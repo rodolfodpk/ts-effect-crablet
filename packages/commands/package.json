@@ -1,0 +1,20 @@
+{
+  "name": "@crablet/commands",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/CommandExecutor.ts",
+    "./CommandDecision": "./src/CommandDecision.ts",
+    "./ExecutionResult": "./src/ExecutionResult.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/sql": "0.51.1",
+    "@crablet/eventstore": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*",
+    "@effect/sql-pg": "0.52.1"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@crablet/eventstore",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/EventStore.ts",
+    "./CommandAuditStore": "./src/CommandAuditStore.ts",
+    "./Tag": "./src/Tag.ts",
+    "./Query": "./src/Query.ts",
+    "./StreamPosition": "./src/StreamPosition.ts",
+    "./AppendEvent": "./src/AppendEvent.ts",
+    "./AppendCondition": "./src/AppendCondition.ts",
+    "./DCBViolation": "./src/DCBViolation.ts",
+    "./CorrelationContext": "./src/CorrelationContext.ts",
+    "./Listen": "./src/Listen.ts",
+    "./Leader": "./src/Leader.ts",
+    "./NotifyPayload": "./src/NotifyPayload.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*"
+  }
+}

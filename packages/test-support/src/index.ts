@@ -1,17 +1,7 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { Client } from "pg";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SQL_DIR = path.join(__dirname, "..", "sql");
-
-const MIGRATION_FILES = [
-  "V1__crablet_eventstore_schema.sql",
-  "V2__crablet_commands_schema.sql",
-  "V3__crablet_processing_schema.sql"
-] as const;
+import { migrationFiles, sqlDir } from "@crablet/db-migrations";
 
 export interface ConnInfo {
   readonly host: string;
@@ -27,6 +17,7 @@ export interface TestDb {
   stop(): Promise<void>;
 }
 
+// Testcontainers-node hangs indefinitely under Bun (see NOTES.md) - this must run under Node.
 export async function startTestDb(): Promise<TestDb> {
   const container = await new PostgreSqlContainer("postgres:17-alpine").start();
 
@@ -47,8 +38,8 @@ export async function startTestDb(): Promise<TestDb> {
   });
   await client.connect();
   try {
-    for (const file of MIGRATION_FILES) {
-      const sqlText = readFileSync(path.join(SQL_DIR, file), "utf-8");
+    for (const file of migrationFiles) {
+      const sqlText = readFileSync(`${sqlDir}/${file}`, "utf-8");
       await client.query(sqlText);
     }
   } finally {

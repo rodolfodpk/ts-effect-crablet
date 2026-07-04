@@ -1,0 +1,16 @@
+{
+  "name": "@crablet/test-support",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@crablet/db-migrations": "workspace:*",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "12.0.4"
+  }
+}

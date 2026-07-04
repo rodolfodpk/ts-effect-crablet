@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decodePayload, encodePayload, isWildcard, shouldWake } from "../src/notify-payload.ts";
+import { decodePayload, encodePayload, isWildcard, shouldWake } from "../src/NotifyPayload.ts";
 
 describe("notify payload codec (parity with PostgresNotifyPayload.java)", () => {
   test("empty types -> wildcard", () => {
@@ -45,11 +45,11 @@ describe("notify payload codec (parity with PostgresNotifyPayload.java)", () => 
   });
 
   test("shouldWake: wildcard always wakes", () => {
-    expect(shouldWake({ wildcard: true, types: new Set(), tagKeys: new Set() }, {})).toBe(true);
+    expect(shouldWake({ wildcard: true, types: new Set<string>(), tagKeys: new Set<string>() }, {})).toBe(true);
   });
 
   test("shouldWake: disjoint event types does not wake", () => {
-    const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set() };
+    const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set<string>() };
     expect(shouldWake(batch, { eventTypes: new Set(["B"]) })).toBe(false);
     expect(shouldWake(batch, { eventTypes: new Set(["A", "B"]) })).toBe(true);
   });
@@ -67,7 +67,7 @@ describe("notify payload codec (parity with PostgresNotifyPayload.java)", () => 
   });
 
   test("shouldWake: tag checks skipped when batch carries no tag keys", () => {
-    const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set() };
+    const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set<string>() };
     expect(shouldWake(batch, { requiredTagKeys: new Set(["k1"]) })).toBe(true);
   });
 });

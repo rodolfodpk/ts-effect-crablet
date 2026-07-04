@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { Effect, Layer, Redacted } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { startTestDb, type TestDb } from "../src/testcontainer.ts";
-import { tryAcquireGlobalLeader } from "../src/leader.ts";
+import { startTestDb, type TestDb } from "@crablet/test-support";
+import { tryAcquireGlobalLeader } from "../src/Leader.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
@@ -29,7 +29,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
 
 describe("advisory-lock leader election parity (Phase 0, Risk B part 2)", () => {
-  it("two concurrent acquisitions on the same key: exactly one succeeds (20 runs)", async () => {
+  it("two concurrent acquisitions on the same key: exactly one succeeds (20 runs)", { timeout: 30_000 }, async () => {
     for (let i = 0; i < 20; i++) {
       const lockKey = BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);
 
@@ -46,7 +46,7 @@ describe("advisory-lock leader election parity (Phase 0, Risk B part 2)", () => 
       const successCount = [a, b].filter(Boolean).length;
       assert.strictEqual(successCount, 1, `iteration ${i}: expected exactly one acquisition, got [${a}, ${b}]`);
     }
-  }, { timeout: 30_000 });
+  });
 
   it("loser can acquire after winner releases", async () => {
     const lockKey = BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);

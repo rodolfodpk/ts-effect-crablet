@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { Chunk, Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { startTestDb, type TestDb } from "../src/testcontainer.ts";
-import { notify, wakeupStream, type WakeupBatch } from "../src/listen.ts";
-import { encodePayload } from "../src/notify-payload.ts";
+import { startTestDb, type TestDb } from "@crablet/test-support";
+import { notify, wakeupStream, type WakeupBatch } from "../src/Listen.ts";
+import { encodePayload } from "../src/NotifyPayload.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
@@ -29,7 +29,7 @@ after(async () => {
 });
 
 describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
-  it("notify round-trip: a single notification is received and decoded", async () => {
+  it("notify round-trip: a single notification is received and decoded", { timeout: 20_000 }, async () => {
     const result = await Effect.runPromise(
       Effect.provide(
         Effect.gen(function* () {
@@ -58,9 +58,9 @@ describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
     assert.strictEqual((result as WakeupBatch).wildcard, false);
     assert.deepStrictEqual([...(result as WakeupBatch).types], ["SpikeNotifyEvent"]);
     assert.deepStrictEqual([...(result as WakeupBatch).tagKeys], ["spike_id"]);
-  }, 20_000);
+  });
 
-  it("a burst of rapid notifications coalesces into one wakeup with the union of types/tag-keys", async () => {
+  it("a burst of rapid notifications coalesces into one wakeup with the union of types/tag-keys", { timeout: 20_000 }, async () => {
     const result = await Effect.runPromise(
       Effect.provide(
         Effect.gen(function* () {
@@ -107,5 +107,5 @@ describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
     }
     assert.deepStrictEqual([...allTypes].sort(), ["EventA", "EventB", "EventC", "EventD"]);
     assert.deepStrictEqual([...allTagKeys].sort(), ["tag_a", "tag_b", "tag_c", "tag_d"]);
-  }, 20_000);
+  });
 });

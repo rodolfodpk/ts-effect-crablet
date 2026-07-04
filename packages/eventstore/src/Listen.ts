@@ -1,7 +1,7 @@
 import { Chunk, Duration, Effect, Stream } from "effect";
 import type { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "@effect/sql/SqlError";
-import { decodePayload, type DecodedPayload } from "./notify-payload.ts";
+import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
 
 // FINDING (Phase 0): @effect/sql-pg@0.52.1's own PgClient.notify(channel, payload) is broken for
 // any non-literal payload - it runs `NOTIFY <channel>, $1` with the payload as a bind parameter
