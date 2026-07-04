@@ -1,6 +1,6 @@
 # Phase 0 Spike — Findings
 
-Status: all acceptance criteria from the plan (`/Users/rodolfo/Documents/spring-crablet-ts-phase0-plan.md`)
+Status: all acceptance criteria from the plan (`/Users/rodolfo/Documents/ts-effect-crablet-phase0-plan.md`)
 met except where noted. 22/22 tests passing (12 under Bun, 10 under Node).
 
 ## Runtime: Bun + Node hybrid, not Bun-only

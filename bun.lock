@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "spring-crablet-ts",
+      "name": "ts-effect-crablet",
       "devDependencies": {
         "@types/bun": "1.3.14",
         "@types/node": "26.1.0",
