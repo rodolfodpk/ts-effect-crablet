@@ -195,3 +195,79 @@ T) => Effect<CommandDecision, E, EventStore>` gets `EventStore` from Effect's co
 - Both major integrations (SQL client, LISTEN/NOTIFY, leader election) work with less custom code
   than the original assessment assumed — `@effect/sql-pg` is more capable than expected on the
   LISTEN/NOTIFY front specifically.
+
+## Phase 2 — event-poller module
+
+Status: `packages/event-poller` built (generic engine only — `crablet-views`/`outbox`/`automations`
+consumers are Phase 3), 19/19 tests passing (16 Bun unit + 3 Node integration files, 33 assertions
+total across the Node suite once combined with Phase 0/1's existing files), clean workspace-wide
+typecheck. No new migration added — the Postgres-backed progress tracker is validated against the
+already-migrated `crablet_view_progress` table (see the Phase 2 plan for the reasoning).
+
+### The one real bug this phase produced: `Effect.fork` vs `Effect.forkDaemon`
+
+By far the most consequential thing found in Phase 2. `EventProcessor.start()` forks three
+long-lived background fibers (LISTEN/NOTIFY dispatcher, leader-retry loop, one loop per
+processorId) and returns immediately — `start()`'s own effect completes right after the last fork
+call. Built and passed against Bun unit tests first, where `start()` is called from *inside* one
+long `Effect.gen` program that keeps running (and keeps its own fiber alive) all the way through
+`stop()` at the end — so the bug was completely invisible there.
+
+It only showed up in the Postgres integration tests, where `start()` is (correctly, realistically)
+its own separate `runtime.runPromise(startProcessor(...))` call that returns a handle to the caller.
+Symptom: the forked fibers never did *anything* — no fetch, no handler call, not even the first
+line of the loop body — for the entire test run, no errors, no logs, nothing. Root cause: plain
+`Effect.fork` ties a child fiber's lifetime to its parent under Effect's structured-concurrency
+guarantee. As soon as `start()`'s own fiber *completes* (not just if it's interrupted — completing
+normally is enough), Effect interrupts every fiber that was `fork`ed from it before they get a
+chance to run. `Effect.forkDaemon` detaches a fiber from this parent-child supervision entirely;
+its lifetime is managed independently until something explicit (here, `stop()`'s
+`Fiber.interruptAll`) interrupts it. This is *the* fix: every background fiber in `EventProcessor.ts`
+uses `forkDaemon`, not `fork`.
+
+Lesson for future phases: **any test that calls a `start()`-shaped API (forks fibers, returns
+immediately) needs to actually exercise it as a separate, short `runPromise` call** — testing it
+inline inside one giant long-lived program will not catch a `fork`-vs-`forkDaemon` mistake, because
+the bug is specifically about what happens *after the forking call returns*.
+
+### `ManagedRuntime` is required for tests with persistent forked fibers
+
+A related, second-order gotcha: a plain `Layer.Layer<...>` gets rebuilt (a fresh connection pool!)
+on every single `Effect.provide(effect, layer)` / `Effect.runPromise(...)` call. Fine for one-shot
+effects. Fatal for `EventProcessor.start()` specifically: its daemon fibers keep using the `SqlClient`/
+`PgClient` captured from the *one* `run()` call that built and started them, but that call's own
+`Effect.provide` scope (and the pool inside it) gets torn down as soon as that call's promise
+resolves — "Failed to acquire connection" errors starting immediately after. Fix: build the layer
+into a `ManagedRuntime.make(layer)` once in the test file's `before()` hook, use its own
+`.runPromise` for every call in the file, and `.dispose()` it in `after()`. This keeps one pool
+alive for the whole file's lifetime, matching how a real long-running application would hold it.
+
+### Confirmed, real gap: `EventStoreLive.appendCommutative` doesn't fire NOTIFY
+
+`internal/sql.ts`'s `appendEventsIf` already accepts optional `notifyChannel`/`notifyPayload`
+params, but `EventStore.ts`'s `appendConditional` never passes them — so, unlike the documented
+Java behavior ("the eventstore sends NOTIFY after every append; there is no separate eventstore
+flag"), the **TS port's real append path does not yet notify anyone**. This was surfaced by
+`event-processor-integration.test.ts`'s wakeup test, which has to call `notify()` manually after
+appending (same as Phase 0's spike did) to exercise the wakeup path at all. Not fixed here — Phase 2
+is scoped to the poller engine, not eventstore append behavior — but flagged as a real, load-bearing
+gap: real views/automations/outbox consumers in Phase 3 will get no LISTEN/NOTIFY wakeups at all
+until `appendConditional` is wired to notify, and will silently fall back to base-interval polling
+only (still correct, just not low-latency).
+
+### Design decisions carried over from the plan (see the plan file for full reasoning)
+
+- One persistent fiber per processorId replaces Java's one-shot self-resubmitting scheduled task —
+  this also eliminates the "already running" guard Java needs (a single dedicated fiber can't run
+  two overlapping ticks for the same processorId by construction).
+- Leader-retry collapses Java's two-tier timing (30s shared task + 5s per-tick follower cooldown)
+  into one shared retry fiber per module, since only one fiber ever attempts `pg_try_advisory_lock`
+  here (the problem the two-tier design solves doesn't arise the same way).
+- `acquireLeader`/`wakeupStream` are injected as already-built `Effect`/`Stream` values rather than
+  raw `sql`/`pg` + lockKey/channel params — decouples the engine from concrete Postgres wiring,
+  which is what let the Bun unit tests use a fake always-leader stub and a manually-driven `PubSub`
+  instead of a real database.
+- The generic `SqlEventFetcher` includes a `transaction_id < pg_snapshot_xmin(...)` visibility
+  filter (verified by a dedicated two-transaction test: a higher position that commits first stays
+  invisible until a still-open lower position also commits) — not explicitly in the given Java
+  ground truth, but directly analogous to `append_events_if()`'s own conflict-check reasoning.

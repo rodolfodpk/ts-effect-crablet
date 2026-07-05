@@ -28,6 +28,20 @@
       "name": "@crablet/db-migrations",
       "version": "0.0.0",
     },
+    "packages/event-poller": {
+      "name": "@crablet/event-poller",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/eventstore": "workspace:*",
+        "@effect/sql": "0.51.1",
+        "@effect/sql-pg": "0.52.1",
+        "effect": "3.21.4",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+        "pg": "8.22.0",
+      },
+    },
     "packages/eventstore": {
       "name": "@crablet/eventstore",
       "version": "0.0.0",
@@ -59,6 +73,8 @@
     "@crablet/commands": ["@crablet/commands@workspace:packages/commands"],
 
     "@crablet/db-migrations": ["@crablet/db-migrations@workspace:packages/db-migrations"],
+
+    "@crablet/event-poller": ["@crablet/event-poller@workspace:packages/event-poller"],
 
     "@crablet/eventstore": ["@crablet/eventstore@workspace:packages/eventstore"],
 

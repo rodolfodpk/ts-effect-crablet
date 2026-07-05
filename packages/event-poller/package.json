@@ -1,0 +1,31 @@
+{
+  "name": "@crablet/event-poller",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/EventProcessor.ts",
+    "./EventSelection": "./src/EventSelection.ts",
+    "./EventFetcher": "./src/EventFetcher.ts",
+    "./EventHandler": "./src/EventHandler.ts",
+    "./ProcessorStatus": "./src/ProcessorStatus.ts",
+    "./ProcessorConfig": "./src/ProcessorConfig.ts",
+    "./ProcessorRuntimeOverrides": "./src/ProcessorRuntimeOverrides.ts",
+    "./BackoffState": "./src/BackoffState.ts",
+    "./ProgressTracker": "./src/ProgressTracker.ts",
+    "./PostgresProgressTracker": "./src/PostgresProgressTracker.ts",
+    "./SqlEventFetcher": "./src/SqlEventFetcher.ts",
+    "./ProcessorManagementService": "./src/ProcessorManagementService.ts",
+    "./InstanceId": "./src/InstanceId.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
+    "@crablet/eventstore": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*",
+    "pg": "8.22.0"
+  }
+}
