@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "test:unit": "bun test packages/eventstore/test/notify-payload.test.ts packages/event-poller/test/backoff-state.test.ts packages/event-poller/test/processor-config.test.ts packages/event-poller/test/processor-lifecycle.test.ts packages/event-poller/test/event-processor-loop.test.ts packages/event-poller/test/management-service.test.ts",
-    "test:integration": "node --test packages/eventstore/test/append.test.ts packages/eventstore/test/leader-election.test.ts packages/eventstore/test/listen-notify.test.ts packages/commands/test/command-executor.test.ts packages/event-poller/test/postgres-progress-tracker.test.ts packages/event-poller/test/sql-event-fetcher.test.ts packages/event-poller/test/event-processor-integration.test.ts",
+    "test:integration": "node --experimental-strip-types --test packages/eventstore/test/append.test.ts packages/eventstore/test/leader-election.test.ts packages/eventstore/test/listen-notify.test.ts packages/commands/test/command-executor.test.ts packages/event-poller/test/postgres-progress-tracker.test.ts packages/event-poller/test/sql-event-fetcher.test.ts packages/event-poller/test/event-processor-integration.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
