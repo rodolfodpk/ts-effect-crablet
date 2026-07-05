@@ -10,7 +10,12 @@ import type { Query } from "./Query.ts";
 import * as StreamPositionNS from "./StreamPosition.ts";
 import type { StreamPosition } from "./StreamPosition.ts";
 import type { ConcurrencyException } from "./DCBViolation.ts";
+import { encodePayload } from "./NotifyPayload.ts";
 import * as Sql from "./internal/sql.ts";
+
+// Port of PostgresNotifyWakeupSource.CHANNEL's default - the fixed channel every append notifies
+// on and every LISTEN/NOTIFY-based consumer (event-poller's wakeupStream) subscribes to.
+export const EVENTS_CHANNEL = "crablet_events";
 
 // Port of com.crablet.eventstore.StoredEvent - a queried event (as opposed to AppendEvent, which
 // is what's written).
@@ -195,7 +200,12 @@ export const EventStoreLive = Layer.effect(
       if (events.length === 0) {
         return Effect.die("Cannot append empty events list");
       }
-      return Sql.appendEventsIf(sql, events, condition);
+      const eventTypes = new Set(events.map((e) => e.type));
+      const tagKeys = new Set(events.flatMap((e) => e.tags.map((t) => t.key)));
+      return Sql.appendEventsIf(sql, events, condition, {
+        notifyChannel: EVENTS_CHANNEL,
+        notifyPayload: encodePayload(eventTypes, tagKeys)
+      });
     };
 
     const service: EventStoreService = {

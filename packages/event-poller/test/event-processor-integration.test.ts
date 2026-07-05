@@ -5,11 +5,10 @@ import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { EventStore, EventStoreLive } from "@crablet/eventstore";
+import { EventStore, EventStoreLive, EVENTS_CHANNEL } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { tryAcquireGlobalLeader } from "@crablet/eventstore/Leader";
-import { notify, wakeupStream } from "@crablet/eventstore/Listen";
-import { encodePayload } from "@crablet/eventstore/NotifyPayload";
+import { wakeupStream } from "@crablet/eventstore/Listen";
 import { makeEventProcessor } from "../src/EventProcessor.ts";
 import { makePostgresProgressTracker } from "../src/PostgresProgressTracker.ts";
 import { makeSqlEventFetcher } from "../src/SqlEventFetcher.ts";
@@ -18,8 +17,6 @@ import * as EventSelection from "../src/EventSelection.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
-
-const WAKEUP_CHANNEL = "crablet_events_event_poller_integ";
 
 // PATTERN PRIMER - `ManagedRuntime`, vs. `Layer.Layer` + `Effect.provide` used everywhere else in
 // this codebase. A plain `Layer.Layer` is rebuilt (a fresh connection pool!) on every single
@@ -139,7 +136,7 @@ const startProcessor = (harness: Harness, options?: { readonly pollingIntervalMs
       selectionOf: () => EventSelection.empty(),
       instanceId: `instance-${crypto.randomUUID()}`,
       acquireLeader: tryAcquireGlobalLeader(sql, harness.lockKey),
-      wakeupStream: wakeupStream(pg, WAKEUP_CHANNEL)
+      wakeupStream: wakeupStream(pg, EVENTS_CHANNEL)
     });
 
     yield* handle.service.start;
@@ -195,14 +192,11 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
       await run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          const pg = yield* PgClient.PgClient;
+          // appendCommutative fires NOTIFY on EVENTS_CHANNEL automatically now - no manual
+          // notify() call needed (previously a Phase 1 gap, fixed in Phase 3 - see NOTES.md).
           yield* store.appendCommutative([
             AppendEvent.of("PollerIntegWakeupEvent", "run_marker", viewName, {})
           ]);
-          // The TS port's EventStoreLive does not yet fire NOTIFY automatically on every append
-          // (a known Phase 1 gap - see NOTES.md); this is the same manual notify() Phase 0's
-          // listen-notify.test.ts uses, standing in for that future automatic wiring.
-          yield* notify(pg, WAKEUP_CHANNEL, encodePayload(new Set(["PollerIntegWakeupEvent"]), new Set()));
         })
       );
 

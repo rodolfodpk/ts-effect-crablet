@@ -2,16 +2,17 @@
 // Bun's wait-strategy handling, confirmed working under plain Node. Run via: node --test
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { EventStore, EventStoreLive, existsProjector } from "../src/EventStore.ts";
+import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector } from "../src/EventStore.ts";
 import { CommandAuditStore, CommandAuditStoreLive } from "../src/CommandAuditStore.ts";
 import * as AppendEvent from "../src/AppendEvent.ts";
 import * as Query from "../src/Query.ts";
 import * as StreamPosition from "../src/StreamPosition.ts";
 import { ConcurrencyException } from "../src/DCBViolation.ts";
+import { wakeupStream, type WakeupBatch } from "../src/Listen.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<EventStore | CommandAuditStore | SqlClient.SqlClient, never>;
@@ -230,5 +231,39 @@ describe("EventStore public API parity (Phase 1)", () => {
     // share the same pg_current_xact_id() - this is the join key CommandExecutor's audit linkage
     // relies on (see spring-crablet's closed design decision: no command_id column on events).
     assert.strictEqual(result.commandTransactionId, result.eventTransactionId);
+  });
+
+  it("appendCommutative fires a NOTIFY on EVENTS_CHANNEL (Phase 3 NOTIFY-wiring fix)", { timeout: 20_000 }, async () => {
+    const spikeId = crypto.randomUUID();
+
+    const runWithPg = <A, E>(
+      effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>
+    ) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+
+    const batch = await runWithPg(
+      Effect.gen(function* () {
+        const pg = yield* PgClient.PgClient;
+        const queue = yield* Queue.unbounded<WakeupBatch>();
+        const fiber = yield* Stream.runForEach(wakeupStream(pg, EVENTS_CHANNEL), (b) =>
+          Queue.offer(queue, b)
+        ).pipe(Effect.fork);
+
+        // Give the dedicated LISTEN connection a moment to register before appending.
+        yield* Effect.sleep("200 millis");
+
+        const store = yield* EventStore;
+        yield* store.appendCommutative([
+          AppendEvent.of("SpikeNotifyWiringEvent", "spike_id", spikeId, {})
+        ]);
+
+        const received = yield* Queue.take(queue).pipe(Effect.timeout("5 seconds"));
+        yield* Fiber.interrupt(fiber);
+        return received;
+      })
+    );
+
+    assert.ok(batch !== undefined && batch !== null, "expected a NOTIFY to be received");
+    assert.strictEqual((batch as WakeupBatch).wildcard, false);
+    assert.ok((batch as WakeupBatch).types.has("SpikeNotifyWiringEvent"));
   });
 });

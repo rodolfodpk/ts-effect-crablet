@@ -1,0 +1,24 @@
+{
+  "name": "@crablet/views",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/ViewsModule.ts",
+    "./ViewProjector": "./src/ViewProjector.ts",
+    "./ViewSubscription": "./src/ViewSubscription.ts",
+    "./ViewsConfig": "./src/ViewsConfig.ts",
+    "./ViewManagementService": "./src/ViewManagementService.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/event-poller": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*",
+    "pg": "8.22.0"
+  }
+}

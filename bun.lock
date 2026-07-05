@@ -66,6 +66,21 @@
         "@testcontainers/postgresql": "12.0.4",
       },
     },
+    "packages/views": {
+      "name": "@crablet/views",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@effect/sql": "0.51.1",
+        "@effect/sql-pg": "0.52.1",
+        "effect": "3.21.4",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+        "pg": "8.22.0",
+      },
+    },
   },
   "packages": {
     "@balena/dockerignore": ["@balena/dockerignore@1.0.2", "", {}, "sha512-wMue2Sy4GAVTk6Ic4tJVcnfdau+gx2EnG7S+uAEe+TWJFqE4YoWN4/H8MSLj4eYJKxGg26lZwboEniNiNwZQ6Q=="],
@@ -79,6 +94,8 @@
     "@crablet/eventstore": ["@crablet/eventstore@workspace:packages/eventstore"],
 
     "@crablet/test-support": ["@crablet/test-support@workspace:packages/test-support"],
+
+    "@crablet/views": ["@crablet/views@workspace:packages/views"],
 
     "@effect/experimental": ["@effect/experimental@0.60.0", "", { "dependencies": { "uuid": "^11.0.3" }, "peerDependencies": { "@effect/platform": "^0.96.0", "effect": "^3.21.0", "ioredis": "^5", "lmdb": "^3" }, "optionalPeers": ["ioredis", "lmdb"] }, "sha512-i5zIg7Xup2KgHyqHlYtkgqSE1bNzCL0GbbTQxrpIzKF0q/ebknOk/ox8B/gIq2vImjoEE81h/oxU+6i1NH210g=="],
 

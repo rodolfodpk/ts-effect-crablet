@@ -198,3 +198,51 @@ per processorId (replacing Java's one-shot self-resubmitting scheduled task), th
 single shared leader-retry fiber, `acquireLeader`/`wakeupStream` injected as pre-built
 `Effect`/`Stream` values to decouple the engine from concrete Postgres wiring, and the
 `SqlEventFetcher`'s `pg_snapshot_xmin(...)` visibility filter.
+
+## Phase 3 — crablet-views port + NOTIFY-wiring fix
+
+Status: `packages/views` built (the first of the three Java consumer modules -
+`crablet-views`/`crablet-outbox`/`crablet-automations` - ported; outbox and automations remain
+future phases, deliberately deferred since views is the simplest: single-key progress table, no
+composite processor-id, no external publisher integration). 46 Bun unit + 37 Node integration tests
+passing workspace-wide, clean typecheck.
+
+### Prerequisite fixed first: `appendConditional` now fires NOTIFY automatically
+
+Closed the gap Phase 2 flagged: `EventStoreLive.appendConditional` (`packages/eventstore/src/
+EventStore.ts`) now derives a payload from the events being appended
+(`NotifyPayload.encodePayload`) and passes it through to `internal/sql.ts`'s already-existing
+`appendEventsIf(..., options)` on a new fixed `EVENTS_CHANNEL = "crablet_events"` (matching Java's
+`PostgresNotifyWakeupSource` default channel name). No new service dependency was needed - the
+`pg_notify()` call happens server-side inside `append_events_if()` itself, already reachable
+through the plain `SqlClient` `EventStoreLive` already depends on. `event-poller`'s
+`event-processor-integration.test.ts` wakeup test no longer needs its own manual `notify()` call -
+real usage now, not a stand-in.
+
+### `packages/views` design notes
+
+- **`ViewProjector` interface is non-generic in `R`** (`handle: (events) => Effect<number, E,
+  never>`) - by the time a projector reaches `ViewsModule.makeViewsProcessor`, every ambient
+  service it needs must already be resolved, mirroring how `EventProcessorDeps.handler` itself
+  requires `R = never`. `makeTransactionalViewProjector` is the standard way to get there: it
+  resolves `SqlClient` once at construction (not per-call), and passes `sql` explicitly into
+  `handleEvent(event, sql)` rather than expecting ambient re-resolution - closer to Java's own
+  `handleEvent(event, jdbc)` parameter-passing than to `EventStore.ts`'s ambient-transaction
+  pattern, and simpler to get right.
+- **`makeViewEventFetcher` reuses `event-poller`'s `makeSqlEventFetcher` as-is**, one instance per
+  view (each bound to that view's own `EventSelection`), dispatching by `viewName` - zero SQL-query
+  duplication, unlike Java's `internal.ViewEventFetcher` which wraps
+  `EventSelectionWhereClauseBuilder` itself.
+- **Verified real transactional-rollback behavior**, not just wiring: `views-integration.test.ts`
+  appends two events in one batch, has the transactional projector's `handleEvent` fail (typed
+  `Effect.fail`, not `Effect.die` - only typed failures flow through `EventProcessor.ts`'s
+  `Effect.tapError` into `recordError`/`error_count`, a mistake initially made when writing this
+  test that silently cost 10s per run waiting on a predicate that could never become true) on the
+  second event, and confirms via direct SQL query that the first event's insert was rolled back
+  too, in the same Postgres transaction.
+
+### Explicitly deferred (matches the Java module's own optional features)
+
+`sharedFetch`/`SharedFetchModuleProcessor` variant, REST/HTTP management controller (the
+Postgres-backed `ViewManagementService`/`getProgressDetails` alone covers ops visibility),
+`AbstractTypedViewProjector`'s automatic deserialize-to-sealed-union ergonomics.
