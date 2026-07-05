@@ -68,6 +68,30 @@ const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => b
   }
 };
 
+const getLastPosition = (viewName: string) =>
+  run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }).pipe(
+    Effect.flatMap((t) => t.getLastPosition(viewName))
+  ));
+
+const getStatus = (viewName: string) =>
+  run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }).pipe(
+    Effect.flatMap((t) => t.getStatus(viewName))
+  ));
+
+const progressRowExists = (viewName: string) =>
+  run(Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql`SELECT 1 FROM crablet_view_progress WHERE view_name = ${viewName}`;
+    return rows.length > 0;
+  }));
+
+const waitForProcessorIdleTick = async (viewName: string) => {
+  await waitUntilAsync(() => progressRowExists(viewName), Boolean);
+  // PgClient.listen uses a dedicated connection. Give it the same small registration grace period
+  // used by listen-notify.test.ts before sending a NOTIFY that Postgres will not replay.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+};
+
 interface Harness {
   readonly viewName: string;
   readonly lockKey: bigint;
@@ -143,20 +167,17 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
       run(startProcessor(harnessB, { pollingIntervalMs: 200 }))
     ]);
 
-    await waitUntilAsync(
-      () => run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }).pipe(
-        Effect.flatMap((t) => t.getLastPosition(viewName))
-      )),
-      (p) => p > 0n
-    );
+    try {
+      await waitUntilAsync(() => getLastPosition(viewName), (p) => p > 0n);
 
-    // Exactly one instance's handler should have received the event - the other stayed a follower
-    // and never called process() at all (tick() skips processing entirely when not leader).
-    const totalCalls = harnessA.handledCounts.length + harnessB.handledCounts.length;
-    assert.strictEqual(totalCalls, 1);
-
-    await run(handleA.service.stop);
-    await run(handleB.service.stop);
+      // Exactly one instance's handler should have received the event - the other stayed a follower
+      // and never called process() at all (tick() skips processing entirely when not leader).
+      const totalCalls = harnessA.handledCounts.length + harnessB.handledCounts.length;
+      assert.strictEqual(totalCalls, 1);
+    } finally {
+      await run(handleA.service.stop);
+      await run(handleB.service.stop);
+    }
   });
 
   it("real LISTEN/NOTIFY triggers an immediate poll well before the configured interval elapses", { timeout: 20_000 }, async () => {
@@ -168,31 +189,29 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
     // waiting for the assertion below well before the base interval ever elapsed again.
     const handle = await run(startProcessor(harness, { pollingIntervalMs: 60_000 }));
 
-    await run(
-      Effect.gen(function* () {
-        const store = yield* EventStore;
-        const pg = yield* PgClient.PgClient;
-        yield* store.appendCommutative([
-          AppendEvent.of("PollerIntegWakeupEvent", "run_marker", viewName, {})
-        ]);
-        // The TS port's EventStoreLive does not yet fire NOTIFY automatically on every append
-        // (a known Phase 1 gap - see NOTES.md); this is the same manual notify() Phase 0's
-        // listen-notify.test.ts uses, standing in for that future automatic wiring.
-        yield* notify(pg, WAKEUP_CHANNEL, encodePayload(new Set(["PollerIntegWakeupEvent"]), new Set()));
-      })
-    );
+    try {
+      await waitForProcessorIdleTick(viewName);
 
-    const finalPosition = await waitUntilAsync(
-      () => run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }).pipe(
-        Effect.flatMap((t) => t.getLastPosition(viewName))
-      )),
-      (p) => p > 0n,
-      5_000
-    );
-    assert.ok(finalPosition > 0n, "expected the wakeup to trigger a poll within 5s, well under the 60s interval");
-    assert.strictEqual(harness.handledCounts.length, 1);
+      await run(
+        Effect.gen(function* () {
+          const store = yield* EventStore;
+          const pg = yield* PgClient.PgClient;
+          yield* store.appendCommutative([
+            AppendEvent.of("PollerIntegWakeupEvent", "run_marker", viewName, {})
+          ]);
+          // The TS port's EventStoreLive does not yet fire NOTIFY automatically on every append
+          // (a known Phase 1 gap - see NOTES.md); this is the same manual notify() Phase 0's
+          // listen-notify.test.ts uses, standing in for that future automatic wiring.
+          yield* notify(pg, WAKEUP_CHANNEL, encodePayload(new Set(["PollerIntegWakeupEvent"]), new Set()));
+        })
+      );
 
-    await run(handle.service.stop);
+      const finalPosition = await waitUntilAsync(() => getLastPosition(viewName), (p) => p > 0n, 5_000);
+      assert.ok(finalPosition > 0n, "expected the wakeup to trigger a poll within 5s, well under the 60s interval");
+      assert.strictEqual(harness.handledCounts.length, 1);
+    } finally {
+      await run(handle.service.stop);
+    }
   });
 
   it("stop() releases the leader lock: it is immediately re-acquirable afterwards", { timeout: 20_000 }, async () => {
@@ -201,9 +220,11 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
     const harness: Harness = { viewName, lockKey, handledCounts: [] };
 
     const handle = await run(startProcessor(harness, { pollingIntervalMs: 200 }));
-    await new Promise((resolve) => setTimeout(resolve, 300)); // let it actually acquire leadership
-
-    await run(handle.service.stop);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300)); // let it actually acquire leadership
+    } finally {
+      await run(handle.service.stop);
+    }
 
     const reacquired = await run(
       Effect.gen(function* () {
@@ -231,15 +252,11 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
 
     const handle = await run(startProcessor(harness, { pollingIntervalMs: 100, failAlways: true }));
 
-    const status = await waitUntilAsync(
-      () => run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }).pipe(
-        Effect.flatMap((t) => t.getStatus(viewName))
-      )),
-      (s) => s === "FAILED",
-      10_000
-    );
-    assert.strictEqual(status, "FAILED");
-
-    await run(handle.service.stop);
+    try {
+      const status = await waitUntilAsync(() => getStatus(viewName), (s) => s === "FAILED", 10_000);
+      assert.strictEqual(status, "FAILED");
+    } finally {
+      await run(handle.service.stop);
+    }
   });
 });
