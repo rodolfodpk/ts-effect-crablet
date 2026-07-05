@@ -2,8 +2,9 @@ import type { SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
 
 // Port of com.crablet.eventpoller.EventSelection. Java models this as an interface with default
 // methods returning empty collections; TS interfaces can't carry default-method bodies, so this is
-// a plain, fully-populated data type instead (matching this repo's Query/Tag/AppendCondition
-// style), with empty()/of() factories filling in the "unrestricted" defaults.
+// a plain, fully-populated data type instead - the namespace-module pattern from eventstore's
+// Tag.ts (interface + free functions, imported as `import * as EventSelection from "./..."`),
+// with empty()/of() factories filling in the "unrestricted" defaults in place of Java's defaults.
 //
 // Dimensions combine with AND: eventTypes empty = unrestricted; requiredTags = ALL keys must be
 // present; anyOfTags = AT LEAST ONE key present; exactTags = ALL key=value pairs match exactly.

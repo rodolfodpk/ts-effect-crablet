@@ -28,6 +28,20 @@ export const idempotencyKeyOf = (
 // Port of com.crablet.command.CommandDecision - a sealed interface in Java, a discriminated
 // union here. CommandExecutor pattern-matches on `_tag` to call the correct EventStore append
 // method, exactly as CommandExecutorImpl's switch does.
+//
+// PATTERN PRIMER - "discriminated union", TypeScript's direct equivalent of a Java `sealed
+// interface` with several `record` implementations. Each variant below (`Commutative`,
+// `CommutativeGuarded`, ...) is a plain interface with a `readonly _tag: "SomeLiteralString"`
+// field - a *literal* string type, not just `string`, so TypeScript can narrow on it. The union
+// type at the bottom (`export type CommandDecision = Commutative | ... | NoOp`) is the "sealed"
+// part: it's a closed set, known at compile time. `CommandExecutor.ts`'s `switch (decision._tag)`
+// then gets *exhaustiveness checking* for free: TypeScript narrows `decision`'s type inside each
+// `case` branch (e.g. inside `case "NonCommutative":`, `decision` is known to have `decisionModel`/
+// `streamPosition` fields, with no cast needed), and if a new variant is ever added to the union
+// without a matching `case`, the switch's fallthrough becomes a type error rather than a silent
+// runtime gap - the same guarantee Java's sealed-interface-exhaustive-switch gives you. This exact
+// `_tag` mechanism is also what `Data.TaggedError` (see eventstore's DCBViolation.ts) generates
+// automatically for error types, and what `Effect.catchTag`/`Effect.exit` narrow on.
 
 export interface Commutative {
   readonly _tag: "Commutative";

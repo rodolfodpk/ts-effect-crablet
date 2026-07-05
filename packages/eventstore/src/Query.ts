@@ -26,6 +26,14 @@ export const of = (items: ReadonlyArray<QueryItem> | QueryItem): Query => {
 
 // Structurally identical to empty() but semantically distinct inside AppendCondition:
 // empty() means "accept all event types"; noCondition() means "this check does not apply".
+//
+// PATTERN NOTE: TypeScript's type system is *structural*, not nominal - two values with the same
+// shape (`{ items: [] }`) are the same type as far as the compiler is concerned, full stop. Unlike
+// Java, there's no way to make `empty()`'s return value a distinct type from `noCondition()`'s just
+// by giving them different names; the compiler cannot catch a mix-up between the two here. The two
+// factory functions exist purely for *readability at the call site* (self-documenting code), not
+// for type safety - keep that distinction in mind whenever you see two differently-named factories
+// producing the same shape in this codebase.
 export const empty = (): Query => ({ items: [] });
 export const noCondition = (): Query => ({ items: [] });
 

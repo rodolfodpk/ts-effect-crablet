@@ -1,6 +1,15 @@
 // Port of crablet-eventstore's PostgresNotifyPayload.java (encode side) and
 // PostgresNotifyWakeupSource.java's payload parsing (decode side).
 // Must stay byte-identical to the Java implementation - this is a cross-language wire contract.
+//
+// PATTERN NOTE: nothing in this file returns an `Effect` - and that's deliberate, not an
+// oversight. `Effect` is for computations that are asynchronous, can fail in a tracked way, or
+// need ambient services (see EventStore.ts's primer on the three type parameters); plain string
+// parsing/formatting with no I/O and no meaningful failure mode is just... a plain function. Don't
+// reach for `Effect.succeed(...)`-wrapping pure logic by default - it adds no safety and forces
+// every caller to unwrap it with `yield*` for nothing. This file (and BackoffState.ts in
+// event-poller, for the same reason) are the two clearest "plain functions are enough" examples in
+// the codebase.
 
 const MAX_PAYLOAD_LENGTH = 7900;
 

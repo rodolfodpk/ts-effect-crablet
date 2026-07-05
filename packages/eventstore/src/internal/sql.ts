@@ -24,6 +24,19 @@ function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
 // Mirrors EventStoreImpl.APPEND_EVENTS_IF_SQL (EventStoreImpl.java:97-101) - same 13 positional
 // params, same order, same casts. Uses sql.unsafe rather than the tagged template so param
 // binding order is explicit and matches Java's stmt.setX(i, ...) call sequence exactly.
+//
+// PATTERN NOTE - @effect/sql gives two ways to run a query, both used in this codebase:
+//   - `sql\`SELECT ... ${value}\`` (tagged template, e.g. Listen.ts's `notify` helper): values are
+//     interpolated at call sites and the library builds the parameterized query for you. Reads
+//     nicely for small ad hoc queries with few params.
+//   - `sql.unsafe(text, paramsArray)` (used here): you write the full SQL text yourself, with
+//     explicit `$1, $2, ...` placeholders, and pass the parameter values as a plain array in
+//     matching order. "Unsafe" refers only to losing the tagged-template's automatic escaping
+//     structure - the values are still sent as bind parameters, not string-concatenated, so this
+//     is not a SQL-injection risk as long as the param array (not the query text) is what varies.
+//     Preferred here specifically because this query has 13 positional params in an exact,
+//     Java-mirrored order - a plain array made that order visually explicit and easy to diff
+//     against the Java call site during porting.
 const APPEND_EVENTS_IF_SQL = `
   SELECT append_events_if(
     $1::text[], $2::text[], $3::jsonb[],

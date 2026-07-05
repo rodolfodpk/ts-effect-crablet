@@ -29,6 +29,14 @@ export const notify = (pg: PgClient.PgClient, channel: string, payload: string):
 // success). For production parity this stream would need to be wrapped in retry/reconnect logic
 // (e.g. Stream.retry(Schedule...)), which the current `.listen()` primitive does not provide.
 
+// PATTERN PRIMER - `Stream<A, E, R>`, Effect's model for "more than one value over time," the
+// counterpart to `Effect<A, E, R>`'s "exactly one value" (or none, on failure). Think of it as a
+// resource-safe, interruptible, backpressure-aware async generator: like Node's
+// `AsyncIterable<A>`, but every operator (`.map`, `.filter`, `.groupedWithin` below) composes
+// lazily into a new `Stream` description without consuming anything, the same way `Effect`
+// combinators compose without running anything, until something actually pulls from it
+// (`Stream.runForEach`, used in event-poller's `EventProcessor.ts`). `pg.listen(channel)` (used
+// below) is the source: each Postgres NOTIFY becomes one `A` flowing through the stream.
 export interface WakeupBatch {
   readonly wildcard: boolean;
   readonly types: ReadonlySet<string>;
@@ -43,6 +51,12 @@ export const wakeupStream = (
 ): Stream.Stream<WakeupBatch, SqlError> =>
   pg.listen(channel).pipe(
     Stream.map(decodePayload),
+    // `Stream.groupedWithin(maxSize, duration)` is the debounce/coalesce technique: it buffers
+    // elements into a `Chunk` (Effect's immutable array type) and flushes the buffer whenever
+    // EITHER `maxSize` elements have arrived OR `duration` has elapsed since the last flush -
+    // whichever comes first. Passing `Number.MAX_SAFE_INTEGER` for size effectively disables the
+    // size trigger, leaving pure time-based batching: every NOTIFY that arrives within the same
+    // 20ms window gets merged into one `WakeupBatch` instead of dispatching N separate wakeups.
     Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(DEBOUNCE_MS)),
     Stream.filter((chunk) => Chunk.isNonEmpty(chunk)),
     Stream.map((chunk) => mergeBatch(Chunk.toReadonlyArray(chunk)))

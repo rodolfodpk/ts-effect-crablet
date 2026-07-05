@@ -59,6 +59,16 @@ const appendDecision = (
         : Query.noCondition();
       const condition = AppendCondition.of(decision.guardPosition, decision.guardQuery, idempotencyQuery);
 
+      // PATTERN PRIMER - `Effect.catchTag("SomeTag", handler)`: the typed-error equivalent of
+      // `catch (e) { if (e instanceof SomeError) { ... } else { throw e; } }`, but checked at
+      // compile time instead of with a runtime `instanceof`. It only intercepts failures whose
+      // `_tag` matches the given literal (see CommandDecision.ts's primer on `_tag` discriminants -
+      // `Data.TaggedError` classes like `ConcurrencyException` get this field automatically); any
+      // other failure in the `E` union passes straight through untouched. `handler` can either
+      // recover (return `Effect.succeed(...)`, turning a failure into a success) or re-fail with a
+      // different error (`Effect.fail(...)`, as both branches below do) - either way, TypeScript
+      // recomputes the resulting `Effect`'s error type accordingly, so callers still see an
+      // accurate `E`.
       return eventStore.appendConditional(decision.events, condition).pipe(
         Effect.catchTag("ConcurrencyException", (guardEx) => {
           // Relabel a genuine guard (lifecycle) conflict as GUARD_VIOLATION, preserving the
@@ -121,6 +131,14 @@ export const CommandExecutorLive = Layer.effect(
       E | ConcurrencyException | SqlError,
       EventStore | CommandAuditStore | SqlClient.SqlClient
     > =>
+      // sql.withTransaction(effect) runs `effect` inside one Postgres transaction, committing on
+      // success and rolling back on any failure (including interruption). Because @effect/sql
+      // makes the "current" SqlClient ambient (see EventStore.ts's Effect.gen/yield* primer), the
+      // `EventStore`/`CommandAuditStore` obtained via `yield*` *inside* this block automatically
+      // use the transaction-scoped connection - no separate "transaction-scoped" implementation
+      // class is needed (unlike Java's EventStoreImpl, which needs a whole second
+      // ConnectionScopedEventStore inner class for exactly this reason - see NOTES.md's Phase 1
+      // write-up for the full comparison).
       sql.withTransaction(
         Effect.gen(function* () {
           const eventStore = yield* EventStore;

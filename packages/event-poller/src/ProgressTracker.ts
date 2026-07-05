@@ -7,6 +7,10 @@ import type { ProcessorStatus } from "./ProcessorStatus.ts";
 // typed here instead of relying on string-matching: PostgresProgressTracker maps Postgres SQLSTATE
 // 42P01 (undefined_table) to this error, and EventProcessor's loop catches it as "not ready yet,
 // return 0" - same external behavior (Flyway hasn't run yet), more robust detection.
+//
+// `Data.TaggedError` - see eventstore's DCBViolation.ts for the full primer on this pattern. The
+// `<{}>` (empty field set) just means this error carries no extra data beyond its `_tag` - the
+// tag alone ("was the table missing, yes or no") is all the caller needs to branch on.
 export class ProgressTableNotReady extends Data.TaggedError("ProgressTableNotReady")<{}> {}
 
 // Port of com.crablet.eventpoller.progress.ProgressTracker<I>.

@@ -21,13 +21,19 @@ let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | Pg
 
 const WAKEUP_CHANNEL = "crablet_events_event_poller_integ";
 
-// A plain Layer.Layer is rebuilt (a fresh connection pool!) on every single Effect.provide/
-// runPromise call - fine for one-shot effects, but fatal here: EventProcessor.start() forks
-// long-lived background fibers (leader-retry, dispatcher, per-processor loops) that outlive the
-// single `run()` call that created them, and those fibers keep using the SAME pool instance.
-// ManagedRuntime keeps one pool alive across every run() call in this file, torn down once via
-// dispose() in after() - matching how a real long-running application would hold one pool for its
-// entire lifetime.
+// PATTERN PRIMER - `ManagedRuntime`, vs. `Layer.Layer` + `Effect.provide` used everywhere else in
+// this codebase. A plain `Layer.Layer` is rebuilt (a fresh connection pool!) on every single
+// `Effect.provide`/`Effect.runPromise` call - fine for one-shot effects (every other test file in
+// this repo does exactly that), but fatal here: `EventProcessor.start()` forks long-lived
+// background fibers (leader-retry, dispatcher, per-processor loops - see `Effect.forkDaemon`'s
+// primer in EventProcessor.ts) that outlive the single `run()` call that created them, and those
+// fibers keep using the SAME pool instance. `ManagedRuntime.make(layer)` builds the layer once,
+// keeps it alive, and hands out a `.runPromise` that reuses that same built runtime across as many
+// calls as you like - `.dispose()` (called in `after()`) is the only thing that actually tears the
+// pool down. This is the general rule: reach for `ManagedRuntime` whenever a test (or a real
+// application's `main`) needs one shared, long-lived set of services across many separate
+// `run`/`runPromise` calls; reach for plain `Layer` + `Effect.provide` when each call is
+// self-contained and can afford to rebuild its own services.
 before(async () => {
   db = await startTestDb();
   const pgLayer = PgClient.layer({

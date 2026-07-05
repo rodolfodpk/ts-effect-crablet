@@ -19,6 +19,20 @@ const isUndefinedTable = (cause: unknown): boolean =>
   (cause as { code?: string } | null | undefined)?.code === "42P01";
 
 // Port of AbstractSingleKeyProgressTracker.java (JDBC base for single-VARCHAR-PK progress tables).
+//
+// PATTERN NOTE - "factory function returning a value object" vs. eventstore's `Context.Tag` +
+// `Layer.effect` (see EventStore.ts's primer). Both resolve `SqlClient` once and return an object
+// of pre-wired closures over it - the difference is *how callers get an instance*. `EventStore` is
+// a process-wide ambient singleton: any code can `yield* EventStore` from anywhere, without being
+// handed one explicitly, because exactly one `EventStoreLive` is registered for the whole app.
+// `makePostgresProgressTracker(spec)` is deliberately NOT registered as a singleton service,
+// because there can be many of them at once with different `spec`s (one per progress table an
+// application cares about) - callers call this factory explicitly, once per table, and pass the
+// resulting `ProgressTracker` value around like any other object (see EventProcessor.ts's
+// `EventProcessorDeps.progressTracker` field). Reach for `Context.Tag`+`Layer` when there's
+// exactly one logical instance for the whole program; reach for a plain factory function
+// returning an `Effect` when a caller needs to construct several differently-configured instances
+// of the same shape.
 export const makePostgresProgressTracker = <I extends string>(
   spec: ProgressTableSpec
 ): Effect.Effect<ProgressTracker<I>, never, SqlClient.SqlClient> =>

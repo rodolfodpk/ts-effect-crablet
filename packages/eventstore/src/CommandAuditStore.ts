@@ -21,6 +21,8 @@ export interface CommandAuditStoreService {
   ) => Effect.Effect<boolean, SqlError>;
 }
 
+// Same Context.Tag + Layer.effect service pattern as EventStore.ts - see that file's primer for
+// the full explanation of what the token/registration split buys you.
 export class CommandAuditStore extends Context.Tag("CommandAuditStore")<
   CommandAuditStore,
   CommandAuditStoreService

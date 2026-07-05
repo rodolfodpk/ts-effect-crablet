@@ -1,3 +1,12 @@
+// Runs under Bun (`bun test` - see package.json's test:unit script) - see NOTES.md for why the
+// test suite is split across two runners. `bun:test`'s API (`describe`/`test`/`expect(...).toBe(...)`)
+// is deliberately Jest/Vitest-shaped - if you're used to those, this file will feel immediate.
+// Contrast with the Postgres-backed test files (e.g. eventstore/test/leader-election.test.ts),
+// which use Node's built-in `node:test` runner instead: `describe`/`it` + `node:assert/strict`'s
+// `assert.strictEqual(...)` rather than a fluent `expect` chain - a more minimal, no-dependency
+// API, chosen there only because `@testcontainers/postgresql` doesn't work under Bun (see
+// NOTES.md), not because it's preferred in general. Pure, fast, no-Postgres-needed tests like this
+// one always go under Bun; anything hitting a real database goes under Node.
 import { describe, expect, test } from "bun:test";
 import { decodePayload, encodePayload, isWildcard, shouldWake } from "../src/NotifyPayload.ts";
 

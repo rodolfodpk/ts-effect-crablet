@@ -74,9 +74,30 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
   deps: EventProcessorDeps<C, I>
 ): Effect.Effect<EventProcessorHandle<C, I>> =>
   Effect.gen(function* () {
+    // PATTERN PRIMER - `Ref<A>`, Effect's mutable cell (think `AtomicReference<A>`, or a `useRef`
+    // that any fiber can read/write). `Ref.make(initial)` allocates it; `Ref.get`/`Ref.set`/
+    // `Ref.update` are themselves `Effect`s, not plain synchronous field access - which matters
+    // because it means reads/writes are automatically sequenced correctly by Effect's fiber
+    // runtime even when multiple fibers touch the same `Ref` concurrently (no manual locking).
+    // `leaderRef` and `backoffRef` are exactly the "impure shell" half of BackoffState.ts's
+    // "functional core, imperative shell" primer: the *shape* of a backoff state transition is a
+    // pure function (`BackoffState.recordEmpty`), but *where the current state lives* and *how
+    // it's shared* across this module's several concurrent fibers (one per processorId, see
+    // `processorLoop` below) is this `Ref`.
     const leaderRef = yield* Ref.make<LeaderHandle | null>(null);
     const backoffRef = yield* Ref.make<ReadonlyMap<I, BackoffState>>(new Map());
     const fibersRef = yield* Ref.make<ReadonlyArray<Fiber.RuntimeFiber<unknown, unknown>>>([]);
+
+    // PATTERN PRIMER - `PubSub<A>`, a multi-subscriber broadcast queue (the Effect equivalent of a
+    // hot `EventEmitter`/RxJS `Subject`, but typed and backpressure-aware). One producer
+    // (`dispatcherLoop` below, draining the LISTEN/NOTIFY `Stream`) publishes into the hub; each
+    // consumer calls `PubSub.subscribe(hub)` to get its OWN independent `Dequeue` - every
+    // subscriber sees every published value, unlike a plain `Queue` where one value goes to
+    // exactly one consumer. `PubSub.sliding(32)` picks the overflow strategy: once a slow
+    // subscriber's own backlog hits 32 unread items, the OLDEST ones are silently dropped to make
+    // room for new ones, rather than blocking the publisher or growing unboundedly. That's
+    // deliberately fine here - a dropped wakeup notification only costs a slightly later poll, not
+    // an incorrect one (see `waitForRelevantWakeup` below).
     const hub = yield* PubSub.sliding<WakeupBatch>(32);
 
     const configOf = (id: I): C | undefined => deps.configs.find((c) => c.processorId === id);
@@ -141,6 +162,14 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         const leader = yield* Ref.get(leaderRef);
         const isLeader = leader !== null && leader.isLeader();
 
+        // PATTERN PRIMER - `Effect.race(a, b)`: runs both effects concurrently, returns whichever
+        // finishes first, and automatically *interrupts* the loser (Effect's fiber interruption is
+        // cooperative and safe to run at almost any suspension point - it's not like a Java
+        // `Thread.interrupt()` that might leave things half-done). This is the entire mechanism
+        // behind "sleep for the polling interval, but wake up early if a LISTEN/NOTIFY arrives":
+        // whichever of `Effect.sleep(delay)` / `waitForRelevantWakeup(...)` resolves first wins,
+        // and the still-waiting other one is cleanly cancelled - no manual timer-handle
+        // bookkeeping (`clearTimeout`-equivalent) needed anywhere in this file.
         if (!isLeader) {
           yield* Effect.race(
             Effect.sleep(Duration.millis(config.pollingIntervalMs)),
@@ -149,6 +178,14 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
           return;
         }
 
+        // PATTERN PRIMER - `Effect.exit(effect)` converts "success A or failure E" into a plain
+        // `Exit<A, E>` *value* you can pattern-match on, instead of letting a failure propagate as
+        // this function's own failure. It's the Effect equivalent of wrapping a call in
+        // `try { ... } catch (e) { ... }` specifically because you need to inspect/react to the
+        // outcome yourself rather than letting it bubble - here, so a handler exception can be
+        // logged and leave backoff state untouched (matching a subtle Java behavior - see the
+        // comment below) instead of aborting this whole tick. `Exit.isSuccess(exit)` narrows the
+        // type so `exit.value`/`exit.cause` are safe to read in each branch.
         const exit = yield* Effect.exit(process(config.processorId));
 
         if (Exit.isSuccess(exit)) {
@@ -182,6 +219,20 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     // Persistent, long-lived fiber - see the module doc comment for why this eliminates the
     // "already running" guard Java's resubmit-to-executor model needs.
+    //
+    // `Effect.scoped(effect)` opens a `Scope` (see eventstore's Leader.ts for the full Scope
+    // primer), runs `effect`, and closes the scope - releasing anything registered against it -
+    // the instant `effect` completes or is interrupted. `PubSub.subscribe(hub)` needs exactly this:
+    // a subscription must eventually be released (so the hub can stop tracking it), and since this
+    // whole loop runs forever until the fiber itself is interrupted (by `stop()`, below), the
+    // natural place to release the subscription is "whenever this fiber ends" - which is precisely
+    // what wrapping the entire `Effect.forever(...)` loop in one `Effect.scoped(...)` gives us.
+    //
+    // `Effect.forever(effect)` repeats `effect` indefinitely. This is NOT the same as writing a
+    // recursive function that calls itself in JS - a naive recursive `Effect.gen` loop would still
+    // be safe here too, because Effect's fiber runtime trampolines through `yield*` points rather
+    // than growing the actual JS call stack, but `Effect.forever` says the *intent* ("repeat this
+    // forever") directly instead of encoding it as recursion.
     const processorLoop = (config: C): Effect.Effect<void> =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -224,12 +275,19 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       const initialHandle = yield* acquireLeaderSafe;
       if (initialHandle !== null) yield* Ref.set(leaderRef, initialHandle);
 
-      // forkDaemon, not fork: plain Effect.fork ties a child's lifetime to its parent fiber under
-      // Effect's structured-concurrency guarantee - since `start`'s own fiber completes (returns)
-      // almost immediately after forking, a plain fork would have Effect interrupt these fibers
-      // right away, before they ever get to do anything. forkDaemon detaches them from `start`'s
-      // fiber entirely; their lifetime is managed explicitly via fibersRef + stop()'s
-      // Fiber.interruptAll instead.
+      // PATTERN PRIMER - `Effect.fork` vs `Effect.forkDaemon`. Effect defaults to "structured
+      // concurrency": a fiber created with `Effect.fork` becomes a *child* of whatever fiber called
+      // fork, and children are automatically interrupted when their parent fiber ends - by design,
+      // so you can't accidentally leak background work past the lifetime of the code block that
+      // started it (this is a real, hard-won lesson from this port - see NOTES.md's Phase 2
+      // write-up for the bug it caused here). `Effect.forkDaemon` opts out of that supervision:
+      // the fiber is attached to the runtime's root scope instead of its immediate caller, so it
+      // keeps running independently for as long as the whole program runs, or until something
+      // explicitly interrupts it. forkDaemon, not fork, is required here specifically because
+      // `start`'s own fiber completes (returns) almost immediately after forking - a plain fork
+      // would have Effect interrupt these fibers right away, before they ever get to do anything.
+      // forkDaemon detaches them from `start`'s fiber entirely; their lifetime is managed
+      // explicitly via fibersRef + stop()'s Fiber.interruptAll instead.
       const dispatcherFiber = yield* Effect.forkDaemon(dispatcherLoop);
       const leaderFiber = yield* Effect.forkDaemon(leaderRetryLoop);
       const processorFibers = yield* Effect.forEach(deps.configs, (config) =>

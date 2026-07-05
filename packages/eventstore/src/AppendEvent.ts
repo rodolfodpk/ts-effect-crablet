@@ -8,6 +8,16 @@ export interface AppendEvent {
   readonly eventData: unknown;
 }
 
+// PATTERN PRIMER - when to reach for a class instead of the namespace-module style (see Tag.ts's
+// primer for the default). A builder needs (a) several optional/repeatable calls before the value
+// is complete (`tag(...)` called any number of times) and (b) validation deferred to one final
+// step (`build()`), not at every intermediate call. Modeling that as pure functions would mean
+// either one giant factory taking every possible tag up front, or manually threading a growing
+// "partial" object through a chain of function calls - both are more awkward than a small class
+// with private mutable fields that only exists transiently during construction. This is the one
+// place in the codebase reaching for OOP-style mutation: the *result* (`AppendEvent`) is still a
+// plain readonly object, only the builder itself is stateful, and only for the few lines it's
+// alive.
 export class AppendEventBuilder {
   private readonly _type: string;
   private _tags: Array<Tag> = [];

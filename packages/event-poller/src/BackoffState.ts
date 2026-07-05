@@ -5,6 +5,19 @@
 // shouldSkip() is deliberately not ported - it's dead code in the real Java implementation too
 // (the impl always calls process(), it only widens the delay before the next call via
 // getNextDelayMs()/nextDelayMs()).
+//
+// PATTERN PRIMER - "functional core, imperative shell", the FP-flavored alternative to Java's
+// mutable class here. Instead of one object whose `emptyPollCount`/`skipCounter` fields get
+// updated in place by method calls (`state.recordEmpty()`), this is a plain immutable value
+// (`BackoffState`) plus pure functions that take a state and return a *new* one
+// (`recordEmpty(state, params) -> BackoffState`), never touching the input. Nothing here is
+// Effect-specific - it's ordinary functional-programming style, chosen because it's trivially
+// testable (see backoff-state.test.ts: call a function, compare the returned value, no setup/
+// teardown of mutable fixtures) and because it composes cleanly with `Ref` (see
+// EventProcessor.ts's primer): the "impure shell" is a `Ref<BackoffState>` that gets updated by
+// calling these pure functions and storing the result back, exactly like `Ref.update(ref, (s) =>
+// recordEmpty(s, params))`. The pure "what's the next state" logic and the impure "where does the
+// current state live, and how does it get shared across fibers" concern are cleanly separated.
 export interface BackoffState {
   readonly emptyPollCount: number;
   readonly skipCounter: number;

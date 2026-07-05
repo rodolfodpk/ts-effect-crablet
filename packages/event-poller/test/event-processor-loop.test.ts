@@ -29,6 +29,23 @@ const alwaysLeader = (): LeaderHandle => ({
 
 const PROCESSOR_ID = "proc-a";
 
+// PATTERN PRIMER - `TestClock`/`TestContext` (provided at the bottom of this file, via
+// `Effect.provide(program, TestContext.TestContext)`): a virtual clock that replaces the real one
+// for every `Effect.sleep` in the program under test. `TestClock.adjust("1000 millis")` doesn't
+// wait a real second - it instantly advances the virtual clock and resolves any `Effect.sleep`
+// calls that were waiting on a time at or before the new instant, in order. That's what makes a
+// test asserting backoff behavior (which involves multiple seconds of simulated polling interval)
+// run in milliseconds of real wall-clock time, deterministically, instead of either sleeping for
+// real or racing against a fake timer library bolted onto plain Promises.
+//
+// `Effect.yieldNow()` is a different, complementary tool: it doesn't touch the clock at all, it
+// just cooperatively hands control back to Effect's fiber scheduler for one step, letting OTHER
+// already-runnable fibers make progress (e.g. a forked background loop that's ready to run but
+// hasn't been scheduled yet). `waitUntil` below combines both ideas into a polling helper: after
+// advancing the clock, background fibers may need a few scheduler turns (not more *time*) to
+// actually observe the new state and act on it - `yieldNow()` gives them those turns without
+// advancing time any further.
+//
 // Polls a check effect by repeatedly yielding the fiber's turn (no real/virtual time elapses),
 // letting background fibers (dispatcher/leader-retry/processor loops) make progress across
 // multiple internal async boundaries (e.g. Stream pull -> PubSub.publish -> Queue.take) before

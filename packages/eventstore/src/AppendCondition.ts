@@ -41,6 +41,14 @@ export const empty = (): AppendCondition => ({
 });
 
 // UmaDB-style fluent factory: failIfChanged(decisionModel).after(streamPosition)
+//
+// PATTERN NOTE: a "curried factory" - `failIfChanged(x)` doesn't return the final value, it returns
+// a small plain object with one more method (`.after(y)`) that produces the real result. This gets
+// the same `verb(arg1).step(arg2)` readability as AppendEvent.ts's builder class, but without any
+// mutable state or a class at all - each intermediate object is just a fresh, throwaway closure
+// over `decisionModel`. Reach for this shape (rather than a class) when there's exactly one or two
+// staged arguments and no branching/optional calls in between; reach for a real builder class (see
+// AppendEvent.ts) once there are several optional/repeatable steps.
 export const failIfChanged = (decisionModel: QueryType) => ({
   after: (streamPosition: StreamPositionType): AppendCondition => ({
     afterPosition: streamPosition,
