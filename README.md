@@ -1,6 +1,7 @@
 # ts-effect-crablet
 
 ![CI](https://github.com/rodolfodpk/ts-effect-crablet/actions/workflows/ci.yml/badge.svg)
+[![codecov](https://codecov.io/gh/rodolfodpk/ts-effect-crablet/branch/main/graph/badge.svg)](https://codecov.io/gh/rodolfodpk/ts-effect-crablet)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)
 ![Effect](https://img.shields.io/badge/Effect-3.21-DE3163)
 ![Bun](https://img.shields.io/badge/Bun-1.3-000000?logo=bun&logoColor=white)
@@ -25,10 +26,15 @@ are intended to be maintained long-term as separate products, not a migration pa
 
 ```bash
 bun install
-bun run typecheck        # tsc --noEmit across the whole workspace
-bun run test:unit        # fast, in-memory tests - runs under Bun
-bun run test:integration # real Postgres via Testcontainers - runs under Node (see NOTES.md for why)
+bun run typecheck          # tsc --noEmit across the whole workspace
+bun run test:unit          # fast, in-memory tests - runs under Bun
+bun run test:unit:coverage # same suite, with an lcov report at coverage/lcov.info
+bun run test:integration   # real Postgres via Testcontainers - runs under Node (see NOTES.md for why)
 ```
+
+The coverage badge only covers the fast Bun unit suite, not the Postgres-backed integration
+tests — merging coverage across two different test runners wasn't worth the added CI complexity
+for this repo's size.
 
 ## Notes
 

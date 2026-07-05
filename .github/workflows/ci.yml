@@ -32,8 +32,15 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Unit tests (Bun)
-        run: bun run test:unit
+      - name: Unit tests (Bun, with coverage)
+        run: bun run test:unit:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
 
       - name: Integration tests (Node + Testcontainers)
         run: bun run test:integration
