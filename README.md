@@ -38,5 +38,6 @@ for this repo's size.
 
 ## Notes
 
-[`NOTES.md`](./NOTES.md) is a running log of findings, gotchas, and design decisions made during
-each phase of the port — start there for the "why," not just the "what."
+[`NOTES.md`](./NOTES.md) is a running log of findings, gotchas, and phase-by-phase status —
+start there for the "why," not just the "what." Lasting architectural decisions are extracted
+into standalone ADRs under [`docs/adr/`](./docs/adr/README.md).

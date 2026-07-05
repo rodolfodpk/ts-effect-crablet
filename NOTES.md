@@ -3,23 +3,16 @@
 Status: all acceptance criteria from the plan (`/Users/rodolfo/Documents/ts-effect-crablet-phase0-plan.md`)
 met except where noted. 22/22 tests passing (12 under Bun, 10 under Node).
 
+**Architectural decisions** made across all phases now live in [`docs/adr/`](docs/adr/README.md),
+one file per decision. This file stays the phase-by-phase journal: status, gotchas, bugs found,
+and what changed vs. each phase's plan.
+
 ## Runtime: Bun + Node hybrid, not Bun-only
 
-Bun (1.3.11) is the package manager and runtime for pure-function tests (`bun test`,
-`test/notify-payload.test.ts`). **`@testcontainers/postgresql` hangs indefinitely under Bun** —
-the underlying Docker container starts and becomes healthy (confirmed via `docker ps`), but the
-JS-side wait-strategy that confirms readiness never returns. The identical script completes in
-1.83s under plain Node 25. Root cause not investigated further (likely Bun's Node-compat layer vs.
-testcontainers-node's log-stream-following internals) — this is a known, reproducible blocker, not
-a config mistake.
-
-**Consequence**: all Testcontainers-dependent tests (`append.test.ts`, `leader-election.test.ts`,
-`listen-notify.test.ts`) run via `node --test`, using Node's built-in test runner (not Vitest —
-kept dependencies minimal for the spike). Relative imports use `.ts` extensions directly (not the
-usual `.js`-in-source convention), since there's no build step — both Bun and Node resolve `.ts`
-extensions directly when running un-transpiled. TypeScript files avoid constructor
-parameter-property shorthand (`constructor(readonly x: T)`) — that syntax needs real
-transformation, not mere type-stripping, and breaks Node's native TS execution.
+`@testcontainers/postgresql` hangs indefinitely under Bun, so Testcontainers-backed tests run
+under Node instead — see [ADR-0001](docs/adr/0001-hybrid-bun-node-runtime.md) for the full
+finding and its consequences (`.ts`-extension imports, no parameter-property shorthand, CI needing
+both runtimes).
 
 ## Risk A: `@effect/sql-pg` calling `append_events_if` — works, idiomatic tier sufficient
 
@@ -35,63 +28,29 @@ passing a plain string throws `Error: Unable to get redacted value` deep inside
 Under the framework's documented default (`READ_COMMITTED`), two genuinely concurrent
 `appendNonCommutative`-equivalent calls racing the same condition could **both succeed** —
 verified empirically at ~93-95% double-success rate under real concurrent load, against both a
-raw-SQL/`pg` harness and the actual **Java `EventStoreImpl`** (19/20 races both succeeded).
-`append_events_if()`'s conflict check is snapshot-based
-(`transaction_id < pg_snapshot_xmin(...)`), which can't see a peer transaction's row until that
-peer commits — a real gap between the framework's documented guarantee
-(`DCB_AND_CRABLET.md`: "Protection Mechanism: PostgreSQL snapshot isolation (MVCC)") and actual
-behavior for genuinely-simultaneous (not staggered) races.
-
-**Fixed on the Java side, twice.** First pass (commit `f082973f`): `appendIf` bumped to
-`SERIALIZABLE` isolation when a concurrency condition was present, mapping the resulting SQLSTATE
-`40001` to `ConcurrencyException` (~10% latency overhead). **Superseded** (commit `b11118b8`):
-that fix only covered the standalone `appendIf` path — `CommandExecutorImpl` (the real,
-command-handler-driven path almost all usage goes through) calls a *different* method,
-`appendIfWithConnection`, which Postgres's "isolation level must be set before any query runs in
-the transaction" rule made impossible to patch the same way. The actual fix moved the protection
-into `append_events_if()` itself: a second, distinctly-namespaced `pg_advisory_xact_lock` (mirroring
-the existing idempotency lock) serializes the concurrency check at the SQL layer, working
-uniformly regardless of caller isolation level, at lower overhead (~4.7% vs ~10%). **This repo's
-`sql.ts` (Phase 1) reflects the current (lock-based) fix** — no isolation-level games needed on the
-TS side either; see Phase 1 notes below. The SQL migrations in `packages/db-migrations/sql/` must
-be kept in sync with `spring-crablet`'s `crablet-db-migrations` — they drifted once already this
-session (Phase 0's copy predated the lock fix), causing a silent regression until re-synced.
+raw-SQL/`pg` harness and the actual **Java `EventStoreImpl`** (19/20 races both succeeded). Fixed
+on the Java side (twice); the TS client relies entirely on that fix rather than doing any
+isolation-level control of its own — see
+[ADR-0003](docs/adr/0003-non-commutative-append-concurrency-protection.md) for the full history
+and the SQL migration-drift risk this creates.
 
 ### Effect-specific finding: commit-time failures are defects, not typed failures
 
-A `SERIALIZABLE` write-skew conflict is detected by Postgres at **COMMIT time** (error detail:
-"Canceled on identification as a pivot, during commit attempt"). `@effect/sql`'s
-`SqlClient.withTransaction` surfaces a commit-time failure as an **unrecoverable defect** (`Die`),
-not a typed `SqlError` in the `E` channel — `Effect.catchTag("SqlError", ...)` does **not** see
-it. Had to use `Effect.catchAllCause` and walk the `Cause` structure manually
-(`Die.defect.cause.code`) to catch it regardless of whether it arrives as a `Fail` or a `Die`. This
-is a real, non-obvious Effect/`@effect/sql` ergonomics gap worth knowing before designing the real
-port's error-handling conventions.
+A `SERIALIZABLE` write-skew conflict is detected by Postgres at **COMMIT time**, and
+`@effect/sql`'s `SqlClient.withTransaction` surfaces it as an unrecoverable defect (`Die`), not a
+typed `SqlError` — `Effect.catchTag("SqlError", ...)` does not see it. See
+[ADR-0004](docs/adr/0004-commit-time-failures-via-cause-inspection.md) for the workaround
+(`Effect.catchAllCause` + manual `Cause` inspection) and its consequences for future transactional
+code paths.
 
 ## Risk B, part 1: LISTEN/NOTIFY — mostly built-in, one real library bug found
 
-**Major positive finding**: `@effect/sql-pg`'s `PgClient.listen(channel)` already implements the
-"dedicated non-pooled connection" pattern Java's `PostgresNotifyWakeupSource` uses by hand — a
-ref-counted (`RcRef`) `new Pg.Client(pool.options)` separate from the pool
-(`node_modules/@effect/sql-pg/dist/esm/PgClient.js:215-231`), returning a
-`Stream<string, SqlError>` of raw payloads. **No raw `pg.Client` EventEmitter bridging was needed**
-for the subscribe path — this contradicts the original HTML assessment's assumption that
-`@effect/sql-pg` "likely doesn't wrap LISTEN/NOTIFY."
-
-**Caveat**: `PgClient`'s internal `onListenClientError` handler is a no-op — there is no automatic
-reconnect-with-backoff on connection drop, unlike Java's explicit exponential backoff
-(`1000 << attempt`, capped 60000ms, resetting after success). A production port would need to wrap
-`.listen()`'s stream in retry/reconnect logic; the current primitive doesn't provide it.
-
-**Real bug found**: `PgClient.notify(channel, payload)` (v0.52.1) is broken for any non-literal
-payload — it runs `NOTIFY <channel>, $1` with the payload as a bind parameter
-(`PgClient.js:262-274`), but Postgres's `NOTIFY` command syntax only accepts a string *literal* for
-the payload, not a parameter placeholder. Confirmed directly against Postgres:
-`NOTIFY test_channel, $1` → `syntax error at or near "$1"` (SQLSTATE `42601`). The `pg_notify()`
-*function* form (used by `append_events_if()` itself) accepts a parameter correctly. Worked around
-in `src/listen.ts` (`notify` export uses ``pg`SELECT pg_notify(${channel}, ${payload})` `` instead
-of `pg.notify`) — this is the one to use, not the library's own helper, until/unless upstream fixes
-it.
+`@effect/sql-pg`'s `PgClient.listen(channel)` already implements the "dedicated non-pooled
+connection" pattern Java's `PostgresNotifyWakeupSource` uses by hand, returning a
+`Stream<string, SqlError>` of raw payloads — no raw `pg.Client` EventEmitter bridging needed for
+the subscribe path. But `PgClient.notify()` itself is broken for non-literal payloads. See
+[ADR-0005](docs/adr/0005-listen-notify-implementation.md) for the bug, the `pg_notify()` SQL
+workaround, and the accepted no-reconnect-on-drop limitation.
 
 Debounce/coalescing (`Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(20))`) verified
 to coalesce a 5-notification burst into a single dispatch with the union of types/tag-keys, mirroring
@@ -99,16 +58,11 @@ Java's `PostgresNotifyWakeupSource` batching semantics.
 
 ## Risk B, part 2: advisory-lock leader election — `sql.reserve` works well
 
-Built on `SqlClient.reserve: Effect<Connection, SqlError, Scope>` (public API, not a raw `pg.Client`)
-combined with manual `Scope.make()`/`Scope.extend()`/`Scope.close()` to hold the connection open on
-success (mirroring Java's "never return to pool until released" pattern) and close it immediately
-on failure. `pg_try_advisory_lock`/`pg_advisory_unlock` via `Connection.execute(...)`. Verified:
-exactly one winner across 20 concurrent-race iterations; loser can reacquire after winner releases.
-
-**Known simplification**: did not simulate a true crash (killing the connection without running
-`pg_advisory_unlock`) — `leader.ts` doesn't expose raw connection access for that, and building it
-felt like scope creep for Phase 0. Only the graceful release path is tested here. A true crash-path
-test (relying on Postgres's own connection-drop cleanup) is a good Phase 1 addition.
+Built on `SqlClient.reserve` (public API, not a raw `pg.Client`) combined with manual
+`Scope.make()`/`Scope.extend()`/`Scope.close()` to hold the connection open across a leader's
+lifetime. See [ADR-0006](docs/adr/0006-leader-election-via-sql-reserve.md) for the design and the
+accepted crash-path test gap. Verified: exactly one winner across 20 concurrent-race iterations;
+loser can reacquire after winner releases.
 
 **Performance note**: the 20-iteration concurrent-race test took ~21s (~1s/iteration) — likely
 connection-acquisition overhead in `sql.reserve`'s pool interaction. Not a correctness concern
@@ -132,17 +86,11 @@ Status: monorepo restructured into a Bun workspace (`packages/db-migrations`, `p
 
 ### Effect ergonomics win: no `ConnectionScopedEventStore` needed
 
-Java's `EventStoreImpl` needs two parallel implementations of every append/project method — one
-using a fresh pooled connection (`appendIf`), one using an already-open transaction-scoped
-connection (`appendIfWithConnection`, wrapped by the inner `ConnectionScopedEventStore` class) —
-because Java has no ambient way to know "am I inside a transaction right now?" without explicit
-plumbing. Effect's `SqlClient.withTransaction` makes this ambient: whatever `SqlClient` is in the
-current Effect context is already transaction-scoped inside a `withTransaction` block, and
-un-scoped outside it. **One `EventStore` implementation handles both cases** — no dual-class
-design needed. Same story for `CommandHandler`: Java's `handle(EventStore eventStore, T command)`
-takes the store explicitly because there's no ambient context; the TS `CommandHandler<T> = (command:
-T) => Effect<CommandDecision, E, EventStore>` gets `EventStore` from Effect's context automatically
-(`yield* EventStore` inside the handler), so the signature only needs the command.
+Java's `EventStoreImpl` needs two parallel implementations of every append/project method (pooled
+vs. transaction-scoped) because Java has no ambient way to know "am I inside a transaction right
+now?". Effect's `SqlClient.withTransaction` makes this ambient, so one `EventStore` implementation
+handles both cases. See [ADR-0002](docs/adr/0002-single-eventstore-implementation.md) for the full
+reasoning and consequences.
 
 ### Real gotchas hit while building this
 
@@ -169,12 +117,10 @@ T) => Effect<CommandDecision, E, EventStore>` gets `EventStore` from Effect's co
 
 ### Scope decisions made (deferred, not forgotten)
 
-- **No command-type auto-discovery.** Java's `CommandExecutor.execute(command)` (single-arg)
-  reflects on a JSON `commandType` property to find the registered handler. TS has no equivalent
-  runtime reflection without extra machinery (a `Map` keyed by some discriminant); every call site
-  in this port passes the handler explicitly (`execute(command, handler)` only). A
-  `Layer`-composed handler registry (per the original HTML assessment's suggestion) is a reasonable
-  Phase 2+ addition if ergonomics demand it.
+- **No command-type auto-discovery.** See
+  [ADR-0008](docs/adr/0008-no-command-type-auto-discovery.md) — every call site passes the handler
+  explicitly (`execute(command, handler)`); a `Layer`-composed handler registry is deferred, not
+  ruled out.
 - **No command-level audit pre-check.** Java's `CommandExecutionOptions.commandId()` path (insert
   a command-audit row before the handler runs, short-circuit to idempotent if it already exists)
   isn't ported yet — `CommandAuditStore.storeCommand`/`storeCommandIfAbsent` exist and are tested
@@ -207,23 +153,13 @@ already-migrated `crablet_view_progress` table (see the Phase 2 plan for the rea
 ### The one real bug this phase produced: `Effect.fork` vs `Effect.forkDaemon`
 
 By far the most consequential thing found in Phase 2. `EventProcessor.start()` forks three
-long-lived background fibers (LISTEN/NOTIFY dispatcher, leader-retry loop, one loop per
-processorId) and returns immediately — `start()`'s own effect completes right after the last fork
-call. Built and passed against Bun unit tests first, where `start()` is called from *inside* one
-long `Effect.gen` program that keeps running (and keeps its own fiber alive) all the way through
-`stop()` at the end — so the bug was completely invisible there.
-
-It only showed up in the Postgres integration tests, where `start()` is (correctly, realistically)
-its own separate `runtime.runPromise(startProcessor(...))` call that returns a handle to the caller.
-Symptom: the forked fibers never did *anything* — no fetch, no handler call, not even the first
-line of the loop body — for the entire test run, no errors, no logs, nothing. Root cause: plain
-`Effect.fork` ties a child fiber's lifetime to its parent under Effect's structured-concurrency
-guarantee. As soon as `start()`'s own fiber *completes* (not just if it's interrupted — completing
-normally is enough), Effect interrupts every fiber that was `fork`ed from it before they get a
-chance to run. `Effect.forkDaemon` detaches a fiber from this parent-child supervision entirely;
-its lifetime is managed independently until something explicit (here, `stop()`'s
-`Fiber.interruptAll`) interrupts it. This is *the* fix: every background fiber in `EventProcessor.ts`
-uses `forkDaemon`, not `fork`.
+long-lived background fibers and returns immediately — built and passed against Bun unit tests
+first (where the bug was invisible, since `start()` runs inside one long-lived test program), then
+failed silently in Postgres integration tests, which call `start()` the way a real application
+would: as its own short-lived `runPromise` call. See
+[ADR-0007](docs/adr/0007-event-poller-fiber-model.md) for the full root-cause writeup and the
+`forkDaemon` fix — it's the single most consequential bug found in this phase, so the ADR keeps
+the complete story rather than a summary.
 
 Lesson for future phases: **any test that calls a `start()`-shaped API (forks fibers, returns
 immediately) needs to actually exercise it as a separate, short `runPromise` call** — testing it
@@ -255,19 +191,10 @@ gap: real views/automations/outbox consumers in Phase 3 will get no LISTEN/NOTIF
 until `appendConditional` is wired to notify, and will silently fall back to base-interval polling
 only (still correct, just not low-latency).
 
-### Design decisions carried over from the plan (see the plan file for full reasoning)
+### Design decisions carried over from the plan
 
-- One persistent fiber per processorId replaces Java's one-shot self-resubmitting scheduled task —
-  this also eliminates the "already running" guard Java needs (a single dedicated fiber can't run
-  two overlapping ticks for the same processorId by construction).
-- Leader-retry collapses Java's two-tier timing (30s shared task + 5s per-tick follower cooldown)
-  into one shared retry fiber per module, since only one fiber ever attempts `pg_try_advisory_lock`
-  here (the problem the two-tier design solves doesn't arise the same way).
-- `acquireLeader`/`wakeupStream` are injected as already-built `Effect`/`Stream` values rather than
-  raw `sql`/`pg` + lockKey/channel params — decouples the engine from concrete Postgres wiring,
-  which is what let the Bun unit tests use a fake always-leader stub and a manually-driven `PubSub`
-  instead of a real database.
-- The generic `SqlEventFetcher` includes a `transaction_id < pg_snapshot_xmin(...)` visibility
-  filter (verified by a dedicated two-transaction test: a higher position that commits first stays
-  invisible until a still-open lower position also commits) — not explicitly in the given Java
-  ground truth, but directly analogous to `append_events_if()`'s own conflict-check reasoning.
+See [ADR-0007](docs/adr/0007-event-poller-fiber-model.md) for the full set: one persistent fiber
+per processorId (replacing Java's one-shot self-resubmitting scheduled task), the collapsed
+single shared leader-retry fiber, `acquireLeader`/`wakeupStream` injected as pre-built
+`Effect`/`Stream` values to decouple the engine from concrete Postgres wiring, and the
+`SqlEventFetcher`'s `pg_snapshot_xmin(...)` visibility filter.
