@@ -289,3 +289,66 @@ same explicitly-scoped simplification `Leader.ts` already documents for its own 
 alone proves the `OutboxPublisher` contract out), leader-crash/failover testing (Java's
 `OutboxLeaderFailoverTest`), and `TopicPublisherPair.getLockKey()` itself (confirmed dead code -
 not porting unused code).
+
+## Phase 5 — crablet-automations port
+
+Status: `packages/automations` built (the last of the three Java consumer modules - views and
+outbox already ported). 72 Bun unit tests passing workspace-wide (up from 61; 11 new: decision
+constructors, processor-config override resolution, dispatcher routing/NoOp/die/ordering/
+correlation-propagation), 42 Node/Testcontainers integration tests passing workspace-wide (up
+from 40; 2 new, covering the full trigger→decide→CommandExecutor→resulting-event loop plus
+correlation/causation propagation and a NoOp path against real Postgres), clean workspace-wide
+typecheck. Same zero-migration, zero-`event-poller`-engine-changes outcome as Phases 3-4:
+`crablet_automation_progress` (single
+`automation_name` PK) and `AUTOMATIONS_LOCK_KEY` both already existed, unused, since earlier phases.
+
+An automation is a process-manager/saga-style reaction: one `StoredEvent` triggers `decide()`,
+which returns a list of `AutomationDecision`s (`ExecuteCommand`/`NoOp`); `ExecuteCommand` gets
+dispatched through `@crablet/commands`' `CommandExecutor` - the first consumer module in this port
+to depend on `@crablet/commands` at all.
+
+### Design decision: bind the command handler once per automation, not per-decision
+
+Java's `AutomationDispatcher` resolves the right `CommandHandler` by runtime type lookup on the
+decision's `Object command`; this repo's `CommandExecutor` has no such lookup (`ADR-0008` - every
+call site passes the handler explicitly). So `AutomationHandler<T, E, HE>`
+(`packages/automations/src/AutomationHandler.ts`) binds one `CommandHandler<T, HE>` once, at
+construction, and `AutomationDecision<T>` (`AutomationDecision.ts`) stays a plain data union with
+no handler inside it - `{ _tag: "ExecuteCommand"; command: T }` or `{ _tag: "NoOp" }`. Consequence
+worth remembering: one automation reacts with exactly one command type unless the caller models
+`T` as a union and supplies one union-capable handler - acceptable, not a blocker, matches the
+Java example (`WalletOpenedAutomation` → `SendWelcomeNotificationCommand`, 1:1) anyway. The
+heterogeneous registry of automations (each with its own `T`/`E`/`HE`) is necessarily type-erased
+to `AutomationHandler<any, any, any>` at the internal-wiring boundary (`internal/
+AutomationEventFetcher.ts`, `internal/AutomationEventHandler.ts`, `internal/
+AutomationProcessorConfig.ts`, `AutomationsModule.ts`) - same erasure Java's `Object command` does
+at runtime, just confined to these four files rather than leaking into the public API.
+
+### Real gotcha: holding the `CommandExecutor` tag value does not discharge its `R`
+
+`makeEventProcessor` requires `handler: EventHandler<I, unknown, never>` - views/outbox satisfy
+this because their handlers never need ambient services beyond what they capture once at
+construction (e.g. `ViewProjector`'s captured `sql`). Automations looked like it should work the
+same way by just `yield* CommandExecutor` once - but `CommandExecutorService.execute` still
+returns `Effect<ExecutionResult, E | ConcurrencyException | SqlError, EventStore |
+CommandAuditStore | SqlClient.SqlClient>` even when called on an already-resolved
+`CommandExecutorService` value, because `CommandExecutorLive`'s own implementation does `yield*
+EventStore` etc. internally whenever the *returned effect* actually runs - resolving the service
+value doesn't pre-resolve what that service's methods ask for later. Fix: `AutomationsModule.ts`'s
+`makeAutomationsProcessor` yields `CommandExecutor`, `EventStore`, `CommandAuditStore`, and
+`SqlClient.SqlClient` once, then builds an `executeDecision` closure that pipes each call through
+`Effect.provideService` for those three services before handing the resulting
+`EventHandler<string, unknown, never>` to `makeEventProcessor` - the same "capture ambient deps
+once, pass concrete values onward" pattern `ViewProjector.ts`'s `makeTransactionalViewProjector`
+already established for `sql` alone, just across three services instead of one. No
+`event-poller` changes needed either way - the adaptation lives entirely in this module's own
+wiring layer (`makeAutomationsProcessor`'s required `R`: `SqlClient.SqlClient | PgClient.PgClient |
+CommandExecutor | EventStore | CommandAuditStore`).
+
+### Explicitly deferred (matches the Java module's own optional features)
+
+`ViewBackedAutomationHandler` (optional `crablet-views`-on-classpath extension inferring wake
+events from view subscriptions), `sharedFetch`/`SharedFetchModuleProcessor` variant and its two
+module-level scan-progress tables, and `AutomationObservationListener`/Micrometer-based metrics
+(matches the port-wide "no `ApplicationEventPublisher`-equivalent metrics yet" deferral already
+recorded in Phase 1).

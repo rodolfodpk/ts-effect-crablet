@@ -1,0 +1,25 @@
+{
+  "name": "@crablet/automations",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/AutomationsModule.ts",
+    "./AutomationHandler": "./src/AutomationHandler.ts",
+    "./AutomationDecision": "./src/AutomationDecision.ts",
+    "./AutomationsConfig": "./src/AutomationsConfig.ts",
+    "./AutomationManagementService": "./src/AutomationManagementService.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/commands": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*",
+    "pg": "8.22.0"
+  }
+}
