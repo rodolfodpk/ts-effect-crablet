@@ -55,6 +55,21 @@
         "@crablet/test-support": "workspace:*",
       },
     },
+    "packages/outbox": {
+      "name": "@crablet/outbox",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@effect/sql": "0.51.1",
+        "@effect/sql-pg": "0.52.1",
+        "effect": "3.21.4",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+        "pg": "8.22.0",
+      },
+    },
     "packages/test-support": {
       "name": "@crablet/test-support",
       "version": "0.0.0",
@@ -92,6 +107,8 @@
     "@crablet/event-poller": ["@crablet/event-poller@workspace:packages/event-poller"],
 
     "@crablet/eventstore": ["@crablet/eventstore@workspace:packages/eventstore"],
+
+    "@crablet/outbox": ["@crablet/outbox@workspace:packages/outbox"],
 
     "@crablet/test-support": ["@crablet/test-support@workspace:packages/test-support"],
 

@@ -246,3 +246,46 @@ real usage now, not a stand-in.
 `sharedFetch`/`SharedFetchModuleProcessor` variant, REST/HTTP management controller (the
 Postgres-backed `ViewManagementService`/`getProgressDetails` alone covers ops visibility),
 `AbstractTypedViewProjector`'s automatic deserialize-to-sealed-union ergonomics.
+
+## Phase 4 — crablet-outbox port
+
+Status: `packages/outbox` built (the second of the three Java consumer modules; automations remain
+a future phase). 61 Bun unit + 40 Node integration tests passing workspace-wide, clean typecheck.
+
+### Real finding: `TopicPublisherPair.getLockKey()` is dead code in Java
+
+Before designing this phase, a research pass resolved an apparent contradiction in the Java source:
+`TopicPublisherPair.java` has a `getLockKey()` method whose javadoc claims each (topic, publisher)
+pair gets its own independent leader-election lock, but grepping the entire `crablet-outbox` module
+found exactly two call sites - the method's own definition and its own unit test. Production wiring
+(`OutboxAutoConfiguration.java`) builds exactly **one** `LeaderElector` (`OUTBOX_LOCK_KEY`) shared by
+one `EventProcessor` instance handling every pair - the same single-module-wide-leader model views
+already uses. This meant `packages/event-poller`'s engine needed zero changes: outbox's composite
+processor identity is just encoded into the `I extends string` the engine already requires
+(`TopicPublisherPair.toKey`/`fromKey`, using `JSON.stringify`/`parse` rather than a `"::"`-joined
+string, since the migration's CHECK constraints only bound `topic`/`publisher` *length*, not
+content - a naive separator would have been silently ambiguous).
+
+### `crablet_outbox_topic_progress` already existed, unused, since Phase 0
+
+The composite-PK progress table (with its `leader_instance`/`leader_since`/`leader_heartbeat`
+columns) was copied verbatim into `packages/db-migrations` back in Phase 0 alongside the view/
+automation tables, but nothing used it until now. Its shape doesn't fit
+`makePostgresProgressTracker`'s single-`idColumn` assumption (confirmed exactly what that
+function's own doc comment already flagged), so this phase adds a hand-rolled
+`internal/OutboxProgressTracker.ts` instead, matching Java's own `OutboxProgressTracker` (which
+also implements `ProgressTracker` directly rather than reusing the single-key abstract base).
+
+The migration's column comment describes `leader_heartbeat` as detecting "abandoned pairs when
+leader crashes" - so `getLastPosition` (called every poll tick, not just when there's new work)
+refreshes `leader_instance`/`leader_heartbeat` as a side effect, keeping it a real liveness signal
+during idle periods too, not just on activity. No failover/reassignment logic consumes it yet -
+same explicitly-scoped simplification `Leader.ts` already documents for its own crash path.
+
+### Explicitly deferred (matches the Java module's own optional features)
+
+`sharedFetch`/`SharedFetchModuleProcessor` variant, REST/HTTP management controller,
+`StatisticsPublisher`/`GlobalStatisticsPublisher` reference implementations (`makeLogPublisher`
+alone proves the `OutboxPublisher` contract out), leader-crash/failover testing (Java's
+`OutboxLeaderFailoverTest`), and `TopicPublisherPair.getLockKey()` itself (confirmed dead code -
+not porting unused code).
