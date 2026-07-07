@@ -1,0 +1,18 @@
+{
+  "name": "@crablet/metrics-otel",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./EventStoreMetrics": "./src/EventStoreMetrics.ts",
+    "./CommandMetrics": "./src/CommandMetrics.ts",
+    "./PollerMetrics": "./src/PollerMetrics.ts",
+    "./LeaderMetrics": "./src/LeaderMetrics.ts",
+    "./ViewMetrics": "./src/ViewMetrics.ts",
+    "./OutboxMetrics": "./src/OutboxMetrics.ts",
+    "./AutomationMetrics": "./src/AutomationMetrics.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4"
+  }
+}

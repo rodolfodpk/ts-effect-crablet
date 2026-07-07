@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
+import * as ViewMetrics from "@crablet/metrics-otel/ViewMetrics";
 import type { ViewProjector } from "../ViewProjector.ts";
 
 // Port of internal.ViewEventHandler.java: routes handle(viewName, events) to the registered
@@ -11,7 +12,15 @@ export const makeViewEventHandler = (projectors: ReadonlyArray<ViewProjector>): 
 
   const handle = (viewName: string, events: ReadonlyArray<StoredEvent>): Effect.Effect<number, unknown, never> => {
     const projector = byName.get(viewName);
-    return projector ? projector.handle(events) : Effect.die(new Error(`Unknown view: ${viewName}`));
+    if (!projector) return Effect.die(new Error(`Unknown view: ${viewName}`));
+
+    return ViewMetrics.observe(
+      ViewMetrics.project,
+      projector.handle(events).pipe(
+        Effect.tap((handled) => Metric.incrementBy(Metric.tagged(ViewMetrics.eventsProjected, "view", viewName), handled))
+      ),
+      [["view", viewName]]
+    );
   };
 
   return { handle };

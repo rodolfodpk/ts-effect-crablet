@@ -24,11 +24,13 @@ describe("makeAutomationEventHandler", () => {
     const seenB: Array<string> = [];
     const automationA = automationHandlerOf(
       "automation-a",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       () => Effect.sync(() => (seenA.push("decided"), [noOp()]))
     );
     const automationB = automationHandlerOf(
       "automation-b",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       () => Effect.sync(() => (seenB.push("decided"), [noOp()]))
     );
@@ -45,6 +47,7 @@ describe("makeAutomationEventHandler", () => {
   test("dies on an unregistered automation name", async () => {
     const automation = automationHandlerOf(
       "automation-a",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       () => Effect.succeed([noOp()])
     );
@@ -58,10 +61,12 @@ describe("makeAutomationEventHandler", () => {
     const executed: Array<unknown> = [];
     const automation = automationHandlerOf(
       "automation-a",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       () => Effect.succeed([noOp()])
     );
-    const executeDecision: ExecuteDecision = (command) => Effect.sync(() => (executed.push(command), undefined));
+    const executeDecision: ExecuteDecision = (_commandType, command) =>
+      Effect.sync(() => (executed.push(command), undefined));
     const handler = makeAutomationEventHandler([automation], executeDecision);
 
     const handled = await Effect.runPromise(handler.handle("automation-a", [fakeEvent(1n), fakeEvent(2n)]));
@@ -74,10 +79,12 @@ describe("makeAutomationEventHandler", () => {
     const executed: Array<unknown> = [];
     const automation = automationHandlerOf(
       "automation-a",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       (event) => Effect.succeed([executeCommand({ step: "first", position: event.position }), executeCommand({ step: "second", position: event.position })])
     );
-    const executeDecision: ExecuteDecision = (command) => Effect.sync(() => (executed.push(command), undefined));
+    const executeDecision: ExecuteDecision = (_commandType, command) =>
+      Effect.sync(() => (executed.push(command), undefined));
     const handler = makeAutomationEventHandler([automation], executeDecision);
 
     const handled = await Effect.runPromise(handler.handle("automation-a", [fakeEvent(1n)]));
@@ -93,6 +100,7 @@ describe("makeAutomationEventHandler", () => {
     const seenIds: Array<{ correlationId: string | null; causationId: bigint | null }> = [];
     const automation = automationHandlerOf(
       "automation-a",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       () => Effect.succeed([executeCommand({ noop: true })])
     );
@@ -114,6 +122,7 @@ describe("makeAutomationEventHandler", () => {
     const decidedPositions: Array<bigint> = [];
     const automation = automationHandlerOf(
       "automation-a",
+      "TestCommand",
       () => Effect.succeed(CD.noOp()),
       (event) => Effect.sync(() => (decidedPositions.push(event.position), [noOp()]))
     );

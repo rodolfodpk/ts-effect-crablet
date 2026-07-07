@@ -1,7 +1,9 @@
-import { Cause, Duration, Effect, Exit, Fiber, PubSub, Queue, Ref, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Queue, Ref, Stream } from "effect";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
+import * as PollerMetrics from "@crablet/metrics-otel/PollerMetrics";
+import * as LeaderMetrics from "@crablet/metrics-otel/LeaderMetrics";
 import type { ProcessorConfig } from "./ProcessorConfig.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 import type { ProgressTracker } from "./ProgressTracker.ts";
@@ -69,6 +71,11 @@ const toBackoffSnapshot = (state: BackoffState): BackoffSnapshot => ({
   emptyPollCount: state.emptyPollCount,
   currentSkipCounter: state.skipCounter
 });
+
+const withPollerTags = <Type, In, Out>(
+  metric: Metric.Metric<Type, In, Out>,
+  tags: ReadonlyArray<readonly [string, string]>
+): Metric.Metric<Type, In, Out> => tags.reduce((acc, [key, value]) => Metric.tagged(acc, key, value), metric);
 
 export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends string>(
   deps: EventProcessorDeps<C, I>
@@ -190,6 +197,19 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
         if (Exit.isSuccess(exit)) {
           const handled = exit.value;
+
+          // Instrumented once here, in the shared engine, so every consumer built on it
+          // (views/outbox/automations) gets cycle/backoff metrics for free - see ADR-0007's "one
+          // shared engine, zero per-consumer duplication" win, just for metrics instead of
+          // scheduling.
+          const pollerTags: ReadonlyArray<readonly [string, string]> = [
+            ["processor", String(config.processorId)],
+            ["instance_id", deps.instanceId]
+          ];
+          yield* Metric.increment(withPollerTags(PollerMetrics.processingCycles, pollerTags));
+          yield* Metric.incrementBy(withPollerTags(PollerMetrics.eventsFetched, pollerTags), handled);
+          if (handled === 0) yield* Metric.increment(withPollerTags(PollerMetrics.emptyPolls, pollerTags));
+
           const currentBackoff = (yield* Ref.get(backoffRef)).get(config.processorId) ?? BackoffStateNS.init();
           const updatedBackoff = config.backoffEnabled
             ? handled > 0
@@ -202,6 +222,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
                 })
             : currentBackoff;
           yield* Ref.update(backoffRef, (m) => new Map(m).set(config.processorId, updatedBackoff));
+          yield* Metric.set(withPollerTags(PollerMetrics.backoffActive, pollerTags), updatedBackoff.skipCounter > 0 ? 1 : 0);
+          yield* Metric.set(withPollerTags(PollerMetrics.backoffEmptyPollCount, pollerTags), updatedBackoff.emptyPollCount);
 
           const delayMs = config.backoffEnabled
             ? BackoffStateNS.nextDelayMs(updatedBackoff, config.pollingIntervalMs)
@@ -251,6 +273,19 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.catchAll((e) => Effect.zipRight(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))
     );
 
+    // Port of crablet.poller.leadership - set on every leadership state transition, tagged by
+    // lock_key (this module's fixed lock, e.g. VIEWS_LOCK_KEY - the closest TS equivalent of
+    // Java's per-LeaderElector "processor" identity, since leadership here is module-wide, not
+    // per-processorId) and instance_id.
+    const setLeadershipGauge = (handle: LeaderHandle, isLeader: boolean): Effect.Effect<void> =>
+      Metric.set(
+        withPollerTags(LeaderMetrics.leadership, [
+          ["lock_key", handle.lockKey.toString()],
+          ["instance_id", deps.instanceId]
+        ]),
+        isLeader ? 1 : 0
+      );
+
     // One shared retry fiber per module (not per-processorId) - see disclosed simplification in
     // the Phase 2 plan: Java's two-tier timing (30s shared task + 5s per-tick cooldown) exists to
     // stop many independently-scheduled per-processor tasks from hammering pg_try_advisory_lock
@@ -260,8 +295,12 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.gen(function* () {
         const current = yield* Ref.get(leaderRef);
         if (current === null || !current.isLeader()) {
+          if (current !== null) yield* setLeadershipGauge(current, false);
           const handle = yield* acquireLeaderSafe;
-          if (handle !== null) yield* Ref.set(leaderRef, handle);
+          if (handle !== null) {
+            yield* Ref.set(leaderRef, handle);
+            yield* setLeadershipGauge(handle, true);
+          }
         }
         yield* Effect.sleep(Duration.millis(leaderRetryIntervalMs));
       })
@@ -273,7 +312,10 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const start: Effect.Effect<void> = Effect.gen(function* () {
       const initialHandle = yield* acquireLeaderSafe;
-      if (initialHandle !== null) yield* Ref.set(leaderRef, initialHandle);
+      if (initialHandle !== null) {
+        yield* Ref.set(leaderRef, initialHandle);
+        yield* setLeadershipGauge(initialHandle, true);
+      }
 
       // PATTERN PRIMER - `Effect.fork` vs `Effect.forkDaemon`. Effect defaults to "structured
       // concurrency": a fiber created with `Effect.fork` becomes a *child* of whatever fiber called

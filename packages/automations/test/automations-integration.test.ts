@@ -116,6 +116,7 @@ describe("automations module integration (real Postgres)", () => {
 
     const automation = automationHandlerOf(
       automationName,
+      "SendConfirmationCommand",
       commandHandler,
       (event) =>
         Effect.succeed([
@@ -178,7 +179,7 @@ describe("automations module integration (real Postgres)", () => {
     const triggerType = `NoopTrigger-${runId}`;
 
     const commandHandler = (_cmd: unknown) => Effect.succeed(CD.noOp());
-    const automation = automationHandlerOf(automationName, commandHandler, () => Effect.succeed([noOp()]), {
+    const automation = automationHandlerOf(automationName, "NoopCommand", commandHandler, () => Effect.succeed([noOp()]), {
       eventTypes: new Set([triggerType])
     });
 

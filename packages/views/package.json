@@ -15,7 +15,8 @@
     "@effect/sql": "0.51.1",
     "@effect/sql-pg": "0.52.1",
     "@crablet/eventstore": "workspace:*",
-    "@crablet/event-poller": "workspace:*"
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*",

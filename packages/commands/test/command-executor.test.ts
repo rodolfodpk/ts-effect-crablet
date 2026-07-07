@@ -54,7 +54,7 @@ describe("CommandExecutor (Phase 1)", () => {
     const result = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* executor.execute({ entityId }, handler);
+        return yield* executor.execute("TestCommand", { entityId }, handler);
       })
     );
 
@@ -89,7 +89,7 @@ describe("CommandExecutor (Phase 1)", () => {
     const outcome = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* executor.execute({ entityId }, handler).pipe(
+        return yield* executor.execute("TestCommand", { entityId }, handler).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("ConcurrencyException", (e) => Effect.succeed(e))
         );
@@ -130,7 +130,7 @@ describe("CommandExecutor (Phase 1)", () => {
     const first = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* executor.execute({ entityId }, handler);
+        return yield* executor.execute("TestCommand", { entityId }, handler);
       })
     );
     assert.strictEqual(first.wasIdempotent, false);
@@ -148,7 +148,7 @@ describe("CommandExecutor (Phase 1)", () => {
     const retry = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* executor.execute({ entityId }, handler);
+        return yield* executor.execute("TestCommand", { entityId }, handler);
       })
     );
     assert.strictEqual(retry.wasIdempotent, true);
@@ -164,7 +164,7 @@ describe("CommandExecutor (Phase 1)", () => {
     const first = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* executor.execute({ entityId }, handler);
+        return yield* executor.execute("TestCommand", { entityId }, handler);
       })
     );
     assert.strictEqual(first.wasIdempotent, false);
@@ -172,7 +172,7 @@ describe("CommandExecutor (Phase 1)", () => {
     const second = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* executor.execute({ entityId }, handler).pipe(
+        return yield* executor.execute("TestCommand", { entityId }, handler).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("ConcurrencyException", (e) => Effect.succeed(e))
         );

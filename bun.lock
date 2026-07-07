@@ -18,6 +18,7 @@
         "@crablet/commands": "workspace:*",
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
         "@effect/sql": "0.51.1",
         "@effect/sql-pg": "0.52.1",
         "effect": "3.21.4",
@@ -32,6 +33,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
         "@effect/sql": "0.51.1",
         "effect": "3.21.4",
       },
@@ -49,6 +51,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
         "@effect/sql": "0.51.1",
         "@effect/sql-pg": "0.52.1",
         "effect": "3.21.4",
@@ -62,6 +65,7 @@
       "name": "@crablet/eventstore",
       "version": "0.0.0",
       "dependencies": {
+        "@crablet/metrics-otel": "workspace:*",
         "@effect/sql": "0.51.1",
         "@effect/sql-pg": "0.52.1",
         "effect": "3.21.4",
@@ -71,12 +75,20 @@
         "@crablet/test-support": "workspace:*",
       },
     },
+    "packages/metrics-otel": {
+      "name": "@crablet/metrics-otel",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "3.21.4",
+      },
+    },
     "packages/outbox": {
       "name": "@crablet/outbox",
       "version": "0.0.0",
       "dependencies": {
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
         "@effect/sql": "0.51.1",
         "@effect/sql-pg": "0.52.1",
         "effect": "3.21.4",
@@ -103,6 +115,7 @@
       "dependencies": {
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
         "@effect/sql": "0.51.1",
         "@effect/sql-pg": "0.52.1",
         "effect": "3.21.4",
@@ -125,6 +138,8 @@
     "@crablet/event-poller": ["@crablet/event-poller@workspace:packages/event-poller"],
 
     "@crablet/eventstore": ["@crablet/eventstore@workspace:packages/eventstore"],
+
+    "@crablet/metrics-otel": ["@crablet/metrics-otel@workspace:packages/metrics-otel"],
 
     "@crablet/outbox": ["@crablet/outbox@workspace:packages/outbox"],
 

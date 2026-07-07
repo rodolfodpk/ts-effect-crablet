@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
+import * as OutboxMetrics from "@crablet/metrics-otel/OutboxMetrics";
 import { fromKey } from "../TopicPublisherPair.ts";
 import type { OutboxPublisher } from "../OutboxPublisher.ts";
 import { publishToOutbox } from "./OutboxPublishingService.ts";
@@ -16,9 +17,17 @@ export const makeOutboxEventHandler = (
   const handle = (key: string, events: ReadonlyArray<StoredEvent>): Effect.Effect<number, unknown, never> => {
     const { publisher: publisherName } = fromKey(key);
     const publisher = byName.get(publisherName);
-    return publisher
-      ? publishToOutbox(publisher, events)
-      : Effect.die(new Error(`Unknown publisher: ${publisherName}`));
+    if (!publisher) return Effect.die(new Error(`Unknown publisher: ${publisherName}`));
+
+    return OutboxMetrics.observe(
+      OutboxMetrics.publish,
+      publishToOutbox(publisher, events).pipe(
+        Effect.tap((handled) =>
+          Metric.incrementBy(Metric.tagged(OutboxMetrics.eventsPublished, "publisher", publisherName), handled)
+        )
+      ),
+      [["publisher", publisherName]]
+    );
   };
 
   return { handle };

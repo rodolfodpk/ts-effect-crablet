@@ -1,10 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
 import type { SqlError } from "@effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import type { CommandHandler } from "@crablet/commands";
+import * as AutomationMetrics from "@crablet/metrics-otel/AutomationMetrics";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
 // Same withEventContext primer as ViewProjector.ts - duplicated locally rather than shared, same
@@ -22,6 +23,7 @@ const withEventContext = <A, E, R>(event: StoredEvent, effect: Effect.Effect<A, 
 // alone does not discharge its R), and threaded through here so this dispatcher itself never
 // touches ambient services directly.
 export type ExecuteDecision = <T, HE>(
+  commandType: string,
   command: T,
   handler: CommandHandler<T, HE>
 ) => Effect.Effect<unknown, HE | ConcurrencyException | SqlError, never>;
@@ -51,17 +53,27 @@ export const makeAutomationEventHandler = (
     const automation = byName.get(automationName);
     if (!automation) return Effect.die(new Error(`Unknown automation: ${automationName}`));
 
-    return Effect.gen(function* () {
-      for (const event of events) {
-        const decisions = yield* automation.decide(event);
-        for (const decision of decisions) {
-          if (decision._tag === "ExecuteCommand") {
-            yield* withEventContext(event, executeDecision(decision.command, automation.handler));
+    const tags: ReadonlyArray<readonly [string, string]> = [["automation", automationName]];
+
+    return AutomationMetrics.observe(
+      AutomationMetrics.decide,
+      Effect.gen(function* () {
+        for (const event of events) {
+          const decisions = yield* automation.decide(event);
+          for (const decision of decisions) {
+            if (decision._tag === "ExecuteCommand") {
+              yield* withEventContext(
+                event,
+                executeDecision(automation.commandType, decision.command, automation.handler)
+              );
+            }
           }
         }
-      }
-      return events.length;
-    });
+        yield* Metric.incrementBy(Metric.tagged(AutomationMetrics.eventsProcessed, "automation", automationName), events.length);
+        return events.length;
+      }),
+      tags
+    );
   };
 
   return { handle };

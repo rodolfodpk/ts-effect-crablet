@@ -11,7 +11,8 @@
   "dependencies": {
     "effect": "3.21.4",
     "@effect/sql": "0.51.1",
-    "@crablet/eventstore": "workspace:*"
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*",

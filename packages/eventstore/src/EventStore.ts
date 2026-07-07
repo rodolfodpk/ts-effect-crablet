@@ -1,6 +1,7 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Metric } from "effect";
 import { SqlClient } from "@effect/sql";
 import type { SqlError } from "@effect/sql/SqlError";
+import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
 import type { Tag } from "./Tag.ts";
 import type { AppendEvent } from "./AppendEvent.ts";
 import * as AppendConditionNS from "./AppendCondition.ts";
@@ -193,6 +194,8 @@ export const EventStoreLive = Layer.effect(
         (r) => r.state
       );
 
+    // Instrumented once here, at the shared primitive appendCommutative/appendNonCommutative/
+    // appendIdempotent are all built on - not tripled across each of them.
     const appendConditional = (
       events: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
@@ -202,10 +205,27 @@ export const EventStoreLive = Layer.effect(
       }
       const eventTypes = new Set(events.map((e) => e.type));
       const tagKeys = new Set(events.flatMap((e) => e.tags.map((t) => t.key)));
-      return Sql.appendEventsIf(sql, events, condition, {
-        notifyChannel: EVENTS_CHANNEL,
-        notifyPayload: encodePayload(eventTypes, tagKeys)
-      });
+      return EventStoreMetrics.observe(
+        EventStoreMetrics.append,
+        Sql.appendEventsIf(sql, events, condition, {
+          notifyChannel: EVENTS_CHANNEL,
+          notifyPayload: encodePayload(eventTypes, tagKeys)
+        }).pipe(
+          Effect.tap(() =>
+            Effect.gen(function* () {
+              yield* Metric.incrementBy(EventStoreMetrics.eventsAppended, events.length);
+              for (const type of eventTypes) {
+                yield* Metric.increment(Metric.tagged(EventStoreMetrics.eventTypeAppended, "event_type", type));
+              }
+            })
+          ),
+          // A dedicated counter alongside the generic append.failures `observe` already records -
+          // the one failure mode Java calls out specifically (ConcurrencyViolationMetric).
+          Effect.catchTag("ConcurrencyException", (e) =>
+            Effect.zipRight(Metric.increment(EventStoreMetrics.concurrencyViolations), Effect.fail(e))
+          )
+        )
+      );
     };
 
     const service: EventStoreService = {

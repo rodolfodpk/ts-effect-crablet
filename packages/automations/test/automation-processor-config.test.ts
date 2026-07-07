@@ -18,9 +18,10 @@ const baseConfig: AutomationsConfig = {
   maxErrors: 10
 };
 
-const fakeHandler = (automationName: string, fields: Parameters<typeof automationHandlerOf>[3] = {}) =>
+const fakeHandler = (automationName: string, fields: Parameters<typeof automationHandlerOf>[4] = {}) =>
   automationHandlerOf(
     automationName,
+    "TestCommand",
     (_command: unknown) => Effect.succeed(CD.noOp()),
     () => Effect.succeed([noOp()]),
     fields

@@ -352,3 +352,112 @@ events from view subscriptions), `sharedFetch`/`SharedFetchModuleProcessor` vari
 module-level scan-progress tables, and `AutomationObservationListener`/Micrometer-based metrics
 (matches the port-wide "no `ApplicationEventPublisher`-equivalent metrics yet" deferral already
 recorded in Phase 1).
+
+## Phase 6 — `@crablet/metrics-otel`: metrics vocabulary + wiring
+
+Status: `packages/metrics-otel` built and wired into all six real call sites (eventstore, commands,
+event-poller, views, outbox, automations). 78 Bun unit tests passing workspace-wide (up from 72; 6
+new: `observe()`'s duration/success/failure/tagging behavior, verified directly against Effect's
+own in-memory `Metric` registry, no mocking), 42 Node/Testcontainers integration tests still passing
+(no regressions from the wiring - `command-executor.test.ts` and the automations test suite needed
+mechanical call-site updates for the new `commandType` parameter, not behavior changes), clean
+workspace-wide typecheck.
+
+This finally addresses the "redesign, not transliteration" callout every prior phase deferred:
+Java's metrics story is two parallel, Spring-specific mechanisms (a deprecated reflection-based
+`MicrometerMetricsCollector`, and the current per-module Micrometer `Observation`/
+`ObservationListener` path) - Effect's own `Metric` module replaces both at once, since a
+`Metric.counter`/`gauge`/`histogram` value **is** simultaneously the name, the live instrument, and
+the recording handle. No event-bus/registry indirection needed anywhere.
+
+### Real gotcha: `Metric.trackDuration` does not record duration on failure
+
+The most consequential finding this phase. `Metric.trackDuration`'s own doc comment reads as if it
+always records - it doesn't. Traced into `effect@3.21.4`'s own source
+(`internal/metric.js`'s `trackDurationWith`): it's built on `Effect.tap`, which by construction only
+runs on the *success* channel. A first cut of `internal/observe.ts` using `Metric.trackDuration`
+silently dropped every failure-path timing sample - caught by `observe.test.ts`'s own
+"records a failure... still records a duration sample" test, which failed with `duration.count` at
+0 instead of 1 until fixed. The fix: measure `Clock.currentTimeNanos` by hand before/after via
+`Effect.exit` (converting "fail" into a plain value instead of letting it propagate early), so
+duration gets recorded regardless of `Exit.isSuccess`/`Exit.isFailure` - matching what Java's
+Micrometer `Observation` timer actually does. Worth remembering for any future Effect `Metric` work
+in this codebase: `trackDuration`/`trackSuccess`/`trackDurationWith` are all `Effect.tap`-based,
+success-path-only aspects, not "runs regardless" aspects - only `trackError`/`trackErrorWith` cover
+the failure path, and there's no single built-in aspect that covers both at once.
+
+### Design decision: two counters instead of one outcome-tagged counter
+
+Java's Micrometer `Observation` produces ONE timer whose `outcome` tag (`success`/`failure`) is
+chosen after the underlying operation finishes. Effect's `Metric.tagged` can only add a tag whose
+value is known before the metric is used, not one chosen retroactively - so `internal/observe.ts`'s
+`OperationMetrics` triplet (`duration`/`successes`/`failures`) uses two separate counters instead.
+Equally queryable at a backend (two series instead of one tag-split series) - a deliberate
+"redesign, not transliteration" call, not a capability gap.
+
+### Breaking change: `CommandExecutor.execute` gained a `commandType` parameter
+
+Java tags `CommandMetrics` by `command.getClass().getSimpleName()` via reflection. This port's
+commands are plain objects/interfaces, not classes - there is no runtime type name to derive a tag
+from. Rather than drop the tag dimension, `CommandExecutorService.execute<T, E>` gained an explicit
+`commandType: string` first parameter (confirmed with the user as the preferred trade-off over
+losing per-command-type metric breakdown). Rippled through `command-executor.test.ts` (6 call
+sites) and, since `AutomationHandler<T, E, HE>` binds one `CommandHandler` per automation, gained
+its own new `commandType: string` field threaded through `AutomationEventHandler.ts`'s
+`ExecuteDecision` type and `AutomationsModule.ts`'s `executeDecision` closure, rippling through all
+three automations test files. A genuinely easy mistake avoided here: several test `executeDecision`
+stubs were originally written as `(command) => ...` (positional match against the *first*
+parameter) - after the signature shift to `(commandType, command, handler)`, those would have
+silently received the `commandType` string where `command` was expected, with no compiler error
+(TypeScript matches callback parameters positionally, not by name). Fixed by renaming to
+`(_commandType, command) => ...` at each affected call site.
+
+### Wiring notes
+
+- **`event-poller/EventProcessor.ts`** is the single highest-leverage site: `crablet.poller.*`
+  cycle/backoff/leadership metrics are instrumented once in the shared engine (`tick`'s
+  `Exit.isSuccess` branch, and the leader-acquisition retry loop), so views/outbox/automations all
+  get this instrumentation for free - the same "one shared engine, zero per-consumer duplication"
+  win ADR-0007 already established for scheduling, just for metrics this time.
+- **Leadership gauge tagging**: Java's `LeadershipMetric` tags by `processorId`, but this port's
+  leader election is module-wide (one `LeaderHandle` shared across every `processorId` an
+  `EventProcessor` instance manages - confirmed back in Phase 4's outbox research). Tagged by
+  `lock_key` (the module's fixed constant, e.g. `VIEWS_LOCK_KEY`) instead - the closest faithful
+  equivalent of "which election is this," since there's no per-processorId leader to speak of.
+- **`eventstore/EventStore.ts`**: all three semantic append methods
+  (`appendCommutative`/`appendNonCommutative`/`appendIdempotent`) share one `appendConditional`
+  primitive, so instrumentation lives there once, not tripled.
+
+### Explicitly deferred
+
+- **Real OTel export `Layer`** - confirmed scope decision with the user before starting: building a
+  working `@effect/opentelemetry` `Metrics.layer` requires adding `@effect/platform` plus 7 separate
+  `@opentelemetry/*` peer packages this repo doesn't otherwise need. Metrics recorded via Effect's
+  `Metric` are always safe/cheap in-process regardless (queryable via `Metric.value`/
+  `Metric.snapshot`) - matching Java's own "export is optional, app-provided" stance. Follow-up
+  recipe for whoever picks this up:
+
+  ```ts
+  import { NodeSdk } from "@effect/opentelemetry";
+  import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+  import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+
+  const MetricsLive = NodeSdk.layer(() => ({
+    resource: { serviceName: "my-crablet-app" },
+    metricReader: new PeriodicExportingMetricReader({
+      exporter: new OTLPMetricExporter({ url: "http://localhost:4318/v1/metrics" }),
+      exportIntervalMillis: 10_000
+    })
+  }));
+  // Provide MetricsLive alongside EventStoreLive/CommandExecutorLive/etc. at the app's composition
+  // root - every Metric.counter/gauge/timer already wired into this port's packages starts
+  // exporting with zero further code changes, since they're already live/ambient module-level
+  // values.
+  ```
+
+- **Legacy dot-separated Micrometer-dashboard-compatible metric names** (`eventstore.events.appended`,
+  etc.) - Java itself deprecates this path in favor of the Observation naming scheme this port uses
+  (`crablet.eventstore.append`, etc.); not porting deprecated code.
+- **Per-module `*ObservationAutoConfiguration`-style conditional registration** - Effect's `Metric`
+  values are always live/ambient module-level constants; there's no Spring-style conditional-bean
+  gate to port. Recording is always on; export (once built, see above) is the actual opt-in step.

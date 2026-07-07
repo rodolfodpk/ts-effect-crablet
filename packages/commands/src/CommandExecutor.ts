@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Metric } from "effect";
 import { SqlClient } from "@effect/sql";
 import type { SqlError } from "@effect/sql/SqlError";
 import { EventStore, type EventStoreService } from "@crablet/eventstore";
@@ -6,6 +6,7 @@ import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { ConcurrencyException, type DCBViolation } from "@crablet/eventstore/DCBViolation";
 import * as Query from "@crablet/eventstore/Query";
 import * as AppendCondition from "@crablet/eventstore/AppendCondition";
+import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import * as CD from "./CommandDecision.ts";
 import * as ExecutionResultNS from "./ExecutionResult.ts";
 import type { ExecutionResult } from "./ExecutionResult.ts";
@@ -14,8 +15,16 @@ import type { ExecutionResult } from "./ExecutionResult.ts";
 // not an explicit parameter, so a handler is just "given a command, produce a decision."
 export type CommandHandler<T, E = never> = (command: T) => Effect.Effect<CD.CommandDecision, E, EventStore>;
 
+// Port of CommandExecutorImpl's per-decision-variant append dispatch. Command-type-string
+// auto-discovery (Java's JSON `commandType` field lookup) and the command-level audit pre-check
+// (COMMAND_ID-based idempotency) are deliberately out of scope for this port - callers always
+// pass the handler explicitly (TS has no runtime-reflection equivalent to look one up by type).
+// `commandType` below is caller-supplied for the same reason: TS commands are plain objects, not
+// classes, so there's no `command.getClass().getSimpleName()` equivalent to derive it from - it
+// exists purely to tag CommandMetrics, not to look up a handler.
 export interface CommandExecutorService {
   readonly execute: <T, E>(
+    commandType: string,
     command: T,
     handler: CommandHandler<T, E>
   ) => Effect.Effect<ExecutionResult, E | ConcurrencyException | SqlError, EventStore | CommandAuditStore | SqlClient.SqlClient>;
@@ -23,11 +32,7 @@ export interface CommandExecutorService {
 
 export class CommandExecutor extends Context.Tag("CommandExecutor")<CommandExecutor, CommandExecutorService>() {}
 
-// Port of CommandExecutorImpl's per-decision-variant append dispatch. Command-type-string
-// auto-discovery (Java's JSON `commandType` field lookup) and the command-level audit pre-check
-// (COMMAND_ID-based idempotency) are deliberately out of scope for this port - callers always
-// pass the handler explicitly (TS has no runtime-reflection equivalent to look one up by type),
-// and command persistence-for-audit is a separate deferred concern (see NOTES.md).
+// Port of CommandExecutorImpl's per-decision-variant append dispatch.
 const appendDecision = (
   eventStore: EventStoreService,
   decision: CD.CommandDecision
@@ -124,6 +129,7 @@ export const CommandExecutorLive = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
 
     const execute = <T, E>(
+      commandType: string,
       command: T,
       handler: CommandHandler<T, E>
     ): Effect.Effect<
@@ -139,30 +145,48 @@ export const CommandExecutorLive = Layer.effect(
       // class is needed (unlike Java's EventStoreImpl, which needs a whole second
       // ConnectionScopedEventStore inner class for exactly this reason - see NOTES.md's Phase 1
       // write-up for the full comparison).
-      sql.withTransaction(
-        Effect.gen(function* () {
-          const eventStore = yield* EventStore;
-          const decision = yield* handler(command);
+      //
+      // `commandType` exists purely to tag CommandMetrics (see the interface's doc comment above) -
+      // wrapped with CommandMetrics.observe for the handle.duration/successes/failures triplet, plus
+      // a dedicated idempotentDuplicates increment when the result comes back idempotent.
+      CommandMetrics.observe(
+        CommandMetrics.handle,
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const eventStore = yield* EventStore;
+            const decision = yield* handler(command);
 
-          if (decision._tag === "NoOp") {
-            return ExecutionResultNS.idempotent(decision.reason ?? "DUPLICATE_OPERATION");
-          }
+            if (decision._tag === "NoOp") {
+              return ExecutionResultNS.idempotent(decision.reason ?? "DUPLICATE_OPERATION");
+            }
 
-          const appendResult = yield* appendDecision(eventStore, decision).pipe(
-            Effect.catchTag("ConcurrencyException", (e) => {
-              const message = e.message ?? "";
-              const isDuplicate = message.toLowerCase().includes("duplicate operation detected");
-              if (!isDuplicate) return Effect.fail(e);
-              if (duplicatePolicyFor(decision) === "THROW") return Effect.fail(e);
-              return Effect.succeed("idempotent" as const);
-            })
-          );
+            const appendResult = yield* appendDecision(eventStore, decision).pipe(
+              Effect.catchTag("ConcurrencyException", (e) => {
+                const message = e.message ?? "";
+                const isDuplicate = message.toLowerCase().includes("duplicate operation detected");
+                if (!isDuplicate) return Effect.fail(e);
+                if (duplicatePolicyFor(decision) === "THROW") return Effect.fail(e);
+                return Effect.succeed("idempotent" as const);
+              })
+            );
 
-          if (appendResult === "idempotent") {
-            return ExecutionResultNS.idempotent("DUPLICATE_OPERATION");
-          }
-          return ExecutionResultNS.created();
-        })
+            if (appendResult === "idempotent") {
+              return ExecutionResultNS.idempotent("DUPLICATE_OPERATION");
+            }
+            return ExecutionResultNS.created();
+          })
+        ).pipe(
+          Effect.tap((result) => {
+            if (!result.wasIdempotent) return Effect.void;
+            const taggedCounter: Metric.Metric.Counter<number> = Metric.tagged(
+              CommandMetrics.idempotentDuplicates,
+              "command_type",
+              commandType
+            );
+            return Metric.increment(taggedCounter);
+          })
+        ),
+        [["command_type", commandType]]
       );
 
     const service: CommandExecutorService = { execute };

@@ -23,17 +23,23 @@ import type { AutomationDecision } from "./AutomationDecision.ts";
 // rather than unioned up front, mirroring CommandExecutorService's own explicitness about generics.
 export interface AutomationHandler<T, E = never, HE = never> extends EventSelection, ProcessorRuntimeOverrides {
   readonly automationName: string;
+  // Exists purely to tag CommandMetrics (@crablet/metrics-otel) when this automation's decisions
+  // are dispatched - TS commands are plain objects, not classes, so there's no
+  // `command.getClass().getSimpleName()` equivalent to derive it from at the dispatch site.
+  readonly commandType: string;
   readonly handler: CommandHandler<T, HE>;
   readonly decide: (event: StoredEvent) => Effect.Effect<ReadonlyArray<AutomationDecision<T>>, E, never>;
 }
 
 export const automationHandlerOf = <T, E = never, HE = never>(
   automationName: string,
+  commandType: string,
   handler: CommandHandler<T, HE>,
   decide: (event: StoredEvent) => Effect.Effect<ReadonlyArray<AutomationDecision<T>>, E, never>,
   fields: Partial<EventSelection> & ProcessorRuntimeOverrides = {}
 ): AutomationHandler<T, E, HE> => ({
   automationName,
+  commandType,
   handler,
   decide,
   ...EventSelectionNS.of(fields),
