@@ -571,3 +571,88 @@ minor scope limitation rather than chased further.
 - **Package-prefix-based exposure** (Java's `CommandApiExposedCommands.fromPackages(...)`) - no
   meaning without reflection/classpath scanning; the flat map already IS the exposure list.
 - **Malformed-JSON RFC 7807 reshaping** - see the finding above.
+
+## Phase 8 — `examples/wallet-example-app`: the first real end-to-end TS application
+
+Status: `examples/wallet-example-app` built - the first application anywhere in this port that
+composes every previously-built package (`eventstore`, `commands`, `event-poller`, `views`,
+`outbox`, `automations`, `commands-http`) into one real running program, proving the whole port
+actually works together rather than just passing each package's own isolated test suite. Ports
+Java's `wallet-example-app` (its own README frames it as "the recommended learning entry point for
+Crablet") at "core walkthrough" scope: all 5 commands, 7 events, the period/"closing the books"
+statement logic, all 4 views, the one automation, a log-only outbox publisher, `commands-http`
+writes composed with a small hand-written read API. 27 new tests passing (15 Postgres-backed
+domain/view unit tests + 12 E2E tests across 5 files, all driven through a real `NodeHttpServer` on
+an ephemeral port with real `fetch()`), zero regressions to the 84 Bun unit + 53 Node integration
+tests from Phases 0-7, clean workspace-wide typecheck (after adding `examples/*` to both root
+`package.json` workspaces and `tsconfig.json`'s `include`).
+
+### Small prerequisite: `@crablet/commands-http` composability refactor
+
+Java serves generic command writes and hand-written wallet reads from one port; `@effect/platform`'s
+`HttpApi.Api` is a single `Context.Tag`, so two independent top-level `HttpApi.make(...)` instances
+can't both be served from one `HttpApiBuilder.serve()` layer. Split `commands-http` into three
+layers instead of the original two: `makeCommandApiGroup(basePath, extraErrors?)` returns just the
+`HttpApiGroup` (composable into a bigger app-owned `HttpApi`); `makeCommandApiGroupLive(api,
+commands, config)` takes the full composed `api` as a parameter instead of building it internally;
+`makeCommandApiLive(commands, config)` (existing export, existing tests, unchanged behavior) becomes
+a one-line wrapper over both. Also added `ExposedCommand.mapError` (an optional per-command hook,
+tried before the generic `toProblemDetail` catch-all) and `extraErrors` on `makeCommandApiGroup` (so
+an app's own RFC 7807 types get `.addError`'d and properly encoded) - without these, wallet handler
+errors (`WalletNotFound`, `InsufficientFunds`) would all become generic 500s, making the
+error-mapping E2E goals unreachable. Ran `commands-http`'s existing full suite after this refactor,
+before touching the wallet app itself - zero behavior change confirmed.
+
+### Two Java discrepancies found during research - resolved, not silently ported
+
+1. Java's `WalletBalanceViewProjector`/`WalletSummaryViewProjector` handle `WalletClosed` in their
+   `switch`, but their `ViewSubscription`s never list `WalletClosed` in `eventTypes` - the
+   delete-on-close branch is dead code. This port's subscriptions **do** include `WalletClosed`,
+   making delete-on-close real.
+2. Java's `SendWelcomeNotificationCommandHandler` isn't in `WalletApplication`'s production
+   `scanBasePackages` (only picked up via a broader test-only component scan) - a latent
+   package-scan wiring bug. This port has no component scanning anywhere (`ADR-0008`) - every
+   handler is wired explicitly, so the gap cannot occur.
+
+### Real bug found via testing, not review: `wallet_transaction_view`'s FK race
+
+`other-views.test.ts` initially failed with a genuine FK-violation `SqlError`: the transaction
+view's projector could run before the balance view's row for the same wallet existed, because both
+views are independent async projections with no ordering guarantee between them. Java's own V103
+migration already fixed this exact race for the summary view (dropping its FK to the balance view)
+but left the transaction view's FK in place - this port's V101 migration drops it too, closing the
+gap Java left open, not reproducing it.
+
+### The one real bug this phase produced: background processors never stopped, so tests hung forever
+
+By far the most consequential thing found in this phase - the same class of bug as Phase 2's
+`Effect.fork` vs `Effect.forkDaemon` lesson (see `ADR-0007`), but one level up, at the composition
+root. `EventProcessorHandle.service.start` forks its daemon fibers via `forkDaemon`, deliberately
+detached from any scope - by design, since they must outlive the short-lived `Effect.gen` block that
+calls `start`. Closing a `Scope` or calling `ManagedRuntime.dispose()` does **not** interrupt them;
+only the handle's own `.service.stop` (`Fiber.interruptAll` over the fibers it tracked) does.
+`startWalletAppForTest.ts`'s first draft called `startBackgroundProcessors()` but never captured or
+stopped the three returned handles - every E2E test file ran its assertions successfully, then hung
+indefinitely in its `after()` hook: the still-running poll loops kept retrying against the pool torn
+down by `Scope.close`/`runtime.dispose()`, logging "Failed to acquire connection" every ~100ms
+forever, with `node --test` never exiting (three killed background shell runs and one direct 6+
+minute hang, all silent/near-zero-CPU rather than an obvious crash, made this hard to distinguish
+from a genuine Testcontainers/Docker problem until traced with a minimal step-by-step diagnostic
+script). Fixed by having `startBackgroundProcessors` return the three `EventProcessorHandle`s
+(new `BackgroundProcessors` interface + `stopBackgroundProcessors` helper in `WalletApp.ts`), and
+`startWalletAppForTest`'s `stop()` now calls `stopBackgroundProcessors` before `Scope.close`.
+Lesson for any future composition root that aggregates multiple `start()`-shaped processors: the
+"stop everything" path must explicitly enumerate and stop each one - there is no automatic
+propagation from closing the outer scope, no matter how many layers of `Scope`/`ManagedRuntime` wrap
+around it.
+
+### Explicitly deferred (matches the confirmed "core walkthrough" scope, not full Java app parity)
+
+- **`WalletWebhookPublisher`** (Resilience4j circuit-breaker HTTP publisher) - a second, more
+  elaborate `OutboxPublisher` example; the log publisher already proves the interface out, same
+  reasoning Phase 4 used for Java's own `StatisticsPublisher`.
+- **Ops-dashboard/management REST controllers** (`ViewController`/
+  `AutomationsManagementController`/`OutboxManagementController`/`DashboardController`) - each
+  surfaces a `*ManagementService` that already exists as a library API; wiring it to HTTP is
+  presentation, not proof-of-composition.
+- **springdoc/OpenAPI** and the **virtual-thread test** - same reasoning as Phase 7.

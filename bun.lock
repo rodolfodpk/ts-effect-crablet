@@ -11,6 +11,29 @@
         "typescript": "6.0.3",
       },
     },
+    "examples/wallet-example-app": {
+      "name": "wallet-example-app",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/automations": "workspace:*",
+        "@crablet/commands": "workspace:*",
+        "@crablet/commands-http": "workspace:*",
+        "@crablet/db-migrations": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/outbox": "workspace:*",
+        "@crablet/views": "workspace:*",
+        "@effect/platform": "0.96.2",
+        "@effect/platform-node": "0.107.0",
+        "@effect/sql": "0.51.1",
+        "@effect/sql-pg": "0.52.1",
+        "effect": "3.21.4",
+        "pg": "8.22.0",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+      },
+    },
     "packages/automations": {
       "name": "@crablet/automations",
       "version": "0.0.0",
@@ -559,6 +582,8 @@
     "util-deprecate": ["util-deprecate@1.0.2", "", {}, "sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw=="],
 
     "uuid": ["uuid@11.1.1", "", { "bin": { "uuid": "dist/esm/bin/uuid" } }, "sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ=="],
+
+    "wallet-example-app": ["wallet-example-app@workspace:examples/wallet-example-app"],
 
     "which": ["which@2.0.2", "", { "dependencies": { "isexe": "^2.0.0" }, "bin": { "node-which": "./bin/node-which" } }, "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA=="],
 

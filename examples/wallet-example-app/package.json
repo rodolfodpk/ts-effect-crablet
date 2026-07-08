@@ -1,0 +1,28 @@
+{
+  "name": "wallet-example-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types src/index.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
+    "@effect/platform": "0.96.2",
+    "@effect/platform-node": "0.107.0",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/commands": "workspace:*",
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/views": "workspace:*",
+    "@crablet/automations": "workspace:*",
+    "@crablet/outbox": "workspace:*",
+    "@crablet/commands-http": "workspace:*",
+    "@crablet/db-migrations": "workspace:*",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*"
+  }
+}
