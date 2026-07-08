@@ -461,3 +461,113 @@ silently received the `commandType` string where `command` was expected, with no
 - **Per-module `*ObservationAutoConfiguration`-style conditional registration** - Effect's `Metric`
   values are always live/ambient module-level constants; there's no Spring-style conditional-bean
   gate to port. Recording is always on; export (once built, see above) is the actual opt-in step.
+
+## Phase 7 — `@crablet/commands-http`: generic REST command API
+
+Status: `packages/commands-http` built - the first HTTP surface anywhere in this port. Mirrors
+Java's `crablet-commands-web` (full survey done): a single generic `GET`/`POST /api/commands`
+dispatcher, RFC 7807 error bodies, optional correlation-header echo/generate. 84 Bun unit tests
+passing workspace-wide (up from 78; 6 new: `ExposedCommand` map construction/lookup, each
+`ProblemDetail` variant's encoded JSON shape/status), 53 Node/Testcontainers integration tests
+passing (up from 42; 11 new, all against a real HTTP server bound to an ephemeral port and driven
+by real `fetch()` calls, real Postgres, real `CommandExecutor`), clean workspace-wide typecheck.
+
+### Before writing any of the real package: a spike, per explicit reviewer instruction
+
+The plan review correctly flagged three unverified assumptions about `@effect/platform`'s actual
+runtime behavior - `HttpApiEndpoint.setPayload` is normally a *static* schema but this dispatcher's
+payload is runtime-selected; `addSuccess(schema, {status})` fixes one status per schema but this
+endpoint needs 200 *or* 201 from the same handler; `Schema.TaggedError`'s encoded JSON shape was
+unverified against RFC 7807. Spiked against a real running server (`bun add`, wrote a throwaway
+single-endpoint `HttpApi`, drove it with `curl`) before writing any package code, and all three
+resolved concretely:
+
+1. **Static envelope payload works.** `Schema.Struct({ commandType: Schema.String, command:
+   Schema.Unknown })` decodes fine as `setPayload`'s argument; all "which concrete command is
+   this" polymorphism happens inside the handler body via a *second* `Schema.decodeUnknown` call
+   against the app-supplied per-command schema - exactly mirroring Java's controller manually
+   calling `objectMapper.treeToValue(node, commandClass)` *after* resolving `commandType`.
+2. **Dynamic 200/201 works** by returning a raw `HttpServerResponse.json(body, {status})` directly
+   from the handler, bypassing `addSuccess` entirely (no `addSuccess` is even declared for the
+   POST endpoint in the real package - see `CommandApi.ts`).
+3. **`Schema.TaggedError` leaks `_tag` into the JSON body**, with no automatic `type`/`title`
+   fields - confirmed the reviewer's concern exactly. Fix, also verified by running it: use plain
+   (non-tagged) `Schema.Class` for the wire-level error shape instead. `HttpApiSchema.
+   annotations({status})` still works correctly for the real HTTP status line either way -
+   status-code control and body-shape control turned out to be two independent mechanisms.
+
+This is the first phase in the port that ran an empirical framework spike *before* committing to
+an implementation plan, per explicit reviewer instruction - worth repeating for any future phase
+introducing a new, previously-unused Effect ecosystem package (this port had never touched
+`@effect/platform` before this phase).
+
+### Design decision: app-supplied flat command map replaces Java's two-tier reflection registry
+
+Java resolves `commandType` (JSON string) to a concrete command class via
+`DiscoveredCommandRegistry` (reflecting over every `CommandHandler` bean's generic parameter +
+Jackson `@JsonSubTypes` annotations) filtered through an app-supplied `CommandApiExposedCommands`
+allowlist. This port has no auto-discovery anywhere (`ADR-0008`) and commands are plain objects,
+not annotated classes - so both Java tiers collapse into one flat, app-supplied map:
+`ExposedCommand.ts`'s `Record<string, { schema, handler }>`. Consequence: there's no Java-style
+"known but not exposed" 404 case - anything not in the map is simply unknown (400), collapsing two
+distinct Java failure modes into one.
+
+### Design decision: the package never chooses Bun vs. Node as the server runtime
+
+`@crablet/commands-http` depends only on `@effect/platform` (`HttpApi`/`HttpApiBuilder`/`Schema` -
+server-runtime-agnostic) as a real dependency; `@effect/platform-node` is a **devDependency only**,
+used solely by this package's own integration test (which, per `ADR-0001`, must run under Node for
+Testcontainers). A real production app is free to use `@effect/platform-bun`'s `BunHttpServer`
+instead, or Node's, without this package caring either way - same "capture ambient deps, let the
+caller wire concrete infrastructure" pattern `EventStoreLive`/`CommandExecutorLive` already use for
+`SqlClient`/`PgClient`. Confirmed empirically that `@effect/platform-node`'s heavier peer
+dependencies (`@effect/rpc`, `@effect/cluster`) install cleanly via `bun install` with no warnings
+or failures, even though this package only uses basic HTTP serving.
+
+### Real finding: malformed JSON never reaches the handler at all
+
+`@effect/platform`'s own payload-schema-decode failure returns a 400 *before*
+`CommandApiLive.ts`'s handler runs - confirmed empirically (a standalone script sending
+`"{not valid json"` against a real running server returned status 400 with an **empty body**, not
+this port's RFC 7807 shape). A `CommandApiMalformedJson` ProblemDetail variant was written and
+tested first, then deleted once this became clear - genuinely unreachable code, since nothing in
+this port's handler ever constructs it. Reshaping the framework's own default decode-failure
+response into the RFC 7807 shape is a documented, deliberate gap (not attempted here), not a bug -
+`ProblemDetail.ts` explains this in its own doc comment for the next person who touches this file.
+
+### Error-mapping precedence in `CommandApiLive.ts`
+
+`ConcurrencyException` (needs its real `DCBViolation` detail - violationCode/matchingEventsCount -
+preserved) is caught first, mapped to `CommandConflict` (409). Everything else reaching the
+handler's outer boundary - `SqlError` (genuine infra failure), the command handler's own
+app-defined validation error `E`, any framework-internal decode/encode error - gets normalized by
+one terminal `toProblemDetail` catch-all to `CommandApiUnexpectedError` (500) unless it's already
+one of the three known `ProblemDetail` types, in which case it passes through unchanged. This
+mirrors Java's literal "catch-all `Exception` → 500, message not echoed" safety net, and avoids
+the fragile alternative (enumerating every possible framework-internal error type by hand at each
+call site) that briefly produced hard-to-satisfy TypeScript inference errors through the
+type-erased `ExposedCommand<any, any>` boundary before being simplified to this shape.
+
+### Correlation header, precisely
+
+Matches Java's own precise (if implicit) behavior, made explicit here: disabled → ignore any
+inbound `X-Correlation-Id` entirely; enabled + header present → validate as a UUID (`Schema.UUID`,
+400 on malformed) and echo the same value back; enabled + header absent → generate a new UUID and
+echo it. Only the `CommandExecutor.execute` call itself runs inside
+`CorrelationContext.withCorrelationId(...)` - request parsing/validation (commandType lookup,
+payload decode, header validation) deliberately does not, so a 400 from bad input never gets a
+correlation id wrapped around it. The echo header is only guaranteed on success responses in this
+first cut - `HttpApiBuilder`'s own error-response encoding path doesn't give the handler an
+obvious hook to attach a header to a framework-constructed error response; documented as a known,
+minor scope limitation rather than chased further.
+
+### Explicitly deferred (matches Java's own "optional" framing)
+
+- **springdoc/OpenAPI `oneOf` discriminator wiring** - `@effect/platform`'s `HttpApiSwagger` could
+  generate basic OpenAPI docs for free from the `HttpApi` definition; not built here, cheap
+  follow-up if ever needed.
+- **Virtual-thread dispatch test** (Java's `CommandApiVirtualThreadE2ETest`) - no Node/Bun
+  analogue.
+- **Package-prefix-based exposure** (Java's `CommandApiExposedCommands.fromPackages(...)`) - no
+  meaning without reflection/classpath scanning; the flat map already IS the exposure list.
+- **Malformed-JSON RFC 7807 reshaping** - see the finding above.

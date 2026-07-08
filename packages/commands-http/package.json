@@ -1,0 +1,26 @@
+{
+  "name": "@crablet/commands-http",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/CommandApi.ts",
+    "./ExposedCommand": "./src/ExposedCommand.ts",
+    "./CommandApiConfig": "./src/CommandApiConfig.ts",
+    "./ProblemDetail": "./src/ProblemDetail.ts",
+    "./CommandApiLive": "./src/CommandApiLive.ts"
+  },
+  "dependencies": {
+    "effect": "3.21.4",
+    "@effect/platform": "0.96.2",
+    "@crablet/commands": "workspace:*",
+    "@crablet/eventstore": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "0.107.0",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
+    "@crablet/test-support": "workspace:*",
+    "pg": "8.22.0"
+  }
+}
