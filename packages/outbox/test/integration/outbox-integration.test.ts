@@ -7,10 +7,10 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import { makeOutboxProcessor } from "../src/OutboxModule.ts";
-import { topicConfigOf } from "../src/TopicConfig.ts";
-import type { OutboxConfig } from "../src/OutboxConfig.ts";
-import type { OutboxPublisher } from "../src/OutboxPublisher.ts";
+import { makeOutboxProcessor } from "../../src/OutboxModule.ts";
+import { topicConfigOf } from "../../src/TopicConfig.ts";
+import type { OutboxConfig } from "../../src/OutboxConfig.ts";
+import type { OutboxPublisher } from "../../src/OutboxPublisher.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;

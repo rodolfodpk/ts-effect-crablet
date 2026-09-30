@@ -5,7 +5,7 @@ import { Effect, Layer, Redacted } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { makePostgresProgressTracker } from "../src/PostgresProgressTracker.ts";
+import { makePostgresProgressTracker } from "../../src/PostgresProgressTracker.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<SqlClient.SqlClient, never>;

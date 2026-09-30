@@ -8,8 +8,8 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import { makeSqlEventFetcher } from "../src/SqlEventFetcher.ts";
-import * as EventSelection from "../src/EventSelection.ts";
+import { makeSqlEventFetcher } from "../../src/SqlEventFetcher.ts";
+import * as EventSelection from "../../src/EventSelection.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<EventStore | SqlClient.SqlClient, never>;

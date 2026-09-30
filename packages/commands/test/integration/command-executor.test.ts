@@ -11,8 +11,8 @@ import { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as Query from "@crablet/eventstore/Query";
 import * as StreamPosition from "@crablet/eventstore/StreamPosition";
-import { CommandExecutor, CommandExecutorLive, type CommandHandler } from "../src/CommandExecutor.ts";
-import * as CD from "../src/CommandDecision.ts";
+import { CommandExecutor, CommandExecutorLive, type CommandHandler } from "../../src/CommandExecutor.ts";
+import * as CD from "../../src/CommandDecision.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient, never>;

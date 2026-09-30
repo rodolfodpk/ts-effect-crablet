@@ -13,10 +13,10 @@ import * as StreamPosition from "@crablet/eventstore/StreamPosition";
 import * as Query from "@crablet/eventstore/Query";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "./support/startWalletAppForTest.ts";
-import { applyAppMigrations } from "./support/applyAppMigrations.ts";
-import { WELCOME_NOTIFICATION_SENT } from "../src/domain/notification/WelcomeNotificationSent.ts";
-import * as WalletTags from "../src/domain/WalletTags.ts";
+import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
+import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { WELCOME_NOTIFICATION_SENT } from "../../src/domain/notification/WelcomeNotificationSent.ts";
+import * as WalletTags from "../../src/domain/WalletTags.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;

@@ -11,10 +11,10 @@ import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "./support/startWalletAppForTest.ts";
-import { applyAppMigrations } from "./support/applyAppMigrations.ts";
-import { WALLET_OPENED, DEPOSIT_MADE } from "../src/domain/events/WalletEvents.ts";
-import { WELCOME_NOTIFICATION_SENT } from "../src/domain/notification/WelcomeNotificationSent.ts";
+import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
+import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { WALLET_OPENED, DEPOSIT_MADE } from "../../src/domain/events/WalletEvents.ts";
+import { WELCOME_NOTIFICATION_SENT } from "../../src/domain/notification/WelcomeNotificationSent.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;

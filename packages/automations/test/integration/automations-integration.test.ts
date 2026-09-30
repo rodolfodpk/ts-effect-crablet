@@ -11,10 +11,10 @@ import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";
-import { makeAutomationsProcessor } from "../src/AutomationsModule.ts";
-import { automationHandlerOf } from "../src/AutomationHandler.ts";
-import { executeCommand, noOp } from "../src/AutomationDecision.ts";
-import type { AutomationsConfig } from "../src/AutomationsConfig.ts";
+import { makeAutomationsProcessor } from "../../src/AutomationsModule.ts";
+import { automationHandlerOf } from "../../src/AutomationHandler.ts";
+import { executeCommand, noOp } from "../../src/AutomationDecision.ts";
+import type { AutomationsConfig } from "../../src/AutomationsConfig.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<

@@ -5,7 +5,7 @@ import { Effect, Layer, Redacted } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { tryAcquireGlobalLeader } from "../src/Leader.ts";
+import { tryAcquireGlobalLeader } from "../../src/Leader.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;

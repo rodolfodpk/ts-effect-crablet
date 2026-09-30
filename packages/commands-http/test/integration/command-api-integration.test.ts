@@ -14,9 +14,9 @@ import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/Co
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";
-import { makeCommandApiLive } from "../src/CommandApiLive.ts";
-import { exposedCommandOf, type ExposedCommand } from "../src/ExposedCommand.ts";
-import type { CommandApiConfig } from "../src/CommandApiConfig.ts";
+import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
+import { exposedCommandOf, type ExposedCommand } from "../../src/ExposedCommand.ts";
+import type { CommandApiConfig } from "../../src/CommandApiConfig.ts";
 
 const jsonBody = (res: Response): Promise<Record<string, unknown>> => res.json() as Promise<Record<string, unknown>>;
 

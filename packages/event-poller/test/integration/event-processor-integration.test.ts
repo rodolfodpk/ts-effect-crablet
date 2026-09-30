@@ -9,11 +9,11 @@ import { EventStore, EventStoreLive, EVENTS_CHANNEL } from "@crablet/eventstore"
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { tryAcquireGlobalLeader } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
-import { makeEventProcessor } from "../src/EventProcessor.ts";
-import { makePostgresProgressTracker } from "../src/PostgresProgressTracker.ts";
-import { makeSqlEventFetcher } from "../src/SqlEventFetcher.ts";
-import { processorConfigOf } from "../src/ProcessorConfig.ts";
-import * as EventSelection from "../src/EventSelection.ts";
+import { makeEventProcessor } from "../../src/EventProcessor.ts";
+import { makePostgresProgressTracker } from "../../src/PostgresProgressTracker.ts";
+import { makeSqlEventFetcher } from "../../src/SqlEventFetcher.ts";
+import { processorConfigOf } from "../../src/ProcessorConfig.ts";
+import * as EventSelection from "../../src/EventSelection.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;

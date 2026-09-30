@@ -10,9 +10,9 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { Tag } from "@crablet/eventstore/Tag";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { makeWalletStatementViewProjector } from "../src/views/WalletStatementViewProjector.ts";
-import * as WalletEvents from "../src/domain/events/WalletEvents.ts";
-import { applyAppMigrations } from "./support/applyAppMigrations.ts";
+import { makeWalletStatementViewProjector } from "../../src/views/WalletStatementViewProjector.ts";
+import * as WalletEvents from "../../src/domain/events/WalletEvents.ts";
+import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<SqlClient.SqlClient | PgClient.PgClient, never>;

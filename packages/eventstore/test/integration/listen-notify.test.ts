@@ -5,8 +5,8 @@ import { Chunk, Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
 import { SqlClient } from "@effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { notify, wakeupStream, type WakeupBatch } from "../src/Listen.ts";
-import { encodePayload } from "../src/NotifyPayload.ts";
+import { notify, wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
+import { encodePayload } from "../../src/NotifyPayload.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;

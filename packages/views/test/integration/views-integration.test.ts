@@ -7,10 +7,10 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import { makeViewsProcessor } from "../src/ViewsModule.ts";
-import { viewSubscriptionOf } from "../src/ViewSubscription.ts";
-import { makeTransactionalViewProjector, type ViewProjector } from "../src/ViewProjector.ts";
-import type { ViewsConfig } from "../src/ViewsConfig.ts";
+import { makeViewsProcessor } from "../../src/ViewsModule.ts";
+import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
+import { makeTransactionalViewProjector, type ViewProjector } from "../../src/ViewProjector.ts";
+import type { ViewsConfig } from "../../src/ViewsConfig.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
