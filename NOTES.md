@@ -747,3 +747,40 @@ First step of the redesign plan: remove structure that only existed to mirror th
   the HTTP mapping is redone in Phase 6); `project`/`StateProjector` (they go away with `defineModel`).
 - **Metric semantics changed:** `crablet.eventstore.concurrency_violations` now counts only `Conflict`;
   it used to count idempotency duplicates too.
+
+## Phase 2 (API redesign) - `defineEvent` and `defineModel`
+
+New in `@crablet/commands`: `Event.ts` and `Model.ts` (subpath exports `./Event`, `./Model`), ported from
+the Phase 0 spike to Effect 4 and the Phase 1 API.
+
+- `defineEvent(type, { schema, tags })`: one declaration owns the type name, payload schema, tag
+  derivation and queries. Calling it builds the `AppendEvent`; `.decode` validates stored data;
+  `.where({ tag: value })` builds a query and only accepts tag keys the event declares (a typo is a
+  compile error - tested with `@ts-expect-error`).
+- `defineModel({ by, initial, scope? }).lifecycle(...).on(...)`: a chained builder. The state fold AND
+  the boundary query come from the same handlers, so they cannot drift. `lifecycle` events are bound by
+  id only and not scoped; `on(..., { by: [tagA, tagB] })` binds a two-party event through either tag
+  (one query item per tag); handlers get `{ event, id }` so they can tell which side they are.
+  `.of({ id, ...scope }).load(eventStore)` returns `{ state, logPosition }`; `lifecycleQuery(id)` is the
+  natural guard query. `all({ from, to })` (in `Model.ts`) is one boundary over several entities: the
+  union of the queries, one position, each member's own state; the boundary is read first, so a race
+  can only surface as an extra safe conflict, never a missed one.
+- The builder is chained rather than array-based because TypeScript cannot drive a nested generic call
+  from the enclosing call's in-progress inference (the state type collapses to `unknown`) - found in
+  the spike.
+- Proved on the real wallet domain (`examples/wallet-example-app/src/domain/WalletModel.ts`, added
+  next to the old definitions; Phase 5 switches the commands over and deletes the old ones): the derived
+  queries equal `WalletQueryPatterns`, the events equal `WalletEvents`, the fold equals
+  `WalletBalanceProjector` - and the two known wallet bugs are fixed and asserted (F2: the receiver of
+  a transfer; F3: concurrent deposits fold by amount, so none is lost). Also against real Postgres: the
+  model's `(query, logPosition)` works as a real append condition, for one wallet and for two.
+- Test support: `@crablet/eventstore/testing/FakeEventStore` - an in-memory `EventStoreService` for
+  unit tests that matches queries like the SQL read path and records appends. It does NOT enforce
+  append conditions (the enforcing in-memory store is a later phase). `test:unit` now also runs
+  `examples/*/test/*.test.ts`.
+- Not done (deliberately): a type-only form of `defineEvent` without a schema; `project`/`StateProjector`
+  remain until commands stop using them (Phase 3/5).
+
+Known flake, seen once in ~15 runs on a busy machine: a test's `PgClient` failing with "Connection timed
+out" at connect (the client's default connect timeout). Same family as the container-start timeout; if
+it recurs, centralise the test `PgClient.layer(...)` in `@crablet/test-support` with a longer timeout.

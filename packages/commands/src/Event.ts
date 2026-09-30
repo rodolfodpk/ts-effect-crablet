@@ -1,0 +1,68 @@
+import * as Schema from "effect/Schema";
+import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import * as Query from "@crablet/eventstore/Query";
+import * as Tag from "@crablet/eventstore/Tag";
+
+// An event definition is the single source of truth for one kind of event: its type name, its
+// payload schema, which tags it carries, and how to query for it. Command handlers, models and
+// idempotency checks all go through it, so a type string or a tag key is never retyped (and a typo
+// in one is a compile error, not a silent "matches nothing").
+//
+//     export const DepositMade = defineEvent("DepositMade", {
+//       schema: Schema.Struct({ walletId: Schema.String, depositId: Schema.String, amount: Schema.Number }),
+//       tags: (d) => ({ wallet_id: d.walletId, deposit_id: d.depositId })
+//     });
+//
+//     DepositMade({ walletId: "w1", depositId: "d1", amount: 10 })   // -> AppendEvent with both tags
+//     DepositMade.where({ deposit_id: "d1" })                        // -> Query; unknown tag keys don't compile
+//
+// PATTERN PRIMER - a function with properties: `EventDef` below has a *call signature* (you call it
+// to build an event) AND properties (`type`, `decode`, `where`). TypeScript models this directly; at
+// runtime it is a plain function with extra fields attached via `Object.assign`.
+
+type TagValue = string | number;
+
+export interface EventDef<Type extends string, Data, TagKeys extends string> {
+  // Build the event to append. `extraTags` are added after the tags derived from the payload - for
+  // tags that are scoping context rather than part of the event's own data (e.g. a period).
+  (data: Data, extraTags?: ReadonlyArray<Tag.Tag>): AppendEvent.AppendEvent;
+  readonly type: Type;
+  // Validate and narrow a stored event's raw JSON payload. Throws if the stored data does not match
+  // the schema (a defect: the log contains something this definition cannot read).
+  readonly decode: (raw: unknown) => Data;
+  // Query for events of this type, optionally restricted to events carrying these tag values.
+  // Only tag keys this event declares are accepted.
+  readonly where: (filter?: { readonly [K in TagKeys]?: TagValue }) => Query.Query;
+}
+
+export const defineEvent = <
+  Type extends string,
+  S extends Schema.Constraint,
+  T extends Record<string, TagValue | null | undefined>
+>(
+  type: Type,
+  def: { readonly schema: S; readonly tags: (data: Schema.Schema.Type<S>) => T }
+): EventDef<Type, Schema.Schema.Type<S>, Extract<keyof T, string>> => {
+  const decode = Schema.decodeUnknownSync(def.schema as never) as (raw: unknown) => Schema.Schema.Type<S>;
+
+  const build = (data: Schema.Schema.Type<S>, extraTags: ReadonlyArray<Tag.Tag> = []) => {
+    const builder = AppendEvent.builder(type);
+    // `tag` lower-cases the key and skips null/undefined values.
+    for (const [key, value] of Object.entries(def.tags(data))) builder.tag(key, value);
+    return builder.tags(extraTags).data(data).build();
+  };
+
+  const where = (filter: Record<string, TagValue | undefined> = {}) =>
+    Query.forEventAndTags(
+      type,
+      Object.entries(filter)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => Tag.of(key, String(value)))
+    );
+
+  return Object.assign(build, { type, decode, where }) as EventDef<
+    Type,
+    Schema.Schema.Type<S>,
+    Extract<keyof T, string>
+  >;
+};

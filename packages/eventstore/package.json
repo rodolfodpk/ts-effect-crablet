@@ -15,7 +15,8 @@
     "./CorrelationContext": "./src/CorrelationContext.ts",
     "./Listen": "./src/Listen.ts",
     "./Leader": "./src/Leader.ts",
-    "./NotifyPayload": "./src/NotifyPayload.ts"
+    "./NotifyPayload": "./src/NotifyPayload.ts",
+    "./testing/FakeEventStore": "./src/testing/FakeEventStore.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",

@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/CommandExecutor.ts",
     "./CommandDecision": "./src/CommandDecision.ts",
-    "./ExecutionResult": "./src/ExecutionResult.ts"
+    "./ExecutionResult": "./src/ExecutionResult.ts",
+    "./Event": "./src/Event.ts",
+    "./Model": "./src/Model.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",
