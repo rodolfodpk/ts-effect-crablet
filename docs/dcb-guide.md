@@ -1,4 +1,4 @@
-# Dynamic Consistency Boundaries: one decision, two accounts
+# Dynamic Consistency Boundaries: one decision, several entities
 
 Most event-sourcing frameworks make you pick an *aggregate* up front: every event belongs to one stream, and
 a command may only decide on one stream. "Move money from account A to B" then needs a saga or a
@@ -106,6 +106,105 @@ every racer has *loaded* before any appends - no timing luck:
 
 The third and fourth rows are the point: the boundary is **exactly as wide as the decision** - no wider (disjoint
 accounts run in parallel) and no narrower (a shared account is protected).
+
+## A rule no aggregate can own: course enrolment
+
+The transfer spans two *instances* of the same kind of thing. The harder case is one decision governed by two
+*different* kinds of rule:
+
+- a course holds at most `capacity` students, and
+- a student takes at most 3 courses.
+
+With aggregates, "course" and "student" each claim to own `StudentSubscribed`, and you must choose one and
+enforce the other eventually (or with a saga). Here both rules are checked in one decision, atomically, because
+one event is tagged with both the student and the course, and two models look at it from each side.
+(`packages/commands/test/support/enrolment.ts`)
+
+```ts
+export const CourseDefined = defineEvent("CourseDefined", {
+  schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Number }),
+  tags: (d) => ({ course_id: d.courseId })
+});
+// One fact, tagged with BOTH the student and the course it concerns.
+export const StudentSubscribed = defineEvent("StudentSubscribed", {
+  schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
+  tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
+});
+
+export const MAX_COURSES_PER_STUDENT = 3;
+
+// Two models over the SAME events, looked at from two sides.
+export const CourseModel = defineModel({
+  by: "course_id",
+  initial: () => ({ exists: false, capacity: 0, subscribers: 0 })
+})
+  .on(CourseDefined, (c, d) => ({ ...c, exists: true, capacity: d.capacity }))
+  .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }));
+
+export const StudentModel = defineModel({ by: "student_id", initial: () => ({ courses: [] as ReadonlyArray<string> }) })
+  .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }));
+
+export class CourseNotFound extends DomainError("CourseNotFound", {
+  fields: { courseId: Schema.String },
+  kind: "not_found"
+}) {}
+export class CourseFull extends DomainError("CourseFull", {
+  fields: { courseId: Schema.String, capacity: Schema.Number },
+  kind: "conflict"
+}) {}
+export class StudentAtLimit extends DomainError("StudentAtLimit", {
+  fields: { studentId: Schema.String, limit: Schema.Number },
+  kind: "conflict"
+}) {}
+
+export const subscribeInput = Schema.Struct({ studentId: Schema.String, courseId: Schema.String });
+
+type Course = { readonly exists: boolean; readonly capacity: number; readonly subscribers: number };
+type Student = { readonly courses: ReadonlyArray<string> };
+
+// Two rules, two different entities, ONE decision:
+//   - a course holds at most `capacity` students,
+//   - a student takes at most 3 courses.
+const decide = ({ course, student }: { course: Course; student: Student }, c: { studentId: string; courseId: string }) =>
+  !course.exists
+    ? fail(new CourseNotFound({ courseId: c.courseId }))
+    : student.courses.includes(c.courseId)
+      ? noop("ALREADY_SUBSCRIBED")
+      : course.subscribers >= course.capacity
+        ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
+        : student.courses.length >= MAX_COURSES_PER_STUDENT
+          ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
+          : emit(StudentSubscribed(c));
+
+export const Subscribe = defineCommand({
+  name: "subscribe",
+  input: subscribeInput,
+  // The boundary is the union of the course's events and the student's events.
+  model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
+  decide
+});
+```
+
+What to notice:
+
+- **One event, two models.** `CourseModel` counts subscribers; `StudentModel` lists a student's courses. Both
+  fold `StudentSubscribed`, through different tags (`course_id`, `student_id`).
+- **The boundary is the union of the two.** A new subscription by *anyone* to this course, or by *this student* to
+  any course, changes what the command read, so a stale decision is refused.
+- **Subscribing twice is `noop`**, reported as an idempotent success: a domain-level "already done" with no
+  `idempotentBy` needed.
+
+Tests: `enrolment-guide.test.ts` (no database) and `integration/enrolment-guide-postgres.test.ts` (real races):
+
+| Scenario | Result |
+|---|---|
+| The last seat in a course, two *different* students racing | Exactly one gets it; the loser re-decides and gets `CourseFull`. The two students share only the course. |
+| A student's last slot, one student racing into two *different* courses | Exactly one succeeds; the loser gets `StudentAtLimit`. The two commands share only the student. |
+| Different student and different course, retries off | Both succeed: nothing shared, nothing conflicts. |
+| Two students into the same roomy course, retries off | One `Conflict` (the course is in both boundaries); with retries both get in. |
+
+Each race protects a *different* rule, and each is protected by the same mechanism: the part of the boundary the two
+commands share.
 
 ## When you do not need the boundary to be strict
 
