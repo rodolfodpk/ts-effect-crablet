@@ -213,3 +213,23 @@ A command that can safely run in parallel with itself - say a deposit, which onl
 `guard` events (for example "is the account closed?") can still refuse the append. The real wallet example uses
 this for deposits; see `examples/wallet-example-app/src/domain/commands/`. The full-size version of the transfer,
 with statement periods and lifecycle checks, is `TransferMoneyCommand.ts` there.
+
+## How this relates to the DCB specification
+
+The [DCB specification](https://dcb.events/specification/) defines one append condition,
+`{ failIfEventsMatch: Query, after?: position }`: the append fails if any event matching the query exists after
+the position the client last saw. A query is a set of items combined with OR, and an item matches an event whose type is
+one of its types AND that carries all of its tags. What this framework does with it:
+
+- **Boundary and `strict()`** are the spec's condition as written: the query that built the decision model,
+  plus the position it was read at.
+- **`concurrent({ guard })`** uses the spec's allowance for a condition query that is *narrower* than the read
+  query (the spec says the two are "typically" the same, not always). Only the guard's events can refuse the append.
+- **Query items** follow the spec: OR between items, type AND tags within one. Multi-item conditions are enforced
+  that way on Postgres (migration V4) and by the in-memory store, and a conformance suite runs the same cases on both.
+- **Idempotency is our addition, not part of the specification.** The spec has one condition and does not discuss
+  idempotency; its examples ("Prevent record duplication") do it with a token event and the ordinary condition, where a
+  repeat is just another failed condition. Here `idempotentBy` is a second, independent check that runs *before* the
+  concurrency check and reports a repeat as "already done" instead of as a conflict. The practical difference: a retry
+  after the state has moved on (a transfer whose sender is now empty) is recognised as a repeat instead of
+  being re-decided or refused as a conflict.
