@@ -6,7 +6,7 @@ Accepted (Phase 2)
 
 ## Context
 
-Java's poller schedules a one-shot, self-resubmitting task per processorId, guarded by an
+The predecessor's poller schedules a one-shot, self-resubmitting task per processorId, guarded by an
 "already running" check to prevent overlapping ticks for the same processor, plus a two-tier
 leader-retry timing scheme (a 30s shared task and a 5s per-tick follower cooldown). Effect's fiber
 model offers a more direct alternative: a single, persistent fiber per processorId that loops
@@ -29,10 +29,10 @@ chance to run.
 
 ## Decision
 
-- One persistent daemon fiber per processorId replaces Java's one-shot self-resubmitting scheduled
+- One persistent daemon fiber per processorId replaces the predecessor's one-shot self-resubmitting scheduled
   task — this also eliminates the "already running" guard by construction, since a single
   dedicated fiber can't run two overlapping ticks for the same processorId.
-- Leader-retry collapses Java's two-tier timing into one shared retry fiber per module, since only
+- Leader-retry collapses the predecessor's two-tier timing into one shared retry fiber per module, since only
   one fiber ever attempts `pg_try_advisory_lock` here.
 - `acquireLeader` / `wakeupStream` are injected into the engine as already-built `Effect`/`Stream`
   values rather than raw `sql`/`pg` handles plus lockKey/channel parameters — this decouples the
@@ -57,5 +57,5 @@ chance to run.
   real database — a deliberate design choice made to keep the fast unit suite fast.
 - The generic `SqlEventFetcher` includes a `transaction_id < pg_snapshot_xmin(...)` visibility
   filter, verified by a dedicated two-transaction test (a higher position that commits first stays
-  invisible until a still-open lower position also commits) — not explicit in the Java ground
+  invisible until a still-open lower position also commits) — not explicit in the predecessor ground
   truth, but directly analogous to `append_events_if()`'s own conflict-check reasoning (ADR-0003).

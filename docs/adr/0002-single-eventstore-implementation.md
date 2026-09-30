@@ -6,10 +6,10 @@ Accepted (Phase 1)
 
 ## Context
 
-Java's `EventStoreImpl` needs two parallel implementations of every append/project method: one
+The predecessor's `EventStoreImpl` needs two parallel implementations of every append/project method: one
 using a fresh pooled connection (`appendIf`), and one using an already-open transaction-scoped
 connection (`appendIfWithConnection`, wrapped by an inner `ConnectionScopedEventStore` class) —
-because Java has no ambient way to know "am I inside a transaction right now?" without explicit
+because the predecessor has no ambient way to know "am I inside a transaction right now?" without explicit
 plumbing threaded through every call site.
 
 Effect's `SqlClient.withTransaction` makes this ambient: whatever `SqlClient` is present in the
@@ -19,7 +19,7 @@ un-scoped outside it. Callers don't need to know or pass along which mode they'r
 ## Decision
 
 Ship one `EventStore` implementation that handles both the pooled and transaction-scoped cases —
-no dual-class design. The same reasoning extends to `CommandHandler`: Java's
+no dual-class design. The same reasoning extends to `CommandHandler`: the predecessor's
 `handle(EventStore eventStore, T command)` takes the store explicitly because there's no ambient
 context; the TS `CommandHandler<T> = (command: T) => Effect<CommandDecision, E, EventStore>` gets
 `EventStore` from Effect's context automatically (`yield* EventStore` inside the handler), so the
@@ -27,7 +27,7 @@ signature only needs the command.
 
 ## Consequences
 
-- Less code to maintain than the Java port would suggest — no `ConnectionScopedEventStore`
+- Less code to maintain than a straight port of the predecessor would suggest — no `ConnectionScopedEventStore`
   equivalent exists or is needed in this codebase.
 - Handler and store code must not accidentally call `Effect.provide` with a fresh `SqlClient`
   layer inside a `withTransaction` block, or the ambient transaction scoping breaks silently.

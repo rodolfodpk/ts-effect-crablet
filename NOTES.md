@@ -5,7 +5,7 @@ met except where noted. 22/22 tests passing (12 under Bun, 10 under Node).
 
 **Architectural decisions** made across all phases now live in [`docs/adr/`](docs/adr/README.md),
 one file per decision. This file stays the phase-by-phase journal: status, gotchas, bugs found,
-and what changed vs. each phase's plan. Early entries (Phase 0 - 3) refer to the Java predecessor
+and what changed vs. each phase's plan. Early entries (Phase 0 - 3) refer to the predecessor
 the framework started from; that is historical. Nothing in the code or API follows it any more (ADR-0010).
 
 ## Runtime: Bun + Node hybrid, not Bun-only
@@ -29,8 +29,8 @@ passing a plain string throws `Error: Unable to get redacted value` deep inside
 Under the framework's documented default (`READ_COMMITTED`), two genuinely concurrent
 `appendNonCommutative`-equivalent calls racing the same condition could **both succeed** —
 verified empirically at ~93-95% double-success rate under real concurrent load, against both a
-raw-SQL/`pg` harness and the actual **Java `EventStoreImpl`** (19/20 races both succeeded). Fixed
-on the Java side (twice); the TS client relies entirely on that fix rather than doing any
+raw-SQL/`pg` harness and the actual **predecessor `EventStoreImpl`** (19/20 races both succeeded). Fixed
+in the SQL (twice); the TS client relies entirely on that fix rather than doing any
 isolation-level control of its own — see
 [ADR-0003](docs/adr/0003-non-commutative-append-concurrency-protection.md) for the full history
 and the SQL migration-drift risk this creates.
@@ -47,7 +47,7 @@ code paths.
 ## Risk B, part 1: LISTEN/NOTIFY — mostly built-in, one real library bug found
 
 `@effect/sql-pg`'s `PgClient.listen(channel)` already implements the "dedicated non-pooled
-connection" pattern Java's `PostgresNotifyWakeupSource` uses by hand, returning a
+connection" pattern the predecessor's `PostgresNotifyWakeupSource` uses by hand, returning a
 `Stream<string, SqlError>` of raw payloads — no raw `pg.Client` EventEmitter bridging needed for
 the subscribe path. But `PgClient.notify()` itself is broken for non-literal payloads. See
 [ADR-0005](docs/adr/0005-listen-notify-implementation.md) for the bug, the `pg_notify()` SQL
@@ -55,7 +55,7 @@ workaround, and the accepted no-reconnect-on-drop limitation.
 
 Debounce/coalescing (`Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(20))`) verified
 to coalesce a 5-notification burst into a single dispatch with the union of types/tag-keys, mirroring
-Java's `PostgresNotifyWakeupSource` batching semantics.
+The predecessor's `PostgresNotifyWakeupSource` batching semantics.
 
 ## Risk B, part 2: advisory-lock leader election — `sql.reserve` works well
 
@@ -74,7 +74,7 @@ connection-acquisition overhead in `sql.reserve`'s pool interaction. Not a corre
 Deliberately out of scope for this Phase 0 code spike (was a separate design question in the
 original plan, addressed via written recommendation, not runnable code): extract
 `docs/user/examples/event-model-schema.json` into its own small versioned package/repo, consumed by
-both a Java validator and a TS `ajv`-based one; fix the `CommandSpec.java`/schema drift
+both a validator in the predecessor and a TS `ajv`-based one; fix the `CommandSpec`/schema drift
 (`idempotency`/`noopIfDuplicate` keys undocumented in the JSON Schema, `validation` field
 undocumented too) as a prerequisite before treating the schema as a stable contract. Not attempted
 here — no TS YAML parsing code was written in Phase 0.
@@ -87,8 +87,8 @@ Status: monorepo restructured into a Bun workspace (`packages/db-migrations`, `p
 
 ### Effect ergonomics win: no `ConnectionScopedEventStore` needed
 
-Java's `EventStoreImpl` needs two parallel implementations of every append/project method (pooled
-vs. transaction-scoped) because Java has no ambient way to know "am I inside a transaction right
+The predecessor's `EventStoreImpl` needs two parallel implementations of every append/project method (pooled
+vs. transaction-scoped) because the predecessor has no ambient way to know "am I inside a transaction right
 now?". Effect's `SqlClient.withTransaction` makes this ambient, so one `EventStore` implementation
 handles both cases. See [ADR-0002](docs/adr/0002-single-eventstore-implementation.md) for the full
 reasoning and consequences.
@@ -110,7 +110,7 @@ reasoning and consequences.
   turning it into a plain success value) and assert on that value directly, rather than relying on
   the rejected promise's prototype chain.
 - **SQL migration drift is a real, live risk, not a hypothetical.** Phase 0's copied `V1__...sql`
-  predated the Java-side advisory-lock fix; Phase 1's first DCB-race test run silently reproduced
+  predated the predecessor-side advisory-lock fix; Phase 1's first DCB-race test run silently reproduced
   the *original* bug (both concurrent appends succeeding) because the migration was stale, not
   because the TS client code was wrong. No tooling currently catches this drift automatically —
   worth a checksum-comparison script or CI job once both repos are actively developed in parallel
@@ -122,12 +122,12 @@ reasoning and consequences.
   [ADR-0008](docs/adr/0008-no-command-type-auto-discovery.md) — every call site passes the handler
   explicitly (`execute(command, handler)`); a `Layer`-composed handler registry is deferred, not
   ruled out.
-- **No command-level audit pre-check.** Java's `CommandExecutionOptions.commandId()` path (insert
+- **No command-level audit pre-check.** The predecessor's `CommandExecutionOptions.commandId()` path (insert
   a command-audit row before the handler runs, short-circuit to idempotent if it already exists)
   isn't ported yet — `CommandAuditStore.storeCommand`/`storeCommandIfAbsent` exist and are tested
   (transaction_id linkage), but `CommandExecutor.execute` doesn't call them itself yet. Deliberately
   deferred, not forgotten.
-- **No metrics/observability equivalents.** Java's `ApplicationEventPublisher`-based metric events
+- **No metrics/observability equivalents.** The predecessor's `ApplicationEventPublisher`-based metric events
   (`CommandStartedMetric`, `ConcurrencyViolationMetric`, etc.) have no TS counterpart yet — this
   matches the original assessment's callout that this needs redesigning around `@effect/opentelemetry`
   rather than transliterating, and hasn't been attempted.
@@ -135,7 +135,7 @@ reasoning and consequences.
 ## Summary: what changed vs. the original plan
 
 - Runtime is Bun+Node hybrid, not pure Bun (blocked on Testcontainers-node/Bun incompatibility).
-- Found and fixed a real, pre-existing concurrency bug in the Java framework itself (not TS-specific) —
+- Found and fixed a real, pre-existing concurrency bug in the predecessor framework itself (not TS-specific) —
   bigger finding than anything about the TS port's feasibility.
 - Found and worked around a real bug in `@effect/sql-pg`'s `PgClient.notify`.
 - Found a real Effect/`@effect/sql` gap: commit-time failures are defects, not typed errors.
@@ -183,7 +183,7 @@ alive for the whole file's lifetime, matching how a real long-running applicatio
 
 `internal/sql.ts`'s `appendEventsIf` already accepts optional `notifyChannel`/`notifyPayload`
 params, but `EventStore.ts`'s `appendConditional` never passes them — so, unlike the documented
-Java behavior ("the eventstore sends NOTIFY after every append; there is no separate eventstore
+The predecessor behavior ("the eventstore sends NOTIFY after every append; there is no separate eventstore
 flag"), the **TS port's real append path does not yet notify anyone**. This was surfaced by
 `event-processor-integration.test.ts`'s wakeup test, which has to call `notify()` manually after
 appending (same as Phase 0's spike did) to exercise the wakeup path at all. Not fixed here — Phase 2
@@ -195,14 +195,14 @@ only (still correct, just not low-latency).
 ### Design decisions carried over from the plan
 
 See [ADR-0007](docs/adr/0007-event-poller-fiber-model.md) for the full set: one persistent fiber
-per processorId (replacing Java's one-shot self-resubmitting scheduled task), the collapsed
+per processorId (replacing the predecessor's one-shot self-resubmitting scheduled task), the collapsed
 single shared leader-retry fiber, `acquireLeader`/`wakeupStream` injected as pre-built
 `Effect`/`Stream` values to decouple the engine from concrete Postgres wiring, and the
 `SqlEventFetcher`'s `pg_snapshot_xmin(...)` visibility filter.
 
 ## Phase 3 — crablet-views port + NOTIFY-wiring fix
 
-Status: `packages/views` built (the first of the three Java consumer modules -
+Status: `packages/views` built (the first of the three predecessor consumer modules -
 `crablet-views`/`crablet-outbox`/`crablet-automations` - ported; outbox and automations remain
 future phases, deliberately deferred since views is the simplest: single-key progress table, no
 composite processor-id, no external publisher integration). 46 Bun unit + 37 Node integration tests
@@ -213,7 +213,7 @@ passing workspace-wide, clean typecheck.
 Closed the gap Phase 2 flagged: `EventStoreLive.appendConditional` (`packages/eventstore/src/
 EventStore.ts`) now derives a payload from the events being appended
 (`NotifyPayload.encodePayload`) and passes it through to `internal/sql.ts`'s already-existing
-`appendEventsIf(..., options)` on a new fixed `EVENTS_CHANNEL = "crablet_events"` (matching Java's
+`appendEventsIf(..., options)` on a new fixed `EVENTS_CHANNEL = "crablet_events"` (matching the predecessor's
 `PostgresNotifyWakeupSource` default channel name). No new service dependency was needed - the
 `pg_notify()` call happens server-side inside `append_events_if()` itself, already reachable
 through the plain `SqlClient` `EventStoreLive` already depends on. `event-poller`'s
@@ -227,12 +227,12 @@ real usage now, not a stand-in.
   service it needs must already be resolved, mirroring how `EventProcessorDeps.handler` itself
   requires `R = never`. `makeTransactionalViewProjector` is the standard way to get there: it
   resolves `SqlClient` once at construction (not per-call), and passes `sql` explicitly into
-  `handleEvent(event, sql)` rather than expecting ambient re-resolution - closer to Java's own
-  `handleEvent(event, jdbc)` parameter-passing than to `EventStore.ts`'s ambient-transaction
+  `handleEvent(event, sql)` rather than expecting ambient re-resolution - closer to the predecessor's own
+  `handleEvent(event, sql)` parameter-passing than to `EventStore.ts`'s ambient-transaction
   pattern, and simpler to get right.
 - **`makeViewEventFetcher` reuses `event-poller`'s `makeSqlEventFetcher` as-is**, one instance per
   view (each bound to that view's own `EventSelection`), dispatching by `viewName` - zero SQL-query
-  duplication, unlike Java's `internal.ViewEventFetcher` which wraps
+  duplication, unlike the predecessor's `internal.ViewEventFetcher` which wraps
   `EventSelectionWhereClauseBuilder` itself.
 - **Verified real transactional-rollback behavior**, not just wiring: `views-integration.test.ts`
   appends two events in one batch, has the transactional projector's `handleEvent` fail (typed
@@ -242,7 +242,7 @@ real usage now, not a stand-in.
   second event, and confirms via direct SQL query that the first event's insert was rolled back
   too, in the same Postgres transaction.
 
-### Explicitly deferred (matches the Java module's own optional features)
+### Explicitly deferred (matches the predecessor module's own optional features)
 
 `sharedFetch`/`SharedFetchModuleProcessor` variant, REST/HTTP management controller (the
 Postgres-backed `ViewManagementService`/`getProgressDetails` alone covers ops visibility),
@@ -250,16 +250,16 @@ Postgres-backed `ViewManagementService`/`getProgressDetails` alone covers ops vi
 
 ## Phase 4 — crablet-outbox port
 
-Status: `packages/outbox` built (the second of the three Java consumer modules; automations remain
+Status: `packages/outbox` built (the second of the three predecessor consumer modules; automations remain
 a future phase). 61 Bun unit + 40 Node integration tests passing workspace-wide, clean typecheck.
 
-### Real finding: `TopicPublisherPair.getLockKey()` is dead code in Java
+### Real finding: `TopicPublisherPair.getLockKey()` is dead code in the predecessor
 
-Before designing this phase, a research pass resolved an apparent contradiction in the Java source:
-`TopicPublisherPair.java` has a `getLockKey()` method whose javadoc claims each (topic, publisher)
+Before designing this phase, a research pass resolved an apparent contradiction in the predecessor source:
+`TopicPublisherPair` has a `getLockKey()` method whose doc comment claims each (topic, publisher)
 pair gets its own independent leader-election lock, but grepping the entire `crablet-outbox` module
 found exactly two call sites - the method's own definition and its own unit test. Production wiring
-(`OutboxAutoConfiguration.java`) builds exactly **one** `LeaderElector` (`OUTBOX_LOCK_KEY`) shared by
+(`OutboxAutoConfiguration`) builds exactly **one** `LeaderElector` (`OUTBOX_LOCK_KEY`) shared by
 one `EventProcessor` instance handling every pair - the same single-module-wide-leader model views
 already uses. This meant `packages/event-poller`'s engine needed zero changes: outbox's composite
 processor identity is just encoded into the `I extends string` the engine already requires
@@ -274,7 +274,7 @@ columns) was copied verbatim into `packages/db-migrations` back in Phase 0 along
 automation tables, but nothing used it until now. Its shape doesn't fit
 `makePostgresProgressTracker`'s single-`idColumn` assumption (confirmed exactly what that
 function's own doc comment already flagged), so this phase adds a hand-rolled
-`internal/OutboxProgressTracker.ts` instead, matching Java's own `OutboxProgressTracker` (which
+`internal/OutboxProgressTracker.ts` instead, matching the predecessor's own `OutboxProgressTracker` (which
 also implements `ProgressTracker` directly rather than reusing the single-key abstract base).
 
 The migration's column comment describes `leader_heartbeat` as detecting "abandoned pairs when
@@ -283,17 +283,17 @@ refreshes `leader_instance`/`leader_heartbeat` as a side effect, keeping it a re
 during idle periods too, not just on activity. No failover/reassignment logic consumes it yet -
 same explicitly-scoped simplification `Leader.ts` already documents for its own crash path.
 
-### Explicitly deferred (matches the Java module's own optional features)
+### Explicitly deferred (matches the predecessor module's own optional features)
 
 `sharedFetch`/`SharedFetchModuleProcessor` variant, REST/HTTP management controller,
 `StatisticsPublisher`/`GlobalStatisticsPublisher` reference implementations (`makeLogPublisher`
-alone proves the `OutboxPublisher` contract out), leader-crash/failover testing (Java's
+alone proves the `OutboxPublisher` contract out), leader-crash/failover testing (the predecessor's
 `OutboxLeaderFailoverTest`), and `TopicPublisherPair.getLockKey()` itself (confirmed dead code -
 not porting unused code).
 
 ## Phase 5 — crablet-automations port
 
-Status: `packages/automations` built (the last of the three Java consumer modules - views and
+Status: `packages/automations` built (the last of the three predecessor consumer modules - views and
 outbox already ported). 72 Bun unit tests passing workspace-wide (up from 61; 11 new: decision
 constructors, processor-config override resolution, dispatcher routing/NoOp/die/ordering/
 correlation-propagation), 42 Node/Testcontainers integration tests passing workspace-wide (up
@@ -310,7 +310,7 @@ to depend on `@crablet/commands` at all.
 
 ### Design decision: bind the command handler once per automation, not per-decision
 
-Java's `AutomationDispatcher` resolves the right `CommandHandler` by runtime type lookup on the
+The predecessor's `AutomationDispatcher` resolves the right `CommandHandler` by runtime type lookup on the
 decision's `Object command`; this repo's `CommandExecutor` has no such lookup (`ADR-0008` - every
 call site passes the handler explicitly). So `AutomationHandler<T, E, HE>`
 (`packages/automations/src/AutomationHandler.ts`) binds one `CommandHandler<T, HE>` once, at
@@ -318,11 +318,11 @@ construction, and `AutomationDecision<T>` (`AutomationDecision.ts`) stays a plai
 no handler inside it - `{ _tag: "ExecuteCommand"; command: T }` or `{ _tag: "NoOp" }`. Consequence
 worth remembering: one automation reacts with exactly one command type unless the caller models
 `T` as a union and supplies one union-capable handler - acceptable, not a blocker, matches the
-Java example (`WalletOpenedAutomation` → `SendWelcomeNotificationCommand`, 1:1) anyway. The
+The predecessor example (`WalletOpenedAutomation` → `SendWelcomeNotificationCommand`, 1:1) anyway. The
 heterogeneous registry of automations (each with its own `T`/`E`/`HE`) is necessarily type-erased
 to `AutomationHandler<any, any, any>` at the internal-wiring boundary (`internal/
 AutomationEventFetcher.ts`, `internal/AutomationEventHandler.ts`, `internal/
-AutomationProcessorConfig.ts`, `AutomationsModule.ts`) - same erasure Java's `Object command` does
+AutomationProcessorConfig.ts`, `AutomationsModule.ts`) - same erasure the predecessor's `Object command` does
 at runtime, just confined to these four files rather than leaking into the public API.
 
 ### Real gotcha: holding the `CommandExecutor` tag value does not discharge its `R`
@@ -346,7 +346,7 @@ already established for `sql` alone, just across three services instead of one. 
 wiring layer (`makeAutomationsProcessor`'s required `R`: `SqlClient.SqlClient | PgClient.PgClient |
 CommandExecutor | EventStore | CommandAuditStore`).
 
-### Explicitly deferred (matches the Java module's own optional features)
+### Explicitly deferred (matches the predecessor module's own optional features)
 
 `ViewBackedAutomationHandler` (optional `crablet-views`-on-classpath extension inferring wake
 events from view subscriptions), `sharedFetch`/`SharedFetchModuleProcessor` variant and its two
@@ -365,7 +365,7 @@ mechanical call-site updates for the new `commandType` parameter, not behavior c
 workspace-wide typecheck.
 
 This finally addresses the "redesign, not transliteration" callout every prior phase deferred:
-Java's metrics story is two parallel, Spring-specific mechanisms (a deprecated reflection-based
+The predecessor's metrics story is two parallel, Spring-specific mechanisms (a deprecated reflection-based
 `MicrometerMetricsCollector`, and the current per-module Micrometer `Observation`/
 `ObservationListener` path) - Effect's own `Metric` module replaces both at once, since a
 `Metric.counter`/`gauge`/`histogram` value **is** simultaneously the name, the live instrument, and
@@ -381,7 +381,7 @@ silently dropped every failure-path timing sample - caught by `observe.test.ts`'
 "records a failure... still records a duration sample" test, which failed with `duration.count` at
 0 instead of 1 until fixed. The fix: measure `Clock.currentTimeNanos` by hand before/after via
 `Effect.exit` (converting "fail" into a plain value instead of letting it propagate early), so
-duration gets recorded regardless of `Exit.isSuccess`/`Exit.isFailure` - matching what Java's
+duration gets recorded regardless of `Exit.isSuccess`/`Exit.isFailure` - matching what the predecessor's
 Micrometer `Observation` timer actually does. Worth remembering for any future Effect `Metric` work
 in this codebase: `trackDuration`/`trackSuccess`/`trackDurationWith` are all `Effect.tap`-based,
 success-path-only aspects, not "runs regardless" aspects - only `trackError`/`trackErrorWith` cover
@@ -389,7 +389,7 @@ the failure path, and there's no single built-in aspect that covers both at once
 
 ### Design decision: two counters instead of one outcome-tagged counter
 
-Java's Micrometer `Observation` produces ONE timer whose `outcome` tag (`success`/`failure`) is
+The predecessor's Micrometer `Observation` produces ONE timer whose `outcome` tag (`success`/`failure`) is
 chosen after the underlying operation finishes. Effect's `Metric.tagged` can only add a tag whose
 value is known before the metric is used, not one chosen retroactively - so `internal/observe.ts`'s
 `OperationMetrics` triplet (`duration`/`successes`/`failures`) uses two separate counters instead.
@@ -398,7 +398,7 @@ Equally queryable at a backend (two series instead of one tag-split series) - a 
 
 ### Breaking change: `CommandExecutor.execute` gained a `commandType` parameter
 
-Java tags `CommandMetrics` by `command.getClass().getSimpleName()` via reflection. This port's
+The predecessor tags `CommandMetrics` by `command.getClass().getSimpleName()` via reflection. This port's
 commands are plain objects/interfaces, not classes - there is no runtime type name to derive a tag
 from. Rather than drop the tag dimension, `CommandExecutorService.execute<T, E>` gained an explicit
 `commandType: string` first parameter (confirmed with the user as the preferred trade-off over
@@ -420,7 +420,7 @@ silently received the `commandType` string where `command` was expected, with no
   `Exit.isSuccess` branch, and the leader-acquisition retry loop), so views/outbox/automations all
   get this instrumentation for free - the same "one shared engine, zero per-consumer duplication"
   win ADR-0007 already established for scheduling, just for metrics this time.
-- **Leadership gauge tagging**: Java's `LeadershipMetric` tags by `processorId`, but this port's
+- **Leadership gauge tagging**: the predecessor's `LeadershipMetric` tags by `processorId`, but this port's
   leader election is module-wide (one `LeaderHandle` shared across every `processorId` an
   `EventProcessor` instance manages - confirmed back in Phase 4's outbox research). Tagged by
   `lock_key` (the module's fixed constant, e.g. `VIEWS_LOCK_KEY`) instead - the closest faithful
@@ -435,7 +435,7 @@ silently received the `commandType` string where `command` was expected, with no
   working `@effect/opentelemetry` `Metrics.layer` requires adding `@effect/platform` plus 7 separate
   `@opentelemetry/*` peer packages this repo doesn't otherwise need. Metrics recorded via Effect's
   `Metric` are always safe/cheap in-process regardless (queryable via `Metric.value`/
-  `Metric.snapshot`) - matching Java's own "export is optional, app-provided" stance. Follow-up
+  `Metric.snapshot`) - matching the predecessor's own "export is optional, app-provided" stance. Follow-up
   recipe for whoever picks this up:
 
   ```ts
@@ -457,7 +457,7 @@ silently received the `commandType` string where `command` was expected, with no
   ```
 
 - **Legacy dot-separated Micrometer-dashboard-compatible metric names** (`eventstore.events.appended`,
-  etc.) - Java itself deprecates this path in favor of the Observation naming scheme this port uses
+  etc.) - the predecessor itself deprecates this path in favor of the Observation naming scheme this port uses
   (`crablet.eventstore.append`, etc.); not porting deprecated code.
 - **Per-module `*ObservationAutoConfiguration`-style conditional registration** - Effect's `Metric`
   values are always live/ambient module-level constants; there's no Spring-style conditional-bean
@@ -466,7 +466,7 @@ silently received the `commandType` string where `command` was expected, with no
 ## Phase 7 — `@crablet/commands-http`: generic REST command API
 
 Status: `packages/commands-http` built - the first HTTP surface anywhere in this port. Mirrors
-Java's `crablet-commands-web` (full survey done): a single generic `GET`/`POST /api/commands`
+The predecessor's `crablet-commands-web` (full survey done): a single generic `GET`/`POST /api/commands`
 dispatcher, RFC 7807 error bodies, optional correlation-header echo/generate. 84 Bun unit tests
 passing workspace-wide (up from 78; 6 new: `ExposedCommand` map construction/lookup, each
 `ProblemDetail` variant's encoded JSON shape/status), 53 Node/Testcontainers integration tests
@@ -486,7 +486,7 @@ resolved concretely:
 1. **Static envelope payload works.** `Schema.Struct({ commandType: Schema.String, command:
    Schema.Unknown })` decodes fine as `setPayload`'s argument; all "which concrete command is
    this" polymorphism happens inside the handler body via a *second* `Schema.decodeUnknown` call
-   against the app-supplied per-command schema - exactly mirroring Java's controller manually
+   against the app-supplied per-command schema - exactly mirroring the predecessor's controller manually
    calling `objectMapper.treeToValue(node, commandClass)` *after* resolving `commandType`.
 2. **Dynamic 200/201 works** by returning a raw `HttpServerResponse.json(body, {status})` directly
    from the handler, bypassing `addSuccess` entirely (no `addSuccess` is even declared for the
@@ -502,16 +502,16 @@ an implementation plan, per explicit reviewer instruction - worth repeating for 
 introducing a new, previously-unused Effect ecosystem package (this port had never touched
 `@effect/platform` before this phase).
 
-### Design decision: app-supplied flat command map replaces Java's two-tier reflection registry
+### Design decision: app-supplied flat command map replaces the predecessor's two-tier reflection registry
 
-Java resolves `commandType` (JSON string) to a concrete command class via
+The predecessor resolves `commandType` (JSON string) to a concrete command class via
 `DiscoveredCommandRegistry` (reflecting over every `CommandHandler` bean's generic parameter +
 Jackson `@JsonSubTypes` annotations) filtered through an app-supplied `CommandApiExposedCommands`
 allowlist. This port has no auto-discovery anywhere (`ADR-0008`) and commands are plain objects,
-not annotated classes - so both Java tiers collapse into one flat, app-supplied map:
-`ExposedCommand.ts`'s `Record<string, { schema, handler }>`. Consequence: there's no Java-style
+not annotated classes - so both predecessor tiers collapse into one flat, app-supplied map:
+`ExposedCommand.ts`'s `Record<string, { schema, handler }>`. Consequence: there's no conventional
 "known but not exposed" 404 case - anything not in the map is simply unknown (400), collapsing two
-distinct Java failure modes into one.
+distinct predecessor failure modes into one.
 
 ### Design decision: the package never chooses Bun vs. Node as the server runtime
 
@@ -544,14 +544,14 @@ handler's outer boundary - `SqlError` (genuine infra failure), the command handl
 app-defined validation error `E`, any framework-internal decode/encode error - gets normalized by
 one terminal `toProblemDetail` catch-all to `CommandApiUnexpectedError` (500) unless it's already
 one of the three known `ProblemDetail` types, in which case it passes through unchanged. This
-mirrors Java's literal "catch-all `Exception` → 500, message not echoed" safety net, and avoids
+mirrors the predecessor's literal "catch-all `Exception` → 500, message not echoed" safety net, and avoids
 the fragile alternative (enumerating every possible framework-internal error type by hand at each
 call site) that briefly produced hard-to-satisfy TypeScript inference errors through the
 type-erased `ExposedCommand<any, any>` boundary before being simplified to this shape.
 
 ### Correlation header, precisely
 
-Matches Java's own precise (if implicit) behavior, made explicit here: disabled → ignore any
+Matches the predecessor's own precise (if implicit) behavior, made explicit here: disabled → ignore any
 inbound `X-Correlation-Id` entirely; enabled + header present → validate as a UUID (`Schema.UUID`,
 400 on malformed) and echo the same value back; enabled + header absent → generate a new UUID and
 echo it. Only the `CommandExecutor.execute` call itself runs inside
@@ -562,14 +562,14 @@ first cut - `HttpApiBuilder`'s own error-response encoding path doesn't give the
 obvious hook to attach a header to a framework-constructed error response; documented as a known,
 minor scope limitation rather than chased further.
 
-### Explicitly deferred (matches Java's own "optional" framing)
+### Explicitly deferred (matches the predecessor's own "optional" framing)
 
 - **springdoc/OpenAPI `oneOf` discriminator wiring** - `@effect/platform`'s `HttpApiSwagger` could
   generate basic OpenAPI docs for free from the `HttpApi` definition; not built here, cheap
   follow-up if ever needed.
-- **Virtual-thread dispatch test** (Java's `CommandApiVirtualThreadE2ETest`) - no Node/Bun
+- **Virtual-thread dispatch test** (the predecessor's `CommandApiVirtualThreadE2ETest`) - no Node/Bun
   analogue.
-- **Package-prefix-based exposure** (Java's `CommandApiExposedCommands.fromPackages(...)`) - no
+- **Package-prefix-based exposure** (the predecessor's `CommandApiExposedCommands.fromPackages(...)`) - no
   meaning without reflection/classpath scanning; the flat map already IS the exposure list.
 - **Malformed-JSON RFC 7807 reshaping** - see the finding above.
 
@@ -579,7 +579,7 @@ Status: `examples/wallet-example-app` built - the first application anywhere in 
 composes every previously-built package (`eventstore`, `commands`, `event-poller`, `views`,
 `outbox`, `automations`, `commands-http`) into one real running program, proving the whole port
 actually works together rather than just passing each package's own isolated test suite. Ports
-Java's `wallet-example-app` (its own README frames it as "the recommended learning entry point for
+The predecessor's `wallet-example-app` (its own README frames it as "the recommended learning entry point for
 Crablet") at "core walkthrough" scope: all 5 commands, 7 events, the period/"closing the books"
 statement logic, all 4 views, the one automation, a log-only outbox publisher, `commands-http`
 writes composed with a small hand-written read API. 27 new tests passing (15 Postgres-backed
@@ -590,7 +590,7 @@ tests from Phases 0-7, clean workspace-wide typecheck (after adding `examples/*`
 
 ### Small prerequisite: `@crablet/commands-http` composability refactor
 
-Java serves generic command writes and hand-written wallet reads from one port; `@effect/platform`'s
+The predecessor serves generic command writes and hand-written wallet reads from one port; `@effect/platform`'s
 `HttpApi.Api` is a single `Context.Tag`, so two independent top-level `HttpApi.make(...)` instances
 can't both be served from one `HttpApiBuilder.serve()` layer. Split `commands-http` into three
 layers instead of the original two: `makeCommandApiGroup(basePath, extraErrors?)` returns just the
@@ -604,13 +604,13 @@ errors (`WalletNotFound`, `InsufficientFunds`) would all become generic 500s, ma
 error-mapping E2E goals unreachable. Ran `commands-http`'s existing full suite after this refactor,
 before touching the wallet app itself - zero behavior change confirmed.
 
-### Two Java discrepancies found during research - resolved, not silently ported
+### Two predecessor discrepancies found during research - resolved, not silently ported
 
-1. Java's `WalletBalanceViewProjector`/`WalletSummaryViewProjector` handle `WalletClosed` in their
+1. The predecessor's `WalletBalanceViewProjector`/`WalletSummaryViewProjector` handle `WalletClosed` in their
    `switch`, but their `ViewSubscription`s never list `WalletClosed` in `eventTypes` - the
    delete-on-close branch is dead code. This port's subscriptions **do** include `WalletClosed`,
    making delete-on-close real.
-2. Java's `SendWelcomeNotificationCommandHandler` isn't in `WalletApplication`'s production
+2. The predecessor's `SendWelcomeNotificationCommandHandler` isn't in `WalletApplication`'s production
    `scanBasePackages` (only picked up via a broader test-only component scan) - a latent
    package-scan wiring bug. This port has no component scanning anywhere (`ADR-0008`) - every
    handler is wired explicitly, so the gap cannot occur.
@@ -619,10 +619,10 @@ before touching the wallet app itself - zero behavior change confirmed.
 
 `other-views.test.ts` initially failed with a genuine FK-violation `SqlError`: the transaction
 view's projector could run before the balance view's row for the same wallet existed, because both
-views are independent async projections with no ordering guarantee between them. Java's own V103
+views are independent async projections with no ordering guarantee between them. The predecessor's own V103
 migration already fixed this exact race for the summary view (dropping its FK to the balance view)
 but left the transaction view's FK in place - this port's V101 migration drops it too, closing the
-gap Java left open, not reproducing it.
+gap the predecessor left open, not reproducing it.
 
 ### The one real bug this phase produced: background processors never stopped, so tests hung forever
 
@@ -647,11 +647,11 @@ Lesson for any future composition root that aggregates multiple `start()`-shaped
 propagation from closing the outer scope, no matter how many layers of `Scope`/`ManagedRuntime` wrap
 around it.
 
-### Explicitly deferred (matches the confirmed "core walkthrough" scope, not full Java app parity)
+### Explicitly deferred (matches the confirmed "core walkthrough" scope, not full predecessor app parity)
 
 - **`WalletWebhookPublisher`** (Resilience4j circuit-breaker HTTP publisher) - a second, more
   elaborate `OutboxPublisher` example; the log publisher already proves the interface out, same
-  reasoning Phase 4 used for Java's own `StatisticsPublisher`.
+  reasoning Phase 4 used for the predecessor's own `StatisticsPublisher`.
 - **Ops-dashboard/management REST controllers** (`ViewController`/
   `AutomationsManagementController`/`OutboxManagementController`/`DashboardController`) - each
   surfaces a `*ManagementService` that already exists as a library API; wiring it to HTTP is
@@ -864,7 +864,7 @@ Postgres.
 
 **A real bug found by the conformance suite (fixed):** tag values containing a comma (also quotes, braces
 or backslashes) were silently stored as DIFFERENT tags. `encodeTagsLiteral` built an unescaped Postgres
-array literal (`{k=a,b}` - two elements), a constraint inherited from the Java original and kept "bug for
+array literal (`{k=a,b}` - two elements), a constraint inherited from the predecessor and kept "bug for
 bug". Every element is now double-quoted and escaped. Reads were always fine (their values are bound
 parameters), so the damage was on write: such events could not be found by their own tags, which breaks
 idempotency keys and consistency boundaries on those values. Covered by a permanent conformance case.
@@ -925,9 +925,9 @@ asserts the model directly (queries, fold, both regressions).
   body; `exposedCommandOf` overloads; an error without a `kind` fails to compile. `matchingEventsCount` dropped.
 - `Crablet.layer(pg)`: one layer from a Postgres config (hides the `provide` vs `provideMerge` trap).
 - README rewritten; its quick start is the verbatim body of `packages/commands/test/quickstart.test.ts`. ADR-0010.
-- Sweep: every "Port of com.crablet...", "Java's ...", JDBC/Flyway reference was removed from source, tests, SQL
+- Sweep: every reference to the predecessor framework (porting notes, its class names, its tooling) was removed from source, tests, SQL
   comments and the wallet example (comments reworded to say what the code does, not where it came from).
-  ADRs 0001-0008 and the early NOTES entries keep their historical mentions, flagged in their headers.
+  ADRs 0001-0008 and the early NOTES entries now call it "the predecessor" and keep the historical comparison.
 - Deleted `CommandExecutor.execute`, the public `CD.*` builders and the `@crablet/commands/CommandDecision` export;
   `CommandDecision` is internal to `defineCommand`. The old executor test is replaced by lifecycle-guard tests
   on defined commands (guard Conflict between load and append; guard + idempotency).

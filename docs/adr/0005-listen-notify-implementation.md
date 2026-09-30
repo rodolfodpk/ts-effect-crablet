@@ -7,7 +7,7 @@ Accepted (Phase 0)
 ## Context
 
 `@effect/sql-pg`'s `PgClient.listen(channel)` already implements the "dedicated non-pooled
-connection" pattern Java's `PostgresNotifyWakeupSource` uses by hand — a ref-counted (`RcRef`)
+connection" pattern the predecessor's `PostgresNotifyWakeupSource` uses by hand — a ref-counted (`RcRef`)
 `new Pg.Client(pool.options)` separate from the pool, returning a `Stream<string, SqlError>` of
 raw payloads. No raw `pg.Client` EventEmitter bridging was needed for the subscribe side.
 
@@ -19,7 +19,7 @@ directly against Postgres (`NOTIFY test_channel, $1` → `syntax error at or nea
 bind parameter correctly.
 
 Separately, `PgClient`'s internal `onListenClientError` handler is a no-op: there is no automatic
-reconnect-with-backoff on a dropped LISTEN connection, unlike Java's explicit exponential backoff
+reconnect-with-backoff on a dropped LISTEN connection, unlike the predecessor's explicit exponential backoff
 (`1000 << attempt`, capped at 60000ms, resetting after success).
 
 ## Decision
@@ -36,7 +36,7 @@ known limitation for now rather than building a custom retry wrapper.
   payload.
 - Debounce/coalescing (`Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(20))`) is
   verified to coalesce a burst of notifications into a single dispatch with the union of
-  types/tag-keys, mirroring Java's `PostgresNotifyWakeupSource` batching semantics — this rides on
+  types/tag-keys, mirroring the predecessor's `PostgresNotifyWakeupSource` batching semantics — this rides on
   top of the same `listen()` stream, unaffected by the `notify()` workaround.
 - A dropped LISTEN connection currently has no automatic recovery. A production port would need to
   wrap `.listen()`'s stream in retry/reconnect logic; this is deferred, not solved, and should be

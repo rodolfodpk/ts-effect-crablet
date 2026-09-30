@@ -5,8 +5,8 @@ narrative in [`NOTES.md`](../../NOTES.md). Each ADR is self-contained: context, 
 consequences. Process gotchas, one-off bugs, and phase status stay in `NOTES.md` — only decisions
 with lasting effect on the codebase's shape get an ADR here.
 
-Note: ADRs 0001-0008 are kept as written. They were recorded while the framework was still modelled on
-its Java predecessor and mention it as historical context; [ADR-0010](0010-declarative-command-api.md)
+Note: ADRs 0001-0008 were recorded while the framework was still modelled on an earlier implementation,
+which they call "the predecessor"; [ADR-0010](0010-declarative-command-api.md)
 records that this repo is now its own product and no code or API follows that predecessor.
 
 - [ADR-0001: Hybrid Bun + Node runtime](0001-hybrid-bun-node-runtime.md)

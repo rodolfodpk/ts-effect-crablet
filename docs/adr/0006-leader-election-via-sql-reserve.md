@@ -7,7 +7,7 @@ Accepted (Phase 0)
 ## Context
 
 Advisory-lock-based leader election needs to hold a single Postgres connection open for as long
-as a fiber holds leadership — mirroring Java's "never return to pool until released" pattern — and
+as a fiber holds leadership — mirroring the predecessor's "never return to pool until released" pattern — and
 release it either explicitly (on graceful stepdown) or implicitly (on connection drop/crash).
 `SqlClient` exposes `reserve: Effect<Connection, SqlError, Scope>` as a public API for exactly this
 kind of connection-holding use case, without dropping to a raw `pg.Client` escape hatch.

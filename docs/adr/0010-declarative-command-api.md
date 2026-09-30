@@ -17,7 +17,7 @@ five variants were only presets of two independent checks the SQL append already
 check and an idempotency check) - which is why "strict AND idempotent" was impossible to express, and
 why the withdraw handler hand-rolled a racy `exists()` pre-check instead.
 
-The redesign also stops treating the Java framework this repo was ported from as a constraint: this is
+The redesign also stops treating the predecessor framework this repo started from as a constraint: this is
 its own product, free to rename and reshape any low-level component.
 
 ## Decision
