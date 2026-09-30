@@ -5,8 +5,9 @@ import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
 
-// What a command handler hands back to the executor: either "append these events, under this
-// condition" or "nothing to do".
+// What a defined command's compiled handler hands back to the executor: either "append these events,
+// under this condition" or "nothing to do". Internal: applications declare commands with
+// `defineCommand` (Command.ts), which builds these.
 //
 // PATTERN PRIMER - "discriminated union", TypeScript's closed set of variants: each variant is a
 // plain interface with a `readonly _tag: "SomeLiteralString"` field - a *literal* string type, not
@@ -67,24 +68,6 @@ export const withIdempotencyQuery = (
   return { ...decision, condition: { ...decision.condition, idempotencyQuery: query }, onDuplicate };
 };
 
-// The common case of the above: an event of `eventType` tagged `tagKey=tagValue` already exists.
-export const withIdempotency = (
-  decision: Append,
-  eventType: string,
-  tagKey: string,
-  tagValue: string,
-  onDuplicate: OnDuplicate = "RETURN_IDEMPOTENT"
-): Append => {
-  if (!eventType.trim()) throw new Error("idempotency eventType must not be blank");
-  if (!tagKey.trim()) throw new Error("idempotency tagKey must not be blank");
-  if (!tagValue.trim()) throw new Error("idempotency tagValue must not be blank");
-  return withIdempotencyQuery(decision, Query.forEventAndTag(eventType, tagKey, tagValue), onDuplicate);
-};
-
-// Earlier names for the same operation, kept until defineCommand replaces hand-written handlers.
-export const commutativeIdempotent = withIdempotency;
-export const commutativeGuardedIdempotent = withIdempotency;
-
 // Commutative with a selective lifecycle guard. Parallel operations of the same type (e.g.
 // concurrent deposits) do not conflict; additionally the append atomically checks whether any event
 // matching `guardQuery` appeared after `logPosition`. `guardQuery` must include only lifecycle
@@ -114,17 +97,5 @@ export const nonCommutative = (
   logPosition: LogPosition
 ): Append => make(eventList(events), AppendCondition.of(logPosition, decisionModel));
 
-// Idempotency only (no concurrency check): append unless an event of `eventType` tagged
-// `tagKey=tagValue` already exists.
-export const idempotent = (
-  events: AppendEvent | ReadonlyArray<AppendEvent>,
-  eventType: string,
-  tagKey: string,
-  tagValue: string,
-  onDuplicate: OnDuplicate = "RETURN_IDEMPOTENT"
-): Append => withIdempotency(commutative(...eventList(events)), eventType, tagKey, tagValue, onDuplicate);
-
 export const noOp = (reason: string | null = null): NoOp => ({ _tag: "NoOp", reason });
 
-export const eventsOf = (decision: CommandDecision): ReadonlyArray<AppendEvent> =>
-  decision._tag === "NoOp" ? [] : decision.events;

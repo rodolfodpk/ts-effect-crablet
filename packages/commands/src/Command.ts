@@ -171,7 +171,7 @@ export const defineCommand = <
         if (loaded === null) {
           return yield* Effect.die(new Error(`command "${def.name}": a consistency guard needs a model (for its position)`));
         }
-        // Throws if the guard includes an event type this command appends (see CD.withLifecycleGuard).
+        // Throws if the guard includes an event type this command appends (see withLifecycleGuard in CommandDecision.ts).
         append = CD.withLifecycleGuard(decision.events, consistency.guard, loaded.logPosition);
       } else {
         append = CD.commutative(...decision.events);

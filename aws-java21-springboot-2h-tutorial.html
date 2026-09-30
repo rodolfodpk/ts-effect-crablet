@@ -1,0 +1,2466 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workshop AWS: Java 21, Spring Boot, ECS Fargate, Lambda, Step Functions e CDK</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --text: #e6edf3;
+      --muted: #9aa7b5;
+      --panel: #161b22;
+      --line: #2d3540;
+      --accent: #6fb3e8;
+      --code-bg: #0a0e14;
+      --code: #e6edf3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      background: #05070a;
+      color: #f2f5f8;
+      padding: 32px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    main {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1, h2, h3 { line-height: 1.2; color: #f2f5f8; }
+    h1 { margin: 0 0 8px; font-size: 30px; }
+    h2 {
+      margin-top: 32px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+    h3 { margin-top: 24px; }
+    .subtitle { color: #b3bfcc; margin: 0; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      margin: 16px 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+      background: rgba(110, 168, 224, 0.12);
+      padding: 0.1em 0.3em;
+      border-radius: 4px;
+      color: #cfe6f7;
+    }
+    pre {
+      overflow-x: auto;
+      background: var(--code-bg);
+      color: var(--code);
+      padding: 14px;
+      border-radius: 8px;
+      line-height: 1.45;
+      border: 1px solid var(--line);
+    }
+    pre code { color: inherit; background: none; padding: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    th, td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th { background: #1c232d; color: #f2f5f8; }
+    .muted { color: var(--muted); }
+    .warn {
+      border-left: 4px solid #e0973a;
+      background: #2b2114;
+      padding: 12px 14px;
+      border-radius: 0 6px 6px 0;
+    }
+    .ok {
+      border-left: 4px solid #3ecf7a;
+      background: #122016;
+      padding: 12px 14px;
+      border-radius: 0 6px 6px 0;
+    }
+    .concept {
+      border-left: 4px solid #6fb3e8;
+      background: #10202f;
+      padding: 14px 16px;
+      margin: 16px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .interview {
+      border-left: 4px solid #b98af0;
+      background: #201a33;
+      padding: 14px 16px;
+      margin: 16px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .interview h3 { margin-top: 0; }
+    .module-badge {
+      display: inline-block;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(110, 179, 232, 0.15);
+      border-radius: 999px;
+      padding: 3px 10px;
+      margin-bottom: 8px;
+    }
+    .toc a { color: var(--accent); text-decoration: none; }
+    .toc li { margin: 6px 0; }
+    .aws-diagram {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #0a0e14;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-top: 12px;
+    }
+    .diagram-note {
+      margin-top: 8px;
+      font-size: 0.95em;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Workshop AWS: e-commerce com Java 21, Spring Boot 4.1 e eventos</h1>
+    <p class="subtitle">Java 21 + Spring Boot 4.1 no ECS Fargate, Lambda Java 21, Step Functions, API Gateway, ALB, IAM, Route 53, ACM, CI/CD e observabilidade com OTel — organizado em 5 módulos para quem está se preparando para uma entrevista técnica.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Objetivo</h2>
+      <p>Ao final, você terá:</p>
+      <ul>
+        <li>um domínio público no Route 53 apontando para API Gateway;</li>
+        <li>API Gateway encaminhando tráfego para um ALB interno via VPC Link;</li>
+        <li>um serviço Spring Boot 4.1 rodando em ECS Fargate dentro da VPC;</li>
+        <li>o Spring Web gravando pedidos de e-commerce em RDS PostgreSQL;</li>
+        <li>CDC do PostgreSQL para Kinesis usando AWS DMS;</li>
+        <li>Lambda Java 21 consumindo eventos do Kinesis;</li>
+        <li>Step Functions orquestrando processamento de e-commerce;</li>
+        <li>permissões IAM criadas pelo CDK usando grants;</li>
+        <li>certificados ACM com validação DNS;</li>
+        <li>domínio e certificado ACM no API Gateway;</li>
+        <li>um caminho recomendado de CI/CD;</li>
+        <li>dicas práticas de observabilidade com OpenTelemetry, Honeycomb e Splunk.</li>
+      </ul>
+      <p class="warn"><strong>Premissa:</strong> este workshop assume que você já tem uma hosted zone existente no Route 53, por exemplo <code>example.com</code>. Registrar domínio novo e aguardar delegação DNS é uma etapa separada.</p>
+    </section>
+
+    <section class="card">
+      <h2>Como estudar este workshop</h2>
+      <p>O conteúdo está organizado em <strong>5 módulos</strong>, cada um com três partes: <strong>Conceitos antes de começar</strong> (o que é, por que existe, como se encaixa na arquitetura), o conteúdo prático (código, CDK, comandos) e <strong>Perguntas de entrevista</strong> (o que costuma ser perguntado sobre o que você acabou de construir).</p>
+      <p>Os tempos abaixo são <strong>tempo ativo de estudo/digitação</strong>, não tempo total de parede. Esta arquitetura cria RDS, uma replication instance do DMS, NAT Gateway e um certificado ACM validado por DNS — isso soma facilmente <strong>20 a 40 minutos de espera</strong> só de provisionamento da AWS, fora do seu controle. Não se assuste se o <code>cdk deploy</code> do Módulo 3 "travar" por um tempo: é o RDS e o DMS subindo.</p>
+      <table>
+        <thead>
+          <tr><th>Módulo</th><th>Tempo ativo</th><th>Espera de provisionamento</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0 — Fundamentos de rede (VPC, Route 53)</td><td>~20 min</td><td>nenhuma (é conceitual)</td></tr>
+          <tr><td>1 — ECS/Fargate + Spring Boot</td><td>~45 min</td><td>baixa</td></tr>
+          <tr><td>2 — Lambda + Step Functions</td><td>~50 min</td><td>baixa</td></tr>
+          <tr><td>3 — CDC (DMS/Kinesis) + CDK completo</td><td>~70 min</td><td><strong>alta</strong> (RDS + DMS + NAT Gateway)</td></tr>
+          <tr><td>4 — DNS/ACM, deploy, CI/CD, observabilidade</td><td>~60 min</td><td>média (validação ACM)</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Total: ~4h de estudo ativo, tipicamente espalhadas em 2-3 sessões. Módulo 3 é o mais pesado — considere fazer isolado, com o deploy rodando em background enquanto você lê a próxima seção.</p>
+    </section>
+
+    <section class="card">
+      <h2>Glossário rápido (referência)</h2>
+      <p class="muted">Cada módulo abaixo explica seus conceitos em contexto antes do código. Esta tabela é só para consulta rápida.</p>
+
+      <h3>Núcleo da arquitetura</h3>
+      <table>
+        <thead>
+          <tr><th>Termo</th><th>O que é</th><th>Como entra nesta solução</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Route 53</td>
+            <td>Serviço DNS da AWS. Resolve nomes como <code>shop.example.com</code> para endpoints AWS.</td>
+            <td>Aponta o domínio público para o API Gateway. O nome correto é Route 53, não Route 66.</td>
+          </tr>
+          <tr>
+            <td>ACM</td>
+            <td>AWS Certificate Manager. Emite e renova certificados TLS.</td>
+            <td>Fornece o certificado HTTPS usado pelo API Gateway.</td>
+          </tr>
+          <tr>
+            <td>API Gateway</td>
+            <td>Entrada HTTP gerenciada para APIs. Faz TLS, roteamento, throttling, auth e integração com backends.</td>
+            <td>Recebe <code>POST /orders</code> e encaminha para o ALB privado.</td>
+          </tr>
+          <tr>
+            <td>VPC Link</td>
+            <td>Ponte privada entre API Gateway e recursos dentro de uma VPC.</td>
+            <td>Permite que o API Gateway chame um ALB interno sem expor o ECS diretamente.</td>
+          </tr>
+          <tr>
+            <td>VPC</td>
+            <td>Rede privada virtual da AWS. Contém subnets, rotas, security groups e recursos privados.</td>
+            <td>Abriga ECS, ALB interno, RDS e DMS.</td>
+          </tr>
+          <tr>
+            <td>ALB</td>
+            <td>Application Load Balancer. Distribui tráfego HTTP para targets.</td>
+            <td>Recebe tráfego do VPC Link e encaminha para tasks ECS.</td>
+          </tr>
+          <tr>
+            <td>ECS Fargate</td>
+            <td>Execução serverless de containers no ECS. Você define CPU/memória/imagem, sem gerenciar EC2.</td>
+            <td>Roda o container Spring Boot 4.1.</td>
+          </tr>
+          <tr>
+            <td>RDS PostgreSQL</td>
+            <td>Banco PostgreSQL gerenciado.</td>
+            <td>Armazena pedidos e serve como fonte CDC.</td>
+          </tr>
+          <tr>
+            <td>DMS</td>
+            <td>Database Migration Service. Também faz CDC lendo alterações do banco.</td>
+            <td>Lê inserts na tabela <code>orders</code> e publica no Kinesis.</td>
+          </tr>
+          <tr>
+            <td>Kinesis</td>
+            <td>Stream de eventos de alta vazão.</td>
+            <td>Transporta eventos CDC do Postgres para Lambdas.</td>
+          </tr>
+          <tr>
+            <td>Lambda</td>
+            <td>Execução serverless de funções.</td>
+            <td>Consome Kinesis e inicia o workflow de e-commerce.</td>
+          </tr>
+          <tr>
+            <td>Step Functions</td>
+            <td>Orquestrador de workflows.</td>
+            <td>Coordena reserva de estoque, pagamento e confirmação.</td>
+          </tr>
+          <tr>
+            <td>IAM Role</td>
+            <td>Identidade assumida por serviços AWS para receber permissões temporárias.</td>
+            <td>Define exatamente o que ECS, Lambda, DMS e Step Functions podem fazer.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Ferramentas, segurança e operação</h3>
+      <p class="muted">Termos citados ao longo do workshop (deploy, segurança de borda, segredos, observabilidade) que não fazem parte do núcleo request/CDC, mas aparecem em quase todo módulo.</p>
+      <table>
+        <thead>
+          <tr><th>Termo</th><th>O que é</th><th>Como entra nesta solução</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>AWS CDK</td>
+            <td>Cloud Development Kit: framework que descreve infraestrutura em uma linguagem de programação (aqui, Java) em vez de YAML/JSON direto.</td>
+            <td>É a ferramenta de IaC usada em todo o Módulo 3 — todo <code>cdk deploy</code> deste workshop sintetiza e executa um stack CloudFormation por baixo dos panos.</td>
+          </tr>
+          <tr>
+            <td>CloudFormation</td>
+            <td>Serviço nativo de infraestrutura como código da AWS, baseado em templates declarativos (YAML/JSON) com stacks, change sets e rollback automático.</td>
+            <td>É o motor real por trás do CDK: o que você escreve em Java no Módulo 3 é sintetizado para um template CloudFormation antes de ser aplicado.</td>
+          </tr>
+          <tr>
+            <td>WAF</td>
+            <td>Web Application Firewall. Filtra requisições HTTP maliciosas (SQL injection, XSS, bots) antes de chegarem à aplicação.</td>
+            <td>Sugerido como item de segurança de borda para o API Gateway em "Próximos passos para produção", caso haja tráfego público sensível.</td>
+          </tr>
+          <tr>
+            <td>ECR</td>
+            <td>Elastic Container Registry. Registro gerenciado de imagens de container.</td>
+            <td>Alternativa a <code>ContainerImage.fromAsset</code> para builds mais controlados (ver dicas de CI/CD no Módulo 4).</td>
+          </tr>
+          <tr>
+            <td>Target Group</td>
+            <td>Agrupamento de destinos (ex.: tasks ECS) que um Load Balancer usa para rotear tráfego e checar saúde.</td>
+            <td>É o que liga o ALB interno às tasks do ECS Fargate — cada task saudável entra no target group e passa a receber tráfego.</td>
+          </tr>
+          <tr>
+            <td>CloudWatch Logs</td>
+            <td>Serviço de logs centralizados da AWS.</td>
+            <td>Recebe automaticamente os logs de stdout/stderr do ECS e das Lambdas; é a "trilha AWS nativa" citada na seção de observabilidade (Módulo 4).</td>
+          </tr>
+          <tr>
+            <td>Secrets Manager</td>
+            <td>Serviço para armazenar, rotacionar e injetar segredos (senhas, tokens, chaves de API).</td>
+            <td>Guarda a senha do RDS gerada pelo CDK (<code>Credentials.fromGeneratedSecret</code>) e é a forma recomendada de injetar <code>DB_PASSWORD</code> no ECS.</td>
+          </tr>
+          <tr>
+            <td>SSM Parameter Store</td>
+            <td>Armazenamento hierárquico de configuração, não necessariamente sensível.</td>
+            <td>Lugar recomendado para configuração não sensível por ambiente (ex.: <code>/ecommerce/prod/orders/max-page-size</code>), em "Próximos passos".</td>
+          </tr>
+          <tr>
+            <td>OIDC</td>
+            <td>OpenID Connect. Protocolo que permite a um provedor externo (GitHub Actions) provar identidade e assumir uma IAM role temporária sem credenciais de longa duração.</td>
+            <td>Usado no pipeline de CI/CD do Módulo 4 para autenticar sem access keys salvas como secret.</td>
+          </tr>
+          <tr>
+            <td>DLQ</td>
+            <td>Dead Letter Queue. Destino para onde eventos/mensagens que falharam repetidamente são desviados, em vez de serem perdidos.</td>
+            <td>Sugerido em "Próximos passos" para capturar falhas de Lambda/Step Functions sem perder o pedido.</td>
+          </tr>
+          <tr>
+            <td>SnapStart</td>
+            <td>Recurso do Lambda que restaura um ambiente de execução Java a partir de um snapshot pós-inicialização, reduzindo cold start.</td>
+            <td>Coberto em "Próximos passos para produção", como mitigação de cold start citada no Módulo 2.</td>
+          </tr>
+          <tr>
+            <td>OpenTelemetry (OTel) / ADOT</td>
+            <td>Padrão aberto de instrumentação para traces, métricas e logs. ADOT é a distribuição da AWS desse padrão (Java Agent, Lambda Layer).</td>
+            <td>Camada de instrumentação usada no Módulo 4 para alimentar o Honeycomb (traces/métricas via OTLP) sem reinstrumentar por backend. Não é o caminho usado para o Splunk — ver linha abaixo.</td>
+          </tr>
+          <tr>
+            <td>Honeycomb / Splunk</td>
+            <td>Backends de observabilidade de terceiros — <strong>não são serviços AWS</strong>. Honeycomb foca em tracing/debugging de alta cardinalidade; Splunk foca em logs e busca operacional.</td>
+            <td>Fontes de dados diferentes (Módulo 4): Honeycomb recebe traces/métricas via OTLP, através do OTel Collector. Splunk recebe logs via encaminhamento de CloudWatch Logs, não via OTLP.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Arquitetura</h2>
+      <svg class="aws-diagram" viewBox="0 0 1180 760" role="img" aria-labelledby="diagram-title diagram-desc">
+        <title id="diagram-title">Diagrama AWS da solução e-commerce</title>
+        <desc id="diagram-desc">Route 53 aponta para API Gateway; API Gateway usa VPC Link para ALB interno; ALB chama ECS Fargate com Spring Boot; Spring grava em RDS PostgreSQL; DMS replica CDC para Kinesis; Lambda consome Kinesis e inicia Step Functions.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#aab4c0"></path>
+          </marker>
+          <style>
+            .aws-box { fill: #1b212b; stroke: #4a5568; stroke-width: 2; rx: 8; }
+            .aws-group { fill: #12161d; stroke: #4a5568; stroke-width: 2; stroke-dasharray: 6 5; rx: 10; }
+            .aws-vpc { fill: #0f1f16; stroke: #3fa46a; stroke-width: 2.5; rx: 12; }
+            .aws-subnet { fill: #141a15; stroke: #5da97f; stroke-width: 2; stroke-dasharray: 4 4; rx: 10; }
+            .aws-orange { fill: #ff9900; stroke: #cc7a00; stroke-width: 2; }
+            .aws-blue { fill: #5b9ce6; stroke: #3a76c4; stroke-width: 2; }
+            .aws-green { fill: #4cb571; stroke: #2f7d43; stroke-width: 2; }
+            .aws-purple { fill: #9b7cf5; stroke: #6d3fd8; stroke-width: 2; }
+            .aws-red { fill: #f08784; stroke: #c94f4c; stroke-width: 2; }
+            .aws-text { font: 600 14px Arial, Helvetica, sans-serif; fill: #e6edf3; }
+            .aws-small { font: 12px Arial, Helvetica, sans-serif; fill: #aab4c0; }
+            .aws-white { font: 700 13px Arial, Helvetica, sans-serif; fill: #ffffff; }
+            .aws-title { font: 700 17px Arial, Helvetica, sans-serif; fill: #f2f5f8; }
+            .aws-line { stroke: #aab4c0; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+            .aws-async { stroke: #b98af0; stroke-width: 2.4; fill: none; stroke-dasharray: 7 5; marker-end: url(#arrow); }
+            .aws-badge { fill: #0d1117; stroke: #f2f5f8; stroke-width: 2; }
+            .aws-badge-text { font: 700 13px Arial, Helvetica, sans-serif; fill: #f2f5f8; }
+          </style>
+        </defs>
+
+        <rect x="20" y="20" width="1140" height="720" class="aws-group"></rect>
+        <text x="40" y="50" class="aws-title">AWS Account / Region</text>
+
+        <rect x="50" y="85" width="230" height="560" class="aws-group"></rect>
+        <text x="70" y="115" class="aws-title">Public Edge</text>
+
+        <rect x="80" y="155" width="150" height="64" class="aws-orange" rx="8"></rect>
+        <text x="155" y="181" text-anchor="middle" class="aws-white">Route 53</text>
+        <text x="155" y="201" text-anchor="middle" class="aws-white">shop.example.com</text>
+
+        <rect x="80" y="285" width="150" height="72" class="aws-orange" rx="8"></rect>
+        <text x="155" y="313" text-anchor="middle" class="aws-white">API Gateway</text>
+        <text x="155" y="333" text-anchor="middle" class="aws-white">HTTP API</text>
+
+        <rect x="80" y="420" width="150" height="62" class="aws-box"></rect>
+        <text x="155" y="446" text-anchor="middle" class="aws-text">ACM</text>
+        <text x="155" y="466" text-anchor="middle" class="aws-small">TLS certificate</text>
+
+        <rect x="330" y="85" width="520" height="560" class="aws-vpc"></rect>
+        <text x="350" y="115" class="aws-title">VPC</text>
+
+        <rect x="360" y="145" width="200" height="440" class="aws-subnet"></rect>
+        <text x="380" y="173" class="aws-text">Private Subnets</text>
+
+        <rect x="620" y="145" width="200" height="440" class="aws-subnet"></rect>
+        <text x="640" y="173" class="aws-text">Data Subnets</text>
+
+        <rect x="392" y="205" width="136" height="64" class="aws-blue" rx="8"></rect>
+        <text x="460" y="232" text-anchor="middle" class="aws-white">VPC Link</text>
+        <text x="460" y="251" text-anchor="middle" class="aws-white">private integration</text>
+
+        <rect x="392" y="315" width="136" height="64" class="aws-blue" rx="8"></rect>
+        <text x="460" y="342" text-anchor="middle" class="aws-white">Internal ALB</text>
+        <text x="460" y="361" text-anchor="middle" class="aws-white">HTTP :8080</text>
+
+        <rect x="382" y="430" width="156" height="82" class="aws-green" rx="8"></rect>
+        <text x="460" y="458" text-anchor="middle" class="aws-white">ECS Fargate</text>
+        <text x="460" y="478" text-anchor="middle" class="aws-white">Spring Boot 4.1</text>
+        <text x="460" y="498" text-anchor="middle" class="aws-white">POST /orders</text>
+
+        <rect x="650" y="255" width="140" height="78" class="aws-green" rx="8"></rect>
+        <text x="720" y="284" text-anchor="middle" class="aws-white">RDS</text>
+        <text x="720" y="304" text-anchor="middle" class="aws-white">PostgreSQL</text>
+        <text x="720" y="324" text-anchor="middle" class="aws-white">orders table</text>
+
+        <rect x="650" y="430" width="140" height="76" class="aws-purple" rx="8"></rect>
+        <text x="720" y="459" text-anchor="middle" class="aws-white">AWS DMS</text>
+        <text x="720" y="479" text-anchor="middle" class="aws-white">CDC task</text>
+
+        <rect x="900" y="85" width="230" height="560" class="aws-group"></rect>
+        <text x="920" y="115" class="aws-title">Event Processing</text>
+
+        <rect x="940" y="180" width="150" height="70" class="aws-purple" rx="8"></rect>
+        <text x="1015" y="209" text-anchor="middle" class="aws-white">Kinesis</text>
+        <text x="1015" y="229" text-anchor="middle" class="aws-white">order-changes</text>
+
+        <rect x="940" y="320" width="150" height="70" class="aws-orange" rx="8"></rect>
+        <text x="1015" y="349" text-anchor="middle" class="aws-white">Lambda</text>
+        <text x="1015" y="369" text-anchor="middle" class="aws-white">event router</text>
+
+        <rect x="930" y="470" width="170" height="92" class="aws-red" rx="8"></rect>
+        <text x="1015" y="500" text-anchor="middle" class="aws-white">Step Functions</text>
+        <text x="1015" y="520" text-anchor="middle" class="aws-white">reserve inventory</text>
+        <text x="1015" y="540" text-anchor="middle" class="aws-white">payment + confirm</text>
+
+        <text x="80" y="690" class="aws-small">Synchronous request path</text>
+        <line x1="230" y1="686" x2="300" y2="686" class="aws-line"></line>
+        <text x="390" y="690" class="aws-small">Asynchronous CDC/event path</text>
+        <line x1="560" y1="686" x2="630" y2="686" class="aws-async"></line>
+
+        <line x1="155" y1="219" x2="155" y2="285" class="aws-line"></line>
+        <line x1="230" y1="321" x2="392" y2="237" class="aws-line"></line>
+        <line x1="460" y1="269" x2="460" y2="315" class="aws-line"></line>
+        <line x1="460" y1="379" x2="460" y2="430" class="aws-line"></line>
+        <path d="M538 471 C590 471, 610 294, 650 294" class="aws-line"></path>
+
+        <line x1="720" y1="333" x2="720" y2="430" class="aws-async"></line>
+        <path d="M790 468 C850 468, 870 215, 940 215" class="aws-async"></path>
+        <line x1="1015" y1="250" x2="1015" y2="320" class="aws-async"></line>
+        <line x1="1015" y1="390" x2="1015" y2="470" class="aws-async"></line>
+      </svg>
+      <p class="diagram-note">O ALB é interno. O único endpoint público da aplicação é o API Gateway, exposto por <code>shop.example.com</code>.</p>
+      <pre><code>Internet
+  |
+  v
+Route 53: shop.example.com
+  |
+  v
+API Gateway HTTP API + ACM certificate
+  |
+  v
+VPC Link
+  |
+  v
+Internal ALB
+  |
+  v
+ECS Fargate service
+  |
+  v
+Spring Boot 4.1 Web API
+  |
+  v
+RDS PostgreSQL
+  |
+  v
+AWS DMS CDC task
+  |
+  v
+Kinesis Data Stream
+  |
+  v
+Lambda Java 21 event router
+  |
+  v
+Step Functions ecommerce workflow
+  |
+  +-- reserve inventory Lambda
+  +-- authorize payment Lambda
+  +-- send confirmation Lambda</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>Fluxo detalhado</h2>
+      <ol>
+        <li><strong>Route 53</strong> resolve <code>shop.example.com</code> para o domínio customizado do API Gateway. O nome correto é Route 53, não Route 66.</li>
+        <li><strong>API Gateway</strong> recebe <code>POST /orders</code>, termina TLS com certificado ACM e aplica controles de borda como throttling, auth e WAF, se configurados.</li>
+        <li><strong>VPC Link</strong> conecta rotas do API Gateway a recursos privados na VPC, como ALB interno e aplicações ECS.</li>
+        <li><strong>ALB interno</strong> recebe a chamada vinda do VPC Link e encaminha para o target group do ECS.</li>
+        <li><strong>ECS Fargate</strong> executa o container Spring Boot em subnets privadas. O container não fica exposto diretamente à internet.</li>
+        <li><strong>Spring Boot Web</strong> valida o pedido e grava no PostgreSQL.</li>
+        <li><strong>RDS PostgreSQL</strong> persiste tabelas como <code>orders</code> e <code>order_items</code>.</li>
+        <li><strong>AWS DMS</strong> lê o write-ahead log do PostgreSQL em modo CDC e publica alterações em um Kinesis Data Stream. O target Kinesis do DMS publica registros em JSON.</li>
+        <li><strong>Lambda</strong> consome os registros do Kinesis por event source mapping. A Lambda filtra eventos de e-commerce relevantes, como pedido criado.</li>
+        <li><strong>Step Functions</strong> orquestra o processo: reservar estoque, autorizar pagamento e enviar confirmação.</li>
+      </ol>
+    </section>
+
+    <section class="toc card">
+      <h2>Roteiro do workshop</h2>
+      <ol>
+        <li><a href="#modulo0">Módulo 0 — Fundamentos de rede: VPC e Route 53</a> — ~20 min</li>
+        <li><a href="#modulo1">Módulo 1 — ECS e Fargate com Spring Boot</a> — ~45 min</li>
+        <li><a href="#modulo2">Módulo 2 — Lambda e Step Functions</a> — ~50 min</li>
+        <li><a href="#modulo3">Módulo 3 — CDC (DMS/Kinesis) e infraestrutura completa em CDK</a> — ~70 min (+ espera de provisionamento)</li>
+        <li><a href="#modulo4">Módulo 4 — DNS/ACM, deploy, CI/CD e observabilidade</a> — ~60 min</li>
+      </ol>
+    </section>
+
+    <!-- ============================== MÓDULO 0 ============================== -->
+    <section id="modulo0">
+      <h2>Módulo 0 — Fundamentos de rede: VPC e Route 53</h2>
+
+      <div class="concept">
+        <h3>Por que começar por rede</h3>
+        <p>Todo recurso deste workshop, exceto o Route 53 e a Internet em si, vive dentro de uma <strong>VPC</strong>: ECS, ALB interno, RDS e DMS. E o único jeito de alguém de fora chegar até essa VPC é através do <strong>Route 53 + API Gateway</strong>. Se esses dois conceitos não estiverem sólidos, cada módulo seguinte vira "copiar código sem entender por quê". Este módulo é 100% conceitual — não há deploy aqui.</p>
+      </div>
+
+      <p class="module-badge">Diagrama — Módulo 0</p>
+      <svg class="aws-diagram" viewBox="0 0 900 380" role="img" aria-labelledby="m0-title m0-desc">
+        <title id="m0-title">Casca de rede: VPC, subnets e Route 53</title>
+        <desc id="m0-desc">Route 53 e um Internet Gateway ficam fora da VPC. Dentro da VPC há três subnets: pública (com NAT Gateway), privada e isolada, ainda vazias — os serviços entram nos próximos módulos.</desc>
+        <rect x="220" y="90" width="650" height="260" class="aws-vpc"></rect>
+        <text x="240" y="118" class="aws-title">VPC — 10.0.0.0/16</text>
+
+        <rect x="30" y="40" width="150" height="60" class="aws-orange" rx="8"></rect>
+        <text x="105" y="66" text-anchor="middle" class="aws-white">Route 53</text>
+        <text x="105" y="84" text-anchor="middle" class="aws-white">shop.example.com</text>
+
+        <rect x="345" y="20" width="140" height="50" class="aws-box"></rect>
+        <text x="415" y="42" text-anchor="middle" class="aws-text">Internet</text>
+        <text x="415" y="60" text-anchor="middle" class="aws-small">Gateway (IGW)</text>
+
+        <rect x="250" y="140" width="180" height="180" class="aws-subnet"></rect>
+        <text x="260" y="164" class="aws-text">Public Subnet</text>
+        <rect x="270" y="230" width="140" height="50" class="aws-blue" rx="8"></rect>
+        <text x="340" y="259" text-anchor="middle" class="aws-white">NAT Gateway</text>
+
+        <rect x="460" y="140" width="180" height="180" class="aws-subnet"></rect>
+        <text x="470" y="164" class="aws-text">Private Subnet</text>
+        <text x="470" y="188" class="aws-small">(ECS, ALB —</text>
+        <text x="470" y="204" class="aws-small">Módulo 1)</text>
+
+        <rect x="670" y="140" width="180" height="180" class="aws-subnet"></rect>
+        <text x="680" y="164" class="aws-text">Isolated Subnet</text>
+        <text x="680" y="188" class="aws-small">(RDS, DMS —</text>
+        <text x="680" y="204" class="aws-small">Módulos 1 e 3)</text>
+        <text x="680" y="300" class="aws-small">sem rota para a internet</text>
+
+        <line x1="415" y1="70" x2="415" y2="140" class="aws-line"></line>
+        <line x1="415" y1="140" x2="340" y2="230" class="aws-line"></line>
+        <line x1="460" y1="230" x2="410" y2="255" class="aws-async"></line>
+        <text x="480" y="225" class="aws-small">saída via NAT</text>
+      </svg>
+      <p class="diagram-note">Route 53 e o Internet Gateway ficam fora da VPC. As três subnets já existem, mas estão vazias — Módulo 1 preenche a Private Subnet com ECS/ALB e a Isolated Subnet com RDS; a ligação de Route 53 até dentro da VPC só aparece no Módulo 4, via API Gateway.</p>
+
+      <h3>VPC, subnets e roteamento</h3>
+      <table>
+        <thead>
+          <tr><th>Conceito</th><th>O que é</th><th>Por que importa aqui</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>VPC</td>
+            <td>Uma rede virtual isolada dentro da sua conta AWS, com um bloco CIDR próprio (ex.: <code>10.0.0.0/16</code>).</td>
+            <td>É o "prédio" onde ECS, RDS, DMS e o ALB interno moram. Nada aqui é acessível de fora por padrão.</td>
+          </tr>
+          <tr>
+            <td>Subnet pública</td>
+            <td>Subnet com rota para um Internet Gateway. Recursos com IP público conseguem ser alcançados diretamente da internet.</td>
+            <td>Nesta arquitetura, nada de aplicação fica aqui — só o NAT Gateway, se você usar um.</td>
+          </tr>
+          <tr>
+            <td>Subnet privada</td>
+            <td>Sem rota direta para a internet, mas com rota de saída via NAT Gateway.</td>
+            <td>Onde o ECS Fargate e o ALB interno rodam — precisam de saída (ex.: puxar imagem do ECR) mas não de entrada pública.</td>
+          </tr>
+          <tr>
+            <td>Subnet isolada</td>
+            <td>Sem rota para a internet em nenhuma direção, nem via NAT.</td>
+            <td>Onde RDS e a replication instance do DMS podem rodar — eles não precisam de internet, só de tráfego dentro da VPC.</td>
+          </tr>
+          <tr>
+            <td>Internet Gateway (IGW)</td>
+            <td>Componente que permite tráfego entre a VPC e a internet, para subnets públicas.</td>
+            <td>Anexado à VPC, mas o tráfego da aplicação nunca passa direto por ele — só o NAT Gateway usa.</td>
+          </tr>
+          <tr>
+            <td>NAT Gateway</td>
+            <td>Permite que recursos em subnet privada iniciem conexões de saída para a internet, sem aceitar conexões de entrada.</td>
+            <td>Deixa o ECS Fargate puxar imagens de container e chamar APIs externas sem expor a task publicamente.</td>
+          </tr>
+          <tr>
+            <td>Security Group</td>
+            <td>Firewall stateful por recurso (ENI). Regras de "permitir", avaliadas todas.</td>
+            <td>Controla, por exemplo, quem pode falar com o Spring Boot na porta 8080 (só o ALB) e quem fala com o Postgres na 5432 (só a aplicação e o DMS).</td>
+          </tr>
+          <tr>
+            <td>Network ACL</td>
+            <td>Firewall stateless por subnet. Regras de permitir e negar, avaliadas em ordem.</td>
+            <td>Raramente customizada neste tipo de arquitetura — a NACL padrão (permite tudo) é suficiente; security groups fazem o trabalho fino.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Route 53: zonas e registros</h3>
+      <table>
+        <thead>
+          <tr><th>Conceito</th><th>O que é</th><th>Por que importa aqui</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Hosted zone</td>
+            <td>Um container de registros DNS para um domínio, ex. <code>example.com</code>.</td>
+            <td>É o pré-requisito deste workshop — o CDK faz lookup dessa zone para criar registros novos dentro dela.</td>
+          </tr>
+          <tr>
+            <td>Record A</td>
+            <td>Aponta um nome diretamente para um endereço IPv4.</td>
+            <td>Não é o que usamos aqui, porque o IP do API Gateway pode mudar.</td>
+          </tr>
+          <tr>
+            <td>Record ALIAS</td>
+            <td>Extensão da AWS ao DNS: aponta um nome para um recurso AWS (API Gateway, ALB, CloudFront) sem IP fixo, resolvido no nível do Route 53.</td>
+            <td><code>shop.example.com</code> vira um ALIAS para o domínio customizado do API Gateway — funciona até no apex do domínio, o que um CNAME não permite.</td>
+          </tr>
+          <tr>
+            <td>Record CNAME</td>
+            <td>Aponta um nome para outro nome (não para um recurso AWS diretamente).</td>
+            <td>Usado pela validação DNS do ACM: o CDK cria um CNAME de validação temporário na hosted zone.</td>
+          </tr>
+          <tr>
+            <td>Health check</td>
+            <td>Monitoramento ativo de um endpoint pelo Route 53, usado para failover de DNS.</td>
+            <td>Fora do escopo deste workshop (uma região só), mas é o mecanismo por trás de setups multi-região.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Como isso aparece nesta arquitetura</h3>
+      <p>Olhando o diagrama da seção "Arquitetura": <strong>Public Edge</strong> tem Route 53 e API Gateway — os únicos pontos alcançáveis da internet. Dentro da <strong>VPC</strong>, as <strong>Private Subnets</strong> hospedam o VPC Link, o ALB interno e o ECS Fargate; as <strong>Data Subnets</strong> hospedam RDS e o DMS. Nenhum desses últimos tem IP público. O tráfego síncrono (pedido do cliente) atravessa Route 53 → API Gateway → VPC Link → ALB → ECS. O tráfego assíncrono (CDC) nunca sai da VPC: Postgres → DMS → Kinesis → Lambda, tudo dentro da rede privada até a Lambda chamar a API do Step Functions (que é um endpoint de serviço AWS, não algo dentro da sua VPC).</p>
+
+      <div class="interview">
+        <h3>Perguntas de entrevista — Módulo 0</h3>
+        <ul>
+          <li><strong>Subnet pública vs privada vs isolada — qual a diferença real?</strong> Pública tem rota para IGW; privada tem rota de saída via NAT mas não de entrada; isolada não tem rota para a internet em nenhuma direção. A diferença é sobre rotas, não sobre "ter IP público" por si só.</li>
+          <li><strong>Para que serve um NAT Gateway, e por que subnets isoladas não precisam de um?</strong> NAT Gateway dá saída para a internet a recursos em subnet privada (ex.: ECS puxando imagem do ECR). Subnets isoladas não têm nenhum caminho para a internet — nem de saída — porque os recursos ali (RDS, DMS) só precisam falar com outros recursos dentro da VPC.</li>
+          <li><strong>Por que usar um registro ALIAS em vez de CNAME para o domínio do API Gateway?</strong> ALIAS é resolvido no nível do Route 53 (sem round-trip de DNS extra), funciona no apex do domínio (CNAME não pode coexistir com outros registros no apex), e acompanha automaticamente o IP do recurso AWS se ele mudar.</li>
+          <li><strong>Security group vs Network ACL — quando você mexeria em qual?</strong> Security group é stateful e por recurso — é o que você ajusta no dia a dia (ex.: liberar porta 8080 do ALB para o ECS). NACL é stateless e por subnet — normalmente só é customizada para bloqueios amplos de rede, não para regras finas de aplicação.</li>
+          <li><strong>Se você tem só uma NAT Gateway para 2 AZs, o que isso custa em disponibilidade?</strong> A NAT Gateway é um recurso por AZ; ter uma só cria uma dependência cross-AZ — se a AZ dela cair, toda saída de internet das subnets privadas nas outras AZs para junto. Em produção, o padrão é uma NAT Gateway por AZ.</li>
+          <li><strong>Por que a hosted zone precisa existir antes do deploy, em vez de o CDK criar uma nova?</strong> Criar uma hosted zone nova exige delegar os nameservers no registrador do domínio — um passo manual, fora do controle do CDK — e enquanto a delegação não propaga, a validação DNS do ACM (que depende da zone) fica bloqueada. Por isso o workshop assume uma zone já existente e delegada.</li>
+          <li><strong>O que muda se, em vez de subnets isoladas, você colocasse o RDS em subnet privada (com NAT)?</strong> Funcionaria, mas o RDS ganharia uma rota de saída para a internet que ele nunca usa — superfície desnecessária. Isolada é mais restritiva e mais correta para um recurso que só precisa de tráfego intra-VPC.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================== MÓDULO 1 ============================== -->
+    <section id="modulo1">
+      <h2>Módulo 1 — ECS e Fargate com Spring Boot</h2>
+
+      <div class="concept">
+        <h3>Conceito: ECS, Fargate e "ECS puro"</h3>
+        <p><strong>ECS</strong> é o orquestrador de containers. Ele agenda tasks, mantém services rodando, integra com load balancer, health checks, IAM roles, logs e deployment rolling.</p>
+        <p><strong>Fargate</strong> é o modo de compute serverless do ECS. Você não cria nem administra instâncias EC2. Você define imagem, CPU, memória, rede, variáveis e roles; a AWS executa a task.</p>
+        <p>Quando alguém diz <strong>"ECS puro"</strong>, geralmente quer dizer <strong>ECS com EC2 capacity provider</strong>: você cria um Auto Scaling Group de instâncias EC2, mantém AMI, patching, escala de hosts, bin packing e capacidade disponível.</p>
+        <table>
+          <thead>
+            <tr><th>Critério</th><th>ECS Fargate</th><th>ECS com EC2</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Operação</td>
+              <td>Menor. Sem hosts para manter.</td>
+              <td>Maior. Você mantém EC2, AMI, patching e capacity.</td>
+            </tr>
+            <tr>
+              <td>Tempo para começar</td>
+              <td>Melhor para workshop e times que querem foco na aplicação.</td>
+              <td>Exige decisões de instância, ASG e capacity provider.</td>
+            </tr>
+            <tr>
+              <td>Custo em escala alta</td>
+              <td>Pode ser mais caro por vCPU/memória.</td>
+              <td>Pode ser mais barato com alta utilização e bom bin packing.</td>
+            </tr>
+            <tr>
+              <td>Controle do host</td>
+              <td>Baixo. Sem acesso ao host.</td>
+              <td>Alto. Útil para agentes especiais, GPU, tuning de kernel ou storage local.</td>
+            </tr>
+            <tr>
+              <td>Fit para esta arquitetura</td>
+              <td>Bom: API Spring stateless atrás de ALB interno.</td>
+              <td>Excesso inicial, salvo exigência de custo/controle.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><strong>Por isso o workshop usa Fargate:</strong> a aplicação Spring Boot é stateless, o estado fica no RDS, a entrada é pelo ALB/API Gateway, e o objetivo é reduzir superfície operacional. Migrar para ECS com EC2 depois é possível se custo em escala ou controle de host justificarem.</p>
+
+        <h3>Conceito: duas roles diferentes por task ECS</h3>
+        <p>Todo task ECS Fargate tem <strong>duas</strong> IAM roles com propósitos diferentes — uma confusão clássica de entrevista:</p>
+        <table>
+          <thead>
+            <tr><th>Role</th><th>Quem assume</th><th>Para quê</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Task execution role</td>
+              <td>O agente do ECS, antes da sua aplicação rodar.</td>
+              <td>Puxar a imagem do ECR, buscar secrets/parameters referenciados na task definition, escrever logs no CloudWatch.</td>
+            </tr>
+            <tr>
+              <td>Task role</td>
+              <td>Sua aplicação, em tempo de execução (via credenciais injetadas no container).</td>
+              <td>Permissões de negócio: chamar outros serviços AWS que o código Java realmente invoca (neste workshop, nenhuma chamada direta é feita do Spring Boot a outro serviço AWS — o acesso ao Postgres é por rede/credenciais, não IAM).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="module-badge">Diagrama — Módulo 1</p>
+      <svg class="aws-diagram" viewBox="0 0 900 380" role="img" aria-labelledby="m1-title m1-desc">
+        <title id="m1-title">ECS Fargate atrás de um ALB interno, com RDS</title>
+        <desc id="m1-desc">Dentro da mesma VPC do Módulo 0, a Private Subnet agora tem um ALB interno na frente de uma task ECS Fargate rodando Spring Boot; a Isolated Subnet tem o RDS PostgreSQL. Security groups controlam quem fala com quem.</desc>
+        <rect x="220" y="90" width="650" height="260" class="aws-vpc"></rect>
+        <text x="240" y="118" class="aws-title">VPC (Módulo 0)</text>
+
+        <rect x="250" y="140" width="330" height="180" class="aws-subnet"></rect>
+        <text x="260" y="164" class="aws-text">Private Subnet</text>
+
+        <rect x="270" y="185" width="120" height="56" class="aws-blue" rx="8"></rect>
+        <text x="330" y="209" text-anchor="middle" class="aws-white">ALB interno</text>
+        <text x="330" y="227" text-anchor="middle" class="aws-white">AlbSg</text>
+
+        <rect x="430" y="185" width="130" height="70" class="aws-green" rx="8"></rect>
+        <text x="495" y="209" text-anchor="middle" class="aws-white">ECS Fargate</text>
+        <text x="495" y="225" text-anchor="middle" class="aws-white">Spring Boot</text>
+        <text x="495" y="241" text-anchor="middle" class="aws-white">AppSg</text>
+
+        <rect x="640" y="140" width="180" height="180" class="aws-subnet"></rect>
+        <text x="650" y="164" class="aws-text">Isolated Subnet</text>
+        <rect x="660" y="200" width="140" height="60" class="aws-green" rx="8"></rect>
+        <text x="730" y="224" text-anchor="middle" class="aws-white">RDS PostgreSQL</text>
+        <text x="730" y="242" text-anchor="middle" class="aws-white">DbSg</text>
+
+        <line x1="390" y1="213" x2="430" y2="213" class="aws-line"></line>
+        <text x="395" y="203" class="aws-small">:8080</text>
+        <path d="M560 220 C600 220, 610 220, 660 225" class="aws-line"></path>
+        <text x="590" y="203" class="aws-small">:5432</text>
+
+        <rect x="30" y="140" width="150" height="70" class="aws-box"></rect>
+        <text x="105" y="164" text-anchor="middle" class="aws-text">Task execution</text>
+        <text x="105" y="180" text-anchor="middle" class="aws-text">role</text>
+        <text x="105" y="198" text-anchor="middle" class="aws-small">pull imagem, logs</text>
+
+        <rect x="30" y="230" width="150" height="70" class="aws-box"></rect>
+        <text x="105" y="254" text-anchor="middle" class="aws-text">Task role</text>
+        <text x="105" y="272" text-anchor="middle" class="aws-small">permissões de</text>
+        <text x="105" y="288" text-anchor="middle" class="aws-small">negócio do app</text>
+      </svg>
+      <p class="diagram-note">A Private Subnet do Módulo 0 ganha o ALB interno e a task ECS; a Isolated Subnet ganha o RDS. As security groups (<code>AlbSg</code> → <code>AppSg</code> na porta 8080, <code>AppSg</code> → <code>DbSg</code> na porta 5432) são o que efetivamente restringe quem fala com quem — não a topologia de subnet por si só.</p>
+
+      <p>Crie um app Spring Boot 4.1 simples em <code>spring-api</code>.</p>
+
+      <h3><code>spring-api/pom.xml</code></h3>
+      <pre><code>&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;parent&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;
+    &lt;version&gt;4.1.0&lt;/version&gt;
+  &lt;/parent&gt;
+
+  &lt;groupId&gt;com.example&lt;/groupId&gt;
+  &lt;artifactId&gt;spring-api&lt;/artifactId&gt;
+  &lt;version&gt;0.0.1&lt;/version&gt;
+
+  &lt;properties&gt;
+    &lt;java.version&gt;21&lt;/java.version&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-actuator&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+      &lt;artifactId&gt;spring-boot-starter-data-jpa&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.postgresql&lt;/groupId&gt;
+      &lt;artifactId&gt;postgresql&lt;/artifactId&gt;
+      &lt;scope&gt;runtime&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.flywaydb&lt;/groupId&gt;
+      &lt;artifactId&gt;flyway-core&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.flywaydb&lt;/groupId&gt;
+      &lt;artifactId&gt;flyway-database-postgresql&lt;/artifactId&gt;
+      &lt;scope&gt;runtime&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-maven-plugin&lt;/artifactId&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+&lt;/project&gt;</code></pre>
+
+      <h3><code>spring-api/src/main/java/com/example/SpringApiApplication.java</code></h3>
+      <pre><code>package com.example;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class SpringApiApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SpringApiApplication.class, args);
+    }
+}</code></pre>
+
+      <h3><code>spring-api/src/main/resources/application.yml</code></h3>
+      <pre><code>server:
+  port: 8080
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info</code></pre>
+      <p class="muted">Só <code>health</code> e <code>info</code> ficam expostos aqui: são o que o health check do ALB (Módulo 1) e um diagnóstico rápido precisam. Métricas de verdade não passam pelo Actuator/Micrometer neste workshop — quem exporta métricas é o OpenTelemetry Java Agent, direto para o Honeycomb via OTLP (Módulo 4).</p>
+
+      <p class="ok">O schema não é mais gerado pelo Hibernate: <code>ddl-auto: validate</code> só confere se as entidades batem com as tabelas que já existem — quem cria e evolui essas tabelas é o Flyway, rodando as migrations abaixo no startup, antes do Hibernate validar qualquer coisa.</p>
+
+      <h3><code>spring-api/src/main/resources/db/migration/V1__create_orders_table.sql</code></h3>
+      <p>Convenção de nome do Flyway: <code>V&lt;versão&gt;__&lt;descrição&gt;.sql</code>. O schema aqui espelha exatamente os campos de <code>OrderEntity</code>, já em <code>snake_case</code> — a mesma conversão de nomes que o Módulo 3 explica ao falar do formato que chega no Kinesis via CDC.</p>
+      <pre><code>CREATE TABLE orders (
+    id UUID PRIMARY KEY,
+    customer_id VARCHAR(255) NOT NULL,
+    sku VARCHAR(255) NOT NULL,
+    quantity INTEGER NOT NULL,
+    amount NUMERIC(19, 2) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL
+);</code></pre>
+
+      <h3><code>spring-api/src/main/java/com/example/OrderEntity.java</code></h3>
+      <pre><code>package com.example;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "orders")
+public class OrderEntity {
+    @Id
+    public UUID id;
+    public String customerId;
+    public String sku;
+    public Integer quantity;
+    public BigDecimal amount;
+    public String status;
+    public Instant createdAt;
+
+    protected OrderEntity() {
+    }
+
+    public OrderEntity(String customerId, String sku, Integer quantity, BigDecimal amount) {
+        this.id = UUID.randomUUID();
+        this.customerId = customerId;
+        this.sku = sku;
+        this.quantity = quantity;
+        this.amount = amount;
+        this.status = "CREATED";
+        this.createdAt = Instant.now();
+    }
+}</code></pre>
+
+      <h3><code>spring-api/src/main/java/com/example/OrderRepository.java</code></h3>
+      <pre><code>package com.example;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.UUID;
+
+public interface OrderRepository extends JpaRepository&lt;OrderEntity, UUID&gt; {
+}</code></pre>
+
+      <h3><code>spring-api/src/main/java/com/example/OrderController.java</code></h3>
+      <pre><code>package com.example;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+public class OrderController {
+    private final OrderRepository repository;
+
+    public OrderController(OrderRepository repository) {
+        this.repository = repository;
+    }
+
+    @GetMapping("/")
+    public Map&lt;String, String&gt; hello() {
+        return Map.of("message", "ecommerce API is running");
+    }
+
+    @GetMapping("/health")
+    public Map&lt;String, String&gt; health() {
+        return Map.of("status", "ok");
+    }
+
+    @PostMapping("/orders")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CreateOrderResponse createOrder(@RequestBody CreateOrderRequest request) {
+        OrderEntity saved = repository.save(new OrderEntity(
+                request.customerId(),
+                request.sku(),
+                request.quantity(),
+                request.amount()
+        ));
+        return new CreateOrderResponse(saved.id, saved.status);
+    }
+
+    public record CreateOrderRequest(String customerId, String sku, Integer quantity, BigDecimal amount) {}
+    public record CreateOrderResponse(UUID orderId, String status) {}
+}</code></pre>
+
+      <h3><code>spring-api/Dockerfile</code></h3>
+      <pre><code>FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY target/spring-api-0.0.1.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]</code></pre>
+
+      <h3>Build local</h3>
+      <pre><code>cd spring-api
+mvn -q package
+cd ..</code></pre>
+
+      <div class="interview">
+        <h3>Perguntas de entrevista — Módulo 1</h3>
+        <ul>
+          <li><strong>Fargate vs launch type EC2 — quando escolher cada um?</strong> Fargate quando você quer não gerenciar hosts e a carga é razoavelmente previsível; EC2 quando precisa de controle de host (GPU, kernel tuning, storage local) ou quer otimizar custo via bin packing em alta utilização.</li>
+          <li><strong>Qual a diferença entre task execution role e task role?</strong> A execution role é usada pelo próprio ECS antes do seu código rodar (pull de imagem, secrets, logs). A task role é usada pelo seu código em runtime para chamar outros serviços AWS.</li>
+          <li><strong>Como o ECS sabe que uma task está saudável?</strong> Via health check do target group do ALB (HTTP, ex. <code>GET /health</code>) e, opcionalmente, um container health check próprio na task definition; falhas consecutivas fazem o ECS substituir a task.</li>
+          <li><strong>Por que expor só <code>health</code>/<code>info</code> no Actuator, em vez de também <code>/actuator/prometheus</code>?</strong> Porque este workshop não faz scrape de Prometheus — quem exporta métricas é o OpenTelemetry Java Agent, via OTLP até o Honeycomb (Módulo 4). Adicionar Micrometer/Prometheus só faria sentido se algo realmente fizesse scrape desse endpoint (ex.: um Prometheus self-managed ou o Managed Service for Prometheus da AWS); sem um consumidor, é uma dependência e um endpoint sem uso real.</li>
+          <li><strong>Como você faria rolling deploy de uma nova versão sem downtime?</strong> ECS já faz rolling update por padrão (sobe tasks novas, espera health check passar, só então derruba as antigas); para mais segurança, ative o deployment circuit breaker (reverte automaticamente se as tasks novas falharem health check) e mantenha <code>minHealthyPercent</code>/<code>maxHealthyPercent</code> adequados.</li>
+          <li><strong>O que acontece se você definir <code>cpu</code>/<code>memoryLimitMiB</code> baixo demais na task?</strong> A JVM pode sofrer OOM kill (o container é morto pelo cgroup, não uma exceção Java tratável) ou throttling de CPU, aumentando latência sem erro explícito — por isso monitorar utilização real antes de reduzir agressivamente.</li>
+          <li><strong>Por que <code>desiredCount(2)</code> em vez de 1?</strong> Redundância entre AZs: com 2 tasks, o ECS tenta distribuí-las em AZs diferentes, então a perda de uma AZ não tira o serviço do ar — com 1 task você tem um SPOF de compute.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================== MÓDULO 2 ============================== -->
+    <section id="modulo2">
+      <h2>Módulo 2 — Lambda e Step Functions</h2>
+
+      <div class="concept">
+        <h3>Conceito: modelo de execução da Lambda e cold starts em Java</h3>
+        <p>Uma Lambda não fica sempre rodando: a AWS cria um <strong>ambiente de execução</strong> sob demanda, roda seu handler, e pode reutilizar esse ambiente para invocações seguintes (<em>warm start</em>) ou descartá-lo. A primeira invocação em um ambiente novo é um <strong>cold start</strong>: inicialização da JVM, carregamento de classes, inicialização do seu código estático (ex.: criar o <code>SfnClient</code>).</p>
+        <p>Java sofre mais com cold start do que runtimes interpretados como Node/Python, porque a JVM tem mais trabalho de inicialização. As mitigações mais comuns: <strong>provisioned concurrency</strong> (mantém ambientes já quentes) e <strong>SnapStart</strong> (restaura de um snapshot pós-inicialização — ver Módulo 4, "Próximos passos").</p>
+
+        <h3>Conceito: Step Functions — Standard vs Express, orquestração vs coreografia</h3>
+        <table>
+          <thead>
+            <tr><th>Critério</th><th>Standard Workflow</th><th>Express Workflow</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Duração máxima</td>
+              <td>Até 1 ano</td>
+              <td>Até 5 minutos</td>
+            </tr>
+            <tr>
+              <td>Semântica de execução</td>
+              <td>Exactly-once</td>
+              <td>At-least-once</td>
+            </tr>
+            <tr>
+              <td>Histórico de execução</td>
+              <td>Visível e auditável no console por execução</td>
+              <td>Só via CloudWatch Logs, não por execução individual</td>
+            </tr>
+            <tr>
+              <td>Custo/volume</td>
+              <td>Por transição de estado — melhor para workflows de negócio de baixo/médio volume</td>
+              <td>Por invocação e duração — melhor para altíssimo volume de eventos curtos</td>
+            </tr>
+            <tr>
+              <td>Fit para este workshop</td>
+              <td><strong>Sim</strong> — poucos pedidos por segundo, precisa de auditoria (reserva de estoque, pagamento), exactly-once importa para não cobrar duas vezes.</td>
+              <td>Melhor para pipelines de streaming de altíssima frequência sem necessidade de auditoria por execução.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>A outra distinção importante: <strong>orquestração</strong> (um componente central, aqui o Step Functions, decide e chama cada passo) vs. <strong>coreografia</strong> (cada serviço reage a eventos e decide sozinho o que fazer, tipicamente via SNS/SQS/EventBridge). Este workshop usa orquestração para o workflow de negócio — você quer um lugar único para ver o estado de um pedido — mas usa um estilo mais próximo de coreografia no lado do CDC (o Postgres não sabe que o DMS existe; o DMS não sabe quem consome o Kinesis).</p>
+
+        <h3>Conceito: Amazon States Language (ASL)</h3>
+        <p>Por baixo de qualquer state machine do Step Functions — inclusive as que você define em CDK — existe um documento JSON na <strong>Amazon States Language</strong>. O CDK não é uma linguagem paralela: <code>Chain</code>, <code>LambdaInvoke</code>, <code>addRetry</code> e <code>addCatch</code> são só uma forma de programar em Java o que vira, no <code>cdk synth</code>, um bloco ASL como este:</p>
+        <pre><code>{
+  "StartAt": "ReserveInventoryStep",
+  "States": {
+    "ReserveInventoryStep": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Next": "AuthorizePaymentStep"
+    },
+    "AuthorizePaymentStep": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "MaxAttempts": 2, "BackoffRate": 2.0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "Next": "OrderFailed" }],
+      "Next": "SendConfirmationStep"
+    },
+    "SendConfirmationStep": { "Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "End": true },
+    "OrderFailed": { "Type": "Fail", "Cause": "Order could not be fulfilled" }
+  }
+}</code></pre>
+        <p>Os tipos de estado que mais aparecem em entrevista: <code>Task</code> (executa um trabalho, ex. invocar uma Lambda), <code>Choice</code> (ramifica com base em uma condição no input), <code>Parallel</code> (executa ramos simultâneos), <code>Map</code> (aplica os mesmos passos a uma lista de itens) e <code>Wait</code> (pausa por tempo fixo ou até um timestamp). Este workshop usa só <code>Task</code>, <code>Retry</code>/<code>Catch</code> e <code>Fail</code> — o suficiente para o workflow de pedido, mas vale saber que <code>Choice</code>/<code>Parallel</code>/<code>Map</code> existem para workflows mais ramificados.</p>
+      </div>
+
+      <p class="module-badge">Diagrama — Módulo 2</p>
+      <svg class="aws-diagram" viewBox="0 0 900 300" role="img" aria-labelledby="m2-title m2-desc">
+        <title id="m2-title">Lambda roteadora e Step Functions</title>
+        <desc id="m2-desc">A Lambda OrderEventRouter inicia uma execução de Step Functions com três estados Task em sequência (reservar estoque, autorizar pagamento, confirmar), com retry na autorização de pagamento e um catch para um estado de falha.</desc>
+        <rect x="30" y="110" width="150" height="70" class="aws-orange" rx="8"></rect>
+        <text x="105" y="140" text-anchor="middle" class="aws-white">Lambda</text>
+        <text x="105" y="158" text-anchor="middle" class="aws-white">OrderEventRouter</text>
+
+        <rect x="240" y="40" width="620" height="220" class="aws-group"></rect>
+        <text x="260" y="65" class="aws-title">Step Functions — EcommerceWorkflow (Standard)</text>
+
+        <rect x="270" y="100" width="150" height="60" class="aws-red" rx="8"></rect>
+        <text x="345" y="125" text-anchor="middle" class="aws-white">Reserve</text>
+        <text x="345" y="143" text-anchor="middle" class="aws-white">Inventory</text>
+
+        <rect x="460" y="100" width="150" height="60" class="aws-red" rx="8"></rect>
+        <text x="535" y="125" text-anchor="middle" class="aws-white">Authorize</text>
+        <text x="535" y="143" text-anchor="middle" class="aws-white">Payment</text>
+
+        <rect x="650" y="100" width="150" height="60" class="aws-red" rx="8"></rect>
+        <text x="725" y="125" text-anchor="middle" class="aws-white">Send</text>
+        <text x="725" y="143" text-anchor="middle" class="aws-white">Confirmation</text>
+
+        <rect x="460" y="200" width="150" height="50" class="aws-box"></rect>
+        <text x="535" y="230" text-anchor="middle" class="aws-text">OrderFailed (Fail)</text>
+
+        <line x1="180" y1="145" x2="270" y2="130" class="aws-line"></line>
+        <text x="195" y="120" class="aws-small">StartExecution</text>
+        <line x1="420" y1="130" x2="460" y2="130" class="aws-line"></line>
+        <line x1="610" y1="130" x2="650" y2="130" class="aws-line"></line>
+        <path d="M535 160 C535 180, 535 190, 535 200" class="aws-async"></path>
+        <text x="545" y="185" class="aws-small">Catch (States.ALL)</text>
+        <path d="M600 100 C620 80, 560 70, 535 100" class="aws-async"></path>
+        <text x="600" y="80" class="aws-small">Retry (2x, backoff 2.0)</text>
+      </svg>
+      <p class="diagram-note">A Lambda roteadora (alimentada pelo Kinesis a partir do Módulo 3) chama <code>StartExecution</code>. Dentro da state machine, só a autorização de pagamento tem retry/catch configurados neste workshop — os outros dois passos propagam falha diretamente caso ocorra.</p>
+
+      <p>Para caber no tempo, as Lambdas usam Java puro. Você pode trocar por Spring Cloud Function depois. A Lambda principal consome Kinesis e inicia uma Step Function para cada pedido criado; os passos do workflow (reservar estoque, autorizar pagamento, confirmar) são Lambdas separadas invocadas pela própria Step Function.</p>
+
+      <h3><code>workflow-lambda/pom.xml</code></h3>
+      <pre><code>&lt;project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+  &lt;groupId&gt;com.example&lt;/groupId&gt;
+  &lt;artifactId&gt;workflow-lambda&lt;/artifactId&gt;
+  &lt;version&gt;0.0.1&lt;/version&gt;
+
+  &lt;properties&gt;
+    &lt;maven.compiler.release&gt;21&lt;/maven.compiler.release&gt;
+  &lt;/properties&gt;
+
+  &lt;dependencyManagement&gt;
+    &lt;dependencies&gt;
+      &lt;dependency&gt;
+        &lt;groupId&gt;software.amazon.awssdk&lt;/groupId&gt;
+        &lt;artifactId&gt;bom&lt;/artifactId&gt;
+        &lt;version&gt;2.31.78&lt;/version&gt;
+        &lt;type&gt;pom&lt;/type&gt;
+        &lt;scope&gt;import&lt;/scope&gt;
+      &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+  &lt;/dependencyManagement&gt;
+
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;com.amazonaws&lt;/groupId&gt;
+      &lt;artifactId&gt;aws-lambda-java-core&lt;/artifactId&gt;
+      &lt;version&gt;1.2.3&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;com.amazonaws&lt;/groupId&gt;
+      &lt;artifactId&gt;aws-lambda-java-events&lt;/artifactId&gt;
+      &lt;version&gt;3.14.0&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;software.amazon.awssdk&lt;/groupId&gt;
+      &lt;artifactId&gt;sfn&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;com.fasterxml.jackson.core&lt;/groupId&gt;
+      &lt;artifactId&gt;jackson-databind&lt;/artifactId&gt;
+      &lt;version&gt;2.19.0&lt;/version&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;
+
+  &lt;build&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-shade-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.6.0&lt;/version&gt;
+        &lt;executions&gt;
+          &lt;execution&gt;
+            &lt;phase&gt;package&lt;/phase&gt;
+            &lt;goals&gt;
+              &lt;goal&gt;shade&lt;/goal&gt;
+            &lt;/goals&gt;
+            &lt;configuration&gt;
+              &lt;finalName&gt;workflow-lambda&lt;/finalName&gt;
+            &lt;/configuration&gt;
+          &lt;/execution&gt;
+        &lt;/executions&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+&lt;/project&gt;</code></pre>
+
+      <h3><code>workflow-lambda/src/main/java/com/example/OrderEventRouterHandler.java</code></h3>
+      <p>Esta é a Lambda que consome o Kinesis (alimentado pelo DMS — ver Módulo 3) e inicia uma execução da Step Function para cada pedido criado.</p>
+      <pre><code>package com.example;
+
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.amazonaws.services.lambda.runtime.events.KinesisEvent;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import software.amazon.awssdk.services.sfn.SfnClient;
+import software.amazon.awssdk.services.sfn.model.StartExecutionRequest;
+
+import java.nio.charset.StandardCharsets;
+
+public class OrderEventRouterHandler implements RequestHandler&lt;KinesisEvent, Void&gt; {
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final SfnClient sfn = SfnClient.create();
+
+    @Override
+    public Void handleRequest(KinesisEvent event, Context context) {
+        for (KinesisEvent.KinesisEventRecord record : event.getRecords()) {
+            try {
+                String json = StandardCharsets.UTF_8.decode(record.getKinesis().getData()).toString();
+                JsonNode root = mapper.readTree(json);
+
+                String table = root.path("metadata").path("table-name").asText();
+                String operation = root.path("metadata").path("operation").asText();
+
+                if (!"orders".equals(table) || !"insert".equals(operation)) {
+                    continue;
+                }
+
+                JsonNode data = root.path("data");
+                sfn.startExecution(StartExecutionRequest.builder()
+                        .stateMachineArn(System.getenv("STATE_MACHINE_ARN"))
+                        .name("order-" + data.path("id").asText())
+                        .input(data.toString())
+                        .build());
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to route Kinesis CDC record", e);
+            }
+        }
+        return null;
+    }
+}</code></pre>
+
+      <h3>Um handler por passo do workflow</h3>
+      <p>Os três passos do workflow (reservar estoque, autorizar pagamento, confirmar) ganham cada um a sua própria classe de handler, em vez de um único handler genérico selecionado por variável de ambiente. É mais código repetido, mas cada Lambda no console, no CloudWatch Logs e no state machine aparece com um nome que já diz o que ela faz — sem precisar abrir a configuração para descobrir qual <code>ECOMMERCE_STEP</code> está configurado ali. Para três passos fixos, a clareza compensa a duplicação; se o número de passos crescesse muito, um handler parametrizado (ou Spring Cloud Function, citado em "Próximos passos") voltaria a fazer sentido.</p>
+
+      <h3><code>workflow-lambda/src/main/java/com/example/ReserveInventoryHandler.java</code></h3>
+      <pre><code>package com.example;
+
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+
+import java.util.Map;
+
+public class ReserveInventoryHandler implements RequestHandler&lt;Map&lt;String, Object&gt;, Map&lt;String, Object&gt;&gt; {
+    @Override
+    public Map&lt;String, Object&gt; handleRequest(Map&lt;String, Object&gt; input, Context context) {
+        context.getLogger().log("Reserving inventory for order: " + input);
+        return Map.of("reserved", true, "input", input);
+    }
+}</code></pre>
+
+      <h3><code>workflow-lambda/src/main/java/com/example/AuthorizePaymentHandler.java</code></h3>
+      <pre><code>package com.example;
+
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+
+import java.util.Map;
+
+public class AuthorizePaymentHandler implements RequestHandler&lt;Map&lt;String, Object&gt;, Map&lt;String, Object&gt;&gt; {
+    @Override
+    public Map&lt;String, Object&gt; handleRequest(Map&lt;String, Object&gt; input, Context context) {
+        context.getLogger().log("Authorizing payment for order: " + input);
+        return Map.of("authorized", true, "input", input);
+    }
+}</code></pre>
+
+      <h3><code>workflow-lambda/src/main/java/com/example/SendConfirmationHandler.java</code></h3>
+      <pre><code>package com.example;
+
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+
+import java.util.Map;
+
+public class SendConfirmationHandler implements RequestHandler&lt;Map&lt;String, Object&gt;, Map&lt;String, Object&gt;&gt; {
+    @Override
+    public Map&lt;String, Object&gt; handleRequest(Map&lt;String, Object&gt; input, Context context) {
+        context.getLogger().log("Sending confirmation for order: " + input);
+        return Map.of("confirmed", true, "input", input);
+    }
+}</code></pre>
+
+      <h3>Build</h3>
+      <pre><code>cd workflow-lambda
+mvn -q package
+cd ..</code></pre>
+
+      <h3>Definindo o state machine no CDK</h3>
+      <p>Este é o pedaço que faltava em versões anteriores deste material: o objeto <code>stateMachine</code> referenciado mais adiante (Módulo 3, para dar permissão à Lambda roteadora de iniciar execuções) precisa ser <em>definido</em> em algum lugar. Ele é definido aqui, porque conceitualmente é aqui que o workflow de Step Functions nasce.</p>
+      <pre><code>import software.amazon.awscdk.services.lambda.Function;
+import software.amazon.awscdk.services.lambda.Runtime;
+import software.amazon.awscdk.services.lambda.Code;
+import software.amazon.awscdk.services.stepfunctions.StateMachine;
+import software.amazon.awscdk.services.stepfunctions.StateMachineType;
+import software.amazon.awscdk.services.stepfunctions.DefinitionBody;
+import software.amazon.awscdk.services.stepfunctions.Fail;
+import software.amazon.awscdk.services.stepfunctions.IChainable;
+import software.amazon.awscdk.services.stepfunctions.RetryProps;
+import software.amazon.awscdk.services.stepfunctions.CatchProps;
+import software.amazon.awscdk.services.stepfunctions.tasks.LambdaInvoke;
+
+import java.util.List;
+
+// Um Lambda por passo do workflow, cada um com sua própria classe de handler
+// no mesmo jar — o nome da função e o handler já dizem o que ela faz.
+Function reserveInventory = Function.Builder.create(this, "ReserveInventoryFunction")
+        .runtime(Runtime.JAVA_21)
+        .handler("com.example.ReserveInventoryHandler::handleRequest")
+        .code(Code.fromAsset("../workflow-lambda/target/workflow-lambda.jar"))
+        .build();
+
+Function authorizePayment = Function.Builder.create(this, "AuthorizePaymentFunction")
+        .runtime(Runtime.JAVA_21)
+        .handler("com.example.AuthorizePaymentHandler::handleRequest")
+        .code(Code.fromAsset("../workflow-lambda/target/workflow-lambda.jar"))
+        .build();
+
+Function sendConfirmation = Function.Builder.create(this, "SendConfirmationFunction")
+        .runtime(Runtime.JAVA_21)
+        .handler("com.example.SendConfirmationHandler::handleRequest")
+        .code(Code.fromAsset("../workflow-lambda/target/workflow-lambda.jar"))
+        .build();
+
+LambdaInvoke reserveStep = LambdaInvoke.Builder.create(this, "ReserveInventoryStep")
+        .lambdaFunction(reserveInventory)
+        .outputPath("$.Payload")
+        .build();
+
+LambdaInvoke paymentStep = LambdaInvoke.Builder.create(this, "AuthorizePaymentStep")
+        .lambdaFunction(authorizePayment)
+        .outputPath("$.Payload")
+        .build();
+
+LambdaInvoke confirmationStep = LambdaInvoke.Builder.create(this, "SendConfirmationStep")
+        .lambdaFunction(sendConfirmation)
+        .outputPath("$.Payload")
+        .build();
+
+Fail orderFailed = Fail.Builder.create(this, "OrderFailed")
+        .cause("Order could not be fulfilled")
+        .build();
+
+// Se a autorização de pagamento falhar, o workflow vai para o estado de falha
+// em vez de tentar confirmar um pedido que não foi pago.
+paymentStep.addCatch(orderFailed, CatchProps.builder()
+        .errors(List.of("States.ALL"))
+        .build());
+
+// Falhas transitórias (ex.: throttling do provedor de pagamento) tentam de novo
+// antes de desistir.
+paymentStep.addRetry(RetryProps.builder()
+        .errors(List.of("States.TaskFailed"))
+        .maxAttempts(2)
+        .backoffRate(2.0)
+        .build());
+
+IChainable definition = reserveStep.next(paymentStep).next(confirmationStep);
+
+StateMachine stateMachine = StateMachine.Builder.create(this, "EcommerceWorkflow")
+        .definitionBody(DefinitionBody.fromChainable(definition))
+        .stateMachineType(StateMachineType.STANDARD)
+        .build();</code></pre>
+      <p class="muted">O CDK cuida de criar a role de execução do state machine com permissão <code>lambda:InvokeFunction</code> nas três Lambdas automaticamente, porque <code>LambdaInvoke</code> chama <code>grantInvoke</code> internamente ao ser adicionado à definição.</p>
+
+      <h3>Testando um estado isoladamente com a TestState API</h3>
+      <p>Antes de rodar a state machine inteira, dá para testar a definição ASL de <strong>um único estado</strong> — sem publicar nem atualizar o state machine — com a <strong>TestState API</strong> do Step Functions (<code>aws stepfunctions test-state</code> na CLI). Para um estado <code>Task</code> como os deste workshop, ela de fato invoca a Lambda de verdade; o que ela evita é ter que dar deploy na state machine inteira só para descobrir se o <code>ResultSelector</code> ou o <code>Parameters</code> de um passo estão certos.</p>
+      <pre><code>aws stepfunctions test-state \
+  --definition '{
+    "Type": "Task",
+    "Resource": "arn:aws:states:::lambda:invoke",
+    "Parameters": {
+      "FunctionName": "arn:aws:lambda:us-east-1:123456789012:function:AuthorizePaymentFunction",
+      "Payload.$": "$"
+    },
+    "ResultSelector": {
+      "authorized.$": "$.Payload.authorized"
+    }
+  }' \
+  --input '{"orderId": "abc-123", "amount": 39.90}' \
+  --role-arn arn:aws:iam::123456789012:role/EcommerceWorkflowRole \
+  --inspection-level TRACE</code></pre>
+      <p><code>--inspection-level</code> controla o quanto de detalhe volta na resposta: <code>INFO</code> só o resultado final; <code>DEBUG</code> acrescenta input/output brutos; <code>TRACE</code> mostra cada estágio do processamento de dados (após <code>InputPath</code>, após <code>Parameters</code>, resultado bruto da Lambda, após <code>ResultSelector</code>, após <code>OutputPath</code>) — o nível mais útil quando um campo não chega onde deveria e você não sabe em qual dessas etapas ele se perdeu.</p>
+      <p class="warn">A role em <code>--role-arn</code> precisa de <code>states:TestState</code> e, para um Task Lambda, também <code>lambda:InvokeFunction</code> na função-alvo. E vale repetir: isso testa <em>um estado</em> com uma invocação real — não é um mock. Para verificar o workflow completo já publicado, ponta a ponta, o Módulo 4 usa <code>aws stepfunctions describe-execution</code>; os dois se complementam, um para depurar durante o desenvolvimento, o outro para validar a execução real em produção.</p>
+
+      <div class="interview">
+        <h3>Perguntas de entrevista — Módulo 2</h3>
+        <ul>
+          <li><strong>Por que Lambda aqui em vez de um consumidor de longa duração?</strong> O volume de eventos de CDC por pedido é baixo e o processamento é curto; Lambda com event source mapping escala automaticamente com o stream sem você gerenciar um processo sempre ligado.</li>
+          <li><strong>Standard ou Express Step Functions — qual e por quê?</strong> Standard, porque cada execução representa um pedido de negócio que precisa ser auditável individualmente e a semântica é exactly-once — importante para não autorizar pagamento duas vezes.</li>
+          <li><strong>Como você evita perder um pedido se um passo falhar?</strong> <code>addRetry</code> cobre falhas transitórias com backoff; <code>addCatch</code> direciona falhas persistentes para um estado de compensação/falha explícito (aqui, <code>Fail</code>) em vez de deixar a execução travada ou silenciosamente incompleta.</li>
+          <li><strong>Por que usar três handlers separados em vez de um handler genérico com variável de ambiente?</strong> Clareza operacional: cada função aparece no console, nos logs e na definição ASL já identificada pelo que faz, sem precisar abrir a configuração para ver qual <code>ECOMMERCE_STEP</code> está setado. O custo é mais classes repetidas — um trade-off razoável para três passos fixos, mas que não escalaria bem para dezenas de passos.</li>
+          <li><strong>Como você testaria a lógica de um único passo do workflow sem rodar a state machine inteira?</strong> Com a TestState API (<code>aws stepfunctions test-state</code>): passa a definição ASL de um estado e um input, e recebe o resultado real daquele estado isolado, incluindo, com <code>--inspection-level TRACE</code>, cada estágio de processamento de dados (InputPath, Parameters, resultado, ResultSelector, OutputPath).</li>
+          <li><strong>Como você reduziria o cold start desta Lambda em Java sem mudar de linguagem?</strong> Provisioned concurrency (mantém ambientes quentes, com custo constante) ou SnapStart (restaura de snapshot pós-init, só em versões publicadas — ver "Próximos passos"); também ajuda reduzir dependências no shaded jar e evitar inicialização pesada em código estático.</li>
+          <li><strong>O que muda no ASL se você quisesse rodar os três passos em paralelo em vez de em sequência?</strong> Trocar a cadeia <code>reserveStep.next(paymentStep).next(confirmationStep)</code> por um estado <code>Parallel</code> com um ramo por Lambda — mas aqui a sequência importa (não faz sentido confirmar antes de autorizar pagamento), então paralelo não se aplica a este workflow específico.</li>
+          <li><strong>Quantas execuções concorrentes o Step Functions Standard aguenta, e o que acontece se estourar?</strong> Existe uma cota de execuções em StartExecution por conta/região (soft limit, pode pedir aumento); ao estourar, novas chamadas de <code>StartExecution</code> falham com throttling — a Lambda roteadora precisaria de retry com backoff nesse caso.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================== MÓDULO 3 ============================== -->
+    <section id="modulo3">
+      <h2>Módulo 3 — CDC (DMS/Kinesis) e infraestrutura completa em CDK</h2>
+
+      <div class="concept">
+        <h3>Conceito: por que CDC em vez de publicar eventos direto do app</h3>
+        <ul>
+          <li>O commit do pedido e a publicação do evento não ficam em duas transações separadas no app (evita o problema clássico de "salvei no banco mas falhei ao publicar o evento", conhecido como dual-write).</li>
+          <li>Se a Lambda ou Step Functions ficarem fora do ar por alguns minutos, os dados continuam no banco e o stream pode recuperar assim que voltarem.</li>
+          <li>O Spring Web continua simples: recebe HTTP, valida e grava no Postgres. Nenhuma lógica de publicação de evento no código da aplicação.</li>
+        </ul>
+        <p>A alternativa mais comum a CDC é o <strong>padrão outbox</strong> (o app grava o evento em uma tabela outbox na mesma transação, e um processo separado publica a partir dela). CDC via DMS evita até essa tabela extra, lendo diretamente do write-ahead log do Postgres — o trade-off é depender da configuração de replication lógica do banco e de um componente AWS a mais (DMS) no caminho.</p>
+
+        <h3>Conceito: o que o DMS realmente faz</h3>
+        <p>DMS (Database Migration Service) não é só para migrações pontuais — em modo <strong>CDC contínuo</strong>, ele se conecta como um "replica" lógico do Postgres, lê o stream de mudanças do write-ahead log, e publica cada mudança (insert/update/delete) no destino configurado — aqui, um Kinesis Data Stream, em JSON.</p>
+
+        <h3>Conceito: Kinesis como buffer durável</h3>
+        <p>Entre o DMS e a Lambda, o Kinesis existe para desacoplar produtor e consumidor: se a Lambda estiver lenta ou fora do ar, os registros continuam retidos no stream (por padrão, 24h) até serem consumidos, em vez de serem perdidos ou de bloquear o DMS.</p>
+
+        <h3>Conceito: CDK L1 (<code>Cfn*</code>) vs L2 constructs</h3>
+        <p>O CDK tem "níveis" de abstração, e este módulo usa os dois de propósito:</p>
+        <ul>
+          <li><strong>L1 (<code>Cfn*</code>)</strong> — mapeamento quase 1:1 com um recurso CloudFormation, sem opinião nenhuma. É o que existe para <em>todo</em> recurso AWS, mesmo os mais novos ou de nicho. Usado abaixo para DMS (<code>CfnReplicationInstance</code>, <code>CfnEndpoint</code>, <code>CfnReplicationTask</code>) porque o CDK ainda não tem um construct L2 maduro para DMS.</li>
+          <li><strong>L2</strong> — uma classe com opinião, que já embute boas práticas e expõe métodos convenientes. É o que este workshop usa para ECS (<code>ApplicationLoadBalancedFargateService</code> já cria ALB, target group e task definition) e para permissões (<code>orderChanges.grantRead(eventRouter)</code>).</li>
+        </ul>
+        <p>O que um <code>.grantRead()</code>/<code>.grantWrite()</code> realmente faz: gera uma <code>iam:PolicyStatement</code> concreta (com as actions certas, ex. <code>kinesis:GetRecords</code>) e anexa à role do recurso que recebe a permissão. Não é mágica nem uma abstração nova de segurança — é geração de IAM policy, só que você não escreve o JSON à mão. Isso é útil de saber em entrevista: se perguntarem "o que o CDK gera por trás de um grant", a resposta é "uma policy IAM normal, anexada à role certa".</p>
+      </div>
+
+      <p class="module-badge">Diagrama — Módulo 3</p>
+      <svg class="aws-diagram" viewBox="0 0 1180 460" role="img" aria-labelledby="m3-title m3-desc">
+        <title id="m3-title">Pipeline de CDC completo e infraestrutura ligada em CDK</title>
+        <desc id="m3-desc">RDS PostgreSQL é lido pelo DMS via CDC e publicado no Kinesis; a Lambda roteadora consome o Kinesis e inicia o Step Functions. Em paralelo, o caminho síncrono liga API Gateway, VPC Link, ALB interno e ECS Fargate.</desc>
+        <rect x="20" y="20" width="1140" height="420" class="aws-group"></rect>
+        <text x="40" y="50" class="aws-title">Tudo ligado pelo InfraStack (CDK)</text>
+
+        <rect x="60" y="90" width="230" height="320" class="aws-group"></rect>
+        <text x="80" y="118" class="aws-title">Público / borda</text>
+        <rect x="90" y="150" width="170" height="60" class="aws-orange" rx="8"></rect>
+        <text x="175" y="184" text-anchor="middle" class="aws-white">API Gateway</text>
+
+        <rect x="330" y="90" width="430" height="320" class="aws-vpc"></rect>
+        <text x="350" y="118" class="aws-title">VPC</text>
+
+        <rect x="360" y="150" width="180" height="230" class="aws-subnet"></rect>
+        <text x="370" y="174" class="aws-text">Private Subnet</text>
+        <rect x="380" y="200" width="140" height="50" class="aws-blue" rx="8"></rect>
+        <text x="450" y="229" text-anchor="middle" class="aws-white">VPC Link + ALB</text>
+        <rect x="380" y="290" width="140" height="60" class="aws-green" rx="8"></rect>
+        <text x="450" y="315" text-anchor="middle" class="aws-white">ECS Fargate</text>
+        <text x="450" y="333" text-anchor="middle" class="aws-white">Spring Boot</text>
+
+        <rect x="570" y="150" width="170" height="230" class="aws-subnet"></rect>
+        <text x="580" y="174" class="aws-text">Isolated Subnet</text>
+        <rect x="590" y="200" width="130" height="55" class="aws-green" rx="8"></rect>
+        <text x="655" y="232" text-anchor="middle" class="aws-white">RDS PostgreSQL</text>
+        <rect x="590" y="295" width="130" height="55" class="aws-purple" rx="8"></rect>
+        <text x="655" y="327" text-anchor="middle" class="aws-white">DMS (CDC task)</text>
+
+        <rect x="810" y="90" width="330" height="320" class="aws-group"></rect>
+        <text x="830" y="118" class="aws-title">Processamento assíncrono</text>
+        <rect x="850" y="150" width="150" height="60" class="aws-purple" rx="8"></rect>
+        <text x="925" y="184" text-anchor="middle" class="aws-white">Kinesis</text>
+        <rect x="850" y="250" width="150" height="60" class="aws-orange" rx="8"></rect>
+        <text x="925" y="284" text-anchor="middle" class="aws-white">Lambda router</text>
+        <rect x="1030" y="200" width="90" height="60" class="aws-red" rx="8"></rect>
+        <text x="1075" y="228" text-anchor="middle" class="aws-white">Step</text>
+        <text x="1075" y="244" text-anchor="middle" class="aws-white">Functions</text>
+
+        <line x1="260" y1="180" x2="380" y2="225" class="aws-line"></line>
+        <line x1="450" y1="250" x2="450" y2="290" class="aws-line"></line>
+        <line x1="655" y1="255" x2="655" y2="295" class="aws-async"></line>
+        <path d="M720 320 C780 320, 800 195, 850 195" class="aws-async"></path>
+        <line x1="925" y1="210" x2="925" y2="250" class="aws-async"></line>
+        <path d="M1000 270 C1015 260, 1020 235, 1030 230" class="aws-async"></path>
+      </svg>
+      <p class="diagram-note">Linha sólida = caminho síncrono do pedido (API Gateway → VPC Link/ALB → ECS). Linha tracejada = caminho assíncrono do CDC (RDS → DMS → Kinesis → Lambda → Step Functions). Este é o diagrama mais denso do workshop porque é aqui que os módulos anteriores se conectam de fato em CDK.</p>
+
+      <h3>Recursos necessários para o CDC</h3>
+      <table>
+        <thead>
+          <tr><th>Recurso</th><th>Função</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>RDS PostgreSQL</td>
+            <td>Banco transacional do e-commerce.</td>
+          </tr>
+          <tr>
+            <td>Parameter group PostgreSQL</td>
+            <td>Habilita logical replication para CDC.</td>
+          </tr>
+          <tr>
+            <td>AWS DMS replication instance ou DMS Serverless</td>
+            <td>Lê mudanças do Postgres e publica no Kinesis.</td>
+          </tr>
+          <tr>
+            <td>DMS source endpoint</td>
+            <td>Conexão com o RDS PostgreSQL.</td>
+          </tr>
+          <tr>
+            <td>DMS target endpoint</td>
+            <td>Conexão com o Kinesis Data Stream.</td>
+          </tr>
+          <tr>
+            <td>Kinesis Data Stream</td>
+            <td>Stream de eventos de mudança de banco.</td>
+          </tr>
+          <tr>
+            <td>Lambda event source mapping</td>
+            <td>Conecta Kinesis à Lambda roteadora de eventos.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>PostgreSQL: habilitar logical replication</h3>
+      <p>Para RDS PostgreSQL, use um parameter group com logical replication. O parâmetro mais importante é:</p>
+      <pre><code>rds.logical_replication = 1</code></pre>
+      <p>Depois reinicie a instância se o parâmetro exigir reboot. Para updates com before image completa, avalie por tabela — e, já que o schema deste workshop é todo versionado pelo Flyway (Módulo 1), essa alteração também vira uma migration em vez de um comando manual solto:</p>
+      <h3><code>spring-api/src/main/resources/db/migration/V2__enable_full_replica_identity.sql</code></h3>
+      <pre><code>ALTER TABLE orders REPLICA IDENTITY FULL;</code></pre>
+      <p class="warn">Use <code>REPLICA IDENTITY FULL</code> com cuidado: ele aumenta volume de WAL. Para o workshop, você pode começar apenas com inserts de <code>orders</code> (que já funcionam sem <code>REPLICA IDENTITY FULL</code> — ele só importa para before-image completo em updates/deletes).</p>
+
+      <h3>DMS task mapping mínimo</h3>
+      <p>Inclua apenas a tabela <code>orders</code> no CDC para manter o workshop pequeno.</p>
+      <pre><code>{
+  "rules": [
+    {
+      "rule-type": "selection",
+      "rule-id": "1",
+      "rule-name": "include-orders",
+      "object-locator": {
+        "schema-name": "public",
+        "table-name": "orders"
+      },
+      "rule-action": "include"
+    }
+  ]
+}</code></pre>
+
+      <h3>Formato esperado no Kinesis</h3>
+      <p>O DMS publica JSON no Kinesis. O payload exato depende das opções do endpoint, mas conceitualmente a Lambda vai receber algo como:</p>
+      <pre><code>{
+  "metadata": {
+    "schema-name": "public",
+    "table-name": "orders",
+    "operation": "insert"
+  },
+  "data": {
+    "id": "7b50f1d8-3a08-4c14-89e7-97c1d215a6d6",
+    "customer_id": "customer-123",
+    "sku": "SKU-001",
+    "quantity": 2,
+    "amount": 39.90,
+    "status": "CREATED"
+  }
+}</code></pre>
+      <p class="muted">Note que os campos vêm em <code>snake_case</code> (<code>customer_id</code>), enquanto <code>OrderEntity</code> usa <code>camelCase</code> (<code>customerId</code>) — isso é esperado: a estratégia de nomenclatura física padrão do Hibernate/Spring Data JPA converte nomes de coluna de camelCase para snake_case automaticamente.</p>
+
+      <h3>Criando o app CDK</h3>
+      <pre><code>mkdir infra
+cd infra
+cdk init app --language java</code></pre>
+
+      <h3>Dependências principais no <code>infra/pom.xml</code></h3>
+      <p>Garanta que o projeto tenha <code>aws-cdk-lib</code> e <code>constructs</code>.</p>
+
+      <h3><code>infra/src/main/java/com/myorg/InfraApp.java</code></h3>
+      <p>Como o stack faz lookup da hosted zone no Route 53 (ver Módulo 0), defina conta e região explicitamente.</p>
+      <pre><code>package com.myorg;
+
+import software.amazon.awscdk.App;
+import software.amazon.awscdk.Environment;
+import software.amazon.awscdk.StackProps;
+
+public class InfraApp {
+    public static void main(final String[] args) {
+        App app = new App();
+
+        new InfraStack(app, "InfraStack", StackProps.builder()
+                .env(Environment.builder()
+                        .account(System.getenv("CDK_DEFAULT_ACCOUNT"))
+                        .region(System.getenv("CDK_DEFAULT_REGION"))
+                        .build())
+                .build());
+
+        app.synth();
+    }
+}</code></pre>
+
+      <h3><code>infra/src/main/java/com/myorg/InfraStack.java</code></h3>
+      <p>Troque <code>example.com</code> pelo seu domínio. Para a arquitetura completa, o domínio público é <code>shop.example.com</code> no API Gateway. O ALB fica interno na VPC (Módulo 0) e não recebe DNS público.</p>
+      <p class="warn">O CDK de DMS usa muitos L1 constructs, como <code>CfnReplicationInstance</code>, <code>CfnEndpoint</code> e <code>CfnReplicationTask</code>. Em um projeto real, coloque isso em um construct próprio, por exemplo <code>PostgresCdcToKinesis</code>.</p>
+
+      <h3>Blocos principais da infraestrutura</h3>
+      <p>O stack precisa criar estes recursos, nesta ordem lógica:</p>
+      <ol>
+        <li>VPC com subnets públicas, privadas e isoladas (Módulo 0).</li>
+        <li>RDS PostgreSQL em subnets isoladas ou privadas.</li>
+        <li>ECS Fargate em subnets privadas (Módulo 1).</li>
+        <li>ALB interno apontando para o ECS.</li>
+        <li>API Gateway HTTP API com VPC Link para o ALB interno.</li>
+        <li>Kinesis Data Stream.</li>
+        <li>DMS Postgres source endpoint e Kinesis target endpoint.</li>
+        <li>DMS CDC replication task.</li>
+        <li>Lambda consumindo Kinesis e iniciando Step Functions (Módulo 2).</li>
+        <li>Step Functions chamando as Lambdas de e-commerce (Módulo 2).</li>
+      </ol>
+
+      <h3>VPC, security groups e RDS</h3>
+      <pre><code>// VPC
+Vpc vpc = Vpc.Builder.create(this, "Vpc")
+        .maxAzs(2)
+        .natGateways(1)
+        .build();
+
+SecurityGroup albSg = SecurityGroup.Builder.create(this, "AlbSg")
+        .vpc(vpc)
+        .allowAllOutbound(true)
+        .build();
+
+SecurityGroup appSg = SecurityGroup.Builder.create(this, "AppSg")
+        .vpc(vpc)
+        .allowAllOutbound(true)
+        .build();
+
+SecurityGroup dbSg = SecurityGroup.Builder.create(this, "DbSg")
+        .vpc(vpc)
+        .allowAllOutbound(true)
+        .build();
+
+appSg.addIngressRule(albSg, Port.tcp(8080), "ALB interno chama Spring Boot");
+dbSg.addIngressRule(appSg, Port.tcp(5432), "Spring Boot acessa Postgres");
+
+// RDS PostgreSQL
+DatabaseInstance db = DatabaseInstance.Builder.create(this, "OrdersDb")
+        .engine(DatabaseInstanceEngine.postgres(PostgresInstanceEngineProps.builder()
+                .version(PostgresEngineVersion.VER_16)
+                .build()))
+        .vpc(vpc)
+        .securityGroups(List.of(dbSg))
+        .credentials(Credentials.fromGeneratedSecret("postgres"))
+        .databaseName("ecommerce")
+        .allocatedStorage(20)
+        .build();
+
+// ECS/Fargate injeta credenciais do banco no container.
+// Em produção, prefira Secrets Manager/SSM e não variáveis com segredo em claro (ver Módulo 4).
+Map&lt;String, String&gt; appEnv = Map.of(
+        "DB_URL", "jdbc:postgresql://" + db.getDbInstanceEndpointAddress() + ":5432/ecommerce",
+        "DB_USERNAME", "postgres"
+);</code></pre>
+
+      <h3>ECS Fargate atrás de um ALB interno</h3>
+      <pre><code>ApplicationLoadBalancedFargateService service =
+        ApplicationLoadBalancedFargateService.Builder.create(this, "SpringBootService")
+                .cluster(cluster)
+                .publicLoadBalancer(false)
+                .desiredCount(2)
+                .cpu(512)
+                .memoryLimitMiB(1024)
+                .taskImageOptions(ApplicationLoadBalancedTaskImageOptions.builder()
+                        .image(ContainerImage.fromAsset("../spring-api"))
+                        .containerPort(8080)
+                        .environment(appEnv)
+                        .build())
+                .build();</code></pre>
+
+      <h3>API Gateway → VPC Link → ALB interno</h3>
+      <p>O ponto conceitual é este: o ALB não é público. O API Gateway entra na VPC via VPC Link (Módulo 0) e encaminha para o listener do ALB. Este é código real, usando os módulos <code>aws-apigatewayv2</code> e <code>aws-apigatewayv2-integrations</code> — os nomes exatos de classes podem variar levemente entre versões do <code>aws-cdk-lib</code>, então confira a versão que você está usando.</p>
+      <pre><code>import software.amazon.awscdk.services.apigatewayv2.HttpApi;
+import software.amazon.awscdk.services.apigatewayv2.VpcLink;
+import software.amazon.awscdk.services.apigatewayv2.HttpMethod;
+import software.amazon.awscdk.services.apigatewayv2.AddRoutesOptions;
+import software.amazon.awscdk.services.apigatewayv2.integrations.HttpAlbIntegration;
+import software.amazon.awscdk.services.apigatewayv2.integrations.HttpAlbIntegrationProps;
+
+import java.util.List;
+
+VpcLink vpcLink = VpcLink.Builder.create(this, "ApiVpcLink")
+        .vpc(vpc)
+        .build();
+
+HttpAlbIntegration albIntegration = new HttpAlbIntegration(
+        "SpringApiIntegration",
+        service.getListener(),
+        HttpAlbIntegrationProps.builder()
+                .vpcLink(vpcLink)
+                .build());
+
+HttpApi httpApi = HttpApi.Builder.create(this, "SpringApiGateway")
+        .build();
+
+httpApi.addRoutes(AddRoutesOptions.builder()
+        .path("/{proxy+}")
+        .methods(List.of(HttpMethod.ANY))
+        .integration(albIntegration)
+        .build());
+
+// Domínio customizado (shop.example.com) e certificado ACM: ver Módulo 4.</code></pre>
+
+      <h3>Kinesis e Lambda roteadora</h3>
+      <p>O <code>stateMachine</code> usado abaixo foi definido no Módulo 2.</p>
+      <pre><code>Stream orderChanges = Stream.Builder.create(this, "OrderChangesStream")
+        .streamName("order-changes")
+        .build();
+
+Function eventRouter = Function.Builder.create(this, "OrderEventRouter")
+        .runtime(Runtime.JAVA_21)
+        .handler("com.example.OrderEventRouterHandler::handleRequest")
+        .code(Code.fromAsset("../workflow-lambda/target/workflow-lambda.jar"))
+        .environment(Map.of("STATE_MACHINE_ARN", stateMachine.getStateMachineArn()))
+        .build();
+
+orderChanges.grantRead(eventRouter);
+stateMachine.grantStartExecution(eventRouter);
+
+eventRouter.addEventSource(KinesisEventSource.Builder.create(orderChanges)
+        .batchSize(100)
+        .startingPosition(StartingPosition.LATEST)
+        .build());</code></pre>
+
+      <h3>DMS no CDK: código real</h3>
+      <p>Diferente de uma descrição em comentários, este é o esqueleto real dos L1 constructs de DMS: subnet group, replication instance, os dois endpoints (source e target) e a replication task.</p>
+      <pre><code>import software.amazon.awscdk.services.dms.CfnReplicationSubnetGroup;
+import software.amazon.awscdk.services.dms.CfnReplicationInstance;
+import software.amazon.awscdk.services.dms.CfnEndpoint;
+import software.amazon.awscdk.services.dms.CfnReplicationTask;
+import software.amazon.awscdk.services.iam.Role;
+import software.amazon.awscdk.services.iam.ServicePrincipal;
+import software.amazon.awscdk.services.ec2.ISubnet;
+
+import java.util.stream.Collectors;
+
+// Role assumida pelo DMS para poder escrever no Kinesis target.
+Role dmsRole = Role.Builder.create(this, "DmsKinesisRole")
+        .assumedBy(new ServicePrincipal("dms.amazonaws.com"))
+        .build();
+orderChanges.grantWrite(dmsRole);
+
+SecurityGroup dmsSg = SecurityGroup.Builder.create(this, "DmsSg")
+        .vpc(vpc)
+        .allowAllOutbound(true)
+        .build();
+dbSg.addIngressRule(dmsSg, Port.tcp(5432), "DMS lê o Postgres via CDC");
+
+CfnReplicationSubnetGroup subnetGroup = CfnReplicationSubnetGroup.Builder.create(this, "DmsSubnetGroup")
+        .replicationSubnetGroupDescription("Subnets para a replication instance do DMS")
+        .subnetIds(vpc.getIsolatedSubnets().stream()
+                .map(ISubnet::getSubnetId)
+                .collect(Collectors.toList()))
+        .build();
+
+CfnReplicationInstance replicationInstance = CfnReplicationInstance.Builder.create(this, "DmsReplicationInstance")
+        .replicationInstanceClass("dms.t3.micro")
+        .replicationSubnetGroupIdentifier(subnetGroup.getRef())
+        .vpcSecurityGroupIds(List.of(dmsSg.getSecurityGroupId()))
+        .publiclyAccessible(false)
+        .build();
+
+CfnEndpoint sourceEndpoint = CfnEndpoint.Builder.create(this, "PostgresSourceEndpoint")
+        .endpointType("source")
+        .engineName("postgres")
+        .serverName(db.getDbInstanceEndpointAddress())
+        .port(5432)
+        .databaseName("ecommerce")
+        .username("postgres")
+        .password(db.getSecret().secretValueFromJson("password").unsafeUnwrap())
+        .build();
+
+CfnEndpoint targetEndpoint = CfnEndpoint.Builder.create(this, "KinesisTargetEndpoint")
+        .endpointType("target")
+        .engineName("kinesis")
+        .kinesisSettings(CfnEndpoint.KinesisSettingsProperty.builder()
+                .streamArn(orderChanges.getStreamArn())
+                .serviceAccessRoleArn(dmsRole.getRoleArn())
+                .build())
+        .build();
+
+CfnReplicationTask replicationTask = CfnReplicationTask.Builder.create(this, "OrdersCdcTask")
+        .replicationInstanceArn(replicationInstance.getRef())
+        .sourceEndpointArn(sourceEndpoint.getRef())
+        .targetEndpointArn(targetEndpoint.getRef())
+        .migrationType("cdc")
+        .tableMappings("{\"rules\":[{\"rule-type\":\"selection\",\"rule-id\":\"1\","
+                + "\"rule-name\":\"include-orders\",\"object-locator\":{\"schema-name\":\"public\","
+                + "\"table-name\":\"orders\"},\"rule-action\":\"include\"}]}")
+        .build();</code></pre>
+      <p class="warn"><code>unsafeUnwrap()</code> materializa o segredo em texto durante o synth do CDK — aceitável para um workshop de laboratório, mas evite em qualquer stack que vá para um repositório compartilhado ou pipeline real; prefira resolver a senha em runtime via Secrets Manager sempre que o serviço de destino suportar (DMS endpoints, no momento em que este material foi escrito, aceitam autenticação via Secrets Manager como alternativa).</p>
+      <p>Como essa parte é a mais sensível e a que mais demora para provisionar (a replication instance sozinha pode levar vários minutos para ficar disponível), vale validar primeiro manualmente no console do DMS em um ambiente de laboratório antes de confiar cegamente no CDK synth.</p>
+
+      <div class="card">
+        <h3>Fundamentos de IAM neste stack</h3>
+        <table>
+          <thead>
+            <tr><th>Ator</th><th>Role</th><th>Permissões</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ECS</td>
+              <td>Task execution role</td>
+              <td>Puxar imagem, escrever logs e preparar a task (ver Módulo 1).</td>
+            </tr>
+            <tr>
+              <td>Container Spring Boot</td>
+              <td>Task role</td>
+              <td>Permissões de negócio do app. O acesso ao Postgres acontece por rede e credenciais do Secrets Manager, não por IAM direto.</td>
+            </tr>
+            <tr>
+              <td>DMS</td>
+              <td>Service role / endpoint role (<code>dmsRole</code> acima)</td>
+              <td>Permissão para ler o endpoint source e publicar no Kinesis target via <code>orderChanges.grantWrite(dmsRole)</code>.</td>
+            </tr>
+            <tr>
+              <td>OrderEventRouter Lambda</td>
+              <td>Lambda execution role</td>
+              <td><code>kinesis:GetRecords</code>, <code>kinesis:GetShardIterator</code> e <code>states:StartExecution</code>. No CDK: <code>orderChanges.grantRead(eventRouter)</code> e <code>stateMachine.grantStartExecution(eventRouter)</code>.</td>
+            </tr>
+            <tr>
+              <td>Step Functions</td>
+              <td>State machine role</td>
+              <td><code>lambda:InvokeFunction</code> nas Lambdas de reserva de estoque, pagamento e confirmação — concedida automaticamente pelo <code>LambdaInvoke</code> (ver Módulo 2).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="interview">
+        <h3>Perguntas de entrevista — Módulo 3</h3>
+        <ul>
+          <li><strong>Por que CDC em vez de publicar o evento direto do código da aplicação?</strong> Evita dual-write (banco e evento em transações separadas que podem divergir), mantém o Spring Web simples, e sobrevive a indisponibilidade temporária dos consumidores porque o dado já está durável no banco.</li>
+          <li><strong>O que a replicação lógica do Postgres exige?</strong> O parâmetro <code>rds.logical_replication = 1</code> no parameter group (com reboot), e opcionalmente <code>REPLICA IDENTITY FULL</code> por tabela se você precisar do before-image completo em updates/deletes.</li>
+          <li><strong>Por que colocar um ALB interno atrás do API Gateway em vez de expor o ALB direto?</strong> Mantém um único ponto de entrada público controlado (API Gateway: TLS, throttling, auth, WAF), enquanto o ALB e o ECS ficam inatingíveis de fora da VPC — reduz superfície de ataque.</li>
+          <li><strong>O que muda entre Standard e Serverless para a replication instance do DMS?</strong> Standard exige provisionar e dimensionar uma instância (<code>dms.t3.micro</code> etc.) que você paga mesmo ociosa; Serverless escala automaticamente com a carga de CDC, à custa de menos controle fino sobre a capacidade.</li>
+          <li><strong>Por que a seção de DMS usa L1 constructs (<code>CfnReplicationInstance</code>) em vez de uma classe de alto nível como a do ECS?</strong> Porque o CDK ainda não tem um construct L2 maduro para DMS — L1 é o "piso": mapeia quase 1:1 com o recurso CloudFormation, existe para praticamente tudo, mas exige que você monte manualmente o que um L2 faria por você (subnet group, roles, etc.).</li>
+          <li><strong>O que exatamente um <code>.grantWrite(dmsRole)</code> faz por baixo dos panos?</strong> Gera uma <code>iam:PolicyStatement</code> com as actions necessárias (ex.: <code>kinesis:PutRecord</code>, <code>kinesis:PutRecords</code>) escopada ao ARN daquele stream específico, e anexa essa policy à role passada como argumento — não é uma abstração de segurança nova, é geração de IAM policy.</li>
+          <li><strong>Se o DMS parar de conseguir escrever no Kinesis, onde você olharia primeiro?</strong> Métricas da replication task no console do DMS (erros, latência de CDC), depois a IAM role do DMS (a policy gerada pelo <code>grantWrite</code> ainda está correta? o stream ainda existe com o mesmo ARN?), e por fim se o Kinesis está sendo throttled por excesso de writes.</li>
+          <li><strong>Por que rodar o ECS em <code>desiredCount(2)</code> mas a replication instance do DMS como uma instância só?</strong> DMS CDC contínuo não tem um modelo nativo de multi-instância ativa-ativa como o ECS; alta disponibilidade em DMS normalmente vem de uma instância multi-AZ (standby), não de várias instâncias processando o mesmo CDC em paralelo — replicar o mesmo CDC duas vezes duplicaria eventos.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================== MÓDULO 4 ============================== -->
+    <section id="modulo4">
+      <h2>Módulo 4 — DNS/ACM, deploy, CI/CD e observabilidade</h2>
+
+      <div class="concept">
+        <h3>Conceito: validação ACM e a regra da região</h3>
+        <p>Um certificado ACM só é utilizável pelo serviço AWS que está na <strong>mesma região</strong> do certificado — com uma exceção conhecida: CloudFront e API Gateway <em>edge-optimized</em> exigem o certificado em <code>us-east-1</code>, não importa em qual região o resto do stack vive. Como este workshop usa API Gateway <strong>regional</strong>, o certificado fica na mesma região do stack.</p>
+        <p>A validação em si é feita criando um registro <strong>CNAME</strong> temporário na hosted zone (Módulo 0) provando que você controla o domínio. Se a hosted zone já é gerenciada pelo próprio CDK/conta, a validação é automática porque o CDK cria esse CNAME sozinho.</p>
+
+        <h3>Conceito: por que OIDC em vez de access keys no CI</h3>
+        <p>Uma access key IAM tradicional é uma credencial de longa duração armazenada como secret do CI — se vazar, é válida até ser revogada manualmente. <strong>OIDC</strong> (OpenID Connect) permite que o GitHub Actions <em>assuma uma role temporária</em> na AWS sem nenhum secret armazenado: a AWS confia em tokens assinados pelo GitHub para aquele repositório/branch específico, e a credencial resultante expira em minutos.</p>
+        <p>Na prática, isso é uma <strong>trust policy</strong> na role IAM, com uma condição sobre a claim <code>sub</code> do token OIDC — algo como:</p>
+        <pre><code>{
+  "Effect": "Allow",
+  "Principal": { "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com" },
+  "Action": "sts:AssumeRoleWithWebIdentity",
+  "Condition": {
+    "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+    "StringLike": { "token.actions.githubusercontent.com:sub": "repo:minha-org/meu-repo:ref:refs/heads/main" }
+  }
+}</code></pre>
+        <p>É essa condição em <code>sub</code> que impede que um workflow de outro repositório, ou até de uma branch diferente do mesmo repositório, consiga assumir a mesma role — sem isso, qualquer repositório que confiasse no mesmo provedor OIDC da conta poderia pedir a credencial.</p>
+
+        <h3>Conceito: o papel do OpenTelemetry</h3>
+        <p>OpenTelemetry (OTel) é uma camada de instrumentação <strong>neutra de fornecedor</strong> para traces, métricas e logs. A ideia é instrumentar uma vez (Java Agent no ECS, ADOT no Lambda) e depois escolher/trocar backends (Honeycomb, Splunk, CloudWatch) sem reinstrumentar o código.</p>
+      </div>
+
+      <p class="module-badge">Diagrama — Módulo 4a: DNS/ACM e CI/CD</p>
+      <svg class="aws-diagram" viewBox="0 0 900 260" role="img" aria-labelledby="m4a-title m4a-desc">
+        <title id="m4a-title">DNS/certificado e pipeline de CI/CD</title>
+        <desc id="m4a-desc">Route 53 e ACM entregam o domínio público até o API Gateway; em paralelo, o GitHub Actions assume uma role temporária via OIDC para rodar cdk deploy, que atualiza o stack CloudFormation.</desc>
+        <rect x="30" y="30" width="150" height="60" class="aws-orange" rx="8"></rect>
+        <text x="105" y="56" text-anchor="middle" class="aws-white">Route 53</text>
+        <text x="105" y="74" text-anchor="middle" class="aws-white">shop.example.com</text>
+
+        <rect x="30" y="130" width="150" height="60" class="aws-box"></rect>
+        <text x="105" y="156" text-anchor="middle" class="aws-text">ACM</text>
+        <text x="105" y="174" text-anchor="middle" class="aws-small">certificado TLS</text>
+
+        <rect x="260" y="80" width="160" height="60" class="aws-orange" rx="8"></rect>
+        <text x="340" y="106" text-anchor="middle" class="aws-white">API Gateway</text>
+        <text x="340" y="124" text-anchor="middle" class="aws-white">domínio customizado</text>
+
+        <line x1="180" y1="60" x2="260" y2="100" class="aws-line"></line>
+        <line x1="180" y1="160" x2="260" y2="115" class="aws-line"></line>
+
+        <rect x="530" y="30" width="150" height="60" class="aws-box"></rect>
+        <text x="605" y="56" text-anchor="middle" class="aws-text">GitHub Actions</text>
+        <text x="605" y="74" text-anchor="middle" class="aws-small">push main</text>
+
+        <rect x="530" y="130" width="150" height="60" class="aws-blue" rx="8"></rect>
+        <text x="605" y="156" text-anchor="middle" class="aws-white">IAM Role</text>
+        <text x="605" y="174" text-anchor="middle" class="aws-white">via OIDC (sub check)</text>
+
+        <rect x="740" y="80" width="140" height="60" class="aws-box"></rect>
+        <text x="810" y="106" text-anchor="middle" class="aws-text">CloudFormation</text>
+        <text x="810" y="124" text-anchor="middle" class="aws-small">cdk deploy</text>
+
+        <line x1="605" y1="90" x2="605" y2="130" class="aws-line"></line>
+        <text x="615" y="115" class="aws-small">AssumeRoleWithWebIdentity</text>
+        <line x1="680" y1="145" x2="740" y2="115" class="aws-line"></line>
+      </svg>
+      <p class="diagram-note">Os dois fluxos são independentes: o da esquerda entrega o domínio público (Módulo 0 + ACM); o da direita é como as mudanças chegam à conta AWS sem access keys de longa duração.</p>
+
+      <h3>Route 53 e certificados ACM</h3>
+      <p>Agora domínio e certificado fazem parte do caminho principal. O CDK faz quatro coisas:</p>
+      <ul>
+        <li>procura a hosted zone <code>example.com</code> no Route 53;</li>
+        <li>cria um certificado ACM para <code>shop.example.com</code>;</li>
+        <li>configura domínio customizado no API Gateway;</li>
+        <li>cria DNS (registro ALIAS, ver Módulo 0) para <code>shop.example.com</code> apontando para o API Gateway.</li>
+      </ul>
+      <p>O ALB fica interno e não recebe domínio público. O único ponto público da app é o API Gateway.</p>
+      <p class="warn"><strong>Região:</strong> este workshop usa API Gateway regional. O certificado pode ficar na mesma região do stack. Se você usar CloudFront ou API Gateway edge-optimized, o certificado precisa estar em <code>us-east-1</code>.</p>
+
+      <h3>Build completo, bootstrap e deploy</h3>
+      <pre><code>cd spring-api
+mvn -q package
+cd ../workflow-lambda
+mvn -q package
+cd ../infra
+cdk bootstrap
+cdk synth
+cdk deploy</code></pre>
+      <p class="warn">Este é o passo em que o tempo de espera de provisionamento (Módulo 3: RDS + DMS + NAT Gateway) se torna visível — <code>cdk deploy</code> pode levar 20-40 minutos de parede aqui, não porque algo está errado, mas porque a AWS está de fato criando esses recursos.</p>
+
+      <h3>Testar via API Gateway</h3>
+      <pre><code>curl https://shop.example.com/
+curl https://shop.example.com/health</code></pre>
+
+      <h3>Criar pedido e disparar o CDC</h3>
+      <pre><code>curl -X POST https://shop.example.com/orders \
+  -H 'content-type: application/json' \
+  -d '{"customerId":"customer-123","sku":"SKU-001","quantity":2,"amount":39.90}'</code></pre>
+      <p class="ok">Resposta esperada: HTTP 201 com <code>orderId</code>. Em seguida, em alguns segundos, o DMS publica o insert no Kinesis, a Lambda consome o evento e a Step Function executa o workflow.</p>
+      <p>Para validar a parte assíncrona, confira nesta ordem: linha criada no RDS, métrica de saída da task DMS, registros chegando no Kinesis, invocação da Lambda e execução da Step Function.</p>
+
+      <h3>Consultando a execução da Step Function</h3>
+      <p>A Lambda roteadora (Módulo 2) nomeia cada execução como <code>order-&lt;orderId&gt;</code> (<code>.name("order-" + data.path("id").asText())</code>), então o ARN da execução é previsível a partir do <code>orderId</code> retornado pelo <code>POST /orders</code>. Ainda assim, os três jeitos de consultar o estado servem para perguntas diferentes:</p>
+      <pre><code>aws stepfunctions list-executions \
+  --state-machine-arn arn:aws:states:us-east-1:123456789012:stateMachine:EcommerceWorkflow \
+  --status-filter FAILED \
+  --max-results 5</code></pre>
+      <p><code>list-executions</code> responde "quais execuções existem e com que status" — útil quando você não sabe o <code>orderId</code> de antemão, ou quer só as que falharam (<code>--status-filter FAILED</code>), sem abrir uma por uma.</p>
+      <pre><code>aws stepfunctions describe-execution \
+  --execution-arn arn:aws:states:us-east-1:123456789012:execution:EcommerceWorkflow:order-abc-123</code></pre>
+      <p><code>describe-execution</code> responde "essa execução específica terminou, e como" — status geral (<code>RUNNING</code>/<code>SUCCEEDED</code>/<code>FAILED</code>/<code>TIMED_OUT</code>/<code>ABORTED</code>) mais o input/output completo da execução. Não diz em qual state ela parou.</p>
+      <pre><code>aws stepfunctions get-execution-history \
+  --execution-arn arn:aws:states:us-east-1:123456789012:execution:EcommerceWorkflow:order-abc-123 \
+  --reverse-order</code></pre>
+      <p><code>get-execution-history</code> responde "onde exatamente ela está ou travou" — o histórico completo de eventos (<code>StateEntered</code>, <code>TaskSucceeded</code>, <code>TaskFailed</code>, <code>StateExited</code>, etc.), cada um com timestamp e o input/output daquele momento. Não existe um campo único "estado atual" na API do Step Functions: com <code>--reverse-order</code> o histórico já vem do mais recente para o mais antigo, então o estado atual é, na prática, o primeiro evento <code>StateEntered</code> da lista que ainda não tem um <code>StateExited</code> correspondente.</p>
+
+      <h3>CI/CD com GitHub Actions e OIDC</h3>
+      <p>Faça o primeiro deploy manual com <code>cdk deploy</code>. Em seguida, transforme os mesmos comandos em pipeline, usando OIDC (acima) para assumir uma role na AWS sem salvar access keys no GitHub.</p>
+      <pre><code>push main
+  |
+  v
+GitHub Actions
+  |
+  +-- build Spring Boot jar
+  +-- build Lambda shaded jar
+  +-- run tests
+  +-- cdk synth
+  +-- cdk deploy
+        |
+        v
+      CloudFormation atualiza ECS, RDS, DMS, Kinesis, Lambda, Step Functions,
+      API Gateway, ACM e Route 53</code></pre>
+
+      <h3>Role de deploy</h3>
+      <p>Crie uma role IAM assumível pelo GitHub OIDC. Em produção, restrinja por organização, repositório e branch. Para começar, a role precisa conseguir executar CDK/CloudFormation e criar os recursos deste workshop.</p>
+      <p class="warn">Evite usuário IAM com access key longa. Prefira OIDC + role temporária.</p>
+
+      <h3><code>.github/workflows/deploy.yml</code></h3>
+      <pre><code>name: deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-cdk-deploy-role
+          aws-region: us-east-1
+
+      - name: Build Spring Boot app
+        working-directory: spring-api
+        run: mvn -q package
+
+      - name: Build Lambda shaded jar
+        working-directory: workflow-lambda
+        run: mvn -q package
+
+      - name: CDK synth
+        working-directory: infra
+        run: mvn -q test &amp;&amp; npx cdk synth
+
+      - name: CDK deploy
+        working-directory: infra
+        run: npx cdk deploy --require-approval never</code></pre>
+
+      <h3>Dicas práticas de CI/CD</h3>
+      <ul>
+        <li>Use contas separadas para <code>dev</code>, <code>stage</code> e <code>prod</code>.</li>
+        <li>Use uma role de deploy por ambiente.</li>
+        <li>Exija aprovação manual antes de produção.</li>
+        <li>Rode <code>cdk diff</code> no pull request.</li>
+        <li>Publique imagem em ECR se quiser builds mais controlados; <code>ContainerImage.fromAsset</code> é ótimo para workshop e início rápido.</li>
+      </ul>
+
+      <h3>Observabilidade com OTel, Honeycomb e Splunk</h3>
+      <p>Se o time já usa OpenTelemetry, Honeycomb e Splunk, trate OTel como trilha principal. Antes de configurar qualquer coisa, é importante deixar explícito de onde vem o dado de cada backend — não é o mesmo caminho para os dois:</p>
+      <div class="concept">
+        <p><strong>Honeycomb recebe traces e métricas</strong>, enviados via OTLP diretamente pela instrumentação (Java Agent no ECS, ADOT no Lambda), passando pelo OTel Collector, em tempo quase real.</p>
+        <p><strong>Splunk recebe logs</strong>, mas <em>não</em> pelo mesmo caminho OTLP: os logs saem via stdout/stderr para o driver de log nativo do ECS/Lambda, viram CloudWatch Logs, e só então são encaminhados de lá para o Splunk. É por isso que, na configuração do Java Agent mais abaixo, <code>OTEL_LOGS_EXPORTER</code> fica como <code>none</code> — o workshop propositalmente não duplica logs pelo caminho OTLP.</p>
+      </div>
+      <p class="module-badge">Diagrama — Módulo 4b: observabilidade</p>
+      <svg class="aws-diagram" viewBox="0 0 900 300" role="img" aria-labelledby="m4b-title m4b-desc">
+        <title id="m4b-title">Duas fontes de dados: Honeycomb via OTLP, Splunk via CloudWatch</title>
+        <desc id="m4b-desc">Traces e métricas saem do app via OTLP através do OTel Collector até o Honeycomb. Logs saem via stdout/stderr para o CloudWatch Logs e de lá são encaminhados para o Splunk — um caminho separado, sem OTLP.</desc>
+        <rect x="30" y="110" width="170" height="70" class="aws-green" rx="8"></rect>
+        <text x="115" y="140" text-anchor="middle" class="aws-white">Spring Boot / Lambda</text>
+        <text x="115" y="158" text-anchor="middle" class="aws-white">Java Agent / ADOT</text>
+
+        <rect x="290" y="50" width="170" height="60" class="aws-blue" rx="8"></rect>
+        <text x="375" y="76" text-anchor="middle" class="aws-white">OTel Collector</text>
+        <text x="375" y="94" text-anchor="middle" class="aws-white">traces + métricas</text>
+
+        <rect x="290" y="170" width="170" height="60" class="aws-box"></rect>
+        <text x="375" y="196" text-anchor="middle" class="aws-text">CloudWatch Logs</text>
+        <text x="375" y="214" text-anchor="middle" class="aws-small">log driver nativo</text>
+
+        <rect x="560" y="50" width="150" height="60" class="aws-purple" rx="8"></rect>
+        <text x="635" y="76" text-anchor="middle" class="aws-white">Honeycomb</text>
+        <text x="635" y="94" text-anchor="middle" class="aws-white">traces/métricas</text>
+
+        <rect x="560" y="170" width="150" height="60" class="aws-purple" rx="8"></rect>
+        <text x="635" y="196" text-anchor="middle" class="aws-white">Splunk</text>
+        <text x="635" y="214" text-anchor="middle" class="aws-white">logs</text>
+
+        <line x1="200" y1="130" x2="290" y2="90" class="aws-line"></line>
+        <text x="205" y="105" class="aws-small">OTLP</text>
+        <line x1="460" y1="80" x2="560" y2="80" class="aws-line"></line>
+        <line x1="200" y1="150" x2="290" y2="195" class="aws-async"></line>
+        <text x="205" y="180" class="aws-small">stdout/stderr</text>
+        <line x1="460" y1="200" x2="560" y2="200" class="aws-async"></line>
+        <text x="470" y="240" class="aws-small">Forwarder / Firehose / Lambda subscription</text>
+      </svg>
+      <p class="diagram-note">Linha sólida = caminho OTLP (traces/métricas → Honeycomb). Linha tracejada = caminho de log (stdout/stderr → CloudWatch → Splunk). São duas fontes de dados diferentes, não a mesma informação duplicada em dois lugares — por isso <code>OTEL_LOGS_EXPORTER=none</code>.</p>
+      <p class="muted">Aside: se o backend for a Splunk Observability Cloud (não o Splunk clássico de busca de logs) e o time quiser traces/métricas lá também, dá para apontar o OTel Collector para ela via um exportador próprio, em paralelo ao exportador do Honeycomb. Isso é um terceiro caminho opcional e independente — não o mesmo fluxo de "Logs para Splunk" descrito acima.</p>
+
+      <h3>Spring Boot 4.1 no ECS com Java Agent</h3>
+      <p>O caminho mais rápido é usar o OpenTelemetry Java Agent. Baixe o agent no build da imagem ou copie de um estágio separado.</p>
+      <pre><code>FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
+COPY target/spring-api-0.0.1.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-javaagent:/otel/opentelemetry-javaagent.jar", "-jar", "app.jar"]</code></pre>
+
+      <p>Configure por variáveis de ambiente no ECS task definition:</p>
+      <pre><code>OTEL_SERVICE_NAME=spring-api
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod,service.version=1.0.0
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.local:4317
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=none</code></pre>
+      <p class="muted"><code>OTEL_LOGS_EXPORTER=none</code> é proposital, não um esquecimento: traces e métricas vão para o Collector via OTLP e chegam ao Honeycomb; logs seguem o caminho separado (stdout/stderr → CloudWatch → Splunk) explicado acima, então não faz sentido também exportá-los via OTLP — seria a mesma informação duplicada em dois lugares.</p>
+
+      <p>Para um primeiro teste sem Collector, você pode exportar traces/métricas direto para Honeycomb usando OTLP HTTP:</p>
+      <pre><code>OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io
+OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=${HONEYCOMB_API_KEY},x-honeycomb-dataset=aws-java21-demo</code></pre>
+
+      <p class="warn">Se, além do Honeycomb, você também usar a Splunk Observability Cloud como destino de traces/métricas via OTLP (o aside acima), prefira um Collector a configurar múltiplos exportadores OTLP direto no app — evita duplicar credenciais e acoplar o código a vários backends. Isso não se aplica ao Splunk clássico de logs, que não recebe nada via OTLP neste desenho: ele depende inteiramente do encaminhamento de CloudWatch Logs descrito a seguir.</p>
+
+      <h3>Logs para Splunk</h3>
+      <p>Como estabelecido acima, logs não saem via OTLP neste workshop. Em ECS e Lambda, escreva logs em stdout/stderr em JSON; eles caem automaticamente no CloudWatch Logs pelo log driver nativo. Depois encaminhe esse CloudWatch Logs para Splunk por Splunk Forwarder, Firehose, Lambda subscription ou Splunk OTel Collector atuando como encaminhador — esta é a única fonte de dados do Splunk neste workshop.</p>
+      <pre><code>{
+  "level": "INFO",
+  "message": "order accepted",
+  "service.name": "spring-api",
+  "trace_id": "abc...",
+  "span_id": "def...",
+  "order_id": "123",
+  "environment": "prod"
+}</code></pre>
+
+      <h3>Lambda Java 21</h3>
+      <p>Para Lambda, use ADOT Lambda Layer ou instrumentação manual com OTel SDK. Se usar SnapStart depois, teste bem inicialização, propagação de contexto e exporters após restore.</p>
+      <ul>
+        <li>Propague <code>traceparent</code> em chamadas HTTP.</li>
+        <li>Inclua <code>executionArn</code> da Step Function como atributo de span quando iniciar workflow.</li>
+        <li>Inclua <code>stateMachineArn</code>, <code>lambda.function_name</code> e <code>aws.request_id</code>.</li>
+        <li>Não coloque CPF, token, segredo ou payload sensível em atributos de span/log.</li>
+      </ul>
+
+      <h3>Atributos úteis para Honeycomb</h3>
+      <pre><code>service.name=spring-api
+deployment.environment=prod
+cloud.provider=aws
+cloud.region=us-east-1
+aws.ecs.cluster.name=...
+aws.ecs.task.arn=...
+http.route=/orders
+order.id=...
+customer.tier=...
+messaging.system=kinesis
+db.system=postgresql
+workflow.name=order-fulfillment</code></pre>
+
+      <h3>Checklist de observabilidade</h3>
+      <ul>
+        <li>Todo request HTTP tem trace.</li>
+        <li>Logs incluem <code>trace_id</code> e <code>span_id</code>.</li>
+        <li>O <code>order.id</code> aparece no log do Spring, na Lambda roteadora e na execução da Step Function.</li>
+        <li>Step Functions e Lambdas registram IDs de execução.</li>
+        <li>Métricas de DMS e Kinesis mostram se há atraso no CDC.</li>
+        <li>Erros têm stack trace no Splunk e span com status erro no Honeycomb.</li>
+        <li>Dashboards têm latência, taxa de erro, throughput e saturação.</li>
+        <li>Alertas acionam por sintomas: erro alto, latência alta, DLQ, falha de execução, task unhealthy.</li>
+      </ul>
+
+      <div class="interview">
+        <h3>Perguntas de entrevista — Módulo 4</h3>
+        <ul>
+          <li><strong>Por que OIDC em vez de access keys de longa duração no CI?</strong> OIDC troca um secret estático (que pode vazar e continuar válido) por uma credencial temporária emitida por confiança em tokens assinados do provedor de CI, escopada a repositório/branch e expirando em minutos.</li>
+          <li><strong>Qual a diferença real entre trace, log e métrica no OTel?</strong> Trace é a linha do tempo estruturada de uma requisição através de serviços (spans com relação pai/filho); log é um evento pontual com texto/contexto; métrica é um valor numérico agregado ao longo do tempo (contador, gauge, histograma). Os três compartilham contexto (ex.: <code>trace_id</code>) para correlação.</li>
+          <li><strong>Um request teve sucesso no Spring Boot mas nunca chegou ao Step Functions — como você debugaria?</strong> Seguindo a cadeia assíncrona: confirmar o insert no RDS, checar métricas/logs da replication task do DMS (ela processou o commit?), verificar se o registro chegou ao Kinesis (iterator age, incoming records), checar invocações/erros da Lambda roteadora, e por fim procurar (ou a ausência de) uma execução no Step Functions com o nome esperado.</li>
+          <li><strong>Step Functions é stateful — então como você consulta esse estado via API?</strong> Três chamadas para três perguntas diferentes: <code>ListExecutions</code> ("quais execuções existem e com que status"), <code>DescribeExecution</code> ("essa execução específica terminou, e como"), e <code>GetExecutionHistory</code> ("em qual state exatamente ela está ou travou" — via o evento <code>StateEntered</code> mais recente sem <code>StateExited</code> correspondente). Não existe uma chamada única que devolva só "o estado atual" — é o histórico completo, e você infere a partir dele.</li>
+          <li><strong>Por que o certificado ACM precisa estar em <code>us-east-1</code> às vezes, mas não sempre?</strong> Só quando o certificado é usado por um serviço "edge" global — CloudFront ou API Gateway edge-optimized. API Gateway regional (usado neste workshop) aceita o certificado na mesma região do stack.</li>
+          <li><strong>Na trust policy do OIDC, o que impede um workflow de outro repositório de assumir a mesma role?</strong> A condição <code>StringLike</code> sobre a claim <code>sub</code> do token (ex.: <code>repo:org/repo:ref:refs/heads/main</code>) — sem essa condição, qualquer repositório que confiasse no mesmo provedor OIDC da conta poderia pedir a credencial.</li>
+          <li><strong>Por que não exportar logs via OTLP também, já que traces e métricas já vão por ali?</strong> Porque este workshop já tem um caminho de logs via CloudWatch → Splunk; exportar logs também via OTLP duplicaria a mesma informação em dois lugares e complicaria correlação — a escolha aqui é ter uma única fonte por tipo de dado.</li>
+          <li><strong>Como você garantiria zero downtime durante um <code>cdk deploy</code> em produção?</strong> ECS já faz rolling update com health check no target group; o ponto de atenção real é a migration do Flyway (Módulo 1) ser compatível com a versão anterior do app ainda rodando durante o rolling update (ex.: não remover uma coluna que a versão antiga ainda lê), e, para o CDK em si, revisar o <code>cdk diff</code> antes de aplicar para pegar replacements destrutivos (ex.: troca de RDS que force recriação).</li>
+          <li><strong>Quem tem permissão para aprovar o <code>cdk deploy</code> em produção neste pipeline?</strong> Na configuração mínima do workshop, ninguém além do próprio workflow — é exatamente por isso que "Dicas práticas de CI/CD" recomenda aprovação manual (environment protection rules do GitHub) antes do deploy em prod, não só depender da role IAM estar certa.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>Checklist final</h2>
+      <ul>
+        <li>Route 53 resolve <code>shop.example.com</code> para API Gateway.</li>
+        <li>API Gateway encaminha <code>/orders</code> para o ALB interno via VPC Link.</li>
+        <li>Spring Boot responde em <code>https://shop.example.com</code>.</li>
+        <li><code>POST /orders</code> grava uma linha na tabela <code>orders</code> do PostgreSQL.</li>
+        <li>DMS captura o insert via CDC e publica no Kinesis.</li>
+        <li>Lambda <code>OrderEventRouterHandler</code> consome o stream e inicia a Step Function.</li>
+        <li>Step Function executa reserva de estoque, autorização de pagamento e confirmação.</li>
+        <li>CloudWatch Logs mostra logs das Lambdas e do container.</li>
+        <li>IAM foi criado via grants do CDK, sem policy manual ampla.</li>
+      </ul>
+
+      <h3>Limpeza</h3>
+      <pre><code>cd infra
+cdk destroy</code></pre>
+    </section>
+
+    <section class="card">
+      <h2>Arquitetura completa (recapitulação)</h2>
+      <p>O mesmo diagrama do início do workshop, agora com um selo por caixa indicando <strong>em qual módulo</strong> aquela peça foi construída. Antes de olhar a legenda, vale o exercício de entrevista mais simples e mais eficaz que existe: <strong>tente desenhar isso de memória</strong>, numerando as peças na ordem em que você as construiu.</p>
+      <svg class="aws-diagram" viewBox="0 0 1180 760" role="img" aria-labelledby="recap-title recap-desc">
+        <title id="recap-title">Diagrama completo recapitulado, com selo de módulo por caixa</title>
+        <desc id="recap-desc">O mesmo diagrama de arquitetura do início do workshop, com selos numerados de 0 a 4 em cada caixa indicando em qual módulo ela foi construída.</desc>
+
+        <rect x="20" y="20" width="1140" height="720" class="aws-group"></rect>
+        <text x="40" y="50" class="aws-title">AWS Account / Region</text>
+
+        <rect x="50" y="85" width="230" height="560" class="aws-group"></rect>
+        <text x="70" y="115" class="aws-title">Public Edge</text>
+
+        <rect x="80" y="155" width="150" height="64" class="aws-orange" rx="8"></rect>
+        <text x="155" y="181" text-anchor="middle" class="aws-white">Route 53</text>
+        <text x="155" y="201" text-anchor="middle" class="aws-white">shop.example.com</text>
+        <circle cx="222" cy="147" r="14" class="aws-badge"></circle>
+        <text x="222" y="152" text-anchor="middle" class="aws-badge-text">0</text>
+
+        <rect x="80" y="285" width="150" height="72" class="aws-orange" rx="8"></rect>
+        <text x="155" y="313" text-anchor="middle" class="aws-white">API Gateway</text>
+        <text x="155" y="333" text-anchor="middle" class="aws-white">HTTP API</text>
+        <circle cx="222" cy="277" r="14" class="aws-badge"></circle>
+        <text x="222" y="282" text-anchor="middle" class="aws-badge-text">4</text>
+
+        <rect x="80" y="420" width="150" height="62" class="aws-box"></rect>
+        <text x="155" y="446" text-anchor="middle" class="aws-text">ACM</text>
+        <text x="155" y="466" text-anchor="middle" class="aws-small">TLS certificate</text>
+        <circle cx="222" cy="412" r="14" class="aws-badge"></circle>
+        <text x="222" y="417" text-anchor="middle" class="aws-badge-text">4</text>
+
+        <rect x="330" y="85" width="520" height="560" class="aws-vpc"></rect>
+        <text x="350" y="115" class="aws-title">VPC</text>
+        <circle cx="345" cy="100" r="14" class="aws-badge"></circle>
+        <text x="345" y="105" text-anchor="middle" class="aws-badge-text">0</text>
+
+        <rect x="360" y="145" width="200" height="440" class="aws-subnet"></rect>
+        <text x="380" y="173" class="aws-text">Private Subnets</text>
+
+        <rect x="620" y="145" width="200" height="440" class="aws-subnet"></rect>
+        <text x="640" y="173" class="aws-text">Data Subnets</text>
+
+        <rect x="392" y="205" width="136" height="64" class="aws-blue" rx="8"></rect>
+        <text x="460" y="232" text-anchor="middle" class="aws-white">VPC Link</text>
+        <text x="460" y="251" text-anchor="middle" class="aws-white">private integration</text>
+        <circle cx="530" cy="197" r="14" class="aws-badge"></circle>
+        <text x="530" y="202" text-anchor="middle" class="aws-badge-text">3</text>
+
+        <rect x="392" y="315" width="136" height="64" class="aws-blue" rx="8"></rect>
+        <text x="460" y="342" text-anchor="middle" class="aws-white">Internal ALB</text>
+        <text x="460" y="361" text-anchor="middle" class="aws-white">HTTP :8080</text>
+        <circle cx="530" cy="307" r="14" class="aws-badge"></circle>
+        <text x="530" y="312" text-anchor="middle" class="aws-badge-text">1</text>
+
+        <rect x="382" y="430" width="156" height="82" class="aws-green" rx="8"></rect>
+        <text x="460" y="458" text-anchor="middle" class="aws-white">ECS Fargate</text>
+        <text x="460" y="478" text-anchor="middle" class="aws-white">Spring Boot 4.1</text>
+        <text x="460" y="498" text-anchor="middle" class="aws-white">POST /orders</text>
+        <circle cx="540" cy="422" r="14" class="aws-badge"></circle>
+        <text x="540" y="427" text-anchor="middle" class="aws-badge-text">1</text>
+
+        <rect x="650" y="255" width="140" height="78" class="aws-green" rx="8"></rect>
+        <text x="720" y="284" text-anchor="middle" class="aws-white">RDS</text>
+        <text x="720" y="304" text-anchor="middle" class="aws-white">PostgreSQL</text>
+        <text x="720" y="324" text-anchor="middle" class="aws-white">orders table</text>
+        <circle cx="792" cy="247" r="14" class="aws-badge"></circle>
+        <text x="792" y="252" text-anchor="middle" class="aws-badge-text">1</text>
+
+        <rect x="650" y="430" width="140" height="76" class="aws-purple" rx="8"></rect>
+        <text x="720" y="459" text-anchor="middle" class="aws-white">AWS DMS</text>
+        <text x="720" y="479" text-anchor="middle" class="aws-white">CDC task</text>
+        <circle cx="792" cy="422" r="14" class="aws-badge"></circle>
+        <text x="792" y="427" text-anchor="middle" class="aws-badge-text">3</text>
+
+        <rect x="900" y="85" width="230" height="560" class="aws-group"></rect>
+        <text x="920" y="115" class="aws-title">Event Processing</text>
+
+        <rect x="940" y="180" width="150" height="70" class="aws-purple" rx="8"></rect>
+        <text x="1015" y="209" text-anchor="middle" class="aws-white">Kinesis</text>
+        <text x="1015" y="229" text-anchor="middle" class="aws-white">order-changes</text>
+        <circle cx="1092" cy="172" r="14" class="aws-badge"></circle>
+        <text x="1092" y="177" text-anchor="middle" class="aws-badge-text">3</text>
+
+        <rect x="940" y="320" width="150" height="70" class="aws-orange" rx="8"></rect>
+        <text x="1015" y="349" text-anchor="middle" class="aws-white">Lambda</text>
+        <text x="1015" y="369" text-anchor="middle" class="aws-white">event router</text>
+        <circle cx="1092" cy="312" r="14" class="aws-badge"></circle>
+        <text x="1092" y="317" text-anchor="middle" class="aws-badge-text">2</text>
+
+        <rect x="930" y="470" width="170" height="92" class="aws-red" rx="8"></rect>
+        <text x="1015" y="500" text-anchor="middle" class="aws-white">Step Functions</text>
+        <text x="1015" y="520" text-anchor="middle" class="aws-white">reserve inventory</text>
+        <text x="1015" y="540" text-anchor="middle" class="aws-white">payment + confirm</text>
+        <circle cx="1102" cy="462" r="14" class="aws-badge"></circle>
+        <text x="1102" y="467" text-anchor="middle" class="aws-badge-text">2</text>
+
+        <text x="80" y="690" class="aws-small">Synchronous request path</text>
+        <line x1="230" y1="686" x2="300" y2="686" class="aws-line"></line>
+        <text x="390" y="690" class="aws-small">Asynchronous CDC/event path</text>
+        <line x1="560" y1="686" x2="630" y2="686" class="aws-async"></line>
+
+        <line x1="155" y1="219" x2="155" y2="285" class="aws-line"></line>
+        <line x1="230" y1="321" x2="392" y2="237" class="aws-line"></line>
+        <line x1="460" y1="269" x2="460" y2="315" class="aws-line"></line>
+        <line x1="460" y1="379" x2="460" y2="430" class="aws-line"></line>
+        <path d="M538 471 C590 471, 610 294, 650 294" class="aws-line"></path>
+
+        <line x1="720" y1="333" x2="720" y2="430" class="aws-async"></line>
+        <path d="M790 468 C850 468, 870 215, 940 215" class="aws-async"></path>
+        <line x1="1015" y1="250" x2="1015" y2="320" class="aws-async"></line>
+        <line x1="1015" y1="390" x2="1015" y2="470" class="aws-async"></line>
+      </svg>
+      <p class="diagram-note"><strong>Legenda:</strong> ⓪ Módulo 0 — rede (VPC, Route 53) · ① Módulo 1 — ECS/Fargate, ALB, RDS · ② Módulo 2 — Lambda e Step Functions · ③ Módulo 3 — CDC (DMS/Kinesis) e a fiação completa em CDK · ④ Módulo 4 — DNS/ACM, CI/CD e observabilidade.</p>
+
+      <div class="interview">
+        <h3>Perguntas de entrevista — visão geral do sistema</h3>
+        <ul>
+          <li><strong>Descreva o ciclo de vida completo de um pedido, do <code>POST /orders</code> até a confirmação.</strong> Route 53 → API Gateway (TLS/ACM) → VPC Link → ALB interno → ECS Fargate → grava no RDS → DMS captura o insert via CDC → publica no Kinesis → Lambda roteadora inicia a Step Function → reserva de estoque → autorização de pagamento (com retry/catch) → confirmação.</li>
+          <li><strong>Onde estão os pontos únicos de falha nesta arquitetura?</strong> O RDS é a maior candidata (sem Multi-AZ, é um SPOF de dados); a replication instance do DMS também, se não houver failover configurado; o Kinesis e o ECS já são multi-AZ por padrão com <code>desiredCount(2)</code>.</li>
+          <li><strong>Como você reduziria custo sem sacrificar a arquitetura?</strong> Substituir o NAT Gateway (cobrado por hora + por GB) por VPC Endpoints para ECR/S3 se o único uso da saída for pull de imagem; avaliar DMS Serverless em vez de uma replication instance sempre ligada; usar Fargate Spot para tasks não críticas.</li>
+          <li><strong>Como você adicionaria uma segunda região?</strong> RDS via read replica cross-region ou Aurora Global Database; Route 53 com routing policy de failover/latência e health checks; replicar o stack CDK por região, com o DMS/Kinesis por região (CDC não cruza região sozinho).</li>
+          <li><strong>Um registro "poison pill" trava o consumo do Kinesis pela Lambda — o que fazer?</strong> Configurar <code>bisectBatchOnFunctionError</code> e um número máximo de tentativas no event source mapping, com um destino on-failure (ex.: outro stream ou SQS) para isolar o registro problemático e não bloquear o shard inteiro.</li>
+          <li><strong>O tráfego aumenta 100x da noite para o dia — o que quebra primeiro?</strong> Provavelmente o RDS (conexões/IOPS) e a replication instance do DMS antes do ECS (que escala tasks) ou do Kinesis (que escala por shards); o Step Functions Standard também tem limite de execuções concorrentes por conta a considerar.</li>
+          <li><strong>Por que este workshop usa CDK e não CloudFormation puro?</strong> Mesmo resultado final (CDK sintetiza para CloudFormation), mas com um nível de abstração em Java que reduz boilerplate e permite reuso via constructs — o trade-off é uma camada extra de build (Maven) entre o código e o template real que é de fato aplicado.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Próximos passos para produção</h2>
+      <h3>1. Habilitar SnapStart para Lambdas Java publicadas por alias</h3>
+      <p>SnapStart reduz cold start (Módulo 2) em Lambdas Java inicializando a função no momento da publicação da versão e restaurando ambientes a partir de snapshot. Ele funciona em versões publicadas, não em <code>$LATEST</code>. Por isso, crie um alias, como <code>live</code>, e faça Step Functions ou event source mappings apontarem para esse alias quando aplicável.</p>
+      <pre><code>Function eventRouter = Function.Builder.create(this, "OrderEventRouter")
+        .runtime(Runtime.JAVA_21)
+        .handler("com.example.OrderEventRouterHandler::handleRequest")
+        .code(Code.fromAsset("../workflow-lambda/target/workflow-lambda.jar"))
+        .snapStart(SnapStartConf.ON_PUBLISHED_VERSIONS)
+        .build();
+
+Alias eventRouterLive = Alias.Builder.create(this, "OrderEventRouterLive")
+        .aliasName("live")
+        .version(eventRouter.getCurrentVersion())
+        .build();</code></pre>
+      <p>Para funções chamadas pela Step Function, use o alias no <code>LambdaInvoke</code>. Para função consumidora de Kinesis, valide se o event source mapping está apontando para a versão/alias desejado.</p>
+
+      <h3>2. Adicionar OpenTelemetry/ADOT para Honeycomb, e encaminhamento de log para Splunk</h3>
+      <p>Use OpenTelemetry como padrão de instrumentação (Módulo 4) para traces e métricas. Para ECS, o caminho comum é Java Agent no container Spring Boot. Para Lambda, avalie ADOT Lambda Layer ou instrumentação manual. O Collector fica responsável por exportar traces/métricas para o Honeycomb — Splunk não faz parte desse caminho OTLP (ver abaixo).</p>
+      <pre><code>OTEL_SERVICE_NAME=spring-api
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=prod,service.version=1.0.0
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=none</code></pre>
+      <p>Recomendação de produção: não coloque a chave do Honeycomb diretamente no container da aplicação. Configure-a no OTel Collector, usando Secrets Manager ou SSM, e permita que apps enviem OTLP apenas para o Collector.</p>
+      <pre><code>Fonte de dados do Honeycomb (traces/métricas, via OTLP):
+Spring Boot / Lambda -> OTLP -> ADOT/OTel Collector -> Honeycomb
+
+Fonte de dados do Splunk (logs, via CloudWatch, não via OTLP):
+Spring Boot / Lambda -> stdout/stderr -> CloudWatch Logs -> encaminhamento -> Splunk</code></pre>
+
+      <h3>3. Usar Secrets Manager ou SSM Parameter Store para configurações sensíveis</h3>
+      <p>Não deixe senha de banco, tokens, API keys ou endpoints privados hardcoded em <code>application.properties</code>. Use o arquivo para defaults não sensíveis e injete valores sensíveis em runtime.</p>
+      <table>
+        <thead>
+          <tr><th>Tipo de configuração</th><th>Onde colocar</th><th>Exemplo</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Não sensível e estável</td>
+            <td><code>application.yml</code></td>
+            <td>porta, actuator, nome da app, timeouts default</td>
+          </tr>
+          <tr>
+            <td>Não sensível por ambiente</td>
+            <td>SSM Parameter Store</td>
+            <td><code>/ecommerce/prod/orders/max-page-size</code></td>
+          </tr>
+          <tr>
+            <td>Sensível</td>
+            <td>Secrets Manager</td>
+            <td>senha do RDS, token Honeycomb, HEC token Splunk</td>
+          </tr>
+          <tr>
+            <td>Feature flags/config dinâmica</td>
+            <td>AWS AppConfig</td>
+            <td>habilitar novo fluxo de pagamento</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>No ECS, injete secrets na task definition:</p>
+      <pre><code>Secret dbPassword = Secret.fromSecretsManager(dbSecret, "password");
+
+ApplicationLoadBalancedTaskImageOptions.builder()
+        .image(ContainerImage.fromAsset("../spring-api"))
+        .containerPort(8080)
+        .environment(Map.of(
+                "DB_URL", jdbcUrl,
+                "DB_USERNAME", "postgres"
+        ))
+        .secrets(Map.of(
+                "DB_PASSWORD", ecs.Secret.fromSecretsManager(dbSecret, "password")
+        ))
+        .build();</code></pre>
+      <p>No Spring, continue lendo via variáveis:</p>
+      <pre><code>spring.datasource.url=${DB_URL}
+spring.datasource.username=${DB_USERNAME}
+spring.datasource.password=${DB_PASSWORD}</code></pre>
+
+      <h3>4. Configurar autoscaling do ECS por CPU, memória e request count</h3>
+      <p>Para APIs Spring stateless, escale horizontalmente aumentando o número de tasks. Comece com CPU/memória e adicione request count no ALB quando tiver tráfego real.</p>
+      <pre><code>ScalableTaskCount scaling = service.getService().autoScaleTaskCount(EnableScalingProps.builder()
+        .minCapacity(2)
+        .maxCapacity(10)
+        .build());
+
+scaling.scaleOnCpuUtilization("CpuScaling", CpuUtilizationScalingProps.builder()
+        .targetUtilizationPercent(60)
+        .build());
+
+scaling.scaleOnMemoryUtilization("MemoryScaling", MemoryUtilizationScalingProps.builder()
+        .targetUtilizationPercent(70)
+        .build());
+
+scaling.scaleOnRequestCount("RequestCountScaling", RequestCountScalingProps.builder()
+        .requestsPerTarget(1000)
+        .targetGroup(service.getTargetGroup())
+        .build());</code></pre>
+      <p>Regras práticas: mantenha pelo menos duas tasks em produção, configure health check real em <code>/health</code>, use deployment circuit breaker, e monitore latência p95/p99 antes de aumentar agressivamente os limites.</p>
+
+      <h3>5. Adicionar DLQ/on-failure destination para Lambdas e alarmes para falhas de Step Functions</h3>
+      <p>Vale separar dois mecanismos que parecem a mesma coisa mas não são, porque as três Lambdas deste workshop são invocadas de duas formas diferentes:</p>
+      <ul>
+        <li><strong><code>OrderEventRouterHandler</code></strong> (Módulo 2/3) é acionada pelo <em>event source mapping</em> do Kinesis — um modelo <em>pull</em>, não uma invocação assíncrona. Para ela, o mecanismo de falha é o <strong>on-failure destination do event source mapping</strong>, não um DLQ "clássico" de Lambda.</li>
+        <li><strong><code>ReserveInventoryFunction</code>/<code>AuthorizePaymentFunction</code>/<code>SendConfirmationFunction</code></strong> (Módulo 2) são invocadas de forma <em>síncrona</em> pelo <code>LambdaInvoke</code> do Step Functions — o <code>addRetry</code>/<code>addCatch</code> já cobre falha ali; um DLQ de invocação assíncrona da Lambda simplesmente não se aplica a essa integração.</li>
+      </ul>
+      <p>Isso já resolve o cenário de "poison pill" citado na pergunta de entrevista da recapitulação: configure <code>bisectBatchOnError</code>, um <code>retryAttempts</code> finito e um destino on-failure no event source mapping do Kinesis, para que um registro problemático pare de bloquear o shard e caia em uma fila para investigação manual, em vez de re-tentar para sempre.</p>
+      <pre><code>import software.amazon.awscdk.Duration;
+import software.amazon.awscdk.services.sqs.Queue;
+import software.amazon.awscdk.services.lambda.eventsources.KinesisEventSource;
+import software.amazon.awscdk.services.lambda.eventsources.OnFailureDestinationProps;
+import software.amazon.awscdk.services.lambda.destinations.SqsDestination;
+
+// Fila para onde vão os metadados dos batches que falharam repetidamente
+// (não o payload completo do Kinesis — só o suficiente para localizar o registro).
+Queue eventRouterDlq = Queue.Builder.create(this, "OrderEventRouterDlq")
+        .queueName("order-event-router-dlq")
+        .retentionPeriod(Duration.days(14))
+        .build();
+
+eventRouter.addEventSource(KinesisEventSource.Builder.create(orderChanges)
+        .batchSize(100)
+        .startingPosition(StartingPosition.LATEST)
+        .bisectBatchOnError(true)
+        .retryAttempts(3)
+        .onFailure(new SqsDestination(eventRouterDlq))
+        .build());</code></pre>
+      <p>Para o workflow de Step Functions, o <code>addCatch</code> do Módulo 2 já evita que uma execução trave, mas cair no estado <code>OrderFailed</code> silenciosamente não avisa ninguém — por isso vale um alarme no CloudWatch sobre a métrica de execuções falhas da própria state machine:</p>
+      <pre><code>import software.amazon.awscdk.services.cloudwatch.Alarm;
+import software.amazon.awscdk.services.cloudwatch.ComparisonOperator;
+import software.amazon.awscdk.services.cloudwatch.MetricOptions;
+import software.amazon.awscdk.services.cloudwatch.actions.SnsAction;
+import software.amazon.awscdk.services.sns.Topic;
+
+Topic opsTopic = Topic.Builder.create(this, "EcommerceOpsAlerts").build();
+
+Alarm workflowFailedAlarm = Alarm.Builder.create(this, "EcommerceWorkflowFailedAlarm")
+        .metric(stateMachine.metricFailed(MetricOptions.builder()
+                .period(Duration.minutes(5))
+                .statistic("sum")
+                .build()))
+        .threshold(1)
+        .evaluationPeriods(1)
+        .comparisonOperator(ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD)
+        .alarmDescription("Uma ou mais execuções do EcommerceWorkflow falharam")
+        .build();
+
+workflowFailedAlarm.addAlarmAction(new SnsAction(opsTopic));</code></pre>
+      <p class="muted">O mesmo padrão (<code>metricFailed</code>/<code>metricTimedOut</code>/<code>metricAborted</code> na state machine, com <code>Alarm</code> + ação SNS) serve para qualquer workflow Standard do Step Functions — não é específico deste e-commerce.</p>
+
+      <h3>Outros itens</h3>
+      <ul>
+        <li>Adicionar WAF no API Gateway se houver tráfego público sensível.</li>
+        <li>Trocar Lambda Java puro por Spring Cloud Function se quiser modelo <code>Function/Supplier/Consumer</code> e testes de negócio mais simples.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

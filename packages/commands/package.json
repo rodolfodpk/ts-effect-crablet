@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/CommandExecutor.ts",
-    "./CommandDecision": "./src/CommandDecision.ts",
     "./ExecutionResult": "./src/ExecutionResult.ts",
     "./Event": "./src/Event.ts",
     "./Model": "./src/Model.ts",

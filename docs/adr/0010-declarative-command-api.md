@@ -47,8 +47,9 @@ Keep ONE write primitive and build a declarative layer on top of it.
 - **Testability is part of the design:** `spec/Spec.ts` (what reads and appends mean, as pure functions),
   an in-memory store that enforces it, a conformance suite and a differential test proving it agrees with
   Postgres, and `given(events).when(command, input)` for BDD-style tests with no database.
-- The old builders (`CommandDecision`, `CommandExecutor.execute`) remain as the low-level escape hatch;
-  the application code in this repo no longer uses them.
+- The old hand-written handlers are gone: `CommandExecutor.execute` and the `CD.*` builders
+  (`commutativeIdempotent`, `idempotent`, ...) were deleted, and `CommandDecision` is now an internal
+  detail of `defineCommand`. `run`/`runDecoded` are the only ways to run a command.
 
 ## Consequences
 

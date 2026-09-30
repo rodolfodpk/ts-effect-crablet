@@ -71,7 +71,7 @@ export interface ModelBuilder<S, Scope extends object> {
   lifecycle<E extends EventLike>(event: E, apply: Handler<S, DataOf<E>>): ModelBuilder<S, Scope>;
   of(args: { readonly id: string } & Scope): ModelInstance<S>;
   // Just the lifecycle events' query: the natural "guard" for a command that is otherwise
-  // commutative (see CommandDecision.withLifecycleGuard).
+  // commutative (see withLifecycleGuard in CommandDecision.ts).
   lifecycleQuery(id: string): Query.Query;
 }
 

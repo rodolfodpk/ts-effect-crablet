@@ -15,25 +15,8 @@ import type { ExecutionResult } from "./ExecutionResult.ts";
 // "nothing to do"). The event store is ambient (via Effect's context), not an explicit parameter.
 export type CommandHandler<T, E = never> = (command: T) => Effect.Effect<CD.CommandDecision, E, EventStore>;
 
-// `commandType` is caller-supplied because commands are plain objects (no class name to derive it
-// from); it exists to tag CommandMetrics, not to look up a handler - callers always pass the
-// handler explicitly (see ADR-0008, no auto-discovery).
-//
-// Failure modes of `execute`: the handler's own `E`; `Conflict` (the decision went stale - the
-// concurrency check refused the append); `Duplicate` (the idempotency check matched AND the decision's
-// `onDuplicate` is "THROW" - with the default "RETURN_IDEMPOTENT" it is reported as an idempotent
-// success instead, so this failure only occurs when a command opted in); and database errors.
+// Commands are always run explicitly - there is no command-type auto-discovery (ADR-0008).
 export interface CommandExecutorService {
-  readonly execute: <T, E>(
-    commandType: string,
-    command: T,
-    handler: CommandHandler<T, E>
-  ) => Effect.Effect<
-    ExecutionResult,
-    E | Conflict | Duplicate | SqlError,
-    EventStore | CommandAuditStore | SqlClient.SqlClient
-  >;
-
   // Run a defined command (see Command.ts). `run` takes UNTRUSTED input: it is validated against the
   // command's schema first (`InvalidInput`). `runDecoded` takes input that is already the command's
   // typed input (e.g. built by an automation) and skips validation.
@@ -124,6 +107,8 @@ export const CommandExecutorLive = Layer.effect(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
+    // One attempt: the handler and its append inside one transaction. `Duplicate` is reported here for
+    // every command; `runDecoded` turns it into an idempotent success unless the command opted in.
     const execute = <T, E>(
       commandType: string,
       command: T,
@@ -178,7 +163,7 @@ export const CommandExecutorLive = Layer.effect(
     const run = <In, Err>(command: Command<In, Err>, input: unknown) =>
       Effect.flatMap(command.decodeInput(input), (decoded) => runDecoded(command, decoded));
 
-    const service: CommandExecutorService = { execute, run, runDecoded };
+    const service: CommandExecutorService = { run, runDecoded };
     return service;
   })
 );

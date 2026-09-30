@@ -928,5 +928,6 @@ asserts the model directly (queries, fold, both regressions).
 - Sweep: every "Port of com.crablet...", "Java's ...", JDBC/Flyway reference was removed from source, tests, SQL
   comments and the wallet example (comments reworded to say what the code does, not where it came from).
   ADRs 0001-0008 and the early NOTES entries keep their historical mentions, flagged in their headers.
-- Left as-is on purpose: low-level `CD.*` builders and `CommandExecutor.execute` (documented escape hatch, still
-  used by package-level tests).
+- Deleted `CommandExecutor.execute`, the public `CD.*` builders and the `@crablet/commands/CommandDecision` export;
+  `CommandDecision` is internal to `defineCommand`. The old executor test is replaced by lifecycle-guard tests
+  on defined commands (guard Conflict between load and append; guard + idempotency).

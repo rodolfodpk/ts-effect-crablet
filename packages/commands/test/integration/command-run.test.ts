@@ -14,7 +14,7 @@ import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import { CommandExecutor, CommandExecutorLive } from "../../src/CommandExecutor.ts";
-import { defineCommand, emit, fail } from "../../src/Command.ts";
+import { concurrent, defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError, InvalidInput } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { defineModel } from "../../src/Model.ts";
@@ -215,5 +215,78 @@ describe("CommandExecutor.run: input", () => {
     const ok = await run(Effect.flatMap(CommandExecutor, (e) => e.runDecoded(cmd, booking(s))));
     assert.equal(ok.wasIdempotent, false);
     assert.equal(await eventsOnSeat(s), 1);
+  });
+});
+
+// ---- a lifecycle guard: bookings run concurrently, but not once the seat has been closed ----
+const SeatClosed = defineEvent("SeatClosed", {
+  schema: Schema.Struct({ seatId: Schema.String }),
+  tags: (d) => ({ seat_id: d.seatId })
+});
+const closeSeat = defineCommand({
+  name: "close_seat",
+  input: Schema.Struct({ seatId: Schema.String }),
+  decide: (_, c) => emit(SeatClosed(c))
+});
+
+// Like `SeatModel.of`, but holds the command after it has LOADED until `gate` opens - so a test can
+// change the world between the load and the append, deterministically.
+const heldAfterLoad = (seatId: string, gate: Effect.Effect<void>) => {
+  const model = SeatModel.of({ id: seatId });
+  return { ...model, load: (es: Parameters<typeof model.load>[0]) => Effect.tap(model.load(es), () => gate) };
+};
+
+const guardedBooking = (gate: Effect.Effect<void>, retries = 3) =>
+  defineCommand({
+    name: "guarded_booking",
+    input: bookingInput,
+    model: (c) => heldAfterLoad(c.seatId, gate),
+    consistency: (c) => concurrent({ guard: SeatClosed.where({ seat_id: c.seatId }) }),
+    idempotentBy: (c) => SeatBooked.where({ booking_id: c.bookingId }),
+    retries,
+    decide: (_, c) => emit(SeatBooked(c))
+  });
+
+describe("CommandExecutor.run: lifecycle guard", () => {
+  it("a guard event committed between load and append is a guard Conflict; unrelated concurrent bookings are not", async () => {
+    const s = seat();
+    const gate = await run(Deferred.make<void>());
+    const cmd = guardedBooking(Deferred.await(gate), 0);
+
+    const racing = exitsOf([Effect.flatMap(CommandExecutor, (e) => e.run(cmd, booking(s)))]);
+    await new Promise((r) => setTimeout(r, 200)); // the booking has loaded and is held
+    await run(Effect.flatMap(CommandExecutor, (e) => e.run(closeSeat, { seatId: s })));
+    await run(Deferred.succeed(gate, undefined));
+
+    const [exit] = await racing;
+    assert.equal(exit!._tag, "Failure");
+    const error = failureOf(exit);
+    assert.ok(error instanceof Conflict, `expected Conflict, got ${JSON.stringify(error)}`);
+    assert.equal(error.kind, "guard");
+    assert.equal(await eventsOnSeat(s), 0);
+
+    // another booking of the same seat that is NOT racing a close commits fine, even next to its peers
+    const open = seat();
+    const openGate = await run(Deferred.make<void>());
+    await run(Deferred.succeed(openGate, undefined));
+    const peers = await exitsOf([
+      Effect.flatMap(CommandExecutor, (e) => e.run(guardedBooking(Deferred.await(openGate), 0), booking(open))),
+      Effect.flatMap(CommandExecutor, (e) => e.run(guardedBooking(Deferred.await(openGate), 0), booking(open)))
+    ]);
+    assert.deepEqual(peers.map((p) => p._tag), ["Success", "Success"]);
+  });
+
+  it("guard + idempotency: repeating a done booking after the seat closed is 'already done', not a Conflict", async () => {
+    const s = seat();
+    const b = booking(s);
+    const open = await run(Deferred.make<void>());
+    await run(Deferred.succeed(open, undefined));
+    const cmd = guardedBooking(Deferred.await(open));
+
+    const first = await run(Effect.flatMap(CommandExecutor, (e) => e.run(cmd, b)));
+    assert.equal(first.wasIdempotent, false);
+    await run(Effect.flatMap(CommandExecutor, (e) => e.run(closeSeat, { seatId: s })));
+    const repeat = await run(Effect.flatMap(CommandExecutor, (e) => e.run(cmd, b)));
+    assert.equal(repeat.wasIdempotent, true);
   });
 });
