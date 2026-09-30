@@ -142,7 +142,7 @@ describe("automations module integration (real Postgres)", () => {
         CorrelationContext.withCorrelationId(triggerCorrelationId)(
           Effect.gen(function* () {
             const store = yield* EventStore;
-            yield* store.appendCommutative([AppendEvent.of(triggerType, "order_id", orderId, {})]);
+            yield* store.append([AppendEvent.of(triggerType, "order_id", orderId, {})]);
           })
         )
       );
@@ -197,7 +197,7 @@ describe("automations module integration (real Postgres)", () => {
       await run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          yield* store.appendCommutative([AppendEvent.ofUntagged(triggerType, {})]);
+          yield* store.append([AppendEvent.ofUntagged(triggerType, {})]);
         })
       );
 

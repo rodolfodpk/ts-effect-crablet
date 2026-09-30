@@ -2,7 +2,7 @@ import { Data } from "effect";
 
 // Port of com.crablet.examples.wallet.exceptions.* - plain typed command-handler failures, mapped
 // to HTTP by the wallet app's own ExposedCommand.mapError hooks (api/WalletProblems.ts), not by
-// commands-http itself. Same Data.TaggedError pattern EventStore.ts's DCBViolation.ts primer
+// commands-http itself. Same Data.TaggedError pattern eventstore's AppendErrors.ts primer
 // establishes for this whole codebase.
 export class WalletNotFound extends Data.TaggedError("WalletNotFound")<{
   readonly walletId: string;

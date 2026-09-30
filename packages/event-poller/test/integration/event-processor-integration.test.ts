@@ -153,7 +153,7 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.of("PollerIntegLeaderEvent", "run_marker", viewName, {})
         ]);
       })
@@ -192,9 +192,9 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
       await run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          // appendCommutative fires NOTIFY on EVENTS_CHANNEL automatically now - no manual
+          // append fires NOTIFY on EVENTS_CHANNEL automatically now - no manual
           // notify() call needed (previously a Phase 1 gap, fixed in Phase 3 - see NOTES.md).
-          yield* store.appendCommutative([
+          yield* store.append([
             AppendEvent.of("PollerIntegWakeupEvent", "run_marker", viewName, {})
           ]);
         })
@@ -238,7 +238,7 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.of("PollerIntegFailedEvent", "run_marker", viewName, {})
         ]);
       })

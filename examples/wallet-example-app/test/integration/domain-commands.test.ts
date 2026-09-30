@@ -11,7 +11,7 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
+import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { openWalletCommandHandler, type OpenWalletCommand } from "../../src/domain/commands/OpenWalletCommand.ts";
 import { depositCommandHandler, type DepositCommand } from "../../src/domain/commands/DepositCommand.ts";
@@ -61,7 +61,7 @@ const openWallet = (walletId: string, owner = "Alice", initialBalance = 0) =>
   );
 
 describe("wallet domain command handlers (real Postgres)", () => {
-  it("OpenWalletCommand: creates a wallet, THROWs (ConcurrencyException) on a duplicate open", async () => {
+  it("OpenWalletCommand: creates a wallet, fails with Duplicate on a duplicate open", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const first = await openWallet(walletId, "Alice", 100);
     assert.strictEqual(first.wasIdempotent, false);
@@ -72,11 +72,11 @@ describe("wallet domain command handlers (real Postgres)", () => {
         const command: OpenWalletCommand = { walletId, owner: "Alice", initialBalance: 100 };
         return yield* executor.execute("open_wallet", command, openWalletCommandHandler).pipe(
           Effect.map(() => "success" as const),
-          Effect.catchTag("ConcurrencyException", (e) => Effect.succeed(e))
+          Effect.catchTag("Duplicate", (e) => Effect.succeed(e))
         );
       })
     );
-    assert.ok(outcome instanceof ConcurrencyException, `expected ConcurrencyException, got ${JSON.stringify(outcome)}`);
+    assert.ok(outcome instanceof Duplicate, `expected Duplicate, got ${JSON.stringify(outcome)}`);
   });
 
   it("DepositCommand: increases the balance; fails WalletNotFound for a nonexistent wallet", async () => {

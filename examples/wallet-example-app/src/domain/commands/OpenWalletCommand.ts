@@ -13,7 +13,7 @@ export interface OpenWalletCommand {
 
 // Port of com.crablet.examples.wallet.commands.OpenWalletCommandHandler. Idempotent on
 // (WalletOpened, wallet_id), onDuplicate: THROW - a second "open" for the same wallet_id is a
-// genuine conflict (WalletAlreadyExists, surfaced as a DCB conflict via ConcurrencyException), not
+// genuine conflict (WalletAlreadyExists, surfaced as a `Duplicate` failure), not
 // a silent no-op - unlike every other wallet command, which is safe to retry.
 export const openWalletCommandHandler: CommandHandler<OpenWalletCommand, InvalidOperation> = (command) =>
   Effect.gen(function* () {

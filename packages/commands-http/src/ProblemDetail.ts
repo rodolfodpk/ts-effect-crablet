@@ -34,9 +34,8 @@ export class CommandApiBadRequest extends Schema.Class<CommandApiBadRequest>("Co
   }
 }
 
-// Wraps eventstore's ConcurrencyException/DCBViolation - see CommandApiLive.ts for the
-// translation. Fields mirror Java's ProblemDetail enrichment (violationCode/matchingEventsCount/
-// hint) exactly.
+// Wraps eventstore's Conflict/Duplicate errors - see CommandApiLive.ts for the
+// translation. Extra RFC 7807 fields: violationCode, matchingEventsCount, hint.
 export class CommandConflict extends Schema.Class<CommandConflict>("CommandConflict")(
   {
     type: Schema.Literal(CommandApiDcbConcurrencyType),

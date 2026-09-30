@@ -11,7 +11,7 @@
     "./LogPosition": "./src/LogPosition.ts",
     "./AppendEvent": "./src/AppendEvent.ts",
     "./AppendCondition": "./src/AppendCondition.ts",
-    "./DCBViolation": "./src/DCBViolation.ts",
+    "./AppendErrors": "./src/AppendErrors.ts",
     "./CorrelationContext": "./src/CorrelationContext.ts",
     "./Listen": "./src/Listen.ts",
     "./Leader": "./src/Leader.ts",

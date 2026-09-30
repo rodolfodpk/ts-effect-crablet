@@ -12,7 +12,7 @@
 // AppendCondition.ts, LogPosition.ts, EventSelection.ts, BackoffState.ts, ...) - it's the
 // default choice here; a real `class` only shows up where genuinely stateful, multi-step
 // construction benefits from it (see AppendEvent.ts's `AppendEventBuilder`) or where Effect's own
-// APIs require a class (`Context.Service`, `Data.TaggedError` - see EventStore.ts and DCBViolation.ts).
+// APIs require a class (`Context.Service`, `Data.TaggedError` - see EventStore.ts and AppendErrors.ts).
 export interface Tag {
   readonly key: string;
   readonly value: string;

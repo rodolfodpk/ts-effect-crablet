@@ -2,7 +2,7 @@ import { Effect, Metric } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
+import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import type { CommandHandler } from "@crablet/commands";
 import * as AutomationMetrics from "@crablet/metrics-otel/AutomationMetrics";
@@ -26,7 +26,7 @@ export type ExecuteDecision = <T, HE>(
   commandType: string,
   command: T,
   handler: CommandHandler<T, HE>
-) => Effect.Effect<unknown, HE | ConcurrencyException | SqlError, never>;
+) => Effect.Effect<unknown, HE | Conflict | Duplicate | SqlError, never>;
 
 // Port of internal.AutomationDispatcher.java: routes handle(automationName, events) to the
 // registered AutomationHandler for that name; dies loudly on an unregistered automation (mirrors

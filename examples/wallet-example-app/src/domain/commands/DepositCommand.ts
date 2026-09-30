@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { EventStore } from "@crablet/eventstore";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { SqlError } from "effect/sql/SqlError";
-import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
+import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import type { CommandHandler } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";
 import * as WalletTags from "../WalletTags.ts";
@@ -26,7 +26,7 @@ export interface DepositCommand {
 // concurrent wallet close, and `.idempotent(DepositMade, deposit_id)` makes retries safe.
 export const depositCommandHandler: CommandHandler<
   DepositCommand,
-  WalletNotFound | InvalidOperation | SqlError | ConcurrencyException
+  WalletNotFound | InvalidOperation | SqlError | Conflict | Duplicate
 > = (command) =>
   Effect.gen(function* () {
     if (command.amount <= 0) return yield* Effect.fail(new InvalidOperation({ message: "amount must be positive" }));

@@ -54,16 +54,15 @@ const positionOf = (query: Query.Query): Promise<LogPositionType> =>
     })
   );
 
-type Outcome = "ok" | "DCB_VIOLATION" | "IDEMPOTENCY_VIOLATION" | `other:${string}`;
+type Outcome = "ok" | "conflict" | "duplicate";
 const attempt = (events: ReadonlyArray<AppendEvent.AppendEvent>, condition: AppendCondition.AppendCondition): Promise<Outcome> =>
   run(
     Effect.gen(function* () {
       const store = yield* EventStore;
-      return yield* store.appendConditional(events, condition).pipe(
+      return yield* store.append(events, condition).pipe(
         Effect.map((): Outcome => "ok"),
-        Effect.catchTag("ConcurrencyException", (e) =>
-          Effect.succeed((e.violation?.errorCode ?? `other:${e.message}`) as Outcome)
-        )
+        Effect.catchTag("Conflict", () => Effect.succeed("conflict" as const)),
+        Effect.catchTag("Duplicate", () => Effect.succeed("duplicate" as const))
       );
     })
   );
@@ -78,29 +77,29 @@ const twoItems = (id: string) =>
 describe("append conditions with multi-item queries", () => {
   it("concurrency: an event matching only the SECOND item is a conflict", async () => {
     const id = uid();
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_A", ["k", id])])));
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_A", ["k", id])])));
     const q = twoItems(id);
     const p0 = await positionOf(q);
 
     // conflicting event matches item B only
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_B", ["j", id])])));
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_B", ["j", id])])));
 
     const outcome = await attempt([ev("MI_Other", ["z", id])], AppendCondition.of(p0, q));
-    assert.equal(outcome, "DCB_VIOLATION");
+    assert.equal(outcome, "conflict");
   });
 
   it("concurrency: an event matching only the FIRST item is a conflict", async () => {
     const id = uid();
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_B", ["j", id])])));
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_B", ["j", id])])));
     const q = twoItems(id);
     const p0 = await positionOf(q);
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_A", ["k", id])])));
-    assert.equal(await attempt([ev("MI_Other", ["z", id])], AppendCondition.of(p0, q)), "DCB_VIOLATION");
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_A", ["k", id])])));
+    assert.equal(await attempt([ev("MI_Other", ["z", id])], AppendCondition.of(p0, q)), "conflict");
   });
 
   it("concurrency: no matching event after the position -> succeeds (no false positive)", async () => {
     const id = uid();
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_A", ["k", id]), ev("MI_B", ["j", id])])));
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_A", ["k", id]), ev("MI_B", ["j", id])])));
     const q = twoItems(id);
     const p = await positionOf(q); // already includes both events
     assert.equal(await attempt([ev("MI_Other", ["z", id])], AppendCondition.of(p, q)), "ok");
@@ -111,7 +110,7 @@ describe("append conditions with multi-item queries", () => {
     const q = twoItems(id);
     const p0 = await positionOf(q);
     // TypeA but carrying item B's tag: satisfies neither item
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_A", ["j", id])])));
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_A", ["j", id])])));
     assert.equal(await attempt([ev("MI_Other", ["z", id])], AppendCondition.of(p0, q)), "ok");
   });
 
@@ -162,13 +161,13 @@ describe("append conditions with multi-item queries", () => {
 
   it("idempotency: a duplicate matching only the SECOND idempotency item is detected", async () => {
     const id = uid();
-    await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_Done", ["op", id])])));
+    await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_Done", ["op", id])])));
     const idem = Query.of([
       Query.queryItemOf(["MI_Done"], [Tag.of("op", uid())]), // different op: no match
       Query.queryItemOf(["MI_Done"], [Tag.of("op", id)]) // the duplicate
     ]);
     const outcome = await attempt([ev("MI_Done", ["op", id])], AppendCondition.of(LogPosition.zero(), Query.noCondition(), idem));
-    assert.equal(outcome, "IDEMPOTENCY_VIOLATION");
+    assert.equal(outcome, "duplicate");
   });
 
   it("idempotency: no item matches -> succeeds", async () => {
@@ -201,10 +200,10 @@ describe("conflict detection must not depend on unrelated open transactions", ()
       await idle.query("SELECT pg_current_xact_id()"); // assigns an xid, pinning the snapshot xmin
 
       // A conflicting event is committed AFTER the idle transaction started.
-      await run(Effect.flatMap(EventStore, (s) => s.appendCommutative([ev("MI_A", ["k", id])])));
+      await run(Effect.flatMap(EventStore, (s) => s.append([ev("MI_A", ["k", id])])));
 
       const outcome = await attempt([ev("MI_Other", ["z", id])], AppendCondition.of(p0, q));
-      assert.equal(outcome, "DCB_VIOLATION", "committed conflicting event must be visible to the check");
+      assert.equal(outcome, "conflict", "committed conflicting event must be visible to the check");
     } finally {
       await idle.query("ROLLBACK");
       await idle.end();

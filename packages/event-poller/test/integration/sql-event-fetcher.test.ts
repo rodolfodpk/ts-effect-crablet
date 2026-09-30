@@ -42,7 +42,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.of("FetchTestTypeA", "marker", marker, {}),
           AppendEvent.of("FetchTestTypeB", "marker", marker, {})
         ]);
@@ -67,7 +67,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.builder("FetchTestRequired").tag("marker", marker).tag("k1", "v1").data({}).build(),
           AppendEvent.builder("FetchTestRequired")
             .tag("marker", marker)
@@ -98,7 +98,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.builder("FetchTestAnyOf").tag("marker", marker).tag("k1", "v1").data({}).build(),
           AppendEvent.builder("FetchTestAnyOf").tag("marker", marker).tag("k_other", "v").data({}).build()
         ]);
@@ -124,7 +124,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.builder("FetchTestExact").tag("marker", marker).tag("status", "open").data({}).build(),
           AppendEvent.builder("FetchTestExact").tag("marker", marker).tag("status", "closed").data({}).build()
         ]);
@@ -153,7 +153,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.of("FetchTestLimit", "marker", marker, {}),
           AppendEvent.of("FetchTestLimit", "marker", marker, {}),
           AppendEvent.of("FetchTestLimit", "marker", marker, {})

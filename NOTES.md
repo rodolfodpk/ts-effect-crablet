@@ -719,3 +719,31 @@ zero errors on Effect 4's types, unchanged `tsconfig.json` (`module: Preserve`, 
 bundler`, `allowImportingTsExtensions`); a deliberately wrong file is still rejected, so the check is
 real. Typecheck dropped from ~2 s to well under 1 s. `@effect/language-service` (which hooks the TS JS
 API that TS 7 replaces) is not used here; check before adopting it.
+
+## Phase 1 (API redesign) - simplifying the low level
+
+First step of the redesign plan: remove structure that only existed to mirror the old variants.
+
+- **One write primitive.** `EventStore.append(events, condition?)` replaces `appendCommutative`,
+  `appendNonCommutative`, `appendIdempotent` and `appendConditional` (the first three were already
+  one-line wrappers over the fourth). Overloaded: without a condition the only failure is `SqlError`;
+  with one it can also fail with `Conflict` or `Duplicate`.
+- **Two typed errors instead of one string-coded one.** `ConcurrencyException` + `DCBViolation`
+  (`errorCode` strings, always-0 `matchingEventsCount`) are replaced by `Conflict { kind: "boundary" |
+  "guard" }` and `Duplicate` in `@crablet/eventstore/AppendErrors`. The executor no longer detects a
+  duplicate by lower-casing the message and searching for "duplicate operation detected", and no
+  longer re-labels `DCB_VIOLATION` to `GUARD_VIOLATION`: the decision knows whether its check is a
+  guard, and the executor sets `kind` accordingly.
+- **One decision shape.** `CommandDecision` is `Append | NoOp`. `Append` is `events` + an
+  `AppendCondition` + `onDuplicate` + `conflictKind`; the five old variants and the executor's
+  per-variant `switch` are gone. The old builders (`commutative`, `nonCommutative`, `idempotent`,
+  `withLifecycleGuard`, `noOp`) remain as named constructors of that shape until `defineCommand`
+  replaces hand-written handlers; `withIdempotency` adds an idempotency check to any `Append`, which
+  makes **strict + idempotent** expressible for the first time (it was impossible: `NonCommutative` had
+  no idempotency field, which is why the old Withdraw handler hand-rolled a racy `exists()` check).
+  New tests cover it, plus the boundary `Conflict`.
+- **Kept as-is on purpose:** the HTTP wire contract (409 with `violationCode`, now derived from the
+  error type; `matchingEventsCount` stays 0 because the SQL never reported a count - to be dropped when
+  the HTTP mapping is redone in Phase 6); `project`/`StateProjector` (they go away with `defineModel`).
+- **Metric semantics changed:** `crablet.eventstore.concurrency_violations` now counts only `Conflict`;
+  it used to count idempotency duplicates too.

@@ -11,7 +11,8 @@ import { CommandAuditStore, CommandAuditStoreLive } from "../../src/CommandAudit
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as Query from "../../src/Query.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
-import { ConcurrencyException } from "../../src/DCBViolation.ts";
+import { Conflict, Duplicate } from "../../src/AppendErrors.ts";
+import * as AppendCondition from "../../src/AppendCondition.ts";
 import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
 
 let db: TestDb;
@@ -42,12 +43,12 @@ const run = <A, E>(effect: Effect.Effect<A, E, EventStore | CommandAuditStore | 
   Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
 
 describe("EventStore public API parity (Phase 1)", () => {
-  it("appendCommutative: event is queryable back", async () => {
+  it("append: event is queryable back", async () => {
     const spikeId = crypto.randomUUID();
     const result = await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        const transactionId = yield* store.appendCommutative([
+        const transactionId = yield* store.append([
           AppendEvent.of("SpikeTestEvent", "spike_id", spikeId, { hello: "world" })
         ]);
         const projection = yield* store.project(
@@ -70,7 +71,7 @@ describe("EventStore public API parity (Phase 1)", () => {
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.builder("SpikeTagRoundTrip")
             .tag("spike_id", spikeId)
             .tag("tricky", trickyValue)
@@ -94,7 +95,7 @@ describe("EventStore public API parity (Phase 1)", () => {
     assert.strictEqual(found, true);
   });
 
-  it("concurrent double appendNonCommutative against same condition -> exactly one DCB_VIOLATION (20 runs)", { timeout: 30_000 }, async () => {
+  it("concurrent double conditional append against same condition -> exactly one Conflict (20 runs)", { timeout: 30_000 }, async () => {
     for (let i = 0; i < 20; i++) {
       const marker = `dcb-race-${crypto.randomUUID()}`;
       const decisionModel = Query.forEventAndTag("RaceEvent", "race_marker", marker);
@@ -104,27 +105,24 @@ describe("EventStore public API parity (Phase 1)", () => {
           Effect.gen(function* () {
             const store = yield* EventStore;
             return yield* store
-              .appendNonCommutative(
+              .append(
                 [AppendEvent.of("RaceEvent", "race_marker", marker, {})],
-                decisionModel,
-                LogPosition.zero()
+                AppendCondition.of(LogPosition.zero(), decisionModel)
               )
               .pipe(
                 Effect.map(() => "success" as const),
-                Effect.catchTag("ConcurrencyException", (e) =>
-                  Effect.succeed(e.violation?.errorCode === "DCB_VIOLATION" ? "dcb_violation" as const : "other" as const)
-                )
+                Effect.catchTag("Conflict", () => Effect.succeed("conflict" as const))
               );
           })
         );
 
       const [a, b] = await Promise.all([attempt(), attempt()]);
       const outcomes = [a, b].sort();
-      assert.deepStrictEqual(outcomes, ["dcb_violation", "success"]);
+      assert.deepStrictEqual(outcomes, ["conflict", "success"]);
     }
   });
 
-  it("concurrent idempotent duplicate -> exactly one IDEMPOTENCY_VIOLATION (20 runs)", { timeout: 30_000 }, async () => {
+  it("concurrent idempotent duplicate -> exactly one Duplicate (20 runs)", { timeout: 30_000 }, async () => {
     for (let i = 0; i < 20; i++) {
       const idKey = `idem-race-${crypto.randomUUID()}`;
 
@@ -133,63 +131,57 @@ describe("EventStore public API parity (Phase 1)", () => {
           Effect.gen(function* () {
             const store = yield* EventStore;
             return yield* store
-              .appendIdempotent([AppendEvent.of("IdemRaceEvent", "idem_key", idKey, {})], "IdemRaceEvent", "idem_key", idKey)
+              .append(
+                [AppendEvent.of("IdemRaceEvent", "idem_key", idKey, {})],
+                AppendCondition.idempotent("IdemRaceEvent", "idem_key", idKey)
+              )
               .pipe(
                 Effect.map(() => "success" as const),
-                Effect.catchTag("ConcurrencyException", (e) =>
-                  Effect.succeed(
-                    e.violation?.errorCode === "IDEMPOTENCY_VIOLATION" ? "idempotency_violation" as const : "other" as const
-                  )
-                )
+                Effect.catchTag("Duplicate", () => Effect.succeed("duplicate" as const))
               );
           })
         );
 
       const [a, b] = await Promise.all([attempt(), attempt()]);
       const outcomes = [a, b].sort();
-      assert.deepStrictEqual(outcomes, ["idempotency_violation", "success"]);
+      assert.deepStrictEqual(outcomes, ["duplicate", "success"]);
     }
   });
 
-  it("sequential idempotent duplicate -> second call fails with ConcurrencyException", async () => {
+  it("sequential idempotent duplicate -> second call fails with Duplicate", async () => {
     const idKey = `idem-seq-${crypto.randomUUID()}`;
     // Effect.runPromise rejects with a FiberFailure wrapper, not the raw tagged error, so
-    // assert.rejects(promise, ConcurrencyException) can't match by constructor. Catch the
-    // expected failure inside the Effect pipeline instead and assert on a plain return value.
+    // assert.rejects(promise, Duplicate) can't match by constructor. Catch the expected failure
+    // inside the Effect pipeline instead and assert on a plain return value.
     const call = () =>
       run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          return yield* store.appendIdempotent(
+          return yield* store.append(
             [AppendEvent.of("IdemSeqEvent", "idem_key", idKey, {})],
-            "IdemSeqEvent",
-            "idem_key",
-            idKey
+            AppendCondition.idempotent("IdemSeqEvent", "idem_key", idKey)
           );
         })
       );
-    const callExpectingViolation = () =>
+    const callExpectingDuplicate = () =>
       run(
         Effect.gen(function* () {
           const store = yield* EventStore;
           return yield* store
-            .appendIdempotent(
+            .append(
               [AppendEvent.of("IdemSeqEvent", "idem_key", idKey, {})],
-              "IdemSeqEvent",
-              "idem_key",
-              idKey
+              AppendCondition.idempotent("IdemSeqEvent", "idem_key", idKey)
             )
             .pipe(
               Effect.map(() => "success" as const),
-              Effect.catchTag("ConcurrencyException", (e) => Effect.succeed(e))
+              Effect.catchTag("Duplicate", (e) => Effect.succeed(e))
             );
         })
       );
 
     await call();
-    const second = await callExpectingViolation();
-    assert.ok(second instanceof ConcurrencyException, `expected ConcurrencyException, got ${JSON.stringify(second)}`);
-    assert.strictEqual(second.violation?.errorCode, "IDEMPOTENCY_VIOLATION");
+    const second = await callExpectingDuplicate();
+    assert.ok(second instanceof Duplicate, `expected Duplicate, got ${JSON.stringify(second)}`);
   });
 
   it("transaction_id audit-linkage invariant: command and event share the same transaction_id", async () => {
@@ -210,7 +202,7 @@ describe("EventStore public API parity (Phase 1)", () => {
               commandId,
               new Date()
             );
-            const eventTransactionId = yield* store.appendCommutative([
+            const eventTransactionId = yield* store.append([
               AppendEvent.of("SpikeAuditEvent", "spike_id", spikeId, {})
             ]);
 
@@ -233,7 +225,7 @@ describe("EventStore public API parity (Phase 1)", () => {
     assert.strictEqual(result.commandTransactionId, result.eventTransactionId);
   });
 
-  it("appendCommutative fires a NOTIFY on EVENTS_CHANNEL (Phase 3 NOTIFY-wiring fix)", { timeout: 20_000 }, async () => {
+  it("append fires a NOTIFY on EVENTS_CHANNEL (Phase 3 NOTIFY-wiring fix)", { timeout: 20_000 }, async () => {
     const spikeId = crypto.randomUUID();
 
     const runWithPg = <A, E>(
@@ -252,7 +244,7 @@ describe("EventStore public API parity (Phase 1)", () => {
         yield* Effect.sleep("200 millis");
 
         const store = yield* EventStore;
-        yield* store.appendCommutative([
+        yield* store.append([
           AppendEvent.of("SpikeNotifyWiringEvent", "spike_id", spikeId, {})
         ]);
 

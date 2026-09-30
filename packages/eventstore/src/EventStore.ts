@@ -10,7 +10,7 @@ import * as QueryNS from "./Query.ts";
 import type { Query } from "./Query.ts";
 import * as LogPositionNS from "./LogPosition.ts";
 import type { LogPosition } from "./LogPosition.ts";
-import type { ConcurrencyException } from "./DCBViolation.ts";
+import { Conflict, Duplicate } from "./AppendErrors.ts";
 import { encodePayload } from "./NotifyPayload.ts";
 import * as Sql from "./internal/sql.ts";
 
@@ -54,7 +54,7 @@ export interface ProjectionResult<T> {
 // instead of a bare value, a `Promise`, or a value-that-might-throw. Read it as three independent
 // promises the type makes to callers:
 //   A - what you get back on success (a Promise<A> in async/await terms)
-//   E - the *typed* ways this can fail (see DCBViolation.ts's primer on Data.TaggedError) - unlike
+//   E - the *typed* ways this can fail (see AppendErrors.ts's primer on Data.TaggedError) - unlike
 //       a thrown JS error, E shows up in the signature, so the compiler forces callers to handle
 //       or explicitly propagate it. `never` here means "cannot fail with a typed error."
 //   R - what ambient services/capabilities this computation needs before it can run at all (see
@@ -62,32 +62,23 @@ export interface ProjectionResult<T> {
 //       nothing, runs anywhere."
 // Nothing actually *runs* just by writing `Effect.Effect<...>` - it's a lazy, immutable
 // description of a computation (like an un-awaited `Promise` factory, but re-runnable and
-// inspectable). `appendCommutative` below promises: give me events, you'll either get a
+// inspectable). `append` below promises: give me events, you'll either get a
 // transaction id back (A = string), or it will fail with a Postgres error (E = SqlError), and it
 // needs nothing else from the caller (R = never, since the concrete `sql` client is captured
 // inside `EventStoreLive` below, not passed in per-call).
 export interface EventStoreService {
-  readonly appendCommutative: (events: ReadonlyArray<AppendEvent>) => Effect.Effect<string, SqlError>;
-
-  readonly appendNonCommutative: (
-    events: ReadonlyArray<AppendEvent>,
-    decisionModel: Query,
-    logPosition: LogPosition
-  ) => Effect.Effect<string, ConcurrencyException | SqlError>;
-
-  readonly appendIdempotent: (
-    events: ReadonlyArray<AppendEvent>,
-    eventType: string,
-    tagKey: string,
-    tagValue: string
-  ) => Effect.Effect<string, ConcurrencyException | SqlError>;
-
-  // Low-level, fully general append - the atomic primitive appendNonCommutative/appendIdempotent
-  // are built on. Prefer the semantic methods for typical use.
-  readonly appendConditional: (
-    events: ReadonlyArray<AppendEvent>,
-    condition: AppendCondition
-  ) => Effect.Effect<string, ConcurrencyException | SqlError>;
+  // The one write primitive: append `events` atomically, optionally guarded by an `AppendCondition`
+  // (a concurrency check after a log position, and/or an idempotency check - see AppendCondition.ts).
+  // Without a condition nothing can be refused, so the only failure is a database error; with one,
+  // the append can also be refused with `Conflict` (something matching the concurrency query is newer
+  // than the position the decision was made at) or `Duplicate` (the idempotency query already matches).
+  readonly append: {
+    (events: ReadonlyArray<AppendEvent>): Effect.Effect<string, SqlError>;
+    (
+      events: ReadonlyArray<AppendEvent>,
+      condition: AppendCondition
+    ): Effect.Effect<string, Conflict | Duplicate | SqlError>;
+  };
 
   readonly project: <T>(
     query: Query,
@@ -194,12 +185,11 @@ export const EventStoreLive = Layer.effect(
         (r) => r.state
       );
 
-    // Instrumented once here, at the shared primitive appendCommutative/appendNonCommutative/
-    // appendIdempotent are all built on - not tripled across each of them.
-    const appendConditional = (
+    // Instrumented once here, at the single write primitive.
+    const appendWith = (
       events: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
-    ): Effect.Effect<string, ConcurrencyException | SqlError> => {
+    ): Effect.Effect<string, Conflict | Duplicate | SqlError> => {
       if (events.length === 0) {
         return Effect.die("Cannot append empty events list");
       }
@@ -219,33 +209,22 @@ export const EventStoreLive = Layer.effect(
               }
             })
           ),
-          // A dedicated counter alongside the generic append.failures `observe` already records -
-          // the one failure mode Java calls out specifically (ConcurrencyViolationMetric).
-          Effect.catchTag("ConcurrencyException", (e) =>
+          // A dedicated counter alongside the generic append.failures `observe` already records,
+          // for the failure mode operators care about most: a stale decision.
+          Effect.catchTag("Conflict", (e) =>
             Effect.andThen(Metric.update(EventStoreMetrics.concurrencyViolations, 1), Effect.fail(e))
           )
         )
       );
     };
 
-    const service: EventStoreService = {
-      // AppendCondition.empty() has empty concurrency/idempotency queries, which append_events_if()
-      // short-circuits to FALSE without evaluating any check (verified against the SQL function) -
-      // ConcurrencyException genuinely cannot occur here. Narrowing the type reflects that
-      // runtime guarantee; Java's appendCommutative signature makes the same claim.
-      appendCommutative: (events) =>
-        appendConditional(events, AppendConditionNS.empty()) as Effect.Effect<string, SqlError>,
+    // With no condition (AppendCondition.empty(): empty concurrency and idempotency queries, which
+    // append_events_if() skips without evaluating any check) nothing can be refused, so the narrower
+    // `SqlError`-only type of the first overload is a runtime guarantee, not just a convenience.
+    const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
+      appendWith(events, condition ?? AppendConditionNS.empty())) as EventStoreService["append"];
 
-      appendNonCommutative: (events, decisionModel, logPosition) =>
-        appendConditional(events, AppendConditionNS.of(logPosition, decisionModel)),
-
-      appendIdempotent: (events, eventType, tagKey, tagValue) =>
-        appendConditional(events, AppendConditionNS.idempotent(eventType, tagKey, tagValue)),
-
-      appendConditional,
-      project,
-      exists
-    };
+    const service: EventStoreService = { append, project, exists };
 
     return service;
   })

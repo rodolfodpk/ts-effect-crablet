@@ -7,7 +7,7 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, existsProjector } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
+import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as Query from "@crablet/eventstore/Query";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
@@ -61,7 +61,7 @@ describe("CommandExecutor (Phase 1)", () => {
     assert.strictEqual(result.wasIdempotent, false);
   });
 
-  it("CommutativeGuarded: staggered lifecycle event before append throws GUARD_VIOLATION", async () => {
+  it("Lifecycle guard: staggered lifecycle event before append fails with a guard Conflict", async () => {
     const entityId = crypto.randomUUID();
     const lifecycleQuery = Query.forEventAndTag("entity_closed", "entity_id", entityId);
 
@@ -77,7 +77,7 @@ describe("CommandExecutor (Phase 1)", () => {
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([AppendEvent.of("entity_closed", "entity_id", entityId, {})]);
+        yield* store.append([AppendEvent.of("entity_closed", "entity_id", entityId, {})]);
       })
     );
 
@@ -91,16 +91,16 @@ describe("CommandExecutor (Phase 1)", () => {
         const executor = yield* CommandExecutor;
         return yield* executor.execute("TestCommand", { entityId }, handler).pipe(
           Effect.map(() => "success" as const),
-          Effect.catchTag("ConcurrencyException", (e) => Effect.succeed(e))
+          Effect.catchTag("Conflict", (e) => Effect.succeed(e))
         );
       })
     );
 
-    assert.ok(outcome instanceof ConcurrencyException, `expected ConcurrencyException, got ${JSON.stringify(outcome)}`);
-    assert.strictEqual(outcome.violation?.errorCode, "GUARD_VIOLATION");
+    assert.ok(outcome instanceof Conflict, `expected Conflict, got ${JSON.stringify(outcome)}`);
+    assert.strictEqual(outcome.kind, "guard");
   });
 
-  it("CommutativeGuarded: idempotent retry after lifecycle change returns idempotent, not GUARD_VIOLATION", async () => {
+  it("Lifecycle guard + idempotency: retry after lifecycle change returns idempotent, not a Conflict", async () => {
     const entityId = crypto.randomUUID();
     const lifecycleQuery = Query.forEventAndTag("entity_closed", "entity_id", entityId);
     const opId = crypto.randomUUID();
@@ -139,12 +139,12 @@ describe("CommandExecutor (Phase 1)", () => {
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        yield* store.appendCommutative([AppendEvent.of("entity_closed", "entity_id", entityId, {})]);
+        yield* store.append([AppendEvent.of("entity_closed", "entity_id", entityId, {})]);
       })
     );
 
     // Retry with the same stale guardPosition and idempotency key - should return idempotent,
-    // not throw GUARD_VIOLATION, since idempotency is checked before concurrency.
+    // not fail with a Conflict, since idempotency is checked before concurrency.
     const retry = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
@@ -154,7 +154,7 @@ describe("CommandExecutor (Phase 1)", () => {
     assert.strictEqual(retry.wasIdempotent, true);
   });
 
-  it("Idempotent with THROW policy: duplicate throws ConcurrencyException", async () => {
+  it("Idempotent with THROW policy: duplicate fails with Duplicate", async () => {
     const entityId = crypto.randomUUID();
     const handler: CommandHandler<TestCommand> = (cmd) =>
       Effect.succeed(
@@ -174,10 +174,78 @@ describe("CommandExecutor (Phase 1)", () => {
         const executor = yield* CommandExecutor;
         return yield* executor.execute("TestCommand", { entityId }, handler).pipe(
           Effect.map(() => "success" as const),
-          Effect.catchTag("ConcurrencyException", (e) => Effect.succeed(e))
+          Effect.catchTag("Duplicate", (e) => Effect.succeed(e))
         );
       })
     );
-    assert.ok(second instanceof ConcurrencyException);
+    assert.ok(second instanceof Duplicate);
+  });
+
+  it("NonCommutative: a decision made on a stale position fails with a boundary Conflict", async () => {
+    const entityId = crypto.randomUUID();
+    const model = Query.forEventAndTag("TestEvent", "entity_id", entityId);
+
+    // The decision is made at position zero (no matching events yet)...
+    const handler: CommandHandler<TestCommand> = (cmd) =>
+      Effect.succeed(CD.nonCommutative(AppendEvent.of("TestEvent", "entity_id", cmd.entityId, {}), model, LogPosition.zero()));
+
+    // ...but a matching event is committed before the append runs.
+    await run(
+      Effect.gen(function* () {
+        const store = yield* EventStore;
+        yield* store.append([AppendEvent.of("TestEvent", "entity_id", entityId, {})]);
+      })
+    );
+
+    const outcome = await run(
+      Effect.gen(function* () {
+        const executor = yield* CommandExecutor;
+        return yield* executor.execute("TestCommand", { entityId }, handler).pipe(
+          Effect.map(() => "success" as const),
+          Effect.catchTag("Conflict", (e) => Effect.succeed(e))
+        );
+      })
+    );
+    assert.ok(outcome instanceof Conflict, `expected Conflict, got ${JSON.stringify(outcome)}`);
+    assert.strictEqual(outcome.kind, "boundary");
+  });
+
+  it("NonCommutative + idempotency: a retry after the state moved on is idempotent, not a Conflict", async () => {
+    const entityId = crypto.randomUUID();
+    const opId = crypto.randomUUID();
+    const model = Query.forEventAndTag("TestEvent", "entity_id", entityId);
+
+    // Strict AND idempotent in one decision (not expressible before the decision types were unified).
+    const handler: CommandHandler<TestCommand> = (cmd) =>
+      Effect.succeed(
+        CD.withIdempotency(
+          CD.nonCommutative(
+            AppendEvent.builder("TestEvent").tag("entity_id", cmd.entityId).tag("op_id", opId).data({}).build(),
+            model,
+            LogPosition.zero()
+          ),
+          "TestEvent",
+          "op_id",
+          opId
+        )
+      );
+
+    const first = await run(
+      Effect.gen(function* () {
+        const executor = yield* CommandExecutor;
+        return yield* executor.execute("TestCommand", { entityId }, handler);
+      })
+    );
+    assert.strictEqual(first.wasIdempotent, false);
+
+    // The retry still carries the stale position zero, and the first attempt's own event now matches the
+    // decision model - a plain strict decision would be a Conflict. The idempotency check comes first.
+    const retry = await run(
+      Effect.gen(function* () {
+        const executor = yield* CommandExecutor;
+        return yield* executor.execute("TestCommand", { entityId }, handler);
+      })
+    );
+    assert.strictEqual(retry.wasIdempotent, true);
   });
 });

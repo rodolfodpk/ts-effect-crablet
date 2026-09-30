@@ -1,7 +1,8 @@
 import { Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventStoreService, StateProjector } from "@crablet/eventstore";
-import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
+import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import * as AppendCondition from "@crablet/eventstore/AppendCondition";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
@@ -88,7 +89,7 @@ export const resolveActivePeriod = (
   eventStore: EventStoreService,
   walletId: string,
   now: Date = new Date()
-): Effect.Effect<ActivePeriod, SqlError | ConcurrencyException, never> =>
+): Effect.Effect<ActivePeriod, SqlError | Conflict | Duplicate, never> =>
   Effect.gen(function* () {
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth() + 1;
@@ -135,7 +136,7 @@ export const resolveActivePeriod = (
 
       const hadTransactions = yield* eventStore.exists(oldPeriodTransactionsQuery(walletId, oldYear, oldMonth));
       if (hadTransactions) {
-        yield* eventStore.appendNonCommutative(
+        yield* eventStore.append(
           [
             WalletEvents.walletStatementClosed({
               walletId,
@@ -147,8 +148,7 @@ export const resolveActivePeriod = (
               closedAt: now.toISOString()
             })
           ],
-          trackingQuery,
-          closeLogPosition
+          AppendCondition.of(closeLogPosition, trackingQuery)
         );
       }
     } else {
@@ -163,7 +163,7 @@ export const resolveActivePeriod = (
     }
 
     const newStatementId = toStatementId(walletId, year, month);
-    yield* eventStore.appendCommutative([
+    yield* eventStore.append([
       WalletEvents.walletStatementOpened({
         walletId,
         statementId: newStatementId,

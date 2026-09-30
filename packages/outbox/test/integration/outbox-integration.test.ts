@@ -115,8 +115,8 @@ describe("outbox module integration (real Postgres)", () => {
       await run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          yield* store.appendCommutative([AppendEvent.ofUntagged(typeA, {})]);
-          yield* store.appendCommutative([AppendEvent.ofUntagged(typeB, {})]);
+          yield* store.append([AppendEvent.ofUntagged(typeA, {})]);
+          yield* store.append([AppendEvent.ofUntagged(typeB, {})]);
         })
       );
 
@@ -157,7 +157,7 @@ describe("outbox module integration (real Postgres)", () => {
       await run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          yield* store.appendCommutative([AppendEvent.ofUntagged(eventType, {})]);
+          yield* store.append([AppendEvent.ofUntagged(eventType, {})]);
         })
       );
 
@@ -206,9 +206,9 @@ describe("outbox module integration (real Postgres)", () => {
       await run(
         Effect.gen(function* () {
           const store = yield* EventStore;
-          // appendCommutative fires NOTIFY on EVENTS_CHANNEL automatically (Phase 3 fix) - no
+          // append fires NOTIFY on EVENTS_CHANNEL automatically (Phase 3 fix) - no
           // manual notify() call needed.
-          yield* store.appendCommutative([AppendEvent.ofUntagged(eventType, {})]);
+          yield* store.append([AppendEvent.ofUntagged(eventType, {})]);
         })
       );
 

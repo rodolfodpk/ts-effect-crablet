@@ -4,7 +4,7 @@ import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { SqlError } from "effect/sql/SqlError";
-import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
+import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import type { CommandHandler } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";
 import * as WalletTags from "../WalletTags.ts";
@@ -31,7 +31,7 @@ export interface WithdrawCommand {
 // than just adding idempotency at the decision level the way Deposit does.
 export const withdrawCommandHandler: CommandHandler<
   WithdrawCommand,
-  WalletNotFound | InsufficientFunds | InvalidOperation | SqlError | ConcurrencyException
+  WalletNotFound | InsufficientFunds | InvalidOperation | SqlError | Conflict | Duplicate
 > = (command) =>
   Effect.gen(function* () {
     if (command.amount <= 0) return yield* Effect.fail(new InvalidOperation({ message: "amount must be positive" }));

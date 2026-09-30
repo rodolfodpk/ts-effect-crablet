@@ -6,7 +6,7 @@ import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
 import type { Query } from "../Query.ts";
 import type { LogPosition } from "../LogPosition.ts";
-import { ConcurrencyException, type DCBViolation } from "../DCBViolation.ts";
+import { Conflict, Duplicate } from "../AppendErrors.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 
 // Port of EventStoreImpl.convertTagsToPostgresArray (EventStoreImpl.java:687-702).
@@ -76,7 +76,7 @@ export const appendEventsIf = (
   events: ReadonlyArray<AppendEvent>,
   condition: AppendCondition,
   options?: AppendOptions
-): Effect.Effect<string, ConcurrencyException | SqlError> =>
+): Effect.Effect<string, Conflict | Duplicate | SqlError> =>
   Effect.gen(function* () {
     const types = events.map((e) => e.type);
     const tagLiterals = events.map((e) => encodeTagsLiteral(e.tags));
@@ -108,10 +108,11 @@ export const appendEventsIf = (
     }
 
     if (result.success === false) {
-      const errorCode = result.error_code ?? "DCB_VIOLATION";
       const message = result.message ?? "append condition violated";
-      const violation: DCBViolation = { errorCode, message, matchingEventsCount: 0 };
-      return yield* new ConcurrencyException({ message: `AppendCondition violated: ${message}`, violation });
+      // The SQL function reports which check refused the append. Idempotency is checked first.
+      return result.error_code === "IDEMPOTENCY_VIOLATION"
+        ? yield* new Duplicate({ message: `Duplicate operation: ${message}` })
+        : yield* new Conflict({ message: `AppendCondition violated: ${message}`, kind: "boundary" });
     }
 
     if (!result.transaction_id) {

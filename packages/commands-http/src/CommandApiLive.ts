@@ -8,7 +8,6 @@ import type { SqlClient } from "effect/sql";
 import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import { makeCommandApi, CommandEnvelope } from "./CommandApi.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
@@ -108,22 +107,21 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
             const correlationId = yield* resolveCorrelationId;
 
             // Only the command-execution call itself runs inside CorrelationContext - request
-            // parsing/validation above deliberately does not. A ConcurrencyException carries real
-            // DCBViolation detail (violationCode/matchingEventsCount) into CommandConflict, which must
-            // happen before the entry's own `mapError` hook - a ConcurrencyException is never this
-            // command's own domain error. Everything else (the handler's own E) gets one chance via
-            // `entry.mapError` to become a real ProblemDetail (e.g. "wallet not found" -> 404) before
-            // falling through, unchanged, to the outer terminal `toProblemDetail` catch-all.
+            // parsing/validation above deliberately does not. A `Conflict` (stale decision) or a
+            // `Duplicate` (command opted into failing on repeats) becomes a 409 `CommandConflict`
+            // before the entry's own `mapError` hook - neither is ever this command's own domain error.
+            // Everything else (the handler's own E) gets one chance via `entry.mapError` to become a real
+            // ProblemDetail (e.g. "wallet not found" -> 404) before falling through, unchanged, to the
+            // outer terminal `toProblemDetail` catch-all. `matchingEventsCount` is always 0: the SQL
+            // append does not report a count; the field is kept for wire compatibility.
             const executor = yield* CommandExecutor;
             const runExecute = executor.execute(payload.commandType, command, entry.handler).pipe(
-              Effect.catchTag("ConcurrencyException", (e: ConcurrencyException) => {
-                const v = e.violation;
-                return Effect.fail(
-                  v === null
-                    ? CommandConflict.of(e.message, "CONCURRENCY_VIOLATION", 0)
-                    : CommandConflict.of(e.message, v.errorCode, v.matchingEventsCount)
-                );
-              }),
+              Effect.catchTag("Conflict", (e) =>
+                Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION", 0))
+              ),
+              Effect.catchTag("Duplicate", (e) =>
+                Effect.fail(CommandConflict.of(e.message, "IDEMPOTENCY_VIOLATION", 0))
+              ),
               Effect.catch((error) =>
                 error instanceof CommandConflict ? Effect.fail(error) : Effect.fail(entry.mapError?.(error) ?? error)
               )
