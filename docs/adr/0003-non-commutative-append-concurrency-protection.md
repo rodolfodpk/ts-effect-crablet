@@ -46,3 +46,49 @@ the TS side.
 - Because the protection lives entirely in the SQL function, the TS client is simpler (no
   isolation-level or transaction-mode branching) but is also fully dependent on the migration
   being current; a stale migration silently reintroduces the race with no compile-time signal.
+
+## Addendum (Phase F): multi-item conditions, snapshot filter, per-item locks
+
+Superseded in part by migration `V4__crablet_multi_item_append_conditions.sql`. The ADR above
+describes protection that worked only for single-item conditions and only while no unrelated
+transaction was open. Two independent defects were found by tests (both reproduced before the fix):
+
+1. **Multi-item queries lost their OR semantics.** `append_events_if` took one flat
+   `(event types, tags)` pair, and the client flattened every query item into it, so
+   "(A and tag1) OR (B and tag2)" became "type in {A,B} AND has tag1 AND tag2". A conflicting event
+   matching just one item was never detected, so any strict command with a multi-item decision model
+   (the wallet's period-scoped Withdraw and Transfer) had no real protection against double-spend.
+   Reads (`queryEvents`) were always correct; only the append condition was wrong. The earlier race
+   tests used single-item queries, so they never saw it.
+2. **The `transaction_id < pg_snapshot_xmin(...)` filter hid committed conflicts.** `xmin` is the
+   oldest still-running transaction, so while any unrelated transaction was open (including a
+   single-item condition), events committed after it started were excluded from the conflict check.
+
+### Decision
+
+- `append_events_if` now takes each condition as a JSONB array of `{types, tags}` items; an event
+  matches an item when (types empty or type in types) AND (tags contain all item tags), and matches
+  the condition when it matches any item. The client (`internal/sql.ts`) sends the items unflattened
+  and drops items with neither types nor tags (no information); no items means no check.
+- The `xmin` filter is removed. MVCC already hides uncommitted peer rows, and the advisory locks make
+  committed peers visible because the check runs in a statement issued after the locks are taken (a
+  fresh READ COMMITTED snapshot). Consequently **callers must run at READ COMMITTED**, the Postgres
+  default; a caller-imposed REPEATABLE READ/SERIALIZABLE snapshot could predate a peer's commit.
+  Events appended earlier in the *same* transaction and after the condition's position now count as
+  conflicts (previously masked by the filter); no current command relies on that.
+- Locks are per item (sorted keys, so acquisition is deadlock-free; idempotency locks always before
+  concurrency locks) instead of one lock per whole condition. Commands whose conditions share an
+  identical item serialize on it even if their other items differ: a wallet withdrawal and a transfer
+  from the same wallet share the wallet's items. Verified: with whole-condition locks both racers won
+  in 13 of 15 rounds; with per-item locks, 0 of 15.
+
+### Known limitation (not solved here)
+
+Serialization needs an *identical* shared item. Two commands whose conditions overlap only semantically
+(the events one appends match the other's condition, but no item is textually identical) still race
+in the check-then-insert window. Handling that in general needs writer-side locking on event tags,
+predicate locks (SERIALIZABLE, see ADR-0004), or a coarser lock; deferred, and the wallet's
+conditions are built from shared item constructors precisely so they overlap on identical items.
+Performance of the per-item loop was not measured.
+
+Tests: `packages/eventstore/test/integration/append-multi-item.test.ts`.

@@ -21,9 +21,8 @@ function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
   return tags.map((t) => `${t.key}=${t.value}`);
 }
 
-// Mirrors EventStoreImpl.APPEND_EVENTS_IF_SQL (EventStoreImpl.java:97-101) - same 13 positional
-// params, same order, same casts. Uses sql.unsafe rather than the tagged template so param
-// binding order is explicit and matches Java's stmt.setX(i, ...) call sequence exactly.
+// append_events_if takes 11 positional params. Uses sql.unsafe rather than the tagged template so
+// the param binding order is explicit.
 //
 // PATTERN NOTE - @effect/sql gives two ways to run a query, both used in this codebase:
 //   - `sql\`SELECT ... ${value}\`` (tagged template, e.g. Listen.ts's `notify` helper): values are
@@ -34,18 +33,26 @@ function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
 //     matching order. "Unsafe" refers only to losing the tagged-template's automatic escaping
 //     structure - the values are still sent as bind parameters, not string-concatenated, so this
 //     is not a SQL-injection risk as long as the param array (not the query text) is what varies.
-//     Preferred here specifically because this query has 13 positional params in an exact,
-//     Java-mirrored order - a plain array made that order visually explicit and easy to diff
-//     against the Java call site during porting.
+//     Preferred here because this query has many positional params where the exact order matters -
+//     a plain array keeps that order visually explicit.
 const APPEND_EVENTS_IF_SQL = `
   SELECT append_events_if(
     $1::text[], $2::text[], $3::jsonb[],
-    $4::text[], $5::text[], $6::bigint,
-    $7::text[], $8::text[],
-    $9::timestamptz, $10::uuid, $11::bigint,
-    $12::text, $13::text
+    $4::jsonb, $5::bigint, $6::jsonb,
+    $7::timestamptz, $8::uuid, $9::bigint,
+    $10::text, $11::text
   ) AS result
 `;
+
+// A Query is an OR of items; the SQL function evaluates each item as
+// (any-of types) AND (all tags) and ORs the results. Items with neither types nor tags carry no
+// information and are dropped; when nothing remains there is no condition to check (null).
+const conditionItemsJson = (query: Query): string | null => {
+  const items = query.items
+    .filter((i) => i.eventTypes.length > 0 || i.tags.length > 0)
+    .map((i) => ({ types: i.eventTypes, tags: flatTagStrings(i.tags) }));
+  return items.length > 0 ? JSON.stringify(items) : null;
+};
 
 interface AppendResultJson {
   readonly success: boolean;
@@ -60,12 +67,10 @@ export interface AppendOptions {
   readonly notifyPayload?: string;
 }
 
-// Port of EventStoreImpl.appendIf (as of the advisory-lock fix in spring-crablet commit
-// b11118b8) - append_events_if() itself now takes a decision-model-keyed pg_advisory_xact_lock
-// before its snapshot-based conflict check, closing the genuinely-concurrent-race window at the
-// SQL layer. This means the TS client needs NO isolation-level games (no SERIALIZABLE bump, no
-// transaction wrapper, no commit-time-defect handling) - a plain sql.unsafe call is sufficient,
-// unlike the Phase 0 spike's original implementation which predated that fix.
+// append_events_if() serializes each condition item with a pg_advisory_xact_lock before checking
+// for conflicts, closing the genuinely-concurrent-race window at the SQL layer, so the client needs
+// no isolation-level control (no SERIALIZABLE bump, no commit-time-defect handling) - a plain
+// sql.unsafe call is sufficient. Callers must run at READ COMMITTED (the Postgres default).
 export const appendEventsIf = (
   sql: SqlClient.SqlClient,
   events: ReadonlyArray<AppendEvent>,
@@ -77,13 +82,8 @@ export const appendEventsIf = (
     const tagLiterals = events.map((e) => encodeTagsLiteral(e.tags));
     const dataJsonStrings = events.map((e) => JSON.stringify(e.eventData));
 
-    const concurrencyTypes = condition.concurrencyQuery.items.flatMap((i) => i.eventTypes);
-    const concurrencyTags = condition.concurrencyQuery.items.flatMap((i) => flatTagStrings(i.tags));
-    const hasConcurrencyCondition = concurrencyTypes.length > 0 || concurrencyTags.length > 0;
-
-    const idempotencyTypes = condition.idempotencyQuery.items.flatMap((i) => i.eventTypes);
-    const idempotencyTags = condition.idempotencyQuery.items.flatMap((i) => flatTagStrings(i.tags));
-    const hasIdempotencyCondition = idempotencyTypes.length > 0 || idempotencyTags.length > 0;
+    const concurrencyItems = conditionItemsJson(condition.concurrencyQuery);
+    const idempotencyItems = conditionItemsJson(condition.idempotencyQuery);
 
     const correlationId = yield* CorrelationContext.correlationId;
     const causationId = yield* CorrelationContext.causationId;
@@ -92,11 +92,9 @@ export const appendEventsIf = (
       types,
       tagLiterals,
       dataJsonStrings,
-      hasConcurrencyCondition ? concurrencyTypes : null,
-      hasConcurrencyCondition ? concurrencyTags : null,
-      hasConcurrencyCondition ? condition.afterPosition.position.toString() : null,
-      hasIdempotencyCondition ? idempotencyTypes : null,
-      hasIdempotencyCondition ? idempotencyTags : null,
+      concurrencyItems,
+      concurrencyItems === null ? null : condition.afterPosition.position.toString(),
+      idempotencyItems,
       new Date().toISOString(),
       correlationId,
       causationId === null ? null : causationId.toString(),

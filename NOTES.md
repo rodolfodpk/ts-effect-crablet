@@ -656,3 +656,31 @@ around it.
   surfaces a `*ManagementService` that already exists as a library API; wiring it to HTTP is
   presentation, not proof-of-composition.
 - **springdoc/OpenAPI** and the **virtual-thread test** - same reasoning as Phase 7.
+
+
+## Phase F - append conditions with real multi-item semantics (correctness fix)
+
+Found by the API-redesign design spike (see the plan) while comparing the prototype against the
+existing wallet handlers. Two independent defects in `append_events_if`, both reproduced by tests
+before fixing (details and decision in the addendum to
+[ADR-0003](docs/adr/0003-non-commutative-append-concurrency-protection.md)):
+
+- A multi-item `Query` was flattened into one type list + one tag list, turning OR-of-items into an
+  AND, so conflicts were missed for any multi-item decision model.
+- A `pg_snapshot_xmin` visibility filter excluded committed conflicting events whenever an unrelated
+  transaction was open.
+
+Fix: `V4__crablet_multi_item_append_conditions.sql` (structured JSONB items, per-item advisory locks,
+no xmin filter) + `internal/sql.ts` sending unflattened items. New regression tests in
+`packages/eventstore/test/integration/append-multi-item.test.ts` (9 tests, incl. the overlapping-
+conditions race, which fails 13/15 rounds with whole-condition locks).
+
+Also found, not yet fixed (tracked in the plan, Phase 5): the wallet's `WalletBalanceProjector`
+mis-attributes a transfer's receiver balance, and folding `newBalance` snapshots loses updates for
+concurrent (commutative) deposits.
+
+Test-infra note: Testcontainers' 10 s "container ports bound" wait is hard-coded, so integration runs
+can fail intermittently with "Timed out after 10000ms while waiting for container ports to be bound"
+when the Docker VM is busy (observed with a `kind` cluster running alongside). Every such failure seen
+was this timeout, never an assertion; re-running the file passes. A shared container per run would
+remove it.
