@@ -1,0 +1,166 @@
+// The four examples from https://dcb.events/examples/ (unique username, invoice number, dynamic product
+// price, opt-in token), written against this framework to see where the API fits and where it strains.
+// In the examples' words each decision reads events by TAG and appends under the resulting condition.
+import * as Schema from "effect/Schema";
+import * as Tag from "@crablet/eventstore/Tag";
+import { defineCommand, emit, fail } from "../../src/Command.ts";
+import { DomainError } from "../../src/Errors.ts";
+import { defineEvent } from "../../src/Event.ts";
+import { all, defineModel, type ModelInstance } from "../../src/Model.ts";
+
+const MINUTE = 60_000;
+
+// ---------------------------------------------------------------------------------------------
+// 1. Unique username
+// ---------------------------------------------------------------------------------------------
+export const AccountRegistered = defineEvent("AccountRegistered", {
+  schema: Schema.Struct({ username: Schema.String }),
+  tags: (d) => ({ username: d.username.toLowerCase() }) // "jamesbond" and "JamesBond" are the same name
+});
+export const AccountClosed = defineEvent("AccountClosed", {
+  schema: Schema.Struct({ username: Schema.String }),
+  tags: (d) => ({ username: d.username.toLowerCase() })
+});
+// Two usernames on ONE event: the same tag key twice is not expressible as `{ username: ... }`, so the
+// two sides get their own keys and the model binds through either (like a transfer's from/to).
+export const UsernameChanged = defineEvent("UsernameChanged", {
+  schema: Schema.Struct({ oldUsername: Schema.String, newUsername: Schema.String }),
+  tags: (d) => ({ old_username: d.oldUsername.toLowerCase(), new_username: d.newUsername.toLowerCase() })
+});
+
+export const RETENTION_MS = 3 * 24 * 60 * MINUTE;
+
+// claimed: someone has it. releasedAt: when a closed/renamed-away name stops being reserved.
+const UsernameModel = defineModel({
+  by: "username",
+  initial: () => ({ claimed: false, reservedUntil: 0 })
+})
+  .on(AccountRegistered, () => ({ claimed: true, reservedUntil: 0 }))
+  .on(AccountClosed, (_, __, ctx) => ({ claimed: false, reservedUntil: ctx.event.occurredAt.getTime() + RETENTION_MS }))
+  .on(
+    UsernameChanged,
+    (_, d, ctx) =>
+      ctx.id === d.newUsername.toLowerCase()
+        ? { claimed: true, reservedUntil: 0 }
+        : { claimed: false, reservedUntil: ctx.event.occurredAt.getTime() + RETENTION_MS },
+    { by: ["old_username", "new_username"] }
+  );
+
+export class UsernameClaimed extends DomainError("UsernameClaimed", { fields: { username: Schema.String }, kind: "conflict" }) {}
+
+export const RegisterAccount = defineCommand({
+  name: "register_account",
+  // `now` is an input so the decision stays pure (and testable at any date)
+  input: Schema.Struct({ username: Schema.String, now: Schema.Number }),
+  model: (c) => UsernameModel.of({ id: c.username.toLowerCase() }),
+  decide: (name, c) => (name.claimed || c.now < name.reservedUntil ? fail(new UsernameClaimed({ username: c.username })) : emit(AccountRegistered(c)))
+});
+
+// ---------------------------------------------------------------------------------------------
+// 2. Invoice number: unique AND gap-free
+// ---------------------------------------------------------------------------------------------
+export const InvoiceCreated = defineEvent("InvoiceCreated", {
+  schema: Schema.Struct({ invoiceNumber: Schema.Number, invoiceData: Schema.String }),
+  // a model needs a key to bind by, even when the decision concerns "all invoices": a constant series tag
+  tags: (d) => ({ invoice: d.invoiceNumber, series: "main" })
+});
+const InvoiceSeries = defineModel({ by: "series", initial: () => ({ next: 1 }) }).on(InvoiceCreated, (_, d) => ({ next: d.invoiceNumber + 1 }));
+
+export const CreateInvoice = defineCommand({
+  name: "create_invoice",
+  input: Schema.Struct({ invoiceData: Schema.String }),
+  model: () => InvoiceSeries.of({ id: "main" }),
+  decide: (series, c) => emit(InvoiceCreated({ invoiceNumber: series.next, invoiceData: c.invoiceData }))
+});
+
+// ---------------------------------------------------------------------------------------------
+// 3. Dynamic product price: an order is valid only at prices that were valid when displayed
+// ---------------------------------------------------------------------------------------------
+export const GRACE_MS = 10 * MINUTE;
+export const ProductDefined = defineEvent("ProductDefined", {
+  schema: Schema.Struct({ productId: Schema.String, price: Schema.Number }),
+  tags: (d) => ({ product_id: d.productId })
+});
+export const ProductPriceChanged = defineEvent("ProductPriceChanged", {
+  schema: Schema.Struct({ productId: Schema.String, newPrice: Schema.Number }),
+  tags: (d) => ({ product_id: d.productId })
+});
+// One event, MANY products: the same tag key once per item. `tags` returns one value per key, so the
+// per-item tags are added through `extraTags` when the event is built (see OrderProducts).
+export const ProductsOrdered = defineEvent("ProductsOrdered", {
+  schema: Schema.Struct({ items: Schema.Array(Schema.Struct({ productId: Schema.String, price: Schema.Number })) }),
+  tags: () => ({})
+});
+
+interface Price {
+  readonly current: number | null;
+  // prices that were replaced, and when
+  readonly superseded: ReadonlyArray<{ readonly price: number; readonly at: number }>;
+}
+const ProductPrice = defineModel({ by: "product_id", initial: (): Price => ({ current: null, superseded: [] }) })
+  .on(ProductDefined, (p, d) => ({ ...p, current: d.price }))
+  .on(ProductPriceChanged, (p, d, ctx) => ({
+    current: d.newPrice,
+    superseded: p.current === null ? p.superseded : [...p.superseded, { price: p.current, at: ctx.event.occurredAt.getTime() }]
+  }));
+
+export class InvalidPrice extends DomainError("InvalidPrice", { fields: { productId: Schema.String }, kind: "conflict" }) {}
+
+const priceIsValid = (p: Price, displayed: number, now: number) =>
+  p.current === displayed || p.superseded.some((s) => s.price === displayed && now - s.at <= GRACE_MS);
+
+export const OrderProducts = defineCommand({
+  name: "order_products",
+  input: Schema.Struct({
+    items: Schema.Array(Schema.Struct({ productId: Schema.String, displayedPrice: Schema.Number })),
+    now: Schema.Number
+  }),
+  // the set of products is only known at run time: one model per item, combined into one boundary
+  model: (c) =>
+    all(Object.fromEntries(c.items.map((i) => [i.productId, ProductPrice.of({ id: i.productId })])) as Record<string, ModelInstance<Price>>),
+  decide: (prices, c) => {
+    const bad = c.items.find((i) => !priceIsValid(prices[i.productId]!, i.displayedPrice, c.now));
+    if (bad) return fail(new InvalidPrice({ productId: bad.productId }));
+    const order = ProductsOrdered({ items: c.items.map((i) => ({ productId: i.productId, price: i.displayedPrice })) }, [
+      ...new Set(c.items.map((i) => i.productId))
+    ].map((id) => Tag.of("product_id", id)));
+    return emit(order);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// 4. Opt-in token: a one-time password confirms a sign-up once, within an hour
+// ---------------------------------------------------------------------------------------------
+export const TOKEN_TTL_MS = 60 * MINUTE;
+export const SignUpInitiated = defineEvent("SignUpInitiated", {
+  schema: Schema.Struct({ email: Schema.String, otp: Schema.String, name: Schema.String }),
+  tags: (d) => ({ email: d.email.toLowerCase(), otp: d.otp })
+});
+export const SignUpConfirmed = defineEvent("SignUpConfirmed", {
+  schema: Schema.Struct({ email: Schema.String, otp: Schema.String, name: Schema.String }),
+  tags: (d) => ({ email: d.email.toLowerCase(), otp: d.otp })
+});
+// bound by email, scoped to the one otp being confirmed
+const PendingSignUp = defineModel({
+  by: "email",
+  initial: () => ({ initiatedAt: null as number | null, name: "", confirmed: false }),
+  scope: (s: { otp: string }) => ({ otp: s.otp })
+})
+  .on(SignUpInitiated, (s, d, ctx) => ({ ...s, initiatedAt: ctx.event.occurredAt.getTime(), name: d.name }))
+  .on(SignUpConfirmed, (s) => ({ ...s, confirmed: true }));
+
+export class TokenInvalid extends DomainError("TokenInvalid", { fields: { reason: Schema.String }, kind: "invalid" }) {}
+
+export const ConfirmSignUp = defineCommand({
+  name: "confirm_sign_up",
+  input: Schema.Struct({ email: Schema.String, otp: Schema.String, now: Schema.Number }),
+  model: (c) => PendingSignUp.of({ id: c.email.toLowerCase(), otp: c.otp }),
+  decide: (s, c) =>
+    s.initiatedAt === null
+      ? fail(new TokenInvalid({ reason: "unknown" }))
+      : s.confirmed
+        ? fail(new TokenInvalid({ reason: "already used" }))
+        : c.now - s.initiatedAt > TOKEN_TTL_MS
+          ? fail(new TokenInvalid({ reason: "expired" }))
+          : emit(SignUpConfirmed({ email: c.email, otp: c.otp, name: s.name }))
+});
