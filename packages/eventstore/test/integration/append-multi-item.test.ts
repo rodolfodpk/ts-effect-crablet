@@ -16,8 +16,8 @@ import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import * as Query from "../../src/Query.ts";
 import * as Tag from "../../src/Tag.ts";
-import * as StreamPosition from "../../src/StreamPosition.ts";
-import type { StreamPosition as StreamPositionType } from "../../src/StreamPosition.ts";
+import * as LogPosition from "../../src/LogPosition.ts";
+import type { LogPosition as LogPositionType } from "../../src/LogPosition.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<EventStore | SqlClient.SqlClient, never>;
@@ -46,11 +46,11 @@ const ev = (type: string, ...tags: Array<[string, string]>) =>
   AppendEvent.builder(type).tags(tags.map(([k, v]) => Tag.of(k, v))).data({ n: 1 }).build();
 
 // Position of the newest event matching `query` (zero when none).
-const positionOf = (query: Query.Query): Promise<StreamPositionType> =>
+const positionOf = (query: Query.Query): Promise<LogPositionType> =>
   run(
     Effect.gen(function* () {
       const store = yield* EventStore;
-      return (yield* store.project(query, StreamPosition.zero(), [existsProjector()])).streamPosition;
+      return (yield* store.project(query, LogPosition.zero(), [existsProjector()])).logPosition;
     })
   );
 
@@ -167,7 +167,7 @@ describe("append conditions with multi-item queries", () => {
       Query.queryItemOf(["MI_Done"], [Tag.of("op", uid())]), // different op: no match
       Query.queryItemOf(["MI_Done"], [Tag.of("op", id)]) // the duplicate
     ]);
-    const outcome = await attempt([ev("MI_Done", ["op", id])], AppendCondition.of(StreamPosition.zero(), Query.noCondition(), idem));
+    const outcome = await attempt([ev("MI_Done", ["op", id])], AppendCondition.of(LogPosition.zero(), Query.noCondition(), idem));
     assert.equal(outcome, "IDEMPOTENCY_VIOLATION");
   });
 
@@ -176,7 +176,7 @@ describe("append conditions with multi-item queries", () => {
       Query.queryItemOf(["MI_Done"], [Tag.of("op", uid())]),
       Query.queryItemOf(["MI_Done"], [Tag.of("op", uid())])
     ]);
-    const outcome = await attempt([ev("MI_Done", ["op", uid()])], AppendCondition.of(StreamPosition.zero(), Query.noCondition(), idem));
+    const outcome = await attempt([ev("MI_Done", ["op", uid()])], AppendCondition.of(LogPosition.zero(), Query.noCondition(), idem));
     assert.equal(outcome, "ok");
   });
 });

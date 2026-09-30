@@ -5,7 +5,7 @@ import type { Tag } from "../Tag.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
 import type { Query } from "../Query.ts";
-import type { StreamPosition } from "../StreamPosition.ts";
+import type { LogPosition } from "../LogPosition.ts";
 import { ConcurrencyException, type DCBViolation } from "../DCBViolation.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 
@@ -136,7 +136,7 @@ export interface StoredEventRow {
 export const queryEvents = (
   sql: SqlClient.SqlClient,
   query: Query,
-  after: StreamPosition
+  after: LogPosition
 ): Effect.Effect<ReadonlyArray<StoredEventRow>, SqlError> =>
   Effect.gen(function* () {
     const params: Array<unknown> = [];

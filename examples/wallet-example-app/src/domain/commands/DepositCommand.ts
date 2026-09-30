@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { EventStore } from "@crablet/eventstore";
-import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
+import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { SqlError } from "effect/sql/SqlError";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import type { CommandHandler } from "@crablet/commands";
@@ -22,7 +22,7 @@ export interface DepositCommand {
 
 // Port of com.crablet.examples.wallet.commands.DepositCommandHandler. CommutativeGuarded (not
 // NonCommutative): deposits commute with each other - two concurrent deposits don't conflict, so
-// no full stream-position DCB check is needed - but a *lifecycle*-only guard query still catches a
+// no full log-position DCB check is needed - but a *lifecycle*-only guard query still catches a
 // concurrent wallet close, and `.idempotent(DepositMade, deposit_id)` makes retries safe.
 export const depositCommandHandler: CommandHandler<
   DepositCommand,
@@ -35,7 +35,7 @@ export const depositCommandHandler: CommandHandler<
     const period = yield* resolveActivePeriod(eventStore, command.walletId);
     const projection = yield* eventStore.project(
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.walletId, period.year, period.month),
-      StreamPositionNS.zero(),
+      LogPositionNS.zero(),
       [walletBalanceProjector]
     );
 
@@ -59,6 +59,6 @@ export const depositCommandHandler: CommandHandler<
     );
 
     const lifecycleGuard = WalletQueryPatterns.walletLifecycleModel(command.walletId);
-    const decision = CD.withLifecycleGuard(event, lifecycleGuard, projection.streamPosition);
+    const decision = CD.withLifecycleGuard(event, lifecycleGuard, projection.logPosition);
     return CD.commutativeGuardedIdempotent(decision, WalletEvents.DEPOSIT_MADE, WalletTags.DEPOSIT_ID, command.depositId);
   });

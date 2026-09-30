@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { EventStore } from "@crablet/eventstore";
-import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
+import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { SqlError } from "effect/sql/SqlError";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
@@ -50,19 +50,19 @@ export const transferMoneyCommandHandler: CommandHandler<
       fromPeriod.year,
       fromPeriod.month
     );
-    const projection = yield* eventStore.project(decisionModel, StreamPositionNS.zero(), [walletBalanceProjector]);
+    const projection = yield* eventStore.project(decisionModel, LogPositionNS.zero(), [walletBalanceProjector]);
 
     // walletBalanceProjector folds one shared state across BOTH wallets' events, which would
     // conflate their balances - project each wallet's own period-scoped query separately instead
     // for the actual balance figures, reusing the already-resolved periods above.
     const fromProjection = yield* eventStore.project(
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.fromWalletId, fromPeriod.year, fromPeriod.month),
-      StreamPositionNS.zero(),
+      LogPositionNS.zero(),
       [walletBalanceProjector]
     );
     const toProjection = yield* eventStore.project(
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.toWalletId, toPeriod.year, toPeriod.month),
-      StreamPositionNS.zero(),
+      LogPositionNS.zero(),
       [walletBalanceProjector]
     );
 
@@ -106,5 +106,5 @@ export const transferMoneyCommandHandler: CommandHandler<
       ]
     );
 
-    return CD.nonCommutative(event, decisionModel, projection.streamPosition);
+    return CD.nonCommutative(event, decisionModel, projection.logPosition);
   });

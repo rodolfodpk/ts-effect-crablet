@@ -2,8 +2,8 @@ import { Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventStoreService, StateProjector } from "@crablet/eventstore";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
-import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
-import type { StreamPosition } from "@crablet/eventstore/StreamPosition";
+import * as LogPositionNS from "@crablet/eventstore/LogPosition";
+import type { LogPosition } from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import * as WalletTags from "../WalletTags.ts";
@@ -30,11 +30,11 @@ export interface ActivePeriod {
   readonly year: number;
   readonly month: number;
   readonly statementId: string;
-  // The decision-model streamPosition for this (now-current) period, post any lazy statement
+  // The decision-model logPosition for this (now-current) period, post any lazy statement
   // open/close - callers use this directly as their own NonCommutative/CommutativeGuarded
-  // decision's streamPosition, since it already reflects everything this resolver itself just
+  // decision's logPosition, since it already reflects everything this resolver itself just
   // appended.
-  readonly streamPosition: StreamPosition;
+  readonly logPosition: LogPosition;
 }
 
 interface StatementTrackingState {
@@ -97,7 +97,7 @@ export const resolveActivePeriod = (
       [WalletEvents.WALLET_STATEMENT_OPENED, WalletEvents.WALLET_STATEMENT_CLOSED],
       [Tag.of(WalletTags.WALLET_ID, walletId)]
     );
-    const tracking = yield* eventStore.project(trackingQuery, StreamPositionNS.zero(), [statementTrackingProjector]);
+    const tracking = yield* eventStore.project(trackingQuery, LogPositionNS.zero(), [statementTrackingProjector]);
 
     if (
       tracking.state.openYear === year &&
@@ -106,32 +106,32 @@ export const resolveActivePeriod = (
     ) {
       const currentPeriodProjection = yield* eventStore.project(
         WalletQueryPatterns.singleWalletActivePeriodDecisionModel(walletId, year, month),
-        StreamPositionNS.zero(),
+        LogPositionNS.zero(),
         [walletBalanceProjector]
       );
       return {
         year,
         month,
         statementId: tracking.state.openStatementId,
-        streamPosition: currentPeriodProjection.streamPosition
+        logPosition: currentPeriodProjection.logPosition
       };
     }
 
     // No statement open for the current period - lazily close the previous one (if any, and only
     // if it actually had transactions) before opening a new one.
     let carryForwardBalance = initialWalletBalanceState.balance;
-    let closeStreamPosition = StreamPositionNS.zero();
+    let closeLogPosition = LogPositionNS.zero();
 
     if (tracking.state.openStatementId !== null && tracking.state.openYear !== null && tracking.state.openMonth !== null) {
       const oldYear = tracking.state.openYear;
       const oldMonth = tracking.state.openMonth;
       const oldPeriodProjection = yield* eventStore.project(
         WalletQueryPatterns.singleWalletActivePeriodDecisionModel(walletId, oldYear, oldMonth),
-        StreamPositionNS.zero(),
+        LogPositionNS.zero(),
         [walletBalanceProjector]
       );
       carryForwardBalance = oldPeriodProjection.state.balance;
-      closeStreamPosition = oldPeriodProjection.streamPosition;
+      closeLogPosition = oldPeriodProjection.logPosition;
 
       const hadTransactions = yield* eventStore.exists(oldPeriodTransactionsQuery(walletId, oldYear, oldMonth));
       if (hadTransactions) {
@@ -148,7 +148,7 @@ export const resolveActivePeriod = (
             })
           ],
           trackingQuery,
-          closeStreamPosition
+          closeLogPosition
         );
       }
     } else {
@@ -156,7 +156,7 @@ export const resolveActivePeriod = (
       // itself, not from any prior period.
       const lifecycleProjection = yield* eventStore.project(
         WalletQueryPatterns.walletLifecycleModel(walletId),
-        StreamPositionNS.zero(),
+        LogPositionNS.zero(),
         [walletBalanceProjector]
       );
       carryForwardBalance = lifecycleProjection.state.balance;
@@ -176,9 +176,9 @@ export const resolveActivePeriod = (
 
     const freshPeriodProjection = yield* eventStore.project(
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(walletId, year, month),
-      StreamPositionNS.zero(),
+      LogPositionNS.zero(),
       [walletBalanceProjector]
     );
 
-    return { year, month, statementId: newStatementId, streamPosition: freshPeriodProjection.streamPosition };
+    return { year, month, statementId: newStatementId, logPosition: freshPeriodProjection.logPosition };
   });

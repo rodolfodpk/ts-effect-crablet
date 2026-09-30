@@ -10,7 +10,7 @@ import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector } from "../
 import { CommandAuditStore, CommandAuditStoreLive } from "../../src/CommandAuditStore.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as Query from "../../src/Query.ts";
-import * as StreamPosition from "../../src/StreamPosition.ts";
+import * as LogPosition from "../../src/LogPosition.ts";
 import { ConcurrencyException } from "../../src/DCBViolation.ts";
 import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
 
@@ -52,7 +52,7 @@ describe("EventStore public API parity (Phase 1)", () => {
         ]);
         const projection = yield* store.project(
           Query.forEventAndTag("SpikeTestEvent", "spike_id", spikeId),
-          StreamPosition.zero(),
+          LogPosition.zero(),
           [existsProjector()]
         );
         return { transactionId, exists: projection.state };
@@ -85,7 +85,7 @@ describe("EventStore public API parity (Phase 1)", () => {
         const store = yield* EventStore;
         const projection = yield* store.project(
           Query.forEventAndTag("SpikeTagRoundTrip", "spike_id", spikeId),
-          StreamPosition.zero(),
+          LogPosition.zero(),
           [existsProjector()]
         );
         return projection.state;
@@ -107,7 +107,7 @@ describe("EventStore public API parity (Phase 1)", () => {
               .appendNonCommutative(
                 [AppendEvent.of("RaceEvent", "race_marker", marker, {})],
                 decisionModel,
-                StreamPosition.zero()
+                LogPosition.zero()
               )
               .pipe(
                 Effect.map(() => "success" as const),

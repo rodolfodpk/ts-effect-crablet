@@ -8,7 +8,7 @@
     "./CommandAuditStore": "./src/CommandAuditStore.ts",
     "./Tag": "./src/Tag.ts",
     "./Query": "./src/Query.ts",
-    "./StreamPosition": "./src/StreamPosition.ts",
+    "./LogPosition": "./src/LogPosition.ts",
     "./AppendEvent": "./src/AppendEvent.ts",
     "./AppendCondition": "./src/AppendCondition.ts",
     "./DCBViolation": "./src/DCBViolation.ts",

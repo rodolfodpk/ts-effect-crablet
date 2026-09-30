@@ -10,7 +10,7 @@ import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/Co
 import { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as Query from "@crablet/eventstore/Query";
-import * as StreamPosition from "@crablet/eventstore/StreamPosition";
+import * as LogPosition from "@crablet/eventstore/LogPosition";
 import { CommandExecutor, CommandExecutorLive, type CommandHandler } from "../../src/CommandExecutor.ts";
 import * as CD from "../../src/CommandDecision.ts";
 
@@ -68,8 +68,8 @@ describe("CommandExecutor (Phase 1)", () => {
     const guardPosition = await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        const projection = yield* store.project(lifecycleQuery, StreamPosition.zero(), [existsProjector()]);
-        return projection.streamPosition;
+        const projection = yield* store.project(lifecycleQuery, LogPosition.zero(), [existsProjector()]);
+        return projection.logPosition;
       })
     );
 
@@ -108,8 +108,8 @@ describe("CommandExecutor (Phase 1)", () => {
     const guardPosition = await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        const projection = yield* store.project(lifecycleQuery, StreamPosition.zero(), [existsProjector()]);
-        return projection.streamPosition;
+        const projection = yield* store.project(lifecycleQuery, LogPosition.zero(), [existsProjector()]);
+        return projection.logPosition;
       })
     );
 

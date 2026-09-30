@@ -1,6 +1,6 @@
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import type { Query } from "@crablet/eventstore/Query";
-import type { StreamPosition } from "@crablet/eventstore/StreamPosition";
+import type { LogPosition } from "@crablet/eventstore/LogPosition";
 
 // Port of com.crablet.command.OnDuplicate.
 export type OnDuplicate = "THROW" | "RETURN_IDEMPOTENT";
@@ -37,7 +37,7 @@ export const idempotencyKeyOf = (
 // part: it's a closed set, known at compile time. `CommandExecutor.ts`'s `switch (decision._tag)`
 // then gets *exhaustiveness checking* for free: TypeScript narrows `decision`'s type inside each
 // `case` branch (e.g. inside `case "NonCommutative":`, `decision` is known to have `decisionModel`/
-// `streamPosition` fields, with no cast needed), and if a new variant is ever added to the union
+// `logPosition` fields, with no cast needed), and if a new variant is ever added to the union
 // without a matching `case`, the switch's fallthrough becomes a type error rather than a silent
 // runtime gap - the same guarantee Java's sealed-interface-exhaustive-switch gives you. This exact
 // `_tag` mechanism is also what `Data.TaggedError` (see eventstore's DCBViolation.ts) generates
@@ -75,14 +75,14 @@ export interface CommutativeGuarded {
   readonly _tag: "CommutativeGuarded";
   readonly events: ReadonlyArray<AppendEvent>;
   readonly guardQuery: Query;
-  readonly guardPosition: StreamPosition;
+  readonly guardPosition: LogPosition;
   readonly idempotencyKey: IdempotencyKey | null;
 }
 
 export const withLifecycleGuard = (
   event: AppendEvent,
   guardQuery: Query,
-  guardPosition: StreamPosition
+  guardPosition: LogPosition
 ): CommutativeGuarded => {
   const appendedTypes = new Set([event.type]);
   const overlapping = guardQuery.items
@@ -106,19 +106,19 @@ export const commutativeGuardedIdempotent = (
 
 export type CommutativeDecision = Commutative | CommutativeGuarded;
 
-// Non-commutative - stream-position-based DCB conflict check.
+// Non-commutative - log-position-based DCB conflict check.
 export interface NonCommutative {
   readonly _tag: "NonCommutative";
   readonly events: ReadonlyArray<AppendEvent>;
   readonly decisionModel: Query;
-  readonly streamPosition: StreamPosition;
+  readonly logPosition: LogPosition;
 }
 
 export const nonCommutative = (
   event: AppendEvent,
   decisionModel: Query,
-  streamPosition: StreamPosition
-): NonCommutative => ({ _tag: "NonCommutative", events: [event], decisionModel, streamPosition });
+  logPosition: LogPosition
+): NonCommutative => ({ _tag: "NonCommutative", events: [event], decisionModel, logPosition });
 
 // Idempotent - entity creation; fails if an event with the same tag already exists.
 export interface Idempotent {

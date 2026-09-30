@@ -99,7 +99,7 @@ const appendDecision = (
     }
 
     case "NonCommutative":
-      return eventStore.appendNonCommutative(decision.events, decision.decisionModel, decision.streamPosition);
+      return eventStore.appendNonCommutative(decision.events, decision.decisionModel, decision.logPosition);
 
     case "Idempotent":
       return eventStore.appendIdempotent(decision.events, decision.eventType, decision.tagKey, decision.tagValue);

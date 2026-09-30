@@ -8,8 +8,8 @@ import * as AppendConditionNS from "./AppendCondition.ts";
 import type { AppendCondition } from "./AppendCondition.ts";
 import * as QueryNS from "./Query.ts";
 import type { Query } from "./Query.ts";
-import * as StreamPositionNS from "./StreamPosition.ts";
-import type { StreamPosition } from "./StreamPosition.ts";
+import * as LogPositionNS from "./LogPosition.ts";
+import type { LogPosition } from "./LogPosition.ts";
 import type { ConcurrencyException } from "./DCBViolation.ts";
 import { encodePayload } from "./NotifyPayload.ts";
 import * as Sql from "./internal/sql.ts";
@@ -47,7 +47,7 @@ export const existsProjector = (...eventTypes: ReadonlyArray<string>): StateProj
 
 export interface ProjectionResult<T> {
   readonly state: T;
-  readonly streamPosition: StreamPosition;
+  readonly logPosition: LogPosition;
 }
 
 // PATTERN PRIMER - `Effect.Effect<A, E, R>`, the type every function in this codebase returns
@@ -72,7 +72,7 @@ export interface EventStoreService {
   readonly appendNonCommutative: (
     events: ReadonlyArray<AppendEvent>,
     decisionModel: Query,
-    streamPosition: StreamPosition
+    logPosition: LogPosition
   ) => Effect.Effect<string, ConcurrencyException | SqlError>;
 
   readonly appendIdempotent: (
@@ -91,7 +91,7 @@ export interface EventStoreService {
 
   readonly project: <T>(
     query: Query,
-    after: StreamPosition,
+    after: LogPosition,
     projectors: ReadonlyArray<StateProjector<T>>
   ) => Effect.Effect<ProjectionResult<T>, SqlError>;
 
@@ -163,7 +163,7 @@ export const EventStoreLive = Layer.effect(
 
     const project = <T>(
       query: Query,
-      after: StreamPosition,
+      after: LogPosition,
       projectors: ReadonlyArray<StateProjector<T>>
     ): Effect.Effect<ProjectionResult<T>, SqlError> =>
       Effect.gen(function* () {
@@ -173,7 +173,7 @@ export const EventStoreLive = Layer.effect(
         const rows = yield* Sql.queryEvents(sql, query, after);
 
         let state = projectors[0]!.initialState;
-        let lastStreamPosition = after;
+        let lastLogPosition = after;
 
         for (const row of rows) {
           const event = parseRow(row);
@@ -182,15 +182,15 @@ export const EventStoreLive = Layer.effect(
               state = projector.transition(state, event);
             }
           }
-          lastStreamPosition = StreamPositionNS.of(event.position, event.occurredAt, event.transactionId);
+          lastLogPosition = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
         }
 
-        return { state: state as T, streamPosition: lastStreamPosition };
+        return { state: state as T, logPosition: lastLogPosition };
       });
 
     const exists = (query: Query): Effect.Effect<boolean, SqlError> =>
       Effect.map(
-        project(query, StreamPositionNS.zero(), [existsProjector()]),
+        project(query, LogPositionNS.zero(), [existsProjector()]),
         (r) => r.state
       );
 
@@ -236,8 +236,8 @@ export const EventStoreLive = Layer.effect(
       appendCommutative: (events) =>
         appendConditional(events, AppendConditionNS.empty()) as Effect.Effect<string, SqlError>,
 
-      appendNonCommutative: (events, decisionModel, streamPosition) =>
-        appendConditional(events, AppendConditionNS.of(streamPosition, decisionModel)),
+      appendNonCommutative: (events, decisionModel, logPosition) =>
+        appendConditional(events, AppendConditionNS.of(logPosition, decisionModel)),
 
       appendIdempotent: (events, eventType, tagKey, tagValue) =>
         appendConditional(events, AppendConditionNS.idempotent(eventType, tagKey, tagValue)),

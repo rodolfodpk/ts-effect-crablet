@@ -9,7 +9,7 @@
 // all - TS values and types share a name (`Tag` the interface vs `Tag.of` the imported namespace)
 // without colliding, because the interface is exported separately from the default/namespace
 // import. You'll see this same shape in almost every file in this repo (Query.ts, AppendEvent.ts,
-// AppendCondition.ts, StreamPosition.ts, EventSelection.ts, BackoffState.ts, ...) - it's the
+// AppendCondition.ts, LogPosition.ts, EventSelection.ts, BackoffState.ts, ...) - it's the
 // default choice here; a real `class` only shows up where genuinely stateful, multi-step
 // construction benefits from it (see AppendEvent.ts's `AppendEventBuilder`) or where Effect's own
 // APIs require a class (`Context.Service`, `Data.TaggedError` - see EventStore.ts and DCBViolation.ts).

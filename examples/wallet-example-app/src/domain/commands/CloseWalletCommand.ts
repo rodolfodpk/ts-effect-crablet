@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { EventStore } from "@crablet/eventstore";
-import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
+import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { SqlError } from "effect/sql/SqlError";
 import type { CommandHandler } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";
@@ -23,10 +23,10 @@ export const closeWalletCommandHandler: CommandHandler<CloseWalletCommand, Walle
   Effect.gen(function* () {
     const eventStore = yield* EventStore;
     const lifecycleModel = WalletQueryPatterns.walletLifecycleModel(command.walletId);
-    const projection = yield* eventStore.project(lifecycleModel, StreamPositionNS.zero(), [walletBalanceProjector]);
+    const projection = yield* eventStore.project(lifecycleModel, LogPositionNS.zero(), [walletBalanceProjector]);
 
     if (!projection.state.exists) return yield* Effect.fail(new WalletNotFound({ walletId: command.walletId }));
 
     const event = WalletEvents.walletClosed({ walletId: command.walletId, closedAt: new Date().toISOString() });
-    return CD.nonCommutative(event, lifecycleModel, projection.streamPosition);
+    return CD.nonCommutative(event, lifecycleModel, projection.logPosition);
   });

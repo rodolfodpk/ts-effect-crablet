@@ -11,7 +11,7 @@ import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import * as StreamPosition from "@crablet/eventstore/StreamPosition";
+import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
@@ -59,7 +59,7 @@ const eventsFor = (eventType: string, walletId: string) =>
       const eventStore = yield* EventStore;
       const result = yield* eventStore.project(
         Query.forEventAndTag(eventType, WalletTags.WALLET_ID, walletId),
-        StreamPosition.zero(),
+        LogPosition.zero(),
         [collectingProjector(eventType)]
       );
       return result.state;

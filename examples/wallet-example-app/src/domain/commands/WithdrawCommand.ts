@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { EventStore } from "@crablet/eventstore";
-import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
+import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { SqlError } from "effect/sql/SqlError";
@@ -23,7 +23,7 @@ export interface WithdrawCommand {
 
 // Port of com.crablet.examples.wallet.commands.WithdrawCommandHandler - including its `handle()`
 // override, not just `decide()`. Withdrawals are order-sensitive (a real balance check), so a full
-// NonCommutative stream-position DCB check is required - but on retry, the balance has already
+// NonCommutative log-position DCB check is required - but on retry, the balance has already
 // been reduced by the first successful attempt, so re-running the balance check would wrongly
 // throw InsufficientFunds. The duplicate pre-check below (does a WithdrawalMade for this
 // withdrawal_id already exist?) must run *before* any balance logic, short-circuiting to NoOp -
@@ -46,7 +46,7 @@ export const withdrawCommandHandler: CommandHandler<
     const period = yield* resolveActivePeriod(eventStore, command.walletId);
     const projection = yield* eventStore.project(
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.walletId, period.year, period.month),
-      StreamPositionNS.zero(),
+      LogPositionNS.zero(),
       [walletBalanceProjector]
     );
 
@@ -81,6 +81,6 @@ export const withdrawCommandHandler: CommandHandler<
     return CD.nonCommutative(
       event,
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.walletId, period.year, period.month),
-      projection.streamPosition
+      projection.logPosition
     );
   });
