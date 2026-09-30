@@ -2,7 +2,6 @@
 // price, opt-in token), written against this framework to see where the API fits and where it strains.
 // In the examples' words each decision reads events by TAG and appends under the resulting condition.
 import * as Schema from "effect/Schema";
-import * as Tag from "@crablet/eventstore/Tag";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
@@ -21,11 +20,10 @@ export const AccountClosed = defineEvent("AccountClosed", {
   schema: Schema.Struct({ username: Schema.String }),
   tags: (d) => ({ username: d.username.toLowerCase() })
 });
-// Two usernames on ONE event: the same tag key twice is not expressible as `{ username: ... }`, so the
-// two sides get their own keys and the model binds through either (like a transfer's from/to).
+// Two usernames on ONE event: a list value gives it the same `username` tag twice.
 export const UsernameChanged = defineEvent("UsernameChanged", {
   schema: Schema.Struct({ oldUsername: Schema.String, newUsername: Schema.String }),
-  tags: (d) => ({ old_username: d.oldUsername.toLowerCase(), new_username: d.newUsername.toLowerCase() })
+  tags: (d) => ({ username: [d.oldUsername.toLowerCase(), d.newUsername.toLowerCase()] })
 });
 
 export const RETENTION_MS = 3 * 24 * 60 * MINUTE;
@@ -37,13 +35,10 @@ const UsernameModel = defineModel({
 })
   .on(AccountRegistered, () => ({ claimed: true, reservedUntil: 0 }))
   .on(AccountClosed, (_, __, ctx) => ({ claimed: false, reservedUntil: ctx.event.occurredAt.getTime() + RETENTION_MS }))
-  .on(
-    UsernameChanged,
-    (_, d, ctx) =>
-      ctx.id === d.newUsername.toLowerCase()
-        ? { claimed: true, reservedUntil: 0 }
-        : { claimed: false, reservedUntil: ctx.event.occurredAt.getTime() + RETENTION_MS },
-    { by: ["old_username", "new_username"] }
+  .on(UsernameChanged, (_, d, ctx) =>
+    ctx.id === d.newUsername.toLowerCase()
+      ? { claimed: true, reservedUntil: 0 }
+      : { claimed: false, reservedUntil: ctx.event.occurredAt.getTime() + RETENTION_MS }
   );
 
 export class UsernameClaimed extends DomainError("UsernameClaimed", { fields: { username: Schema.String }, kind: "conflict" }) {}
@@ -85,11 +80,10 @@ export const ProductPriceChanged = defineEvent("ProductPriceChanged", {
   schema: Schema.Struct({ productId: Schema.String, newPrice: Schema.Number }),
   tags: (d) => ({ product_id: d.productId })
 });
-// One event, MANY products: the same tag key once per item. `tags` returns one value per key, so the
-// per-item tags are added through `extraTags` when the event is built (see OrderProducts).
+// One event, MANY products: a list value tags it product_id once per distinct product.
 export const ProductsOrdered = defineEvent("ProductsOrdered", {
   schema: Schema.Struct({ items: Schema.Array(Schema.Struct({ productId: Schema.String, price: Schema.Number })) }),
-  tags: () => ({})
+  tags: (d) => ({ product_id: d.items.map((i) => i.productId) })
 });
 
 interface Price {
@@ -121,10 +115,7 @@ export const OrderProducts = defineCommand({
   decide: (prices, c) => {
     const bad = c.items.find((i) => !priceIsValid(prices[i.productId]!, i.displayedPrice, c.now));
     if (bad) return fail(new InvalidPrice({ productId: bad.productId }));
-    const order = ProductsOrdered({ items: c.items.map((i) => ({ productId: i.productId, price: i.displayedPrice })) }, [
-      ...new Set(c.items.map((i) => i.productId))
-    ].map((id) => Tag.of("product_id", id)));
-    return emit(order);
+    return emit(ProductsOrdered({ items: c.items.map((i) => ({ productId: i.productId, price: i.displayedPrice })) }));
   }
 });
 

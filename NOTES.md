@@ -946,3 +946,11 @@ asserts the model directly (queries, fold, both regressions).
 - Measured cost (16 writers x 150 appends, one run): hot single (type, tag) unconditional 7.6k -> 2.6k appends/s;
   guarded hot 2.3k -> 2.0k; distinct keys -5..-16%.
 - Flake seen again: a wallet integration file failed once to start its container; re-running passed.
+
+## List-valued tags
+
+- `defineEvent`'s `tags` may return a list for a key: one tag per distinct element, same key
+  (`tags: (d) => ({ product_id: d.items.map((i) => i.productId) })`). Empty list = no tag for that key. `where({ product_id })`
+  still takes a single value. Found while writing the dcb.events examples (`test/support/dcb-examples.ts`), where an
+  order touches many products and a rename touches two usernames; both previously needed `extraTags` or two tag keys.
+- Each extra tag is one more (type, tag) append lock (V5), so keep lists modest.

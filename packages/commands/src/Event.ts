@@ -16,6 +16,11 @@ import * as Tag from "@crablet/eventstore/Tag";
 //     DepositMade({ walletId: "w1", depositId: "d1", amount: 10 })   // -> AppendEvent with both tags
 //     DepositMade.where({ deposit_id: "d1" })                        // -> Query; unknown tag keys don't compile
 //
+// A tag value may be a LIST: one tag per distinct element, same key. For an event that concerns many
+// entities at once (each extra tag is one more append lock, so keep such lists modest):
+//
+//     tags: (d) => ({ product_id: d.items.map((i) => i.productId) })   // -> product_id=p1, product_id=p2
+//
 // PATTERN PRIMER - a function with properties: `EventDef` below has a *call signature* (you call it
 // to build an event) AND properties (`type`, `decode`, `where`). TypeScript models this directly; at
 // runtime it is a plain function with extra fields attached via `Object.assign`.
@@ -38,7 +43,7 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
 export const defineEvent = <
   Type extends string,
   S extends Schema.Constraint,
-  T extends Record<string, TagValue | null | undefined>
+  T extends Record<string, TagValue | ReadonlyArray<TagValue> | null | undefined>
 >(
   type: Type,
   def: { readonly schema: S; readonly tags: (data: Schema.Schema.Type<S>) => T }
@@ -47,8 +52,14 @@ export const defineEvent = <
 
   const build = (data: Schema.Schema.Type<S>, extraTags: ReadonlyArray<Tag.Tag> = []) => {
     const builder = AppendEvent.builder(type);
-    // `tag` lower-cases the key and skips null/undefined values.
-    for (const [key, value] of Object.entries(def.tags(data))) builder.tag(key, value);
+    // `tag` lower-cases the key and skips null/undefined values. A list value becomes one tag per
+    // distinct element (same key repeated), e.g. an order touching several products.
+    for (const [key, value] of Object.entries(def.tags(data))) {
+      const values: ReadonlyArray<TagValue | null | undefined> = Array.isArray(value)
+        ? [...new Set((value as ReadonlyArray<TagValue>).map(String))]
+        : [value as TagValue | null | undefined];
+      for (const one of values) builder.tag(key, one);
+    }
     return builder.tags(extraTags).data(data).build();
   };
 

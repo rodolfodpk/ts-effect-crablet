@@ -65,3 +65,31 @@ describe("defineEvent", () => {
     expect(true).toBe(true);
   });
 });
+
+describe("defineEvent: list-valued tags", () => {
+  const Ordered = defineEvent("Ordered", {
+    schema: Schema.Struct({ orderId: Schema.String, productIds: Schema.Array(Schema.String) }),
+    tags: (d) => ({ order_id: d.orderId, product_id: d.productIds })
+  });
+  const tagsOf = (e: { tags: ReadonlyArray<{ key: string; value: string }> }) => e.tags.map((t) => `${t.key}=${t.value}`).sort();
+
+  test("a list becomes one tag per element, same key", () => {
+    expect(tagsOf(Ordered({ orderId: "o1", productIds: ["p2", "p1"] }))).toEqual(["order_id=o1", "product_id=p1", "product_id=p2"]);
+  });
+
+  test("duplicates collapse, and numbers and their string forms count as the same value", () => {
+    const Nums = defineEvent("Nums", { schema: Schema.Struct({}), tags: () => ({ n: [1, "1", 2, 2] }) });
+    expect(tagsOf(Nums({}))).toEqual(["n=1", "n=2"]);
+    expect(tagsOf(Ordered({ orderId: "o1", productIds: ["p1", "p1"] }))).toEqual(["order_id=o1", "product_id=p1"]);
+  });
+
+  test("an empty list adds no tag for that key", () => {
+    expect(tagsOf(Ordered({ orderId: "o1", productIds: [] }))).toEqual(["order_id=o1"]);
+  });
+
+  test("where() finds the event through any one of its list values, and the key is still typed", () => {
+    expect(Ordered.where({ product_id: "p1" })).toEqual(Query.of([Query.queryItemOf(["Ordered"], [Tag.of("product_id", "p1")])]));
+    // @ts-expect-error - "nope" is not a tag key of Ordered
+    Ordered.where({ nope: "x" });
+  });
+});
