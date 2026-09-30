@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import * as WalletTags from "../domain/WalletTags.ts";

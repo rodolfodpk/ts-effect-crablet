@@ -41,3 +41,14 @@ known limitation for now rather than building a custom retry wrapper.
 - A dropped LISTEN connection currently has no automatic recovery. A production port would need to
   wrap `.listen()`'s stream in retry/reconnect logic; this is deferred, not solved, and should be
   revisited before treating any consumer as production-hardened.
+
+## Addendum (Phase M, Effect 4): the `PgClient.notify` bug is gone
+
+On `@effect/sql-pg` 4.0.0-rc.118, `PgClient.notify(channel, payload)` works with a dynamic payload
+(verified against Postgres by swapping it in for the workaround and running the LISTEN/NOTIFY
+tests). The `notify()` helper in `Listen.ts` was deleted; call `pg.notify(channel, payload)`.
+
+`PgClient.listen(channel)` now returns an Effect yielding a notification queue (payload in
+`notification.payload`) instead of a `Stream<string>`; `wakeupStream` adapts it with
+`Stream.unwrap(Effect.map(listen, Stream.fromQueue))`. The debounce/coalesce behaviour and its test
+are unchanged. The missing reconnect-on-drop limitation was not re-examined and still applies.

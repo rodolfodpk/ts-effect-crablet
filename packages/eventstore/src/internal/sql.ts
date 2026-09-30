@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import type { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import type { Tag } from "../Tag.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
@@ -24,7 +24,7 @@ function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
 // append_events_if takes 11 positional params. Uses sql.unsafe rather than the tagged template so
 // the param binding order is explicit.
 //
-// PATTERN NOTE - @effect/sql gives two ways to run a query, both used in this codebase:
+// PATTERN NOTE - effect/sql gives two ways to run a query, both used in this codebase:
 //   - `sql\`SELECT ... ${value}\`` (tagged template, e.g. Listen.ts's `notify` helper): values are
 //     interpolated at call sites and the library builds the parameterized query for you. Reads
 //     nicely for small ad hoc queries with few params.
@@ -171,7 +171,9 @@ export const queryEvents = (
     else if (orClause) whereSql = ` WHERE ${orClause}`;
 
     const sqlText =
-      "SELECT type, tags, data, transaction_id, position, occurred_at, correlation_id, causation_id " +
-      `FROM crablet_events${whereSql} ORDER BY transaction_id, position ASC`;
+      // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
+      // ORDER BY uses the qualified column so it sorts by the real xid8, not the text alias.
+      "SELECT type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id " +
+      `FROM crablet_events${whereSql} ORDER BY crablet_events.transaction_id, position ASC`;
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
   });

@@ -1,6 +1,4 @@
 import { Clock, Duration, Effect, Exit, Metric } from "effect";
-import type { MetricKeyType } from "effect";
-import type { MetricState } from "effect";
 
 // One instrumented "operation" - Java's Micrometer Observation (one timer whose `outcome` tag is
 // chosen after the fact) becomes three plain Metric values here instead: Effect's `Metric.tagged`
@@ -9,15 +7,15 @@ import type { MetricState } from "effect";
 // counter. Equally queryable at a backend (two series instead of one tag-split series) - a
 // deliberate "redesign, not transliteration" call, not a capability gap.
 export interface OperationMetrics {
-  readonly duration: Metric.Metric<MetricKeyType.MetricKeyType.Histogram, Duration.Duration, MetricState.MetricState.Histogram>;
-  readonly successes: Metric.Metric.Counter<number>;
-  readonly failures: Metric.Metric.Counter<number>;
+  readonly duration: Metric.Histogram<Duration.Duration>;
+  readonly successes: Metric.Counter<number>;
+  readonly failures: Metric.Counter<number>;
 }
 
-const withTags = <Type, In, Out>(
-  metric: Metric.Metric<Type, In, Out>,
+const withTags = <In, State>(
+  metric: Metric.Metric<In, State>,
   tags: ReadonlyArray<readonly [string, string]>
-): Metric.Metric<Type, In, Out> => tags.reduce((acc, [key, value]) => Metric.tagged(acc, key, value), metric);
+): Metric.Metric<In, State> => tags.reduce((acc, [key, value]) => Metric.withAttributes(acc, { [key]: value }), metric);
 
 // Wraps `effect` with duration (always recorded, success or failure - same as Java's Observation
 // timer) plus a success/failure count, optionally tagged (e.g. `[["view", viewName]]`) at the call
@@ -41,9 +39,7 @@ export const observe = <A, E, R>(
     const end = yield* Clock.currentTimeNanos;
 
     yield* Metric.update(withTags(metrics.duration, tags), Duration.nanos(end - start));
-    yield* Metric.increment(
-      withTags(Exit.isSuccess(exit) ? metrics.successes : metrics.failures, tags)
-    );
+    yield* Metric.update(withTags(Exit.isSuccess(exit) ? metrics.successes : metrics.failures, tags), 1);
 
     return yield* exit;
   });

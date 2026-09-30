@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Metric } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
 import type { Tag } from "./Tag.ts";
 import type { AppendEvent } from "./AppendEvent.ts";
@@ -58,7 +58,7 @@ export interface ProjectionResult<T> {
 //       a thrown JS error, E shows up in the signature, so the compiler forces callers to handle
 //       or explicitly propagate it. `never` here means "cannot fail with a typed error."
 //   R - what ambient services/capabilities this computation needs before it can run at all (see
-//       this file's own `Context.Tag`/`Layer.effect` primer just below) - `never` means "needs
+//       this file's own `Context.Service`/`Layer.effect` primer just below) - `never` means "needs
 //       nothing, runs anywhere."
 // Nothing actually *runs* just by writing `Effect.Effect<...>` - it's a lazy, immutable
 // description of a computation (like an un-awaited `Promise` factory, but re-runnable and
@@ -98,10 +98,10 @@ export interface EventStoreService {
   readonly exists: (query: Query) => Effect.Effect<boolean, SqlError>;
 }
 
-// PATTERN PRIMER - `Context.Tag` + `Layer.effect`, the Effect equivalent of a Spring `@Service`
+// PATTERN PRIMER - `Context.Service` + `Layer.effect`, the Effect equivalent of a Spring `@Service`
 // bean plus its dependency-injection wiring, split into two halves:
 //
-// 1. `Context.Tag("EventStore")<EventStore, EventStoreService>()` creates an *identity token* -
+// 1. `Context.Service<EventStore, EventStoreService>()("EventStore")` creates an *identity token* -
 //    a unique key that lets Effect's context map "EventStore" to a concrete `EventStoreService`
 //    value at runtime. Extending it as a `class EventStore` (rather than just calling the
 //    function and assigning the result to a `const`) is a convenience: the class itself becomes
@@ -117,7 +117,7 @@ export interface EventStoreService {
 //    provides it into a runnable program (see `Layer.provide`/`Layer.provideMerge`/`ManagedRuntime`
 //    used throughout the test files) - that's the "wiring" step, analogous to Spring's application
 //    context assembling all `@Service` beans together at startup.
-export class EventStore extends Context.Tag("EventStore")<EventStore, EventStoreService>() {}
+export class EventStore extends Context.Service<EventStore, EventStoreService>()("EventStore") {}
 
 function parseRow(row: Sql.StoredEventRow): StoredEvent {
   const tags: ReadonlyArray<Tag> = row.tags.map((raw) => {
@@ -213,16 +213,16 @@ export const EventStoreLive = Layer.effect(
         }).pipe(
           Effect.tap(() =>
             Effect.gen(function* () {
-              yield* Metric.incrementBy(EventStoreMetrics.eventsAppended, events.length);
+              yield* Metric.update(EventStoreMetrics.eventsAppended, events.length);
               for (const type of eventTypes) {
-                yield* Metric.increment(Metric.tagged(EventStoreMetrics.eventTypeAppended, "event_type", type));
+                yield* Metric.update(Metric.withAttributes(EventStoreMetrics.eventTypeAppended, { event_type: type }), 1);
               }
             })
           ),
           // A dedicated counter alongside the generic append.failures `observe` already records -
           // the one failure mode Java calls out specifically (ConcurrencyViolationMetric).
           Effect.catchTag("ConcurrencyException", (e) =>
-            Effect.zipRight(Metric.increment(EventStoreMetrics.concurrencyViolations), Effect.fail(e))
+            Effect.andThen(Metric.update(EventStoreMetrics.concurrencyViolations, 1), Effect.fail(e))
           )
         )
       );

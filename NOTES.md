@@ -692,3 +692,22 @@ finished transactions (`transaction_id < pg_snapshot_xmin(pg_current_snapshot())
 guarantee), and that snapshot is cluster-wide, so open transactions in OTHER databases on the same
 server hold events back. Production corollary worth remembering: any long-running transaction anywhere
 on the cluster delays every poller (views, outbox, automations) until it finishes.
+
+## Phase M - migration to Effect 4 (release candidate)
+
+`effect`, `@effect/sql-pg`, `@effect/platform-node` all pinned to `4.0.0-rc.118`; `@effect/sql` and
+`@effect/platform` dropped (now `effect/sql`, `effect/http`, `effect/http-api`). Decision and the full
+list of non-obvious changes: [ADR-0009](docs/adr/0009-effect-4-release-candidate.md). Everything
+passes: typecheck, 84 unit tests, 89 integration tests (3 consecutive clean runs).
+
+Things that only failed at runtime, not in the type checker (worth remembering for the next bump):
+
+- `@effect/sql-pg` 4.x is its own wire-protocol client, not node-postgres. `xid8` has no codec, so
+  `transaction_id` is now read with `::text`; `int8` columns come back as `bigint` (tests compared
+  against strings - the progress-wait predicates passed instantly because `0n !== "0"`).
+- The Postgres SQLSTATE moved to `error.reason.cause.code` (undefined-table detection in the two
+  progress trackers).
+- ADR re-verification: 0004 still true at commit time (Die defect); 0005's `PgClient.notify` bug is
+  fixed upstream, so the `notify()` helper was removed; 0006's slow 20-race test is now sub-second.
+- Deliberately not done: a thin internal re-export layer for the formerly-unstable modules (the RC
+  no longer uses an `unstable/` path prefix; exact pinning is the guard instead).

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { HttpApiSchema } from "@effect/platform";
+import "effect/http-api"; // registers the `httpApiStatus` schema annotation used below
 
 // App-owned RFC 7807 wire types, same plain-Schema.Class pattern (not Schema.TaggedError -
 // confirmed during commands-http's own Phase 7 spike that tagging leaks an unwanted `_tag` field)
@@ -13,7 +13,7 @@ export class WalletNotFoundProblem extends Schema.Class<WalletNotFoundProblem>("
     status: Schema.Literal(404),
     detail: Schema.String
   },
-  HttpApiSchema.annotations({ status: 404 })
+  { httpApiStatus: 404 }
 ) {
   static of(walletId: string): WalletNotFoundProblem {
     return new WalletNotFoundProblem({
@@ -34,7 +34,7 @@ export class InsufficientFundsProblem extends Schema.Class<InsufficientFundsProb
     currentBalance: Schema.Number,
     requestedAmount: Schema.Number
   },
-  HttpApiSchema.annotations({ status: 400 })
+  { httpApiStatus: 400 }
 ) {
   static of(walletId: string, currentBalance: number, requestedAmount: number): InsufficientFundsProblem {
     return new InsufficientFundsProblem({

@@ -1,6 +1,6 @@
 import { Context, Effect, Layer, Metric } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import { EventStore, type EventStoreService } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { ConcurrencyException, type DCBViolation } from "@crablet/eventstore/DCBViolation";
@@ -30,7 +30,7 @@ export interface CommandExecutorService {
   ) => Effect.Effect<ExecutionResult, E | ConcurrencyException | SqlError, EventStore | CommandAuditStore | SqlClient.SqlClient>;
 }
 
-export class CommandExecutor extends Context.Tag("CommandExecutor")<CommandExecutor, CommandExecutorService>() {}
+export class CommandExecutor extends Context.Service<CommandExecutor, CommandExecutorService>()("CommandExecutor") {}
 
 // Port of CommandExecutorImpl's per-decision-variant append dispatch.
 const appendDecision = (
@@ -138,7 +138,7 @@ export const CommandExecutorLive = Layer.effect(
       EventStore | CommandAuditStore | SqlClient.SqlClient
     > =>
       // sql.withTransaction(effect) runs `effect` inside one Postgres transaction, committing on
-      // success and rolling back on any failure (including interruption). Because @effect/sql
+      // success and rolling back on any failure (including interruption). Because effect/sql
       // makes the "current" SqlClient ambient (see EventStore.ts's Effect.gen/yield* primer), the
       // `EventStore`/`CommandAuditStore` obtained via `yield*` *inside* this block automatically
       // use the transaction-scoped connection - no separate "transaction-scoped" implementation
@@ -178,12 +178,8 @@ export const CommandExecutorLive = Layer.effect(
         ).pipe(
           Effect.tap((result) => {
             if (!result.wasIdempotent) return Effect.void;
-            const taggedCounter: Metric.Metric.Counter<number> = Metric.tagged(
-              CommandMetrics.idempotentDuplicates,
-              "command_type",
-              commandType
-            );
-            return Metric.increment(taggedCounter);
+            const taggedCounter: Metric.Counter<number> = Metric.withAttributes(CommandMetrics.idempotentDuplicates, { command_type: commandType });
+            return Metric.update(taggedCounter, 1);
           })
         ),
         [["command_type", commandType]]

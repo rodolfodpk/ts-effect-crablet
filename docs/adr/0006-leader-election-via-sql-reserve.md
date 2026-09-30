@@ -31,3 +31,11 @@ connection.
   (~1s/iteration), likely connection-acquisition overhead in `sql.reserve`'s pool interaction —
   not a correctness concern since leader election isn't a hot path, but worth profiling before
   assuming it scales to many concurrent processors.
+
+## Addendum (Phase M, Effect 4)
+
+`Scope.extend` is now `Scope.provide` (same behaviour); the design is unchanged and the leader
+election tests pass on Effect 4. The performance note above no longer applies: the 20-iteration
+concurrent-race test that took ~21 s now takes well under a second, which points at the old
+`@effect/sql-pg` (node-postgres) pool interaction as the cost, not the advisory-lock design. The
+hard-crash test gap remains.

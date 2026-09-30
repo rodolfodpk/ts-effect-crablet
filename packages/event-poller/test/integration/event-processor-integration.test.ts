@@ -2,7 +2,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, EVENTS_CHANNEL } from "@crablet/eventstore";
@@ -22,7 +22,7 @@ let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | Pg
 // this codebase. A plain `Layer.Layer` is rebuilt (a fresh connection pool!) on every single
 // `Effect.provide`/`Effect.runPromise` call - fine for one-shot effects (every other test file in
 // this repo does exactly that), but fatal here: `EventProcessor.start()` forks long-lived
-// background fibers (leader-retry, dispatcher, per-processor loops - see `Effect.forkDaemon`'s
+// background fibers (leader-retry, dispatcher, per-processor loops - see `Effect.forkDetach`'s
 // primer in EventProcessor.ts) that outlive the single `run()` call that created them, and those
 // fibers keep using the SAME pool instance. `ManagedRuntime.make(layer)` builds the layer once,
 // keeps it alive, and hands out a `.runPromise` that reuses that same built runtime across as many

@@ -65,7 +65,8 @@ export const buildEventSelectionQuery = (
   params.push(batchSize);
 
   const sqlText =
-    "SELECT e.type, e.tags, e.data, e.transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id " +
+    // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
+    "SELECT e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id " +
     `FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.position ASC LIMIT $${limitParamIndex}`;
 
   return { sql: sqlText, params };

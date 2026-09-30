@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import type { SqlClient } from "@effect/sql";
+import type { SqlClient } from "effect/sql";
 import { isBackedOff, makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
 

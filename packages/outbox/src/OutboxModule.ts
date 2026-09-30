@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY } from "@crablet/eventstore/Leader";

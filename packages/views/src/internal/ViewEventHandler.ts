@@ -17,7 +17,7 @@ export const makeViewEventHandler = (projectors: ReadonlyArray<ViewProjector>): 
     return ViewMetrics.observe(
       ViewMetrics.project,
       projector.handle(events).pipe(
-        Effect.tap((handled) => Metric.incrementBy(Metric.tagged(ViewMetrics.eventsProjected, "view", viewName), handled))
+        Effect.tap((handled) => Metric.update(Metric.withAttributes(ViewMetrics.eventsProjected, { view: viewName }), handled))
       ),
       [["view", viewName]]
     );

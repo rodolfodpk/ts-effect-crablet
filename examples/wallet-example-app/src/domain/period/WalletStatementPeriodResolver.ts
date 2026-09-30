@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 import type { EventStoreService, StateProjector } from "@crablet/eventstore";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";

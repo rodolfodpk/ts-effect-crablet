@@ -1,5 +1,5 @@
 import { Data, type Effect } from "effect";
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 
 // Port of the "relation does not exist" swallowing EventProcessorImpl.process() does ad hoc via

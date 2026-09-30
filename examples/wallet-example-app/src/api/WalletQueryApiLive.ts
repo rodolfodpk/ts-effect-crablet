@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
-import type { HttpApi, HttpApiGroup } from "@effect/platform";
-import { HttpApiBuilder } from "@effect/platform";
-import { SqlClient } from "@effect/sql";
+import type { HttpApi, HttpApiGroup } from "effect/http-api";
+import { HttpApiBuilder } from "effect/http-api";
+import { SqlClient } from "effect/sql";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 
 interface BalanceRow {
@@ -33,25 +33,21 @@ interface SummaryRow {
 // Same `any`-cast composability boundary @crablet/commands-http/CommandApiLive.ts's
 // makeCommandApiGroupLive establishes and documents - HttpApiBuilder.group's own signature can't
 // statically prove an arbitrary caller-supplied `Groups` contains this literal group name.
-export const makeWalletQueryApiLive = <
-  ApiId extends string,
-  Groups extends HttpApiGroup.HttpApiGroup.Any,
-  ApiError,
-  ApiR
->(
-  api: HttpApi.HttpApi<ApiId, Groups, ApiError, ApiR>
-): Layer.Layer<any, never, ApiR | SqlClient.SqlClient> => {
+export const makeWalletQueryApiLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
+  api: HttpApi.HttpApi<ApiId, Groups>
+): Layer.Layer<HttpApiGroup.Service<ApiId, "walletQueries">, never, SqlClient.SqlClient> => {
   const groupBuilder = HttpApiBuilder.group as any;
   return groupBuilder(api, "walletQueries", (handlers: any) =>
+    Effect.succeed(
     handlers
-      .handle("getWallet", ({ path }: { path: { walletId: string } }) =>
+      .handle("getWallet", ({ params }: { params: { walletId: string } }) =>
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const rows = yield* sql.unsafe<BalanceRow>("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [
-            path.walletId
+            params.walletId
           ]);
           const row = rows[0];
-          if (!row) return yield* Effect.fail(WalletNotFoundProblem.of(path.walletId));
+          if (!row) return yield* Effect.fail(WalletNotFoundProblem.of(params.walletId));
           return {
             walletId: row.wallet_id,
             owner: row.owner,
@@ -62,14 +58,14 @@ export const makeWalletQueryApiLive = <
       )
       .handle(
         "getWalletTransactions",
-        ({ path, urlParams }: { path: { walletId: string }; urlParams: { page?: number; size?: number } }) =>
+        ({ params, query }: { params: { walletId: string }; query: { page?: number; size?: number } }) =>
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
-            const size = urlParams.size ?? 20;
-            const page = urlParams.page ?? 0;
+            const size = query.size ?? 20;
+            const page = query.page ?? 0;
             const rows = yield* sql.unsafe<TransactionRow>(
               "SELECT * FROM wallet_transaction_view WHERE wallet_id = $1 ORDER BY occurred_at DESC LIMIT $2 OFFSET $3",
-              [path.walletId, size, page * size]
+              [params.walletId, size, page * size]
             );
             return {
               transactions: rows.map((row) => ({
@@ -83,14 +79,14 @@ export const makeWalletQueryApiLive = <
             };
           })
       )
-      .handle("getWalletSummary", ({ path }: { path: { walletId: string } }) =>
+      .handle("getWalletSummary", ({ params }: { params: { walletId: string } }) =>
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const rows = yield* sql.unsafe<SummaryRow>("SELECT * FROM wallet_summary_view WHERE wallet_id = $1", [
-            path.walletId
+            params.walletId
           ]);
           const row = rows[0];
-          if (!row) return yield* Effect.fail(WalletNotFoundProblem.of(path.walletId));
+          if (!row) return yield* Effect.fail(WalletNotFoundProblem.of(params.walletId));
           return {
             walletId: row.wallet_id,
             totalDeposits: Number(row.total_deposits),
@@ -102,5 +98,6 @@ export const makeWalletQueryApiLive = <
           };
         })
       )
+    )
   );
 };

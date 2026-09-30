@@ -3,7 +3,7 @@ import { EventStore } from "@crablet/eventstore";
 import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
 import type { CommandHandler } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";

@@ -1,5 +1,5 @@
 import { Effect, Metric } from "effect";
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import type { ConcurrencyException } from "@crablet/eventstore/DCBViolation";
@@ -69,7 +69,7 @@ export const makeAutomationEventHandler = (
             }
           }
         }
-        yield* Metric.incrementBy(Metric.tagged(AutomationMetrics.eventsProcessed, "automation", automationName), events.length);
+        yield* Metric.update(Metric.withAttributes(AutomationMetrics.eventsProcessed, { automation: automationName }), events.length);
         return events.length;
       }),
       tags

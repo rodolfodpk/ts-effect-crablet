@@ -27,3 +27,19 @@ normal `Fail` path) rather than relying on `Effect.catchTag("SqlError", ...)`.
   sufficient and will let the failure escape as an unhandled defect.
 - This is documented here specifically so future phases don't rediscover the same gap by trial and
   error when adding new transactional code paths that could hit similar commit-time conflicts.
+
+## Addendum (Phase M, Effect 4): re-verified
+
+Checked against a real Postgres on Effect 4 (`4.0.0-rc.118`):
+
+- A failure raised **at COMMIT** (forced deterministically with a `DEFERRABLE INITIALLY DEFERRED`
+  unique constraint) still surfaces from `SqlClient.withTransaction` as a `Die` defect (whose value is
+  an `SqlError`), not a typed failure. The decision stands.
+- A `SERIALIZABLE` conflict detected *during a statement* ("Canceled on identification as a pivot,
+  during write", SQLSTATE 40001) is now a **typed** `SqlError` with `reason._tag === "SerializationError"`.
+  Only the commit-time variant needs the `Cause` walk.
+- Inspecting a cause on v4: `Effect.catchCause` (was `catchAllCause`) and
+  `cause.reasons.find(Cause.isDieReason)` / `Cause.isFailReason` (the recursive `Sequential`/`Parallel`
+  cause shape is gone).
+
+No code path currently depends on this (ADR-0003 no longer uses `SERIALIZABLE`).

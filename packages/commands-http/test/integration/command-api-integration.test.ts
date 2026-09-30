@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { Context, Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import * as Schema from "effect/Schema";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { HttpApiBuilder, HttpServer } from "@effect/platform";
+import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
@@ -95,12 +95,12 @@ const withServer = <A>(
         // (it's a sink, not a service provider), so without provideMerge, HttpServer.HttpServer
         // itself wouldn't survive into the built context below for the address lookup.
         const serverLayer = Layer.provideMerge(
-          HttpApiBuilder.serve().pipe(Layer.provide(makeCommandApiLive(commands, config))),
+          HttpRouter.serve(makeCommandApiLive(commands, config)),
           NodeHttpServer.layer(createServer, { port: 0 })
         );
         const context = yield* Layer.build(serverLayer);
         const httpServer = Context.get(context, HttpServer.HttpServer);
-        const port = httpServer.address._tag === "TcpAddress" ? httpServer.address.port : 0;
+        const port = httpServer.address._tag === "UnixPathAddress" ? 0 : httpServer.address.port;
         return yield* Effect.promise(() => body(`http://localhost:${port}`));
       })
     )

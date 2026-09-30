@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
 import { makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
-import type { SqlClient } from "@effect/sql";
+import type { SqlClient } from "effect/sql";
 
 const KNOWN_IDS = ["view-a", "view-b"] as const;
 

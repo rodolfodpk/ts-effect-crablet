@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import type { EventFetcher } from "./EventFetcher.ts";
 import type { EventSelection } from "./EventSelection.ts";
 import { buildEventSelectionQuery, parseStoredEventRow, type StoredEventRow } from "./internal/sql.ts";

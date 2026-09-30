@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import { ProgressTableNotReady, type ProgressTracker } from "./ProgressTracker.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 import { assertSafeIdentifier } from "./internal/identifiers.ts";
@@ -15,12 +15,13 @@ export interface ProgressTableSpec {
   readonly idColumn: string;
 }
 
-const isUndefinedTable = (cause: unknown): boolean =>
-  (cause as { code?: string } | null | undefined)?.code === "42P01";
+// The Postgres error (with its SQLSTATE `code`) is the `cause` of the SqlError's `reason`.
+const isUndefinedTable = (error: SqlError): boolean =>
+  (error.reason.cause as { code?: string } | null | undefined)?.code === "42P01";
 
 // Port of AbstractSingleKeyProgressTracker.java (JDBC base for single-VARCHAR-PK progress tables).
 //
-// PATTERN NOTE - "factory function returning a value object" vs. eventstore's `Context.Tag` +
+// PATTERN NOTE - "factory function returning a value object" vs. eventstore's `Context.Service` +
 // `Layer.effect` (see EventStore.ts's primer). Both resolve `SqlClient` once and return an object
 // of pre-wired closures over it - the difference is *how callers get an instance*. `EventStore` is
 // a process-wide ambient singleton: any code can `yield* EventStore` from anywhere, without being
@@ -29,7 +30,7 @@ const isUndefinedTable = (cause: unknown): boolean =>
 // because there can be many of them at once with different `spec`s (one per progress table an
 // application cares about) - callers call this factory explicitly, once per table, and pass the
 // resulting `ProgressTracker` value around like any other object (see EventProcessor.ts's
-// `EventProcessorDeps.progressTracker` field). Reach for `Context.Tag`+`Layer` when there's
+// `EventProcessorDeps.progressTracker` field). Reach for `Context.Service`+`Layer` when there's
 // exactly one logical instance for the whole program; reach for a plain factory function
 // returning an `Effect` when a caller needs to construct several differently-configured instances
 // of the same shape.
@@ -46,8 +47,8 @@ export const makePostgresProgressTracker = <I extends string>(
     const mapTableNotReady = <A>(
       effect: Effect.Effect<A, SqlError>
     ): Effect.Effect<A, SqlError | ProgressTableNotReady> =>
-      Effect.catchAll(effect, (e): Effect.Effect<never, SqlError | ProgressTableNotReady> =>
-        isUndefinedTable(e.cause) ? Effect.fail(new ProgressTableNotReady()) : Effect.fail(e)
+      Effect.catch(effect, (e): Effect.Effect<never, SqlError | ProgressTableNotReady> =>
+        isUndefinedTable(e) ? Effect.fail(new ProgressTableNotReady()) : Effect.fail(e)
       );
 
     const getStatus = (id: I): Effect.Effect<ProcessorStatus, SqlError> =>

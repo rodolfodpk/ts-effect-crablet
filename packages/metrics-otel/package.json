@@ -13,6 +13,6 @@
     "./AutomationMetrics": "./src/AutomationMetrics.ts"
   },
   "dependencies": {
-    "effect": "3.21.4"
+    "effect": "4.0.0-rc.118"
   }
 }

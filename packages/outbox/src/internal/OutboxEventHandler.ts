@@ -23,7 +23,7 @@ export const makeOutboxEventHandler = (
       OutboxMetrics.publish,
       publishToOutbox(publisher, events).pipe(
         Effect.tap((handled) =>
-          Metric.incrementBy(Metric.tagged(OutboxMetrics.eventsPublished, "publisher", publisherName), handled)
+          Metric.update(Metric.withAttributes(OutboxMetrics.eventsPublished, { publisher: publisherName }), handled)
         )
       ),
       [["publisher", publisherName]]

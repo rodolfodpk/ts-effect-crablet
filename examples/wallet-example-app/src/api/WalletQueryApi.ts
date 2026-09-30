@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
+import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 
 // Port of com.crablet.wallet.api.WalletQueryController - hand-written reads (plain SqlClient
@@ -35,25 +35,34 @@ export const WalletSummaryResponse = Schema.Struct({
   lastTransactionAt: Schema.NullOr(Schema.String)
 });
 
-export const TransactionsPageParams = Schema.Struct({
+// Query-string params for the transactions list (both optional, parsed from strings).
+export const TransactionsPageParams = {
   page: Schema.optional(Schema.NumberFromString),
   size: Schema.optional(Schema.NumberFromString)
-});
+};
+
+const walletIdParam = { walletId: Schema.String };
 
 export const walletQueryGroup = HttpApiGroup.make("walletQueries")
   .add(
-    HttpApiEndpoint.get("getWallet")`/api/wallets/${HttpApiSchema.param("walletId", Schema.String)}`
-      .addSuccess(WalletResponse)
-      .addError(WalletNotFoundProblem)
+    HttpApiEndpoint.get("getWallet", "/api/wallets/:walletId", {
+      params: walletIdParam,
+      success: WalletResponse,
+      error: WalletNotFoundProblem
+    })
   )
   .add(
-    HttpApiEndpoint.get("getWalletTransactions")`/api/wallets/${HttpApiSchema.param("walletId", Schema.String)}/transactions`
-      .setUrlParams(TransactionsPageParams)
-      .addSuccess(TransactionsResponse)
-      .addError(WalletNotFoundProblem)
+    HttpApiEndpoint.get("getWalletTransactions", "/api/wallets/:walletId/transactions", {
+      params: walletIdParam,
+      query: TransactionsPageParams,
+      success: TransactionsResponse,
+      error: WalletNotFoundProblem
+    })
   )
   .add(
-    HttpApiEndpoint.get("getWalletSummary")`/api/wallets/${HttpApiSchema.param("walletId", Schema.String)}/summary`
-      .addSuccess(WalletSummaryResponse)
-      .addError(WalletNotFoundProblem)
+    HttpApiEndpoint.get("getWalletSummary", "/api/wallets/:walletId/summary", {
+      params: walletIdParam,
+      success: WalletSummaryResponse,
+      error: WalletNotFoundProblem
+    })
   );

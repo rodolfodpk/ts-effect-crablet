@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { SqlClient } from "@effect/sql";
+import type { SqlClient } from "effect/sql";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 

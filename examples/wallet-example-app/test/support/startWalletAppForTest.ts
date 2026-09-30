@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
 import { Context, Effect, Exit, Layer, ManagedRuntime, Scope } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { HttpApiBuilder, HttpServer } from "@effect/platform";
+import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
@@ -35,16 +35,16 @@ export const startWalletAppForTest = async (
       const processors = yield* startBackgroundProcessors(undefined, outboxPublishers);
 
       const serverLayer = Layer.provideMerge(
-        HttpApiBuilder.serve().pipe(Layer.provide(makeWalletApiLayer({ basePath: "/api/commands" }))),
+        HttpRouter.serve(makeWalletApiLayer({ basePath: "/api/commands" })),
         NodeHttpServer.layer(createServer, { port: 0 })
       );
-      const context = yield* Scope.extend(Layer.build(serverLayer), scope);
+      const context = yield* Scope.provide(Layer.build(serverLayer), scope);
       return { context, processors };
     })
   );
 
   const httpServer = Context.get(context, HttpServer.HttpServer);
-  const port = httpServer.address._tag === "TcpAddress" ? httpServer.address.port : 0;
+  const port = httpServer.address._tag === "UnixPathAddress" ? 0 : httpServer.address.port;
 
   return {
     baseUrl: `http://localhost:${port}`,

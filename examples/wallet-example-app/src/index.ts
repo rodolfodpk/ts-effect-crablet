@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
 import { Effect, Layer, Redacted } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { HttpApiBuilder } from "@effect/platform";
+import { HttpRouter } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
@@ -41,8 +41,7 @@ async function main(): Promise<void> {
     yield* startBackgroundProcessors();
     yield* Effect.log(`wallet-example-app listening on :${port}`);
     yield* Layer.launch(
-      HttpApiBuilder.serve().pipe(
-        Layer.provide(makeWalletApiLayer({ basePath: "/api/commands" })),
+      HttpRouter.serve(makeWalletApiLayer({ basePath: "/api/commands" })).pipe(
         Layer.provide(NodeHttpServer.layer(createServer, { port }))
       )
     );

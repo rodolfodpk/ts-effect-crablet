@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { EventStore } from "@crablet/eventstore";
 import * as StreamPositionNS from "@crablet/eventstore/StreamPosition";
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 import type { CommandHandler } from "@crablet/commands";
 import * as CD from "@crablet/commands/CommandDecision";
 import * as WalletQueryPatterns from "../WalletQueryPatterns.ts";

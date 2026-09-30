@@ -2,7 +2,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
@@ -66,7 +66,7 @@ const getProgress = (automationName: string) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const rows = yield* sql.unsafe<{ last_position: string; status: string; error_count: number }>(
-        "SELECT last_position, status, error_count FROM crablet_automation_progress WHERE automation_name = $1",
+        "SELECT last_position::text AS last_position, status, error_count FROM crablet_automation_progress WHERE automation_name = $1",
         [automationName]
       );
       return rows[0] ?? null;
@@ -81,7 +81,7 @@ const getEventRow = (eventType: string) =>
         position: string;
         correlation_id: string | null;
         causation_id: string | null;
-      }>("SELECT position, correlation_id, causation_id FROM crablet_events WHERE type = $1", [eventType]);
+      }>("SELECT position::text AS position, correlation_id, causation_id::text AS causation_id FROM crablet_events WHERE type = $1", [eventType]);
       return rows[0] ?? null;
     })
   );

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventFetcher } from "@crablet/event-poller/EventFetcher";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";

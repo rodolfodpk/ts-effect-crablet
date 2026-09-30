@@ -1,8 +1,8 @@
 import { Effect, Layer } from "effect";
 import * as Schema from "effect/Schema";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { HttpApi, HttpApiBuilder } from "@effect/platform";
+import { HttpApi, HttpApiBuilder } from "effect/http-api";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor } from "@crablet/commands";
@@ -80,7 +80,7 @@ const defaultOutboxConfig: OutboxConfig = {
 // The 3 EventProcessorHandles started by startBackgroundProcessors - callers that need a bounded
 // lifetime (every E2E test file; the real index.ts entry point never disposes, so it can ignore
 // this) must call `.service.stop` on each before tearing down the underlying connection pool.
-// `.service.start` forks its daemon fibers via `Effect.forkDaemon` (see EventProcessor.ts's own
+// `.service.start` forks its daemon fibers via `Effect.forkDetach` (see EventProcessor.ts's own
 // primer), deliberately detached from any scope/parent fiber - so closing a Scope or disposing a
 // ManagedRuntime does NOT stop them on its own; only `.service.stop`'s explicit
 // `Fiber.interruptAll` does. Omitting this leaves the poll loops running forever, retrying against
@@ -205,13 +205,7 @@ const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
 // Port of the app's own HTTP composition: commands-http's generic write group + WalletQueryApi's
 // hand-written reads, combined into ONE HttpApi served under one port - the small composability
 // refactor Phase 8's plan made to commands-http exists specifically for this.
-export const makeWalletApiLayer = (
-  config: WalletAppConfig = {}
-): Layer.Layer<
-  HttpApi.Api,
-  never,
-  SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore
-> => {
+export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = HttpApi.make("walletApp")
     .add(makeCommandApiGroup(basePath, [WalletNotFoundProblem, InsufficientFundsProblem]))
@@ -223,5 +217,5 @@ export const makeWalletApiLayer = (
   });
   const queryLive = makeWalletQueryApiLive(api);
 
-  return HttpApiBuilder.api(api).pipe(Layer.provide(commandsLive), Layer.provide(queryLive));
+  return HttpApiBuilder.layer(api).pipe(Layer.provide(commandsLive), Layer.provide(queryLive));
 };

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import {
   makeProcessorManagementService,
   type ProcessorManagementService

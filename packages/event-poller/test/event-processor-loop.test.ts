@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Exit, Queue, Ref, Stream, TestClock, TestContext } from "effect";
+import { Effect, Exit, Queue, Ref, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
@@ -30,7 +31,7 @@ const alwaysLeader = (): LeaderHandle => ({
 const PROCESSOR_ID = "proc-a";
 
 // PATTERN PRIMER - `TestClock`/`TestContext` (provided at the bottom of this file, via
-// `Effect.provide(program, TestContext.TestContext)`): a virtual clock that replaces the real one
+// `Effect.provide(program, TestClock.layer())`): a virtual clock that replaces the real one
 // for every `Effect.sleep` in the program under test. `TestClock.adjust("1000 millis")` doesn't
 // wait a real second - it instantly advances the virtual clock and resolves any `Effect.sleep`
 // calls that were waiting on a time at or before the new instant, in order. That's what makes a
@@ -38,7 +39,7 @@ const PROCESSOR_ID = "proc-a";
 // run in milliseconds of real wall-clock time, deterministically, instead of either sleeping for
 // real or racing against a fake timer library bolted onto plain Promises.
 //
-// `Effect.yieldNow()` is a different, complementary tool: it doesn't touch the clock at all, it
+// `Effect.yieldNow` is a different, complementary tool: it doesn't touch the clock at all, it
 // just cooperatively hands control back to Effect's fiber scheduler for one step, letting OTHER
 // already-runnable fibers make progress (e.g. a forked background loop that's ready to run but
 // hasn't been scheduled yet). `waitUntil` below combines both ideas into a polling helper: after
@@ -59,7 +60,7 @@ const waitUntil = <A, E>(
     for (let i = 0; i < maxTries; i++) {
       const value = yield* check;
       if (predicate(value)) return value;
-      yield* Effect.yieldNow();
+      yield* Effect.yieldNow;
     }
     return yield* check;
   });
@@ -217,10 +218,10 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
       // Nothing further happens after stop, even as we push more events and advance time.
       yield* Ref.set(eventsRef, [storedEvent(1n), storedEvent(2n), storedEvent(3n)]);
       yield* TestClock.adjust("10000 millis");
-      for (let i = 0; i < 20; i++) yield* Effect.yieldNow();
+      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
       expect(yield* tracker.getLastPosition(PROCESSOR_ID)).toBe(statusesBeforeMoreTime);
     });
 
-    await Effect.runPromise(Effect.provide(program, TestContext.TestContext));
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
   });
 });

@@ -3,7 +3,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector } from "../../src/EventStore.ts";
@@ -246,7 +246,7 @@ describe("EventStore public API parity (Phase 1)", () => {
         const queue = yield* Queue.unbounded<WakeupBatch>();
         const fiber = yield* Stream.runForEach(wakeupStream(pg, EVENTS_CHANNEL), (b) =>
           Queue.offer(queue, b)
-        ).pipe(Effect.fork);
+        ).pipe(Effect.forkChild);
 
         // Give the dedicated LISTEN connection a moment to register before appending.
         yield* Effect.sleep("200 millis");

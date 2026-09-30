@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 
 // Port of com.crablet.eventstore.CommandAuditStore - kept as a separate service from EventStore
 // (mirroring the Java split) so non-command consumers (views, outbox, automations) aren't exposed
@@ -21,12 +21,9 @@ export interface CommandAuditStoreService {
   ) => Effect.Effect<boolean, SqlError>;
 }
 
-// Same Context.Tag + Layer.effect service pattern as EventStore.ts - see that file's primer for
+// Same Context.Service + Layer.effect service pattern as EventStore.ts - see that file's primer for
 // the full explanation of what the token/registration split buys you.
-export class CommandAuditStore extends Context.Tag("CommandAuditStore")<
-  CommandAuditStore,
-  CommandAuditStoreService
->() {}
+export class CommandAuditStore extends Context.Service<CommandAuditStore, CommandAuditStoreService>()("CommandAuditStore") {}
 
 const STORE_COMMAND_SQL = `
   INSERT INTO crablet_commands (command_id, transaction_id, type, data, metadata, occurred_at)

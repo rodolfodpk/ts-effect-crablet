@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Metric } from "effect";
+import { Cause, Effect, Metric } from "effect";
 import { observe, type OperationMetrics } from "../src/internal/observe.ts";
 
 // Fresh, uniquely-named metrics per test - Effect's Metric registry is global/module-level, so
@@ -54,10 +54,8 @@ describe("observe", () => {
     const exit = await Effect.runPromiseExit(observe(metrics, Effect.fail("original-error")));
     expect(exit._tag).toBe("Failure");
     if (exit._tag === "Failure") {
-      expect(exit.cause._tag).toBe("Fail");
-      if (exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBe("original-error");
-      }
+      const failure = exit.cause.reasons.find(Cause.isFailReason);
+      expect(failure?.error).toBe("original-error");
     }
   });
 
@@ -66,7 +64,7 @@ describe("observe", () => {
     await Effect.runPromise(observe(metrics, Effect.succeed("ok"), [["view", "wallet-view"]]));
 
     const taggedSuccesses = await Effect.runPromise(
-      Metric.value(Metric.tagged(metrics.successes, "view", "wallet-view"))
+      Metric.value(Metric.withAttributes(metrics.successes, { view: "wallet-view" }))
     );
     expect(taggedSuccesses.count).toBe(1);
 

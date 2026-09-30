@@ -1,11 +1,11 @@
 // Runs under Node (Testcontainers) - see NOTES.md.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Chunk, Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
-import { SqlClient } from "@effect/sql";
+import { Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { notify, wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
+import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
 import { encodePayload } from "../../src/NotifyPayload.ts";
 
 let db: TestDb;
@@ -38,13 +38,13 @@ describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
 
           const fiber = yield* Stream.runForEach(wakeupStream(pg, CHANNEL), (batch) =>
             Queue.offer(queue, batch)
-          ).pipe(Effect.fork);
+          ).pipe(Effect.forkChild);
 
           // Give the dedicated LISTEN connection a moment to register LISTEN before notifying.
           yield* Effect.sleep("200 millis");
 
           const payload = encodePayload(new Set(["SpikeNotifyEvent"]), new Set(["spike_id"]));
-          yield* notify(pg, CHANNEL, payload);
+          yield* pg.notify(CHANNEL, payload);
 
           const batch = yield* Queue.take(queue).pipe(Effect.timeout("5 seconds"));
           yield* Fiber.interrupt(fiber);
@@ -69,18 +69,18 @@ describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
 
           const fiber = yield* Stream.runForEach(wakeupStream(pg, CHANNEL), (batch) =>
             Queue.offer(queue, batch)
-          ).pipe(Effect.fork);
+          ).pipe(Effect.forkChild);
 
           yield* Effect.sleep("200 millis");
 
           // Fire 5 notifications in rapid succession (well within the 20ms debounce window).
           yield* Effect.all(
             [
-              notify(pg, CHANNEL, encodePayload(new Set(["EventA"]), new Set(["tag_a"]))),
-              notify(pg, CHANNEL, encodePayload(new Set(["EventB"]), new Set(["tag_b"]))),
-              notify(pg, CHANNEL, encodePayload(new Set(["EventC"]), new Set())),
-              notify(pg, CHANNEL, encodePayload(new Set(["EventA"]), new Set(["tag_a", "tag_c"]))),
-              notify(pg, CHANNEL, encodePayload(new Set(["EventD"]), new Set(["tag_d"])))
+              pg.notify(CHANNEL, encodePayload(new Set(["EventA"]), new Set(["tag_a"]))),
+              pg.notify(CHANNEL, encodePayload(new Set(["EventB"]), new Set(["tag_b"]))),
+              pg.notify(CHANNEL, encodePayload(new Set(["EventC"]), new Set())),
+              pg.notify(CHANNEL, encodePayload(new Set(["EventA"]), new Set(["tag_a", "tag_c"]))),
+              pg.notify(CHANNEL, encodePayload(new Set(["EventD"]), new Set(["tag_d"])))
             ],
             { concurrency: "unbounded" }
           );
@@ -89,7 +89,7 @@ describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
           yield* Effect.sleep("300 millis");
           const drained = yield* Queue.takeAll(queue);
           yield* Fiber.interrupt(fiber);
-          return Chunk.toReadonlyArray(drained);
+          return drained;
         }),
         layer
       )

@@ -36,3 +36,10 @@ runtime for everything else (fast, in-memory unit tests, `bun install`, workspac
   moved to Node 24.)
 - Two test runners means two slightly different assertion/mocking idioms in the same repo — an
   accepted ongoing cost of this split, not eliminated.
+
+## Addendum (Phase M)
+
+Re-checked with Bun 1.3.11 and Testcontainers 12.2: a Testcontainers-backed test file run with
+`bun test` no longer hangs, but it fails with an error (not investigated), so the split stands:
+integration tests run under Node, everything else under Bun. `@effect/sql-pg` 4.x no longer uses
+node-postgres, so Postgres-backed code paths do not depend on `pg` at runtime.

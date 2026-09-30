@@ -3,7 +3,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Layer, ManagedRuntime, Redacted } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";

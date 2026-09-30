@@ -13,3 +13,4 @@ with lasting effect on the codebase's shape get an ADR here.
 - [ADR-0006: Leader election via SqlClient.reserve + manually managed Scope](0006-leader-election-via-sql-reserve.md)
 - [ADR-0007: Event-poller fiber model — one daemon fiber per processorId, one shared leader-retry fiber](0007-event-poller-fiber-model.md)
 - [ADR-0008: No command-type auto-discovery — handlers passed explicitly at every call site](0008-no-command-type-auto-discovery.md)
+- [ADR-0009: Build on Effect 4 (release candidate), pinned exactly](0009-effect-4-release-candidate.md)

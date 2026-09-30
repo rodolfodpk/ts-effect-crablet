@@ -1,12 +1,13 @@
 import { Effect } from "effect";
-import { SqlClient } from "@effect/sql";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlClient } from "effect/sql";
+import type { SqlError } from "effect/sql/SqlError";
 import { ProgressTableNotReady, type ProgressTracker } from "@crablet/event-poller/ProgressTracker";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import { fromKey } from "../TopicPublisherPair.ts";
 
-const isUndefinedTable = (cause: unknown): boolean =>
-  (cause as { code?: string } | null | undefined)?.code === "42P01";
+// The Postgres error (with its SQLSTATE `code`) is the `cause` of the SqlError's `reason`.
+const isUndefinedTable = (error: SqlError): boolean =>
+  (error.reason.cause as { code?: string } | null | undefined)?.code === "42P01";
 
 // Port of com.crablet.outbox.internal.OutboxProgressTracker - hand-rolled against the composite
 // (topic, publisher)-PK table `crablet_outbox_topic_progress`, since event-poller's
@@ -23,8 +24,8 @@ export const makeOutboxProgressTracker = (
     const mapTableNotReady = <A>(
       effect: Effect.Effect<A, SqlError>
     ): Effect.Effect<A, SqlError | ProgressTableNotReady> =>
-      Effect.catchAll(effect, (e): Effect.Effect<never, SqlError | ProgressTableNotReady> =>
-        isUndefinedTable(e.cause) ? Effect.fail(new ProgressTableNotReady()) : Effect.fail(e)
+      Effect.catch(effect, (e): Effect.Effect<never, SqlError | ProgressTableNotReady> =>
+        isUndefinedTable(e) ? Effect.fail(new ProgressTableNotReady()) : Effect.fail(e)
       );
 
     const getStatus = (key: string): Effect.Effect<ProcessorStatus, SqlError> => {

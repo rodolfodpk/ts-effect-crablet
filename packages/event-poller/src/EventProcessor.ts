@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Queue, Ref, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Ref, Stream } from "effect";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
@@ -72,10 +72,10 @@ const toBackoffSnapshot = (state: BackoffState): BackoffSnapshot => ({
   currentSkipCounter: state.skipCounter
 });
 
-const withPollerTags = <Type, In, Out>(
-  metric: Metric.Metric<Type, In, Out>,
+const withPollerTags = <In, State>(
+  metric: Metric.Metric<In, State>,
   tags: ReadonlyArray<readonly [string, string]>
-): Metric.Metric<Type, In, Out> => tags.reduce((acc, [key, value]) => Metric.tagged(acc, key, value), metric);
+): Metric.Metric<In, State> => tags.reduce((acc, [key, value]) => Metric.withAttributes(acc, { [key]: value }), metric);
 
 export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends string>(
   deps: EventProcessorDeps<C, I>
@@ -93,12 +93,12 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // `processorLoop` below) is this `Ref`.
     const leaderRef = yield* Ref.make<LeaderHandle | null>(null);
     const backoffRef = yield* Ref.make<ReadonlyMap<I, BackoffState>>(new Map());
-    const fibersRef = yield* Ref.make<ReadonlyArray<Fiber.RuntimeFiber<unknown, unknown>>>([]);
+    const fibersRef = yield* Ref.make<ReadonlyArray<Fiber.Fiber<unknown, unknown>>>([]);
 
     // PATTERN PRIMER - `PubSub<A>`, a multi-subscriber broadcast queue (the Effect equivalent of a
     // hot `EventEmitter`/RxJS `Subject`, but typed and backpressure-aware). One producer
     // (`dispatcherLoop` below, draining the LISTEN/NOTIFY `Stream`) publishes into the hub; each
-    // consumer calls `PubSub.subscribe(hub)` to get its OWN independent `Dequeue` - every
+    // consumer calls `PubSub.subscribe(hub)` to get its OWN independent `Subscription` - every
     // subscriber sees every published value, unlike a plain `Queue` where one value goes to
     // exactly one consumer. `PubSub.sliding(32)` picks the overflow strategy: once a slow
     // subscriber's own backlog hits 32 unread items, the OLDEST ones are silently dropped to make
@@ -145,11 +145,11 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       });
 
     const waitForRelevantWakeup = (
-      dequeue: Queue.Dequeue<WakeupBatch>,
+      dequeue: PubSub.Subscription<WakeupBatch>,
       filter: SubscriberFilter
     ): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const batch = yield* Queue.take(dequeue);
+        const batch = yield* PubSub.take(dequeue);
         if (!shouldWake(batch, filter)) {
           yield* waitForRelevantWakeup(dequeue, filter);
         }
@@ -162,7 +162,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // block, which never runs on the exception path.
     const tick = (
       config: C,
-      dequeue: Queue.Dequeue<WakeupBatch>,
+      dequeue: PubSub.Subscription<WakeupBatch>,
       filter: SubscriberFilter
     ): Effect.Effect<void> =>
       Effect.gen(function* () {
@@ -206,9 +206,9 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
             ["processor", String(config.processorId)],
             ["instance_id", deps.instanceId]
           ];
-          yield* Metric.increment(withPollerTags(PollerMetrics.processingCycles, pollerTags));
-          yield* Metric.incrementBy(withPollerTags(PollerMetrics.eventsFetched, pollerTags), handled);
-          if (handled === 0) yield* Metric.increment(withPollerTags(PollerMetrics.emptyPolls, pollerTags));
+          yield* Metric.update(withPollerTags(PollerMetrics.processingCycles, pollerTags), 1);
+          yield* Metric.update(withPollerTags(PollerMetrics.eventsFetched, pollerTags), handled);
+          if (handled === 0) yield* Metric.update(withPollerTags(PollerMetrics.emptyPolls, pollerTags), 1);
 
           const currentBackoff = (yield* Ref.get(backoffRef)).get(config.processorId) ?? BackoffStateNS.init();
           const updatedBackoff = config.backoffEnabled
@@ -222,8 +222,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
                 })
             : currentBackoff;
           yield* Ref.update(backoffRef, (m) => new Map(m).set(config.processorId, updatedBackoff));
-          yield* Metric.set(withPollerTags(PollerMetrics.backoffActive, pollerTags), updatedBackoff.skipCounter > 0 ? 1 : 0);
-          yield* Metric.set(withPollerTags(PollerMetrics.backoffEmptyPollCount, pollerTags), updatedBackoff.emptyPollCount);
+          yield* Metric.update(withPollerTags(PollerMetrics.backoffActive, pollerTags), updatedBackoff.skipCounter > 0 ? 1 : 0);
+          yield* Metric.update(withPollerTags(PollerMetrics.backoffEmptyPollCount, pollerTags), updatedBackoff.emptyPollCount);
 
           const delayMs = config.backoffEnabled
             ? BackoffStateNS.nextDelayMs(updatedBackoff, config.pollingIntervalMs)
@@ -270,7 +270,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       30_000;
 
     const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(
-      Effect.catchAll((e) => Effect.zipRight(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))
+      Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))
     );
 
     // Port of crablet.poller.leadership - set on every leadership state transition, tagged by
@@ -278,13 +278,10 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // Java's per-LeaderElector "processor" identity, since leadership here is module-wide, not
     // per-processorId) and instance_id.
     const setLeadershipGauge = (handle: LeaderHandle, isLeader: boolean): Effect.Effect<void> =>
-      Metric.set(
-        withPollerTags(LeaderMetrics.leadership, [
+      Metric.update(withPollerTags(LeaderMetrics.leadership, [
           ["lock_key", handle.lockKey.toString()],
           ["instance_id", deps.instanceId]
-        ]),
-        isLeader ? 1 : 0
-      );
+        ]), isLeader ? 1 : 0);
 
     // One shared retry fiber per module (not per-processorId) - see disclosed simplification in
     // the Phase 2 plan: Java's two-tier timing (30s shared task + 5s per-tick cooldown) exists to
@@ -308,7 +305,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const dispatcherLoop: Effect.Effect<void> = Stream.runForEach(deps.wakeupStream, (batch: WakeupBatch) =>
       PubSub.publish(hub, batch)
-    ).pipe(Effect.catchAll((e) => Effect.logError(String(e))));
+    ).pipe(Effect.catch((e) => Effect.logError(String(e))));
 
     const start: Effect.Effect<void> = Effect.gen(function* () {
       const initialHandle = yield* acquireLeaderSafe;
@@ -317,23 +314,23 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         yield* setLeadershipGauge(initialHandle, true);
       }
 
-      // PATTERN PRIMER - `Effect.fork` vs `Effect.forkDaemon`. Effect defaults to "structured
-      // concurrency": a fiber created with `Effect.fork` becomes a *child* of whatever fiber called
+      // PATTERN PRIMER - `Effect.forkChild` vs `Effect.forkDetach`. Effect defaults to "structured
+      // concurrency": a fiber created with `Effect.forkChild` becomes a *child* of whatever fiber called
       // fork, and children are automatically interrupted when their parent fiber ends - by design,
       // so you can't accidentally leak background work past the lifetime of the code block that
       // started it (this is a real, hard-won lesson from this port - see NOTES.md's Phase 2
-      // write-up for the bug it caused here). `Effect.forkDaemon` opts out of that supervision:
+      // write-up for the bug it caused here). `Effect.forkDetach` opts out of that supervision:
       // the fiber is attached to the runtime's root scope instead of its immediate caller, so it
       // keeps running independently for as long as the whole program runs, or until something
-      // explicitly interrupts it. forkDaemon, not fork, is required here specifically because
-      // `start`'s own fiber completes (returns) almost immediately after forking - a plain fork
+      // explicitly interrupts it. forkDetach, not forkChild, is required here specifically because
+      // `start`'s own fiber completes (returns) almost immediately after forking - a plain forkChild
       // would have Effect interrupt these fibers right away, before they ever get to do anything.
-      // forkDaemon detaches them from `start`'s fiber entirely; their lifetime is managed
+      // forkDetach detaches them from `start`'s fiber entirely; their lifetime is managed
       // explicitly via fibersRef + stop()'s Fiber.interruptAll instead.
-      const dispatcherFiber = yield* Effect.forkDaemon(dispatcherLoop);
-      const leaderFiber = yield* Effect.forkDaemon(leaderRetryLoop);
+      const dispatcherFiber = yield* Effect.forkDetach(dispatcherLoop);
+      const leaderFiber = yield* Effect.forkDetach(leaderRetryLoop);
       const processorFibers = yield* Effect.forEach(deps.configs, (config) =>
-        Effect.forkDaemon(processorLoop(config))
+        Effect.forkDetach(processorLoop(config))
       );
 
       yield* Ref.set(fibersRef, [dispatcherFiber, leaderFiber, ...processorFibers]);

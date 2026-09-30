@@ -2,7 +2,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
@@ -56,7 +56,7 @@ const getProgress = (topic: string, publisher: string) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const rows = yield* sql.unsafe<{ last_position: string; status: string; error_count: number }>(
-        "SELECT last_position, status, error_count FROM crablet_outbox_topic_progress WHERE topic = $1 AND publisher = $2",
+        "SELECT last_position::text AS last_position, status, error_count FROM crablet_outbox_topic_progress WHERE topic = $1 AND publisher = $2",
         [topic, publisher]
       );
       return rows[0] ?? null;

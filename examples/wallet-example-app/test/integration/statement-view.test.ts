@@ -5,7 +5,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
-import { SqlClient } from "@effect/sql";
+import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { Tag } from "@crablet/eventstore/Tag";
