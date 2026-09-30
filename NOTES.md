@@ -931,3 +931,18 @@ asserts the model directly (queries, fold, both regressions).
 - Deleted `CommandExecutor.execute`, the public `CD.*` builders and the `@crablet/commands/CommandDecision` export;
   `CommandDecision` is internal to `defineCommand`. The old executor test is replaced by lifecycle-guard tests
   on defined commands (guard Conflict between load and append; guard + idempotency).
+
+## V5 - writer-side (type, tag) locking
+
+- Reproduced the V4 gap first: an in-flight writer (held open inside a transaction) whose events match a checker's
+  condition did not make the checker wait, so the checker committed past it. `append-writer-locking.test.ts` failed
+  2 of 3 on V4 and passes on V5.
+- `V5__crablet_writer_side_locking.sql`: every append exclusively locks the (type, tag) pairs of its events and of its
+  condition items (concurrency and idempotency), plus shared type/global intent locks; tag-less / type-less items take
+  the matching intent lock exclusively. Locks are taken in one sorted loop.
+- New hazard, reproduced then fixed: a command that appends in `prepare` and then reads other entities can deadlock
+  with a mirror-image command (Postgres reports 40P01 after ~1s). `CommandExecutor` now maps it to `Conflict`, so the
+  command is re-run (`deadlock-retry.test.ts`).
+- Measured cost (16 writers x 150 appends, one run): hot single (type, tag) unconditional 7.6k -> 2.6k appends/s;
+  guarded hot 2.3k -> 2.0k; distinct keys -5..-16%.
+- Flake seen again: a wallet integration file failed once to start its container; re-running passed.

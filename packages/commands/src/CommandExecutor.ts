@@ -102,6 +102,18 @@ export const withConflictRetry = <A, E, R>(
   return loop(0);
 };
 
+// Two commands that each make several appends can acquire the append locks of different entities in
+// opposite order (V5 writer-side locking). Postgres aborts one of them (SQLSTATE 40P01, deadlock_detected)
+// and rolls its transaction back - exactly the situation a `Conflict` retry handles: the whole command is
+// re-run in a fresh transaction.
+const isDeadlock = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "_tag" in error &&
+  error._tag === "SqlError" &&
+  ((error as SqlError).reason.cause as { code?: string } | null | undefined)?.code === "40P01";
+const deadlockConflict = new Conflict({ message: "Deadlock detected between concurrent commands; the transaction was rolled back", kind: "boundary" });
+
 export const CommandExecutorLive = Layer.effect(
   CommandExecutor,
   Effect.gen(function* () {
@@ -129,6 +141,7 @@ export const CommandExecutorLive = Layer.effect(
       CommandMetrics.observe(
         CommandMetrics.handle,
         sql.withTransaction(runHandler(handler, command)).pipe(
+          Effect.catch((error) => (isDeadlock(error) ? Effect.fail(deadlockConflict) : Effect.fail(error))),
           Effect.tap((result) => {
             if (!result.wasIdempotent) return Effect.void;
             const taggedCounter: Metric.Counter<number> = Metric.withAttributes(

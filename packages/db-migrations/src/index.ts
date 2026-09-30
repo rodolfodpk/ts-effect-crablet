@@ -10,7 +10,8 @@ export const migrationFiles = [
   "V1__crablet_eventstore_schema.sql",
   "V2__crablet_commands_schema.sql",
   "V3__crablet_processing_schema.sql",
-  "V4__crablet_multi_item_append_conditions.sql"
+  "V4__crablet_multi_item_append_conditions.sql",
+  "V5__crablet_writer_side_locking.sql"
 ] as const;
 
 export function migrationFilePaths(): ReadonlyArray<string> {

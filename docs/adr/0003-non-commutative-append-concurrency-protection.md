@@ -82,13 +82,21 @@ transaction was open. Two independent defects were found by tests (both reproduc
   from the same wallet share the wallet's items. Verified: with whole-condition locks both racers won
   in 13 of 15 rounds; with per-item locks, 0 of 15.
 
-### Known limitation (not solved here)
+### Known limitation in V4 - solved in V5
 
-Serialization needs an *identical* shared item. Two commands whose conditions overlap only semantically
-(the events one appends match the other's condition, but no item is textually identical) still race
-in the check-then-insert window. Handling that in general needs writer-side locking on event tags,
-predicate locks (SERIALIZABLE, see ADR-0004), or a coarser lock; deferred, and the wallet's
-conditions are built from shared item constructors precisely so they overlap on identical items.
-Performance of the per-item loop was not measured.
+V4 serialized only writers that held a textually identical condition item. A writer with no condition, or
+with different items, took no lock a checker could collide with, so its event could commit between the
+checker's check and insert (a lost conflict). V5 (`V5__crablet_writer_side_locking.sql`) locks by
+(event type, tag) pairs, taken by EVERY writer for its own events as well as for its conditions; an event that
+matches a condition item always shares a pair with that item, so the two always queue. Tag-less and type-less
+items fall back to exclusive type / global locks that every writer holds shared. The design follows the
+documented approach of `@dcb-es/event-store`, whose code was read to confirm it.
+
+Costs (measured, one run on a local container, 16 writers x 150 appends): appends to one hot (type, tag)
+serialize - unconditional appends to a single wallet went from ~7.6k/s to ~2.6k/s; guarded ones from ~2.3k/s
+to ~2.0k/s; appends to distinct wallets dropped 5-16%. Transactions that make several appends can now
+deadlock with a mirror-image command (Postgres aborts one, SQLSTATE 40P01); the executor maps that to a
+`Conflict` and re-runs the command. Tests: `append-writer-locking.test.ts` (an in-flight writer makes a
+matching checker wait, then conflict; no false serialization) and `commands/test/integration/deadlock-retry.test.ts`.
 
 Tests: `packages/eventstore/test/integration/append-multi-item.test.ts`.
