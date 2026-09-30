@@ -227,6 +227,10 @@ one of its types AND that carries all of its tags. What this framework does with
   query (the spec says the two are "typically" the same, not always). Only the guard's events can refuse the append.
 - **Query items** follow the spec: OR between items, type AND tags within one. Multi-item conditions are enforced
   that way on Postgres (migration V4) and by the in-memory store, and a conformance suite runs the same cases on both.
+- **Writers lock their own events too** (migration V5). Every append locks the (event type, tag) pairs of its own events
+  as well as of its condition, so a check always waits for an in-flight writer whose events it would match, even one
+  that has no condition of its own (a `concurrent()` command). The price: appends to one hot (type, tag) queue, and two
+  commands that each append more than once can deadlock, which the executor treats as a conflict and retries.
 - **Idempotency is our addition, not part of the specification.** The spec has one condition and does not discuss
   idempotency; its examples ("Prevent record duplication") do it with a token event and the ordinary condition, where a
   repeat is just another failed condition. Here `idempotentBy` is a second, independent check that runs *before* the
