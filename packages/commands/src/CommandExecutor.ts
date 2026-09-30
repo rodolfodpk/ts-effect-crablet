@@ -63,6 +63,62 @@ export interface CommandExecutorService {
 
 export class CommandExecutor extends Context.Service<CommandExecutor, CommandExecutorService>()("CommandExecutor") {}
 
+// The part of running a command that does not depend on HOW transactions are provided: call the
+// handler, then apply its decision with ONE atomic conditional append. Exported so other runners (the
+// in-memory scenario runner in testing/) share exactly this logic instead of copying it.
+//
+// The idempotency check runs before the concurrency check inside the append, so an idempotent retry
+// against a since-changed state is a duplicate, not a spurious conflict.
+export const runHandler = <T, E>(
+  handler: CommandHandler<T, E>,
+  command: T
+): Effect.Effect<ExecutionResult, E | Conflict | Duplicate | SqlError, EventStore> =>
+  Effect.gen(function* () {
+    const eventStore = yield* EventStore;
+    const decision = yield* handler(command);
+
+    if (decision._tag === "NoOp") {
+      return ExecutionResultNS.idempotent(decision.reason ?? "DUPLICATE_OPERATION");
+    }
+
+    const outcome = yield* eventStore.append(decision.events, decision.condition).pipe(
+      Effect.as("created" as const),
+      Effect.catchTag("Conflict", (conflict) =>
+        // A lifecycle-guard decision reports its conflict as a guard conflict.
+        Effect.fail(
+          decision.conflictKind === "guard"
+            ? new Conflict({
+                message: "Lifecycle guard violated: lifecycle state changed since it was loaded",
+                kind: "guard"
+              })
+            : conflict
+        )
+      ),
+      Effect.catchTag("Duplicate", (duplicate) =>
+        decision.onDuplicate === "THROW" ? Effect.fail(duplicate) : Effect.succeed("idempotent" as const)
+      )
+    );
+
+    return outcome === "idempotent" ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION") : ExecutionResultNS.created();
+  });
+
+// Re-run `attempt` after a `Conflict`, up to `retries` more times (`onRetry` runs before each re-run).
+// Each re-run is a fresh attempt: the caller makes `attempt` a whole new transaction with a fresh load.
+// The last `Conflict` is reported if the retries run out; any other failure is not retried.
+export const withConflictRetry = <A, E, R>(
+  retries: number,
+  attempt: Effect.Effect<A, E, R>,
+  onRetry: Effect.Effect<void> = Effect.void
+): Effect.Effect<A, E, R> => {
+  const loop = (retriesUsed: number): Effect.Effect<A, E, R> =>
+    Effect.catch(attempt, (error) =>
+      error instanceof Conflict && retriesUsed < retries
+        ? Effect.andThen(onRetry, loop(retriesUsed + 1))
+        : Effect.fail(error)
+    );
+  return loop(0);
+};
+
 export const CommandExecutorLive = Layer.effect(
   CommandExecutor,
   Effect.gen(function* () {
@@ -87,41 +143,7 @@ export const CommandExecutorLive = Layer.effect(
       // dedicated idempotentDuplicates increment when the result comes back idempotent.
       CommandMetrics.observe(
         CommandMetrics.handle,
-        sql.withTransaction(
-          Effect.gen(function* () {
-            const eventStore = yield* EventStore;
-            const decision = yield* handler(command);
-
-            if (decision._tag === "NoOp") {
-              return ExecutionResultNS.idempotent(decision.reason ?? "DUPLICATE_OPERATION");
-            }
-
-            // One atomic conditional append for every kind of decision. The idempotency check runs
-            // before the concurrency check inside the SQL function, so an idempotent retry against a
-            // since-changed state is a duplicate, not a spurious conflict.
-            const outcome = yield* eventStore.append(decision.events, decision.condition).pipe(
-              Effect.as("created" as const),
-              Effect.catchTag("Conflict", (conflict) =>
-                // A lifecycle-guard decision reports its conflict as a guard conflict.
-                Effect.fail(
-                  decision.conflictKind === "guard"
-                    ? new Conflict({
-                        message: "Lifecycle guard violated: lifecycle state changed since it was loaded",
-                        kind: "guard"
-                      })
-                    : conflict
-                )
-              ),
-              Effect.catchTag("Duplicate", (duplicate) =>
-                decision.onDuplicate === "THROW" ? Effect.fail(duplicate) : Effect.succeed("idempotent" as const)
-              )
-            );
-
-            return outcome === "idempotent"
-              ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION")
-              : ExecutionResultNS.created();
-          })
-        ).pipe(
+        sql.withTransaction(runHandler(handler, command)).pipe(
           Effect.tap((result) => {
             if (!result.wasIdempotent) return Effect.void;
             const taggedCounter: Metric.Counter<number> = Metric.withAttributes(
@@ -135,31 +157,15 @@ export const CommandExecutorLive = Layer.effect(
       );
 
     // Execute, re-running after a Conflict while retries remain (each attempt is its own transaction).
-    const runDecoded = <In, Err>(command: Command<In, Err>, input: In) => {
-      const attempt = (
-        retriesUsed: number
-      ): Effect.Effect<
-        ExecutionResult,
-        Err | SqlError | Conflict | Duplicate,
-        EventStore | CommandAuditStore | SqlClient.SqlClient
-      > =>
-        execute(command.name, input, command.handler).pipe(
-          Effect.catchTag("Conflict", (conflict) =>
-            retriesUsed < command.retries
-              ? Effect.andThen(
-                  Metric.update(
-                    Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }),
-                    1
-                  ),
-                  attempt(retriesUsed + 1)
-                )
-              : Effect.fail(conflict)
-          )
-        );
-      // The executor reports `Duplicate` for every command, but only a command that declared
-      // `onDuplicate: "fail"` can produce one that should reach the caller: for any other command the
-      // executor has already turned it into an idempotent success, so none can arrive here.
-      return attempt(0).pipe(
+    const runDecoded = <In, Err>(command: Command<In, Err>, input: In) =>
+      withConflictRetry(
+        command.retries,
+        execute(command.name, input, command.handler),
+        Metric.update(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }), 1)
+        // The executor reports `Duplicate` for every command, but only a command that declared
+        // `onDuplicate: "fail"` can produce one that should reach the caller: for any other command
+        // the executor has already turned it into an idempotent success, so none can arrive here.
+      ).pipe(
         Effect.catchTag("Duplicate", (duplicate) =>
           command.duplicates === "fail" ? Effect.fail(duplicate) : Effect.die(duplicate)
         )
@@ -168,7 +174,6 @@ export const CommandExecutorLive = Layer.effect(
         Err | Conflict | SqlError,
         EventStore | CommandAuditStore | SqlClient.SqlClient
       >;
-    };
 
     const run = <In, Err>(command: Command<In, Err>, input: unknown) =>
       Effect.flatMap(command.decodeInput(input), (decoded) => runDecoded(command, decoded));

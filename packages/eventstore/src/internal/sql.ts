@@ -9,12 +9,14 @@ import type { LogPosition } from "../LogPosition.ts";
 import { Conflict, Duplicate } from "../AppendErrors.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 
-// Port of EventStoreImpl.convertTagsToPostgresArray (EventStoreImpl.java:687-702).
-// Deliberately bug-for-bug identical: no escaping of `=`, `,`, `{`, `}` in keys/values - an
-// existing constraint of the Java implementation, not something to "fix" in the port.
+// A Postgres text[] literal for one event's tags: `{"key=value","key2=value2"}`. Every element is
+// double-quoted, with `\` and `"` backslash-escaped, so a value may contain any character - commas,
+// quotes, braces, backslashes, spaces, `=` - and still round-trip exactly. (Unquoted, a value like
+// `a,b` would be split into two array elements and silently stored as different tags.)
 function encodeTagsLiteral(tags: ReadonlyArray<Tag>): string {
   if (tags.length === 0) return "{}";
-  return `{${tags.map((t) => `${t.key}=${t.value}`).join(",")}}`;
+  const quote = (s: string) => `"${s.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  return `{${tags.map((t) => quote(`${t.key}=${t.value}`)).join(",")}}`;
 }
 
 function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {

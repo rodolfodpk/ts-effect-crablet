@@ -9,7 +9,7 @@ import * as Tag from "@crablet/eventstore/Tag";
 import type { Query } from "@crablet/eventstore/Query";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { all } from "@crablet/commands/Model";
-import { makeFakeEventStore } from "@crablet/eventstore/testing/FakeEventStore";
+import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import * as WalletEvents from "../src/domain/events/WalletEvents.ts";
 import * as WalletQueryPatterns from "../src/domain/WalletQueryPatterns.ts";
 import { walletBalanceProjector } from "../src/domain/WalletBalanceProjector.ts";
@@ -94,9 +94,9 @@ describe("event definitions produce the same events as the existing constructors
 });
 
 const at = "2026-09-01T00:00:00.000Z";
-const stateOf = (fake: ReturnType<typeof makeFakeEventStore>, id: string) =>
+const stateOf = (fake: ReturnType<typeof makeInMemoryEventStore>, id: string) =>
   Effect.runPromise(M.WalletModel.of({ id, year: Y, month: MO }).load(fake.service)).then((l) => l.state);
-const oldStateOf = (fake: ReturnType<typeof makeFakeEventStore>, id: string) =>
+const oldStateOf = (fake: ReturnType<typeof makeInMemoryEventStore>, id: string) =>
   Effect.runPromise(
     fake.service.project(
       WalletQueryPatterns.singleWalletActivePeriodDecisionModel(id, Y, MO),
@@ -107,7 +107,7 @@ const oldStateOf = (fake: ReturnType<typeof makeFakeEventStore>, id: string) =>
 
 describe("state fold vs the existing WalletBalanceProjector", () => {
   test("agrees on a sequential history of opens, deposits, withdrawals and a statement", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       WalletEvents.walletOpened({ walletId: "w1", owner: "Ann", initialBalance: 100, openedAt: at }),
       WalletEvents.walletStatementOpened({ walletId: "w1", statementId: "s", year: Y, month: MO, openingBalance: 100, openedAt: at }),
@@ -120,7 +120,7 @@ describe("state fold vs the existing WalletBalanceProjector", () => {
   });
 
   test("agrees that a closed wallet no longer exists, and that an unknown wallet doesn't", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       WalletEvents.walletOpened({ walletId: "w1", owner: "Ann", initialBalance: 5, openedAt: at }),
       WalletEvents.walletClosed({ walletId: "w1", closedAt: at })
@@ -150,7 +150,7 @@ describe("state fold vs the existing WalletBalanceProjector", () => {
   // each writer computed from the state IT saw. Two deposits that ran concurrently both saw balance 50,
   // so they wrote snapshots 60 and 70; folding snapshots keeps only the last (70) and loses 10.
   test("F3: concurrent deposits are summed, not overwritten by the last stale snapshot", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       WalletEvents.walletOpened({ walletId: "w1", owner: "Ann", initialBalance: 50, openedAt: at }),
       WalletEvents.walletStatementOpened({ walletId: "w1", statementId: "s", year: Y, month: MO, openingBalance: 50, openedAt: at }),
@@ -163,7 +163,7 @@ describe("state fold vs the existing WalletBalanceProjector", () => {
 });
 
 function seededTransfer() {
-  const fake = makeFakeEventStore();
+  const fake = makeInMemoryEventStore();
   fake.seed(
     WalletEvents.walletOpened({ walletId: "a", owner: "Ann", initialBalance: 100, openedAt: at }),
     WalletEvents.walletStatementOpened({ walletId: "a", statementId: "sa", year: Y, month: MO, openingBalance: 100, openedAt: at }),

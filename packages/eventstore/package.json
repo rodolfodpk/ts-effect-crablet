@@ -16,7 +16,8 @@
     "./Listen": "./src/Listen.ts",
     "./Leader": "./src/Leader.ts",
     "./NotifyPayload": "./src/NotifyPayload.ts",
-    "./testing/FakeEventStore": "./src/testing/FakeEventStore.ts"
+    "./spec/Spec": "./src/spec/Spec.ts",
+    "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",

@@ -6,7 +6,7 @@ import * as AppendCondition from "@crablet/eventstore/AppendCondition";
 import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Tag from "@crablet/eventstore/Tag";
-import { makeFakeEventStore, type FakeEventStore } from "@crablet/eventstore/testing/FakeEventStore";
+import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { concurrent, defineCommand, emit, fail, noop, strict } from "../src/Command.ts";
 import { DomainError, InvalidInput } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
@@ -41,15 +41,15 @@ const Increment = defineCommand({
 });
 
 const cmd = { id: "c1", by: 5, opId: "op1" };
-const open = (fake: FakeEventStore, id = "c1") => fake.seed(Opened({ id }));
-const runHandler = <A, E>(fake: FakeEventStore, effect: Effect.Effect<A, E, EventStore>) =>
+const open = (fake: InMemoryEventStore, id = "c1") => fake.seed(Opened({ id }));
+const runHandler = <A, E>(fake: InMemoryEventStore, effect: Effect.Effect<A, E, EventStore>) =>
   Effect.runPromiseExit(Effect.provideService(effect, EventStore, fake.service));
-const succeeded = async <A, E>(fake: FakeEventStore, effect: Effect.Effect<A, E, EventStore>): Promise<A> => {
+const succeeded = async <A, E>(fake: InMemoryEventStore, effect: Effect.Effect<A, E, EventStore>): Promise<A> => {
   const exit = await runHandler(fake, effect);
   if (Exit.isFailure(exit)) throw new Error(`expected success, got ${Cause.pretty(exit.cause)}`);
   return exit.value;
 };
-const failureOf = async <A, E>(fake: FakeEventStore, effect: Effect.Effect<A, E, EventStore>): Promise<unknown> => {
+const failureOf = async <A, E>(fake: InMemoryEventStore, effect: Effect.Effect<A, E, EventStore>): Promise<unknown> => {
   const exit = await runHandler(fake, effect);
   if (Exit.isSuccess(exit)) throw new Error("expected failure");
   return exit.cause.reasons.find(Cause.isFailReason)?.error;
@@ -57,7 +57,7 @@ const failureOf = async <A, E>(fake: FakeEventStore, effect: Effect.Effect<A, E,
 
 describe("defineCommand: the decision", () => {
   test("a refusal from decide is a typed failure; a pure decide never touches the store", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     expect(await failureOf(fake, Increment.handler(cmd))).toBeInstanceOf(NotOpen);
     open(fake);
     expect(await failureOf(fake, Increment.handler({ ...cmd, by: 101 }))).toBeInstanceOf(TooLarge);
@@ -65,7 +65,7 @@ describe("defineCommand: the decision", () => {
   });
 
   test("emit becomes an Append of those events", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     const decision = await succeeded(fake, Increment.handler(cmd));
     expect(decision._tag).toBe("Append");
@@ -76,7 +76,7 @@ describe("defineCommand: the decision", () => {
   });
 
   test("noop, and emitting nothing, are no-ops (nothing to append)", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     const Nothing = defineCommand({ name: "n", input, decide: () => noop("not needed") });
     expect(await succeeded(fake, Nothing.handler(cmd))).toEqual({ _tag: "NoOp", reason: "not needed" });
     const Empty = defineCommand({ name: "e", input, decide: () => emit() });
@@ -85,14 +85,14 @@ describe("defineCommand: the decision", () => {
 });
 
 describe("defineCommand: consistency -> append condition", () => {
-  const condOf = async (command: { handler: (i: any) => Effect.Effect<any, any, EventStore> }, fake: FakeEventStore) => {
+  const condOf = async (command: { handler: (i: any) => Effect.Effect<any, any, EventStore> }, fake: InMemoryEventStore) => {
     const d = await succeeded(fake, command.handler(cmd));
     if (d._tag !== "Append") throw new Error("expected Append");
     return d;
   };
 
   test("strict (the default): fail if anything in the model's boundary changed since load", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake); // position 1 is the newest event in the boundary
     const d = await condOf(Increment, fake);
     const model = CounterModel.of({ id: "c1" });
@@ -103,7 +103,7 @@ describe("defineCommand: consistency -> append condition", () => {
   });
 
   test("concurrent(): no concurrency check at all", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     const C = defineCommand({ name: "c", input, model: (c) => CounterModel.of({ id: c.id }), consistency: () => concurrent(), decide: (_, c) => emit(Incremented(c)) });
     const d = await condOf(C, fake);
@@ -111,7 +111,7 @@ describe("defineCommand: consistency -> append condition", () => {
   });
 
   test("concurrent({ guard }): only the guard's events conflict, checked after the loaded position", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     const guard = CounterModel.lifecycleQuery("c1");
     const C = defineCommand({ name: "c", input, model: (c) => CounterModel.of({ id: c.id }), consistency: () => concurrent({ guard }), decide: (_, c) => emit(Incremented(c)) });
@@ -122,7 +122,7 @@ describe("defineCommand: consistency -> append condition", () => {
   });
 
   test("a guard that includes an event type the command appends is rejected", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     const C = defineCommand({
       name: "c",
@@ -136,14 +136,14 @@ describe("defineCommand: consistency -> append condition", () => {
   });
 
   test("a model-less command defaults to concurrent()", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     const Record = defineCommand({ name: "r", input, decide: (state, c) => (state === undefined ? emit(Incremented(c)) : noop()) });
     const d = await condOf(Record, fake);
     expect(d.condition).toEqual(AppendCondition.empty());
   });
 
   test("strict consistency without a model is a defect (there is no boundary to be strict about)", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     const Bad = defineCommand({ name: "bad", input, consistency: () => strict(), decide: (_, c) => emit(Incremented(c)) });
     const exit = await runHandler(fake, Bad.handler(cmd));
     expect(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason)).toBe(true);
@@ -162,7 +162,7 @@ describe("defineCommand: idempotency", () => {
     });
 
   test("every combination of consistency and idempotency maps to the expected AppendCondition", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     const pos = LogPosition.of(1n, new Date(), "1");
     const model = CounterModel.of({ id: "c1" });
@@ -192,7 +192,7 @@ describe("defineCommand: idempotency", () => {
   });
 
   test("the check runs BEFORE prepare and decide: a repeat neither re-prepares nor re-decides", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     fake.seed(Incremented({ id: "c1", by: 1, opId: "op1" })); // the operation was already done
     const calls: Array<string> = [];
@@ -209,7 +209,7 @@ describe("defineCommand: idempotency", () => {
   });
 
   test('onDuplicate "fail": a repeat fails with Duplicate instead', async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     fake.seed(Incremented({ id: "c1", by: 1, opId: "op1" }));
     const C = withIdem({ onDuplicate: "fail" });
@@ -218,7 +218,7 @@ describe("defineCommand: idempotency", () => {
   });
 
   test('an append built for onDuplicate "fail" tells the executor to throw; the default returns', async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake);
     const fail_ = await succeeded(fake, withIdem({ onDuplicate: "fail" }).handler(cmd));
     const ret = await succeeded(fake, withIdem().handler(cmd));
@@ -229,7 +229,7 @@ describe("defineCommand: idempotency", () => {
 
 describe("defineCommand: prepare", () => {
   test("runs after the idempotency check, sees the input and the store, and feeds model and decide", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     open(fake, "c9");
     const seen: Array<unknown> = [];
     const C = defineCommand({
@@ -244,7 +244,7 @@ describe("defineCommand: prepare", () => {
   });
 
   test("a failure in prepare is the command's failure", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     const C = defineCommand({ name: "p", input, prepare: () => Effect.fail("nope" as const), decide: () => noop() });
     expect(await failureOf(fake, C.handler(cmd))).toBe("nope");
   });

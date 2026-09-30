@@ -829,3 +829,45 @@ yield* executor.run(Book, rawInput);   // validate -> transaction -> retry on Co
   -> one Created + one Idempotent; `onDuplicate: "fail"` (sequential and racing).
 - Still to come: the hand-written wallet handlers (`CD.*`) are replaced in Phase 5; `ExposedCommand`/HTTP in
   Phase 6. `execute` stays public until then.
+
+## Phase 4 (API redesign) - testability: spec, in-memory store, scenarios, conformance
+
+Goal: test command logic fast and without Docker, WITHOUT trusting a stand-in that might disagree with
+Postgres.
+
+- **`@crablet/eventstore/spec/Spec`**: what reads and conditional appends mean, as pure functions
+  (`itemMatches`, `queryMatches`, `checkAppend`): an item matches on ANY-of types AND ALL-of tags; a
+  query is an OR of items; an append is refused as `duplicate` (idempotency query matches at any position,
+  checked FIRST) or `conflict` (concurrency query matches something NEWER than the position). Items with no
+  information are dropped; a condition with none performs no check, while a READ with none matches all.
+- **`InMemoryEventStore`** (`@crablet/eventstore/testing/InMemoryEventStore`, replaces the Phase 2
+  `FakeEventStore`): implements the spec WITH enforcement - `Conflict`/`Duplicate` exactly when Postgres
+  would, same messages, correlation/causation ids recorded - plus an exclusive, all-or-nothing
+  `transaction(effect)` (rolls back on failure, defect or interruption). It cannot model concurrency:
+  nothing interleaves, so races and conflict retries are Postgres-only tests.
+- **Conformance suite** (`test/conformance/cases.ts`, 19 framework-neutral cases): the same cases run
+  against the in-memory store (Bun, `test/conformance-in-memory.test.ts`) and real Postgres
+  (`test/integration/conformance-postgres.test.ts`).
+- **Differential test** (`test/integration/differential.test.ts`): 8 seeded random histories x 150 steps
+  (random events, random multi-item concurrency/idempotency conditions, random reads) applied to both
+  stores in lockstep; every append outcome and every read must be identical. It asserts it exercised every
+  outcome (497 accepted / 163 conflicts / 110 duplicates / 359 non-empty reads), so it cannot pass
+  vacuously. Mutation-checked: swapping the spec's idempotency/concurrency order fails both the suite and
+  the differential test.
+- **`given(...events).when(command, input)`** (`@crablet/commands/testing/Scenario`): runs a command through
+  the REAL pipeline (validation, idempotency check, prepare, load, decide, conditional append, conflict
+  retry) against the in-memory store and returns `{ outcome, events, error, reason }`; later `when`s see
+  earlier effects; a defect fails the test loudly. The executor's transaction-independent core
+  (`runHandler`) and retry loop (`withConflictRetry`) were extracted so the real executor and the
+  scenario runner share one implementation.
+
+**A real bug found by the conformance suite (fixed):** tag values containing a comma (also quotes, braces
+or backslashes) were silently stored as DIFFERENT tags. `encodeTagsLiteral` built an unescaped Postgres
+array literal (`{k=a,b}` - two elements), a constraint inherited from the Java original and kept "bug for
+bug". Every element is now double-quoted and escaped. Reads were always fine (their values are bound
+parameters), so the damage was on write: such events could not be found by their own tags, which breaks
+idempotency keys and consistency boundaries on those values. Covered by a permanent conformance case.
+
+Side-task from the plan, already done in Phase F: the `pg_snapshot_xmin` filter that could hide committed
+conflicts was removed there (and is covered by `append-multi-item.test.ts`). Not done: the optional PGlite
+(Postgres-in-WASM) tier - the in-memory store plus the conformance/differential proof covers the need.

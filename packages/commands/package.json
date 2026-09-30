@@ -10,7 +10,8 @@
     "./Event": "./src/Event.ts",
     "./Model": "./src/Model.ts",
     "./Errors": "./src/Errors.ts",
-    "./Command": "./src/Command.ts"
+    "./Command": "./src/Command.ts",
+    "./testing/Scenario": "./src/testing/Scenario.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",

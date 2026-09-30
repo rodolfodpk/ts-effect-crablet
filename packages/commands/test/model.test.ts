@@ -3,7 +3,7 @@ import { Cause, Effect, Exit } from "effect";
 import * as Schema from "effect/Schema";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
-import { makeFakeEventStore } from "@crablet/eventstore/testing/FakeEventStore";
+import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { defineEvent } from "../src/Event.ts";
 import { all, defineModel } from "../src/Model.ts";
 
@@ -47,7 +47,7 @@ const AccountModel = defineModel({
     { by: ["from_id", "to_id"] }
   );
 
-const load = <S>(fake: ReturnType<typeof makeFakeEventStore>, model: { load: (es: never) => Effect.Effect<S, unknown> }) =>
+const load = <S>(fake: ReturnType<typeof makeInMemoryEventStore>, model: { load: (es: never) => Effect.Effect<S, unknown> }) =>
   Effect.runPromise(model.load(fake.service as never) as Effect.Effect<S>);
 
 describe("defineModel: the boundary query is derived from the handlers", () => {
@@ -77,7 +77,7 @@ describe("defineModel: the boundary query is derived from the handlers", () => {
 
 describe("defineModel: folding", () => {
   test("folds this entity's events, in order, from the initial state", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       Opened({ accountId: "a1", initial: 10 }),
       Deposited({ accountId: "a1", amount: 5 }, [Tag.of("year", "2026")]),
@@ -88,7 +88,7 @@ describe("defineModel: folding", () => {
   });
 
   test("ignores other entities, other scopes and unrelated event types", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       Opened({ accountId: "a1", initial: 10 }),
       Opened({ accountId: "a2", initial: 999 }),
@@ -101,14 +101,14 @@ describe("defineModel: folding", () => {
   });
 
   test("lifecycle events apply regardless of scope", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(Opened({ accountId: "a1", initial: 10 }), Closed({ accountId: "a1" }));
     const { state } = await load(fake, AccountModel.of({ id: "a1", year: 2031 }));
     expect(state.open).toBe(false);
   });
 
   test("a two-party event is applied from each side using the instance id and the event's tags", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       Opened({ accountId: "a", initial: 100 }),
       Opened({ accountId: "b", initial: 0 }),
@@ -119,7 +119,7 @@ describe("defineModel: folding", () => {
   });
 
   test("no matching events: initial state, and the zero log position", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     const loaded = await load(fake, AccountModel.of({ id: "nobody", year: 2026 }));
     expect(loaded.state).toEqual({ open: false, balance: 0 });
     expect(loaded.logPosition.position).toBe(0n);
@@ -128,7 +128,7 @@ describe("defineModel: folding", () => {
 
 describe("defineModel: log position", () => {
   test("is the position of the newest event IN the boundary, not of unrelated newer events", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(Opened({ accountId: "a1", initial: 1 })); // position 1, in the boundary
     fake.seed(Opened({ accountId: "other", initial: 1 }), Unrelated({})); // positions 2, 3: not in it
     const { logPosition } = await load(fake, AccountModel.of({ id: "a1", year: 2026 }));
@@ -138,7 +138,7 @@ describe("defineModel: log position", () => {
 
 describe("all: a model over several entities", () => {
   test("one boundary (union of the members'), one position, each member's own state", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(
       Opened({ accountId: "a", initial: 100 }), // 1
       Opened({ accountId: "b", initial: 0 }), // 2
@@ -158,7 +158,7 @@ describe("all: a model over several entities", () => {
   });
 
   test("the position covers events that only one member's boundary contains", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed(Opened({ accountId: "a", initial: 1 }), Closed({ accountId: "b" }));
     const { logPosition } = await load(fake, all({ x: AccountModel.of({ id: "a", year: 1 }), y: AccountModel.of({ id: "b", year: 1 }) }));
     expect(logPosition.position).toBe(2n);
@@ -167,7 +167,7 @@ describe("all: a model over several entities", () => {
 
 describe("malformed stored data", () => {
   test("an event whose payload does not match its definition is a defect, not a silent skip", async () => {
-    const fake = makeFakeEventStore();
+    const fake = makeInMemoryEventStore();
     fake.seed({ type: "Opened", tags: [Tag.of("account_id", "a1")], eventData: { accountId: "a1" } }); // missing `initial`
     const exit = await Effect.runPromiseExit(AccountModel.of({ id: "a1", year: 2026 }).load(fake.service));
     expect(Exit.isFailure(exit)).toBe(true);
