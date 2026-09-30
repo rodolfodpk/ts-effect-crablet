@@ -711,3 +711,11 @@ Things that only failed at runtime, not in the type checker (worth remembering f
   fixed upstream, so the `notify()` helper was removed; 0006's slow 20-race test is now sub-second.
 - Deliberately not done: a thin internal re-export layer for the formerly-unstable modules (the RC
   no longer uses an `unstable/` path prefix; exact pinning is the guard instead).
+
+### TypeScript 7.0.2 (native compiler)
+
+`typescript` bumped 6.0.3 -> 7.0.2 (`tsc` is now the native binary). The whole workspace typechecks with
+zero errors on Effect 4's types, unchanged `tsconfig.json` (`module: Preserve`, `moduleResolution:
+bundler`, `allowImportingTsExtensions`); a deliberately wrong file is still rejected, so the check is
+real. Typecheck dropped from ~2 s to well under 1 s. `@effect/language-service` (which hooks the TS JS
+API that TS 7 replaces) is not used here; check before adopting it.
