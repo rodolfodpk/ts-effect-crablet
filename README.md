@@ -131,5 +131,6 @@ The coverage badge only covers the fast Bun unit suite, not the Postgres-backed 
 ## Learn more
 
 - [`examples/wallet-example-app`](./examples/wallet-example-app) - a complete application: commands, views, an automation, an outbox and HTTP.
+- [`docs/dcb-guide.md`](./docs/dcb-guide.md) - what a dynamic consistency boundary is, through one runnable example: a transfer between two accounts, with its tests.
 - [`docs/adr/`](./docs/adr/README.md) - the lasting design decisions and why they were made. Start with [ADR-0010](./docs/adr/0010-declarative-command-api.md).
 - [`NOTES.md`](./NOTES.md) - a running log of findings, gotchas and phase-by-phase status.
