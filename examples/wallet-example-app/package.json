@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types src/index.ts"
+    "start": "node src/index.ts"
   },
   "dependencies": {
     "effect": "3.21.4",
@@ -20,7 +20,7 @@
     "@crablet/outbox": "workspace:*",
     "@crablet/commands-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",
-    "pg": "8.22.0"
+    "pg": "8.23.0"
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*"

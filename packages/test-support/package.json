@@ -8,9 +8,9 @@
   },
   "dependencies": {
     "@crablet/db-migrations": "workspace:*",
-    "pg": "8.22.0"
+    "pg": "8.23.0"
   },
   "devDependencies": {
-    "@testcontainers/postgresql": "12.0.4"
+    "@testcontainers/postgresql": "12.2.0"
   }
 }

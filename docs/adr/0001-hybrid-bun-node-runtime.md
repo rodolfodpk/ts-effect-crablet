@@ -30,8 +30,9 @@ runtime for everything else (fast, in-memory unit tests, `bun install`, workspac
   — that syntax needs real transformation, not mere type-stripping, and breaks Node's native TS
   execution.
 - CI must install and use both runtimes: Bun for `typecheck`/`test:unit`, Node for
-  `test:integration`. On Node versions below 23.6, `node --test` needs the explicit
-  `--experimental-strip-types` flag to execute `.ts` files at all (harmless to pass on newer Node
-  versions where it's already default-on).
+  `test:integration`. Node 24 (the version CI and `.nvmrc` pin; `engines` requires >=24) strips
+  types by default, so `node --test` runs `.ts` files with no flag. (Node below 22.18/23.6 would
+  need `--experimental-strip-types`; that flag was dropped from the scripts when the baseline
+  moved to Node 24.)
 - Two test runners means two slightly different assertion/mocking idioms in the same repo — an
   accepted ongoing cost of this split, not eliminated.
