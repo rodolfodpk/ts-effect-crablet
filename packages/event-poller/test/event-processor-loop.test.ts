@@ -98,7 +98,7 @@ const makeHarness = (options?: { readonly enabled?: boolean; readonly failFirstN
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
-describe("EventProcessor.process (direct call - mirrors Java's public process(I), no leadership gate)", () => {
+describe("EventProcessor.process (direct call, no leadership gate)", () => {
   test("disabled config -> 0, no autoRegister", async () => {
     const { handle, rows } = await run(makeHarness({ enabled: false }));
     const handled = await run(handle.service.process(PROCESSOR_ID));

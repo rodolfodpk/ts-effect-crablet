@@ -3,7 +3,7 @@ import type { OperationMetrics } from "./internal/observe.ts";
 
 export { observe } from "./internal/observe.ts";
 
-// Port of crablet.automation.decide. Tag with ("automation", automationName) at the call site.
+// crablet.automation.decide. Tag with ("automation", automationName) at the call site.
 export const decide: OperationMetrics = {
   duration: Metric.timer("crablet.automation.decide.duration"),
   successes: Metric.counter("crablet.automation.decide.successes"),

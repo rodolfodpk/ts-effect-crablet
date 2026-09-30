@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as BackoffState from "../src/BackoffState.ts";
 
-// Exact algorithm port of com.crablet.eventpoller.internal.BackoffState - table-driven against
+// Table-driven against
 // hand-computed values matching: maxSkips = floor(maxBackoffSeconds*1000/pollingIntervalMs);
 // skipCounter = min(multiplier^(emptyPollCount-threshold) - 1, maxSkips) once emptyPollCount > threshold.
 describe("BackoffState", () => {

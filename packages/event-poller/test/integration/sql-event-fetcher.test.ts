@@ -197,7 +197,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
 
       // p_tags is TEXT[] where each element is itself a Postgres array-literal STRING
       // (e.g. "{key=value}") representing one event's tag list - matching
-      // EventStoreImpl.convertTagsToPostgresArray / this port's encodeTagsLiteral, not a plain
+      // the event store's encodeTagsLiteral, not a plain
       // "key=value" string.
       await clientA.query("BEGIN");
       await clientA.query(

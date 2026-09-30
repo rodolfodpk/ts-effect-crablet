@@ -1,6 +1,6 @@
 import type { Tag } from "./Tag.ts";
 
-// Port of com.crablet.eventstore.AppendEvent. Event data is serialized (JSON.stringify) by the
+// An event to append. Event data is serialized (JSON.stringify) by the
 // EventStore implementation - callers pass a plain object, not a pre-serialized string.
 export interface AppendEvent {
   readonly type: string;

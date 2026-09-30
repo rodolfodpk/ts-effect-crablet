@@ -23,11 +23,9 @@ export interface OutboxDeps {
   readonly instanceId?: string;
 }
 
-// Port of OutboxAutoConfiguration + EventProcessorFactory.createProcessor - outbox-module-specific
-// wiring only. Confirmed (this phase's research pass, with file:line citations) that Java's outbox
-// leadership is a single module-wide lock (OUTBOX_LOCK_KEY) shared by one EventProcessor handling
-// every (topic, publisher) pair - the same single-leader model views uses - so this reuses
-// @crablet/event-poller's generic engine exactly as-is, with no changes needed.
+// Outbox-module-specific wiring only. Leadership is a single module-wide lock (OUTBOX_LOCK_KEY)
+// shared by one EventProcessor handling every (topic, publisher) pair - the same single-leader model
+// views uses - so this reuses @crablet/event-poller's generic engine as-is.
 export const makeOutboxProcessor = (
   deps: OutboxDeps
 ): Effect.Effect<

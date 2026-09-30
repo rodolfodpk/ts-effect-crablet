@@ -134,8 +134,7 @@ export interface StoredEventRow {
   readonly causation_id: string | null;
 }
 
-// Port of QuerySqlBuilderImpl.buildWhereClause (QuerySqlBuilderImpl.java:18-70) + the base SELECT
-// from EventStoreImpl.java:350-356.
+// Reads the events matching a query after a position.
 export const queryEvents = (
   sql: SqlClient.SqlClient,
   query: Query,

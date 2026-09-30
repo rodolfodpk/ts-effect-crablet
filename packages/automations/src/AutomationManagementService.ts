@@ -10,8 +10,7 @@ import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 
-// Port of com.crablet.automations.management.AutomationManagementService / AutomationProgressDetails
-// - wraps the generic ProcessorManagementService with one extra query against
+// Automation management and progress details - wraps the generic ProcessorManagementService with one extra query against
 // crablet_automation_progress for ops visibility. Mirrors ViewManagementService.ts exactly (single
 // key, same shape), just against a different table/column.
 export interface AutomationProgressDetails {

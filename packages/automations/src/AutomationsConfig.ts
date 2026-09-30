@@ -1,6 +1,5 @@
-// Port of com.crablet.automations.config.AutomationsConfig (crablet.automations.* properties),
-// minus shared-fetch fields - the shared-fetch execution strategy is explicitly out of scope for
-// this phase, matching views'/outbox's own deferral.
+// Automations module configuration. (No shared-fetch fields - that execution strategy is out of
+// scope, as it is for views and outbox.)
 export interface AutomationsConfig {
   readonly enabled: boolean;
   readonly pollingIntervalMs: number;

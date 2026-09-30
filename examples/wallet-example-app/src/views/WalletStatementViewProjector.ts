@@ -6,8 +6,7 @@ import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/vie
 import * as WalletTags from "../domain/WalletTags.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Port of com.crablet.wallet.view.projectors.WalletStatementViewProjector - the most edge-case-
-// heavy projector in the app (Java's own fidelity bar: a 713-line, ~20-test unit suite). Maintains
+// The most edge-case-heavy projector in the app. Maintains
 // wallet_statement_view (one row per (wallet, period) statement) + the statement_transactions
 // junction table.
 //

@@ -5,15 +5,13 @@ import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Port of com.crablet.wallet.view.projectors.WalletSummaryViewProjector - running totals per
+// Running totals per
 // wallet. `current_balance` is always SET to the event's own carried balance (naturally
 // idempotent, same as WalletBalanceViewProjector); the running total_* columns are incremented,
 // with `last_transaction_at = GREATEST(...)` guarding only the timestamp against moving backward
-// on an out-of-order redelivery - this port keeps the same accepted limitation Java's own summary
-// view has (unlike WalletStatementViewProjector, there's no junction table here, so a genuine
-// redelivery could double-count a total_* column; Java's own design doesn't solve this either).
-// Deliberately no FK to wallet_balance_view (Java's own V103 migration fix - both are independent
-// async projections off the same event stream, so summary's own projector can process
+// on an out-of-order redelivery - accepted limitation: unlike WalletStatementViewProjector,
+// there's no junction table here, so a genuine redelivery could double-count a total_* column.
+// Deliberately no FK to wallet_balance_view (both are independent async projections off the same event stream, so summary's own projector can process
 // WalletOpened before balance's does).
 const upsertOnOpen = (
   sql: SqlClient.SqlClient,

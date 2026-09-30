@@ -9,10 +9,9 @@ import type { AutomationHandler } from "../AutomationHandler.ts";
 // One makeSqlEventFetcher instance per automation (each bound to that automation's own
 // EventSelection), dispatched by automationName - reuses event-poller's shared selection-keyed
 // fetcher logic as-is, same reuse ViewEventFetcher.ts already established for views rather than
-// duplicating Java's internal.AutomationEventFetcher's own SQL-building wrapper.
+// duplicating SQL-building code.
 // `AutomationHandler<any, any, any>`: a heterogeneous registry of automations, each with its own
-// command type T, is inherently type-erased at this boundary - same as Java's Object-command
-// erasure, just confined to this internal wiring file rather than leaking into the public
+// command type T, is inherently type-erased at this boundary - confined to this internal wiring file rather than leaking into the public
 // AutomationHandler<T, E, HE> API. T only matters to the caller who built each handler and to
 // AutomationDispatcher's per-decision dispatch (AutomationEventHandler.ts); this fetcher only ever
 // reads the EventSelection/automationName fields, which don't depend on T at all.

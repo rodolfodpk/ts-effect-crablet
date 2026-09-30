@@ -2,7 +2,7 @@ import type { Tag } from "@crablet/eventstore/Tag";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventSelection } from "../EventSelection.ts";
 
-// Port of the generic parts of EventSelectionWhereClauseBuilder.java - dimensions AND together;
+// Builds the WHERE clause for an EventSelection - dimensions AND together;
 // eventTypes empty = unrestricted, requiredTags = ALL keys present, anyOfTags = ANY key present,
 // exactTags = ALL key=value pairs match. requiredTags/anyOfTags query crablet_event_tags (the
 // framework's key-presence lookup table, documented as existing for exactly this purpose);

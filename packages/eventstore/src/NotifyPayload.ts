@@ -1,6 +1,5 @@
-// Port of crablet-eventstore's PostgresNotifyPayload.java (encode side) and
-// PostgresNotifyWakeupSource.java's payload parsing (decode side).
-// Must stay byte-identical to the Java implementation - this is a cross-language wire contract.
+// The NOTIFY payload wire format: encode side (EventStore) and decode side (wakeup filtering).
+// Encode and decode must stay in agreement with each other.
 //
 // PATTERN NOTE: nothing in this file returns an `Effect` - and that's deliberate, not an
 // oversight. `Effect` is for computations that are asynchronous, can fail in a tracked way, or
@@ -58,8 +57,8 @@ export interface SubscriberFilter {
   readonly exactTagKeys?: ReadonlySet<string>;
 }
 
-// Port of PostgresNotifyWakeupSource.shouldWake - in-memory pre-filter before the real SQL poll.
-// Tag *value* matching is intentionally NOT done here (matches Java) - only key-name presence.
+// In-memory pre-filter before the real SQL poll.
+// Tag *value* matching is intentionally NOT done here - only key-name presence.
 export function shouldWake(batch: DecodedPayload, filter: SubscriberFilter): boolean {
   if (batch.wildcard) return true;
 

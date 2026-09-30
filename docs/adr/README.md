@@ -1,9 +1,13 @@
 # Architecture Decision Records
 
-Lasting architectural decisions made during the TS/Effect port, extracted from the phase-by-phase
+Lasting architectural decisions made while building this framework, extracted from the phase-by-phase
 narrative in [`NOTES.md`](../../NOTES.md). Each ADR is self-contained: context, decision,
 consequences. Process gotchas, one-off bugs, and phase status stay in `NOTES.md` — only decisions
 with lasting effect on the codebase's shape get an ADR here.
+
+Note: ADRs 0001-0008 are kept as written. They were recorded while the framework was still modelled on
+its Java predecessor and mention it as historical context; [ADR-0010](0010-declarative-command-api.md)
+records that this repo is now its own product and no code or API follows that predecessor.
 
 - [ADR-0001: Hybrid Bun + Node runtime](0001-hybrid-bun-node-runtime.md)
 - [ADR-0002: Single EventStore implementation via Effect's ambient transaction context](0002-single-eventstore-implementation.md)

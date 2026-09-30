@@ -15,7 +15,7 @@ const connInfo = {
 };
 const port = Number(process.env["PORT"] ?? 8080);
 
-// Port of WalletApplication.java's entry point: apply migrations, then start the app - views/
+// Entry point: apply migrations, then start the app - views/
 // automations/outbox background processors AND the HTTP server, all sharing one connection pool.
 async function main(): Promise<void> {
   await migrate(connInfo);

@@ -1,4 +1,4 @@
-// Port of com.crablet.outbox.TopicPublisherPair - the composite (topic, publisher) processor
+// The composite (topic, publisher) processor
 // identity outbox uses (a topic can have several publishers, each advancing independently).
 // @crablet/event-poller's engine requires `I extends string`, so this pair is encoded into a
 // single string for engine plumbing and decoded back wherever the real (topic, publisher) columns

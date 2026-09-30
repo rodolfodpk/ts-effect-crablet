@@ -3,7 +3,7 @@ import * as LogPosition from "./LogPosition.ts";
 import type { Query as QueryType } from "./Query.ts";
 import type { LogPosition as LogPositionType } from "./LogPosition.ts";
 
-// Port of com.crablet.eventstore.AppendCondition. Supports two independent checks:
+// Supports two independent checks:
 // concurrencyQuery (conflicting writes after afterPosition) and idempotencyQuery (duplicate
 // operations regardless of position).
 export interface AppendCondition {

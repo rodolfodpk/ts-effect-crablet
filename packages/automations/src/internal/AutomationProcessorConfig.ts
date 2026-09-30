@@ -3,7 +3,7 @@ import { resolveOverride } from "@crablet/event-poller/ProcessorRuntimeOverrides
 import type { AutomationsConfig } from "../AutomationsConfig.ts";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
-// Port of internal.AutomationProcessorConfig.java's createConfigMap: folds each automation's
+// Folds each automation's
 // nullable per-handler overrides against the module's global AutomationsConfig defaults - one
 // ProcessorConfig<string> per AutomationHandler, same single-key shape ViewProcessorConfig.ts uses
 // (not outbox's cross-join, since an automation has no secondary "publisher"-like dimension).

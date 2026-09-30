@@ -30,7 +30,7 @@ describe("ProcessorManagementService: lag and backoff reporting", () => {
       sql: fakeSql(20n)
     });
 
-    // Real Java semantics compute this as a raw subtraction in SQL; our fake mirrors the same
+    // The real implementation computes this as a raw subtraction in SQL; our fake mirrors the same
     // shape via the "lag" column the fake query returns.
     expect(await run(management.getLag("view-a"))).toBe(20n);
   });

@@ -27,13 +27,12 @@ export type ExecuteDecision = <T, HE>(
   input: T
 ) => Effect.Effect<unknown, HE | Conflict | SqlError, never>;
 
-// Port of internal.AutomationDispatcher.java: routes handle(automationName, events) to the
+// Routes handle(automationName, events) to the
 // registered AutomationHandler for that name; dies loudly on an unregistered automation (mirrors
 // ViewEventHandler/OutboxEventHandler treating this as a misconfiguration, not a recoverable typed
 // failure). For each event in the batch (in order): calls decide(event) to get a list of
 // decisions, then executes each ExecuteCommand decision *sequentially, in returned order*, with
-// the triggering event's causation/correlation propagated (matching Java's ScopedValue scope
-// around CommandExecutor.execute - decide() itself runs outside that scope, since it only reads
+// the triggering event's causation/correlation propagated (scoped around the command run - decide() itself runs outside that scope, since it only reads
 // state and issues no writes of its own). The trigger event counts as processed once regardless of
 // how many decisions it produced - the return value is `events.length`, not a decision tally,
 // matching at-least-once redelivery semantics the same way ViewEventHandler/OutboxEventHandler do.

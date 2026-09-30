@@ -1,4 +1,4 @@
-// Port of com.crablet.examples.wallet.WalletTags - tag name constants used across wallet events
+// Tag name constants used across wallet events
 // and decision-model queries.
 export const WALLET_ID = "wallet_id";
 export const DEPOSIT_ID = "deposit_id";
@@ -15,7 +15,7 @@ export const TO_STATEMENT_ID = "to_statement_id";
 
 // Period ("closing the books") tags - every wallet command is scoped to the current calendar
 // month, so period-scoped events carry year/month (day/hour reserved for finer-grained
-// PeriodType values Java supports but this port doesn't use - only MONTHLY). MoneyTransferred
+// other period granularities - only MONTHLY is used). MoneyTransferred
 // carries one shared (year, month) pair too, not separate from/to-prefixed variants - both wallets
 // in a transfer always resolve to the same current period (see TransferMoneyCommand.ts).
 export const YEAR = "year";

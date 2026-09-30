@@ -24,9 +24,7 @@ export interface MigrateConnInfo {
 
 // Standalone script (plain pg.Client, not Effect) - this is deploy-time bootstrapping, before any
 // SqlClient/Layer exists, same reasoning @crablet/test-support's startTestDb documents for why it
-// isn't wrapped in Effect either. Applies core crablet migrations first, then this app's own -
-// mirrors Java's `spring.flyway.locations=classpath:db/migration,classpath:db/migration/app`
-// (two locations, core first).
+// isn't wrapped in Effect either. Applies core crablet migrations first, then this app's own -.
 export async function migrate(connInfo: MigrateConnInfo): Promise<void> {
   const client = new Client({
     host: connInfo.host,
@@ -49,7 +47,7 @@ export async function migrate(connInfo: MigrateConnInfo): Promise<void> {
 }
 
 // `import.meta.main` is Bun/Deno-only - this app runs under Node (Testcontainers/pg driver
-// parity with the rest of this port, see NOTES.md), so the portable Node equivalent is comparing
+// see NOTES.md), so the portable Node equivalent is comparing
 // this module's own URL against the script Node was actually invoked with.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   await migrate({

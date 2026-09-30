@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 
-// Port of com.crablet.wallet.api.WalletQueryController - hand-written reads (plain SqlClient
+// Hand-written reads (plain SqlClient
 // queries against the view tables, no event-store involvement), composed alongside
 // commands-http's generic write group under one shared HttpApi (see WalletApp.ts).
 export const WalletResponse = Schema.Struct({

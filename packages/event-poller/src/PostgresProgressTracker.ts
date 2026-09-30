@@ -19,7 +19,7 @@ export interface ProgressTableSpec {
 const isUndefinedTable = (error: SqlError): boolean =>
   (error.reason.cause as { code?: string } | null | undefined)?.code === "42P01";
 
-// Port of AbstractSingleKeyProgressTracker.java (JDBC base for single-VARCHAR-PK progress tables).
+// Progress tracker for single-VARCHAR-PK progress tables.
 //
 // PATTERN NOTE - "factory function returning a value object" vs. eventstore's `Context.Service` +
 // `Layer.effect` (see EventStore.ts's primer). Both resolve `SqlClient` once and return an object

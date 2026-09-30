@@ -22,9 +22,8 @@ export interface ViewsDeps {
   readonly instanceId?: string;
 }
 
-// Port of ViewsAutoConfiguration + EventProcessorFactory.createProcessor - views-module-specific
-// wiring only. The generic scheduling/leader-election/backoff engine itself lives in
-// @crablet/event-poller and is reused as-is; this is the adapter layer Java's config class plays,
+// Views-module-specific wiring only. The generic scheduling/leader-election/backoff engine itself lives in
+// @crablet/event-poller and is reused as-is; this is the adapter layer
 // assembling the module-specific fetcher/handler/progress-tracker/configs and handing them, plus
 // the shared VIEWS_LOCK_KEY and EVENTS_CHANNEL, to that engine.
 export const makeViewsProcessor = (

@@ -1,6 +1,6 @@
 import { Metric } from "effect";
 
-// Port of crablet.poller.processing.cycle / crablet.poller.backoff - wired ONCE into
+// crablet.poller.processing.cycle / crablet.poller.backoff - wired ONCE into
 // event-poller's shared EventProcessor.ts engine, so views/outbox/automations all get
 // cycle/backoff instrumentation for free without any per-consumer-module wiring (mirrors ADR-0007's
 // "one shared engine, zero per-consumer duplication" win, just for metrics instead of scheduling).

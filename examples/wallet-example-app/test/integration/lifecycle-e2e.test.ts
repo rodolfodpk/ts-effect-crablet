@@ -1,5 +1,5 @@
 // Runs under Node (Testcontainers) - see NOTES.md. Full E2E happy path through the real running
-// app (background processors + HTTP server), mirroring Java's WalletLifecycleE2ETest.
+// app (background processors + HTTP server).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Layer, ManagedRuntime, Redacted } from "effect";

@@ -1,6 +1,4 @@
-// Port of com.crablet.views.config.ViewsConfig (crablet.views.* properties), minus
-// fetchBatchSize/sharedFetch - the shared-fetch execution strategy is explicitly out of scope for
-// this phase (see the Phase 3 plan's "Explicitly out of scope" section).
+// Views module configuration. (No shared-fetch fields - that execution strategy is out of scope.)
 export interface ViewsConfig {
   readonly enabled: boolean;
   readonly pollingIntervalMs: number;

@@ -2,11 +2,9 @@ import { viewSubscriptionOf, type ViewSubscription } from "@crablet/views/ViewSu
 import * as WalletTags from "../domain/WalletTags.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Port of com.crablet.wallet.view.config.WalletViewConfig - the 4 ViewSubscriptions, all sharing
-// one anyOfTags filter (any of wallet_id/from_wallet_id/to_wallet_id present), same as Java's own
-// config. Deliberately includes WalletClosed in balance/summary's own eventTypes (see this port's
-// plan for the discrepancy writeup: Java's own subscriptions omit it, making their projectors'
-// own delete-on-close switch branches dead code).
+// The 4 ViewSubscriptions, all sharing one anyOfTags filter (any of wallet_id/from_wallet_id/
+// to_wallet_id present). Deliberately includes WalletClosed in balance/summary's own eventTypes so
+// their delete-on-close branches run.
 const SHARED_ANY_OF_TAGS = new Set([WalletTags.WALLET_ID, WalletTags.FROM_WALLET_ID, WalletTags.TO_WALLET_ID]);
 
 export const walletBalanceViewSubscription: ViewSubscription = viewSubscriptionOf("wallet-balance-view", {
@@ -36,9 +34,8 @@ export const walletSummaryViewSubscription: ViewSubscription = viewSubscriptionO
   anyOfTags: SHARED_ANY_OF_TAGS
 });
 
-// Own per-subscription runtime overrides, matching Java's own WalletStatementViewProjector
-// subscription (pollingIntervalMs(1000)/batchSize(100)) - redundant with the global defaults this
-// app also uses, but demonstrates the override mechanism the same way Java's config does.
+// Own per-subscription runtime overrides (pollingIntervalMs(1000)/batchSize(100)) - redundant
+// with the global defaults this app also uses, but demonstrates the override mechanism.
 export const walletStatementViewSubscription: ViewSubscription = viewSubscriptionOf("wallet-statement-view", {
   eventTypes: new Set([
     WalletEvents.WALLET_STATEMENT_OPENED,

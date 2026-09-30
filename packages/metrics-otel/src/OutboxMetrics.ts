@@ -3,7 +3,7 @@ import type { OperationMetrics } from "./internal/observe.ts";
 
 export { observe } from "./internal/observe.ts";
 
-// Port of crablet.outbox.publish. Tag with ("publisher", publisherName) at the call site.
+// crablet.outbox.publish. Tag with ("publisher", publisherName) at the call site.
 export const publish: OperationMetrics = {
   duration: Metric.timer("crablet.outbox.publish.duration"),
   successes: Metric.counter("crablet.outbox.publish.successes"),

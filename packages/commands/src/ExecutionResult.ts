@@ -1,4 +1,4 @@
-// Port of com.crablet.command.ExecutionResult.
+// The outcome of running a command: created, or already done (idempotent).
 export interface ExecutionResult {
   readonly wasIdempotent: boolean;
   readonly reason: string | null;

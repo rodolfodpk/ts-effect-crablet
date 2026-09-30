@@ -10,7 +10,7 @@ import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 
-// Port of com.crablet.views.service.ViewManagementService / ViewProgressDetails - wraps the generic
+// View management and progress details - wraps the generic
 // ProcessorManagementService with one extra query against crablet_view_progress for ops visibility.
 export interface ViewProgressDetails {
   readonly viewName: string;

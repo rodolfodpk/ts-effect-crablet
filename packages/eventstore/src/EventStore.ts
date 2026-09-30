@@ -14,11 +14,11 @@ import { Conflict, Duplicate } from "./AppendErrors.ts";
 import { encodePayload } from "./NotifyPayload.ts";
 import * as Sql from "./internal/sql.ts";
 
-// Port of PostgresNotifyWakeupSource.CHANNEL's default - the fixed channel every append notifies
+// The fixed channel every append notifies
 // on and every LISTEN/NOTIFY-based consumer (event-poller's wakeupStream) subscribes to.
 export const EVENTS_CHANNEL = "crablet_events";
 
-// Port of com.crablet.eventstore.StoredEvent - a queried event (as opposed to AppendEvent, which
+// A queried event (as opposed to AppendEvent, which
 // is what's written).
 export interface StoredEvent {
   readonly type: string;
@@ -31,8 +31,7 @@ export interface StoredEvent {
   readonly causationId: bigint | null;
 }
 
-// Port of com.crablet.eventstore.query.StateProjector<T>. eventTypes empty = matches all types
-// (mirrors StateProjector.exists()'s "no filter" semantics).
+// eventTypes empty = matches all types ("no filter" semantics).
 export interface StateProjector<T> {
   readonly eventTypes: ReadonlyArray<string>;
   readonly initialState: T;
@@ -128,8 +127,7 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
 }
 
 // Effect's transaction handling is ambient (SqlClient.withTransaction scopes every SqlClient call
-// made within its callback to one transaction), so - unlike Java's EventStoreImpl needing a
-// separate ConnectionScopedEventStore for the transaction-scoped case - a single implementation
+// made within its callback to one transaction), so a single implementation
 // works for both standalone and transaction-scoped use. Whatever SqlClient is in the current
 // Effect context (direct pool connection, or the transaction-bound one inside withTransaction)
 // is what these methods use.
@@ -144,8 +142,7 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
 // `someEffect` needs some ambient service (`R` not `never`), that requirement is inferred onto the
 // enclosing function too, until something calls `Effect.provide`/`Layer.effect`'s own machinery to
 // satisfy it. `yield* SqlClient.SqlClient` just below is exactly this: "ask the ambient context
-// for the SqlClient service" (compare to a Java method needing a `DataSource` injected via
-// constructor - here it's requested inline, right where it's needed, and TypeScript tracks that
+// for the SqlClient service" (it's requested inline, right where it's needed, and TypeScript tracks that
 // requirement in the enclosing function's `R` type parameter automatically).
 export const EventStoreLive = Layer.effect(
   EventStore,

@@ -8,7 +8,7 @@ export interface LogPosition {
   readonly transactionId: string | null;
 }
 
-// A plain function that throws replaces Java's validating constructor here - there's no
+// A plain function that throws does the validation - there's no
 // constructor to hook into for a plain `interface`, so validation just lives in the one factory
 // function every caller is expected to go through. This throw is a genuine (uncaught, defect-style)
 // exception, not an Effect failure - LogPosition values are constructed synchronously outside

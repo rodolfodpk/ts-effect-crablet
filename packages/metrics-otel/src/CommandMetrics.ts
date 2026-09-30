@@ -3,11 +3,8 @@ import type { OperationMetrics } from "./internal/observe.ts";
 
 export { observe } from "./internal/observe.ts";
 
-// Port of crablet.command.handle / crablet.command.idempotent.duplicate. Tag with
-// ("command_type", commandType) at the call site - CommandExecutor.execute's own commandType
-// parameter (see the port's design notes on why this had to become an explicit parameter: TS
-// commands are plain objects, not classes, so there is no `command.getClass().getSimpleName()`
-// equivalent to tag by).
+// crablet.command.handle / crablet.command.idempotent.duplicate. Tag with
+// ("command_type", commandType) at the call site - the defined command's `name`.
 export const handle: OperationMetrics = {
   duration: Metric.timer("crablet.command.handle.duration"),
   successes: Metric.counter("crablet.command.handle.successes"),

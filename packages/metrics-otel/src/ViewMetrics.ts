@@ -3,7 +3,7 @@ import type { OperationMetrics } from "./internal/observe.ts";
 
 export { observe } from "./internal/observe.ts";
 
-// Port of crablet.view.project. Tag with ("view", viewName) at the call site.
+// crablet.view.project. Tag with ("view", viewName) at the call site.
 export const project: OperationMetrics = {
   duration: Metric.timer("crablet.view.project.duration"),
   successes: Metric.counter("crablet.view.project.successes"),

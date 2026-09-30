@@ -5,15 +5,13 @@ import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Port of com.crablet.wallet.view.projectors.WalletBalanceViewProjector. Deposit/Withdrawal/
+// Deposit/Withdrawal/
 // Transfer always SET the balance to the event's own carried `newBalance`/`fromBalance`/
 // `toBalance` (never increment) - naturally idempotent under redelivery, no junction table needed
 // (unlike WalletStatementViewProjector, which increments running totals and does need one).
 //
-// WalletClosed deletes the row - this port's own ViewSubscription (WalletViewConfig.ts)
-// deliberately subscribes to WalletClosed for this view (Java's own ViewSubscription config
-// doesn't, making its own equivalent delete-on-close branch dead code - see this port's plan for
-// the full discrepancy writeup).
+// WalletClosed deletes the row - the ViewSubscription (WalletViewConfig.ts) deliberately subscribes
+// to WalletClosed for this view.
 const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
   switch (event.type) {
     case WalletEvents.WALLET_OPENED: {

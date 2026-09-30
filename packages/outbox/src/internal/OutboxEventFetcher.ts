@@ -8,8 +8,7 @@ import { fromKey } from "../TopicPublisherPair.ts";
 import type { TopicConfig } from "../TopicConfig.ts";
 
 // One makeSqlEventFetcher instance per TOPIC (not per pair) - publishers on the same topic share
-// one selection/fetch query, matching Java's internal.OutboxEventFetcher deriving its filter from
-// processorId.topic(). Dispatched by decoding the topic out of the pair key - reuses
+// one selection/fetch query, with the filter derived from the pair key's topic. Dispatched by decoding the topic out of the pair key - reuses
 // event-poller's shared selection-keyed fetcher logic as-is, same pattern as
 // packages/views/src/internal/ViewEventFetcher.ts.
 export const makeOutboxEventFetcher = (

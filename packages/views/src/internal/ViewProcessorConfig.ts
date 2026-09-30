@@ -3,7 +3,7 @@ import { resolveOverride } from "@crablet/event-poller/ProcessorRuntimeOverrides
 import type { ViewsConfig } from "../ViewsConfig.ts";
 import type { ViewSubscription } from "../ViewSubscription.ts";
 
-// Port of internal.ViewProcessorConfig.java's createConfigMap: folds each view's nullable
+// Folds each view's nullable
 // per-subscription overrides against the module's global ViewsConfig defaults.
 export const makeViewProcessorConfigs = (
   config: ViewsConfig,

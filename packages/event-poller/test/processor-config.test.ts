@@ -3,7 +3,7 @@ import { processorConfigOf } from "../src/ProcessorConfig.ts";
 import { resolveOverride } from "../src/ProcessorRuntimeOverrides.ts";
 
 describe("processorConfigOf", () => {
-  test("supplies Java defaults for maxErrors/leaderElectionRetryIntervalMs when omitted", () => {
+  test("supplies defaults for maxErrors/leaderElectionRetryIntervalMs when omitted", () => {
     const config = processorConfigOf("view-a", {
       pollingIntervalMs: 1000,
       batchSize: 100,

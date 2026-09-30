@@ -221,7 +221,7 @@ describe("EventStore public API parity (Phase 1)", () => {
     assert.strictEqual(typeof result.commandTransactionId, "string");
     // The whole point of the invariant: both writes happened in the same DB transaction, so they
     // share the same pg_current_xact_id() - this is the join key CommandExecutor's audit linkage
-    // relies on (see spring-crablet's closed design decision: no command_id column on events).
+    // relies on (by design there is no command_id column on events).
     assert.strictEqual(result.commandTransactionId, result.eventTransactionId);
   });
 

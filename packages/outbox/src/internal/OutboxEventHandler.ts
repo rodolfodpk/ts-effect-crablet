@@ -6,7 +6,7 @@ import { fromKey } from "../TopicPublisherPair.ts";
 import type { OutboxPublisher } from "../OutboxPublisher.ts";
 import { publishToOutbox } from "./OutboxPublishingService.ts";
 
-// Port of internal.OutboxEventHandler.java: decodes the publisher name from the pair key, looks up
+// Decodes the publisher name from the pair key, looks up
 // the registered OutboxPublisher, delegates to OutboxPublishingService; dies loudly on an
 // unregistered publisher (a misconfiguration, not a recoverable typed failure).
 export const makeOutboxEventHandler = (

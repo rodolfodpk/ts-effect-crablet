@@ -1,7 +1,6 @@
 // Runs under Node (Testcontainers) - see NOTES.md. Postgres-backed unit test of
 // WalletStatementViewProjector specifically, driven directly (hand-built StoredEvent fixtures fed
-// to projector.handle([...])), not through the full views/commands/HTTP pipeline - matches Java's
-// own direct-projector-unit-test style, fidelity bar being its ~20-case suite.
+// to projector.handle([...])), not through the full views/commands/HTTP pipeline.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";

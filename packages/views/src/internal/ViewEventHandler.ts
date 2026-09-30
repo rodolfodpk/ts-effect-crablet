@@ -4,9 +4,8 @@ import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import * as ViewMetrics from "@crablet/metrics-otel/ViewMetrics";
 import type { ViewProjector } from "../ViewProjector.ts";
 
-// Port of internal.ViewEventHandler.java: routes handle(viewName, events) to the registered
-// ViewProjector for that name; dies loudly on an unregistered view (mirrors Java throwing for a
-// misconfigured/unknown view - a programmer error, not a recoverable typed failure).
+// Routes handle(viewName, events) to the registered ViewProjector for that name; dies loudly on an
+// unregistered view (a programmer error, not a recoverable typed failure).
 export const makeViewEventHandler = (projectors: ReadonlyArray<ViewProjector>): EventHandler<string, unknown, never> => {
   const byName = new Map(projectors.map((p) => [p.viewName, p] as const));
 

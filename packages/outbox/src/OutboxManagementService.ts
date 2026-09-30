@@ -10,7 +10,7 @@ import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 
-// Port of com.crablet.outbox.management.OutboxManagementService / OutboxProgressDetails - wraps the
+// Outbox management and progress details - wraps the
 // generic ProcessorManagementService with one extra query against crablet_outbox_topic_progress
 // for ops visibility.
 export interface OutboxProgressDetails {

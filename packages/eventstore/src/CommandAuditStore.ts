@@ -2,8 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 
-// Port of com.crablet.eventstore.CommandAuditStore - kept as a separate service from EventStore
-// (mirroring the Java split) so non-command consumers (views, outbox, automations) aren't exposed
+// Kept as a separate service from EventStore so non-command consumers (views, outbox, automations) aren't exposed
 // to command-audit concerns. transaction_id is always pg_current_xact_id() - call these within
 // the same `sql.withTransaction(...)` scope as the event appends for the linkage to be meaningful.
 export interface CommandAuditStoreService {

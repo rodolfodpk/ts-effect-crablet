@@ -8,8 +8,7 @@ import type { ViewSubscription } from "../ViewSubscription.ts";
 
 // One makeSqlEventFetcher instance per view (each bound to that view's own EventSelection),
 // dispatched by viewName - reuses event-poller's shared selection-keyed fetcher logic as-is rather
-// than duplicating the SQL-building code Java's internal.ViewEventFetcher wraps around
-// EventSelectionWhereClauseBuilder.
+// than duplicating SQL-building code.
 export const makeViewEventFetcher = (
   subscriptions: ReadonlyArray<ViewSubscription>
 ): Effect.Effect<EventFetcher<string, SqlError, never>, never, SqlClient.SqlClient> =>

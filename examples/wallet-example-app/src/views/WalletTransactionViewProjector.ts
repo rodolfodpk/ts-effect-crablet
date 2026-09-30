@@ -5,7 +5,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Port of com.crablet.wallet.view.projectors.WalletTransactionViewProjector - one row per
+// One row per
 // transaction event, `ON CONFLICT (transaction_id, event_position) DO NOTHING` for idempotency. A
 // transfer produces two rows ({transferId}-from negative amount, {transferId}-to positive
 // amount), one per affected wallet.

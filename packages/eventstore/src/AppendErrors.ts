@@ -10,7 +10,7 @@ import { Data } from "effect";
 //   operation was already done. Whether that is an error or a silent "already done" is the
 //   command's `onDuplicate` policy (see commands' CommandDecision.ts), not this module's call.
 //
-// PATTERN PRIMER - `Data.TaggedError`, Effect's answer to Java-style checked exceptions. Every
+// PATTERN PRIMER - `Data.TaggedError`, Effect's typed, checked-exception-like errors. Every
 // `Effect<A, E, R>` has an explicit error type `E` right in its signature (see EventStore.ts's
 // primer on the three type parameters) - `Data.TaggedError("Conflict")<{ ... }>` is a base-class
 // factory that gives you, for free: (1) a class with the listed fields, (2) an automatic

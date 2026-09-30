@@ -9,7 +9,7 @@ import { fromKey } from "../TopicPublisherPair.ts";
 const isUndefinedTable = (error: SqlError): boolean =>
   (error.reason.cause as { code?: string } | null | undefined)?.code === "42P01";
 
-// Port of com.crablet.outbox.internal.OutboxProgressTracker - hand-rolled against the composite
+// Hand-rolled against the composite
 // (topic, publisher)-PK table `crablet_outbox_topic_progress`, since event-poller's
 // makePostgresProgressTracker assumes a single VARCHAR PK column that doesn't fit this schema.
 // `instanceId` is captured once at construction (like EventStoreLive captures `sql` once) because

@@ -1,7 +1,5 @@
-// Port of com.crablet.eventpoller.processor.ProcessorRuntimeOverrides /
-// ProcessorRuntimeOverrideResolver. Java needs six per-field static resolve methods because Java
-// generics can't express one function covering every field; TS's generics make one function
-// sufficient. `undefined`/`null` means "inherit the module-wide default".
+// Per-processor runtime overrides, resolved against module-wide defaults by one generic function.
+// `undefined`/`null` means "inherit the module-wide default".
 //
 // Consumed by Phase 3 per-module config types (ViewSubscription, AutomationHandler, etc.) when
 // building a ProcessorConfig<I> - event-poller itself doesn't call this internally.

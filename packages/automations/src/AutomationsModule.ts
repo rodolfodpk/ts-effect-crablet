@@ -26,10 +26,9 @@ export interface AutomationsDeps {
   readonly instanceId?: string;
 }
 
-// Port of AutomationsAutoConfiguration + EventProcessorFactory.createProcessor -
-// automations-module-specific wiring only. Reuses @crablet/event-poller's generic engine as-is,
+// Automations-module-specific wiring only. Reuses @crablet/event-poller's generic engine as-is,
 // same single-module-wide-leader model views/outbox already use (AUTOMATIONS_LOCK_KEY is one lock
-// for the whole module, not one per automation - confirmed against the Java source).
+// for the whole module, not one per automation).
 //
 // Differs from ViewsModule.ts/OutboxModule.ts in one load-bearing way: makeEventProcessor requires
 // `handler: EventHandler<I, unknown, never>` (R discharged to never), but

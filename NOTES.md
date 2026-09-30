@@ -5,7 +5,8 @@ met except where noted. 22/22 tests passing (12 under Bun, 10 under Node).
 
 **Architectural decisions** made across all phases now live in [`docs/adr/`](docs/adr/README.md),
 one file per decision. This file stays the phase-by-phase journal: status, gotchas, bugs found,
-and what changed vs. each phase's plan.
+and what changed vs. each phase's plan. Early entries (Phase 0 - 3) refer to the Java predecessor
+the framework started from; that is historical. Nothing in the code or API follows it any more (ADR-0010).
 
 ## Runtime: Bun + Node hybrid, not Bun-only
 
@@ -917,3 +918,15 @@ New tests: `wallet-commands.test.ts` (16 BDD tests of the real wallet commands w
 `given(...).when(...)`, incl. "a deposit to an unknown wallet leaves no statement behind" and "a retried
 withdrawal is 'already done' even though the balance no longer covers it"); `wallet-model.test.ts` now
 asserts the model directly (queries, fold, both regressions).
+
+## Phase 6 — Edges + docs (API redesign)
+
+- `commands-http`: domain errors map by neutral `kind` (not_found/invalid/conflict/forbidden) to status + RFC 7807
+  body; `exposedCommandOf` overloads; an error without a `kind` fails to compile. `matchingEventsCount` dropped.
+- `Crablet.layer(pg)`: one layer from a Postgres config (hides the `provide` vs `provideMerge` trap).
+- README rewritten; its quick start is the verbatim body of `packages/commands/test/quickstart.test.ts`. ADR-0010.
+- Sweep: every "Port of com.crablet...", "Java's ...", JDBC/Flyway reference was removed from source, tests, SQL
+  comments and the wallet example (comments reworded to say what the code does, not where it came from).
+  ADRs 0001-0008 and the early NOTES entries keep their historical mentions, flagged in their headers.
+- Left as-is on purpose: low-level `CD.*` builders and `CommandExecutor.execute` (documented escape hatch, still
+  used by package-level tests).

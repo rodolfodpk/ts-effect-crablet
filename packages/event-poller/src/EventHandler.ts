@@ -1,7 +1,7 @@
 import type { Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 
-// Port of com.crablet.eventpoller.EventHandler<I>. Implementations MUST be idempotent - delivery
+// Handles a batch of events for a processor. Implementations MUST be idempotent - delivery
 // is at-least-once (handler execution and progress-cursor advance are not in the same transaction;
 // the same batch may be re-delivered if progress tracking fails after successful handling).
 //

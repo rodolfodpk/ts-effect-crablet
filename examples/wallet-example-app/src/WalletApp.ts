@@ -98,8 +98,7 @@ export const stopBackgroundProcessors = (processors: BackgroundProcessors): Effe
     yield* processors.outboxHandle.service.stop;
   });
 
-// Port of WalletApplicationConfig + WalletViewConfig/WalletOpenedAutomation/outbox wiring together
-// - builds and starts the 3 background processors (views/automations/outbox). Building/providing
+// Builds and starts the 3 background processors (views/automations/outbox). Building/providing
 // their Layers alone would NOT process any events - each EventProcessorHandle's own `.service.start`
 // forks the long-lived daemon fibers that actually do the work (same requirement every prior
 // phase's own integration tests already had to satisfy).
@@ -172,9 +171,8 @@ const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
   close_wallet: exposedCommandOf(CloseWallet, notFound)
 };
 
-// Port of the app's own HTTP composition: commands-http's generic write group + WalletQueryApi's
-// hand-written reads, combined into ONE HttpApi served under one port - the small composability
-// refactor Phase 8's plan made to commands-http exists specifically for this.
+// The app's HTTP composition: commands-http's generic write group + WalletQueryApi's
+// hand-written reads, combined into ONE HttpApi served under one port.
 export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = HttpApi.make("walletApp")

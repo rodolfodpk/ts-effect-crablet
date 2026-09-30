@@ -3,7 +3,7 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// This repo owns the schema. Migrations are applied in the order listed (Flyway-style V<n>__ names).
+// This repo owns the schema. Migrations are applied in the order listed (V<n>__ names).
 export const sqlDir = path.join(__dirname, "..", "sql");
 
 export const migrationFiles = [

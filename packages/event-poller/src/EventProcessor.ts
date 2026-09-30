@@ -14,18 +14,12 @@ import type { EventSelection } from "./EventSelection.ts";
 import * as BackoffStateNS from "./BackoffState.ts";
 import type { BackoffState } from "./BackoffState.ts";
 
-// Port of com.crablet.eventpoller.processor.EventProcessor<C,I> +
-// com.crablet.eventpoller.internal.EventProcessorImpl.
-//
-// Java's model is one TaskScheduler one-shot self-resubmission per processorId, with an explicit
-// "already running" guard needed because a LISTEN/NOTIFY wakeup can force a concurrent second
-// invocation racing an in-flight scheduled one. The Effect-idiomatic replacement is one
-// persistent, long-lived fiber per processorId (see makeEventProcessor's `processorLoop`):
-// because a single dedicated fiber processes strictly sequentially by construction, that guard has
-// no equivalent here - a structural simplification, not a missing feature.
+// The event processor: one persistent, long-lived fiber per processorId (see makeEventProcessor's
+// `processorLoop`). A single dedicated fiber processes strictly sequentially by construction, so a
+// LISTEN/NOTIFY wakeup can never race an in-flight poll and no "already running" guard is needed.
 export interface EventProcessorService<C extends ProcessorConfig<I>, I> {
-  // Callable directly (mirrors Java's public process(I) - used by tests, does NOT check
-  // leadership; the leadership gate lives only in the scheduled loop, same as Java).
+  // Callable directly (used by tests); does NOT check leadership - the leadership gate lives only
+  // in the scheduled loop.
   readonly process: (processorId: I) => Effect.Effect<number, unknown>;
   readonly start: Effect.Effect<void>;
   readonly stop: Effect.Effect<void>;
@@ -109,8 +103,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const configOf = (id: I): C | undefined => deps.configs.find((c) => c.processorId === id);
 
-    // Mirrors EventProcessorImpl.process(I) exactly - the same 7-step sequence the scheduled loop
-    // calls, but with NO leadership check (that gate lives only in `tick` below, same as Java).
+    // The same 7-step sequence the scheduled loop calls, but with NO leadership check (that gate
+    // lives only in `tick` below).
     const process = (id: I): Effect.Effect<number, unknown> =>
       Effect.gen(function* () {
         const config = configOf(id);
@@ -155,11 +149,10 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         }
       });
 
-    // One iteration of a processorId's loop - mirrors EventProcessorImpl.scheduledTask's 7-step
-    // sequence exactly, including the subtle Java detail that on ANY exception the backoff state
-    // is left untouched and the next delay falls back to the plain pollingIntervalMs (not the
-    // backoff-adjusted delay) since Java's nextDelayMs is only overwritten by the backoff-update
-    // block, which never runs on the exception path.
+    // One iteration of a processorId's loop - the same 7-step sequence. Subtle detail: on ANY
+    // exception the backoff state is left untouched and the next delay falls back to the plain
+    // pollingIntervalMs (not the backoff-adjusted delay), since the delay is only overwritten by
+    // the backoff-update block, which never runs on the exception path.
     const tick = (
       config: C,
       dequeue: PubSub.Subscription<WakeupBatch>,
@@ -171,8 +164,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
         // PATTERN PRIMER - `Effect.race(a, b)`: runs both effects concurrently, returns whichever
         // finishes first, and automatically *interrupts* the loser (Effect's fiber interruption is
-        // cooperative and safe to run at almost any suspension point - it's not like a Java
-        // `Thread.interrupt()` that might leave things half-done). This is the entire mechanism
+        // cooperative and safe to run at almost any suspension point). This is the entire mechanism
         // behind "sleep for the polling interval, but wake up early if a LISTEN/NOTIFY arrives":
         // whichever of `Effect.sleep(delay)` / `waitForRelevantWakeup(...)` resolves first wins,
         // and the still-waiting other one is cleanly cancelled - no manual timer-handle
@@ -190,8 +182,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         // this function's own failure. It's the Effect equivalent of wrapping a call in
         // `try { ... } catch (e) { ... }` specifically because you need to inspect/react to the
         // outcome yourself rather than letting it bubble - here, so a handler exception can be
-        // logged and leave backoff state untouched (matching a subtle Java behavior - see the
-        // comment below) instead of aborting this whole tick. `Exit.isSuccess(exit)` narrows the
+        // logged and leave backoff state untouched (see the comment below) instead of aborting this whole tick. `Exit.isSuccess(exit)` narrows the
         // type so `exit.value`/`exit.cause` are safe to read in each branch.
         const exit = yield* Effect.exit(process(config.processorId));
 
@@ -240,7 +231,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       });
 
     // Persistent, long-lived fiber - see the module doc comment for why this eliminates the
-    // "already running" guard Java's resubmit-to-executor model needs.
+    // "already running" guard.
     //
     // `Effect.scoped(effect)` opens a `Scope` (see eventstore's Leader.ts for the full Scope
     // primer), runs `effect`, and closes the scope - releasing anything registered against it -
@@ -273,9 +264,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))
     );
 
-    // Port of crablet.poller.leadership - set on every leadership state transition, tagged by
-    // lock_key (this module's fixed lock, e.g. VIEWS_LOCK_KEY - the closest TS equivalent of
-    // Java's per-LeaderElector "processor" identity, since leadership here is module-wide, not
+    // crablet.poller.leadership - set on every leadership state transition, tagged by lock_key
+    // (this module's fixed lock, e.g. VIEWS_LOCK_KEY - leadership is module-wide, not
     // per-processorId) and instance_id.
     const setLeadershipGauge = (handle: LeaderHandle, isLeader: boolean): Effect.Effect<void> =>
       Metric.update(withPollerTags(LeaderMetrics.leadership, [
@@ -283,11 +273,9 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
           ["instance_id", deps.instanceId]
         ]), isLeader ? 1 : 0);
 
-    // One shared retry fiber per module (not per-processorId) - see disclosed simplification in
-    // the Phase 2 plan: Java's two-tier timing (30s shared task + 5s per-tick cooldown) exists to
-    // stop many independently-scheduled per-processor tasks from hammering pg_try_advisory_lock
-    // simultaneously; since only this one fiber ever attempts acquisition, that problem doesn't
-    // arise the same way.
+    // One shared retry fiber per module (not per-processorId) - a single fiber attempts
+    // acquisition for the whole module, so many per-processor tasks never hammer pg_try_advisory_lock
+    // simultaneously.
     const leaderRetryLoop: Effect.Effect<void> = Effect.forever(
       Effect.gen(function* () {
         const current = yield* Ref.get(leaderRef);
@@ -318,7 +306,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       // concurrency": a fiber created with `Effect.forkChild` becomes a *child* of whatever fiber called
       // fork, and children are automatically interrupted when their parent fiber ends - by design,
       // so you can't accidentally leak background work past the lifetime of the code block that
-      // started it (this is a real, hard-won lesson from this port - see NOTES.md's Phase 2
+      // started it (this is a real, hard-won lesson - see NOTES.md's Phase 2
       // write-up for the bug it caused here). `Effect.forkDetach` opts out of that supervision:
       // the fiber is attached to the runtime's root scope instead of its immediate caller, so it
       // keeps running independently for as long as the whole program runs, or until something

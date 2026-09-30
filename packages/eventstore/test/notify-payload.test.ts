@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { decodePayload, encodePayload, isWildcard, shouldWake } from "../src/NotifyPayload.ts";
 
-describe("notify payload codec (parity with PostgresNotifyPayload.java)", () => {
+describe("notify payload codec", () => {
   test("empty types -> wildcard", () => {
     expect(encodePayload(new Set(), new Set())).toBe("*");
   });

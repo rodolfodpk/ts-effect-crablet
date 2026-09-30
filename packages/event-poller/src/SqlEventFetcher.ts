@@ -8,8 +8,7 @@ import { buildEventSelectionQuery, parseStoredEventRow, type StoredEventRow } fr
 // A generic, selection-keyed EventFetcher against crablet_events/crablet_event_tags - the query
 // logic (event types / required-tags / any-of-tags / exact-tags) is the same across every
 // consumer module, so this is reusable as-is rather than reimplemented per module in Phase 3
-// (mirrors how each Java module's *EventFetcher wraps the same EventSelectionWhereClauseBuilder
-// logic; this factory *is* that shared logic, not a per-module wrapper around it).
+// (this factory *is* that shared logic, not a per-module wrapper around it).
 //
 // processorId is intentionally ignored - one fetcher instance is bound to one fixed EventSelection
 // at construction time. A Phase-3 module with several processorIds sharing one legacy fetch path

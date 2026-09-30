@@ -1,13 +1,9 @@
-// Port of com.crablet.eventpoller.internal.BackoffState - exact algorithm port. Java mutates
-// instance fields; the Effect-idiomatic equivalent is an immutable value plus pure transitions,
-// with the caller (the per-processorId loop in EventProcessor.ts) holding current state in a Ref.
+// Empty-poll backoff: an immutable value plus pure transitions, with the caller (the per-processorId
+// loop in EventProcessor.ts) holding the current state in a Ref. The loop always polls; backoff only
+// widens the delay before the next poll.
 //
-// shouldSkip() is deliberately not ported - it's dead code in the real Java implementation too
-// (the impl always calls process(), it only widens the delay before the next call via
-// getNextDelayMs()/nextDelayMs()).
-//
-// PATTERN PRIMER - "functional core, imperative shell", the FP-flavored alternative to Java's
-// mutable class here. Instead of one object whose `emptyPollCount`/`skipCounter` fields get
+// PATTERN PRIMER - "functional core, imperative shell", the alternative to a mutable class.
+// Instead of one object whose `emptyPollCount`/`skipCounter` fields get
 // updated in place by method calls (`state.recordEmpty()`), this is a plain immutable value
 // (`BackoffState`) plus pure functions that take a state and return a *new* one
 // (`recordEmpty(state, params) -> BackoffState`), never touching the input. Nothing here is

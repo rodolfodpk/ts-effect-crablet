@@ -4,7 +4,7 @@ import type { OutboxConfig } from "../OutboxConfig.ts";
 import type { TopicConfig } from "../TopicConfig.ts";
 import * as TopicPublisherPair from "../TopicPublisherPair.ts";
 
-// Port of internal.OutboxProcessorConfig.java's createConfigMap: cross-joins each topic's declared
+// Cross-joins each topic's declared
 // publishers against the module's global OutboxConfig defaults (+ each publisher's own optional
 // runtime overrides).
 export const makeOutboxProcessorConfigs = (

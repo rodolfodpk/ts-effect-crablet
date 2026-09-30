@@ -3,7 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
 import type { SqlError } from "effect/sql/SqlError";
 
-// Port of LeaderElectorImpl.java: session-level pg_try_advisory_lock/pg_advisory_unlock on a
+// Session-level pg_try_advisory_lock/pg_advisory_unlock on a
 // dedicated connection that is held open indefinitely on success (never returned to the pool
 // until explicitly released), and closed immediately on failure. No heartbeat query - liveness
 // is just "is the reserved connection still open" (Postgres auto-releases the lock server-side
@@ -12,7 +12,7 @@ import type { SqlError } from "effect/sql/SqlError";
 // Uses SqlClient's public `reserve: Effect<Connection, SqlError, Scope>` primitive (verified in
 // effect/sql/SqlConnection) rather than a raw pg.Client, since
 // `reserve` already gives a pooled-but-pinned connection tied to an Effect Scope we control -
-// the same "hold it open, don't return it to the pool" shape Java's LeaderElectorImpl uses.
+// the "hold it open, don't return it to the pool" shape leadership needs.
 
 export const OUTBOX_LOCK_KEY = 4856221667890123456n;
 export const VIEWS_LOCK_KEY = 4856221667890123457n;
@@ -24,8 +24,8 @@ export interface LeaderHandle {
   release(): Effect.Effect<void>;
 }
 
-// PATTERN PRIMER - `Scope`, Effect's resource-lifecycle primitive (the answer to Java's
-// try-with-resources / `Closeable`, but capability-based rather than syntax-based). A `Scope` is a
+// PATTERN PRIMER - `Scope`, Effect's resource-lifecycle primitive (scoped cleanup,
+// capability-based rather than syntax-based). A `Scope` is a
 // value that resources can register cleanup logic against (`Scope.addFinalizer`, used internally
 // by `sql.reserve`); when the scope closes, every registered finalizer runs, in reverse order.
 // Normally you never touch `Scope` directly - `Effect.scoped(effect)` (see event-poller's
