@@ -28,15 +28,14 @@ describe("ProblemDetail variants", () => {
     expect(statusOf(CommandApiBadRequest)).toBe(400);
   });
 
-  test("CommandConflict.of() carries violationCode/matchingEventsCount/hint", () => {
-    const problem = CommandConflict.of("Concurrent lifecycle event detected", "GUARD_VIOLATION", 1);
+  test("CommandConflict.of() carries violationCode and hint", () => {
+    const problem = CommandConflict.of("Concurrent lifecycle event detected", "GUARD_VIOLATION");
     expect(Schema.encodeSync(CommandConflict)(problem)).toEqual({
       type: CommandApiDcbConcurrencyType,
       title: "Conflict",
       status: 409,
       detail: "Concurrent lifecycle event detected",
       violationCode: "GUARD_VIOLATION",
-      matchingEventsCount: 1,
       hint: "Refresh state and retry the command if it is still valid."
     });
     expect(statusOf(CommandConflict)).toBe(409);

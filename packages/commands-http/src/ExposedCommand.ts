@@ -1,4 +1,7 @@
+import type { SqlError } from "effect/sql/SqlError";
 import type { Command } from "@crablet/commands/Command";
+import type { InvalidInput, KindedError } from "@crablet/commands/Errors";
+import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 
 // What the REST command API exposes: a flat, app-supplied map commandType -> ExposedCommand (there is
 // no auto-discovery anywhere, see ADR-0008). An entry is a defined command (Command.ts) - it brings its
@@ -20,7 +23,20 @@ export interface ExposedCommand<T, E = never> {
   mapError?(error: E): object | undefined;
 }
 
-export const exposedCommandOf = <T, E = never>(
+// Every error a command can fail with must be something the API knows how to present: a declared
+// domain error (its KIND picks the HTTP status), or one of the framework's own errors (input validation,
+// a stale decision, a repeated operation, a database failure). Anything else - a plain string, say, or
+// an untagged class - is a compile error unless the caller supplies `mapError` to present it.
+export type Presentable = KindedError | Conflict | Duplicate | SqlError | InvalidInput;
+
+export function exposedCommandOf<T, E extends Presentable = never>(command: Command<T, E>): ExposedCommand<T, E>;
+export function exposedCommandOf<T, E>(
+  command: Command<T, E>,
+  mapError: (error: E) => object | undefined
+): ExposedCommand<T, E>;
+export function exposedCommandOf<T, E>(
   command: Command<T, E>,
   mapError?: (error: E) => object | undefined
-): ExposedCommand<T, E> => ({ command, mapError });
+): ExposedCommand<T, E> {
+  return { command, mapError };
+}

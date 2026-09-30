@@ -1,6 +1,14 @@
 import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError } from "./ProblemDetail.ts";
+import {
+  CommandApiBadRequest,
+  CommandApiDomainConflict,
+  CommandApiForbidden,
+  CommandApiInvalid,
+  CommandApiNotFound,
+  CommandConflict,
+  CommandApiUnexpectedError
+} from "./ProblemDetail.ts";
 
 // The command API's two routes: GET (list exposed commands) and POST (execute) on the same
 // configurable base path. POST's payload is one *static* envelope shape, not a per-command-type
@@ -45,7 +53,16 @@ export const makeCommandApiGroup = (basePath: `/${string}`, extraErrors: Readonl
         success: CommandResultResponse,
         // The error list is assembled from a runtime-variable-length array, which cannot be tracked
         // statically; the cast is a deliberate, narrow type-erasure at this one composition boundary.
-        error: [CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, ...extraErrors] as never
+        error: [
+          CommandApiBadRequest,
+          CommandConflict,
+          CommandApiNotFound,
+          CommandApiInvalid,
+          CommandApiDomainConflict,
+          CommandApiForbidden,
+          CommandApiUnexpectedError,
+          ...extraErrors
+        ] as never
       })
     );
 

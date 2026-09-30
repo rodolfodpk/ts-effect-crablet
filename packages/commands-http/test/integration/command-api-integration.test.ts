@@ -13,7 +13,8 @@ import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import { defineCommand, emit } from "@crablet/commands/Command";
+import { defineCommand, emit, fail } from "@crablet/commands/Command";
+import { DomainError } from "@crablet/commands/Errors";
 import * as Query from "@crablet/eventstore/Query";
 import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
 import { exposedCommandOf, type ExposedCommand } from "../../src/ExposedCommand.ts";
@@ -66,7 +67,24 @@ const SendConfirmation = defineCommand({
   decide: (_, c) => emit(AppendEvent.of("ConfirmationSent", "order_id", c.orderId, {}))
 });
 
+// Domain errors declared with a KIND and no per-command hook: the kind alone decides the HTTP status.
+class NoSuchThing extends DomainError("NoSuchThing", { fields: { id: Schema.String }, kind: "not_found" }) {}
+class NotAllowed extends DomainError("NotAllowed", { fields: { reason: Schema.String }, kind: "forbidden" }) {}
+class BadRequestDomain extends DomainError("BadRequestDomain", { fields: { limit: Schema.Number }, kind: "invalid" }) {}
+class AlreadyDone extends DomainError("AlreadyDone", { fields: { id: Schema.String }, kind: "conflict" }) {}
+
+const Refuse = defineCommand({
+  name: "refuse",
+  input: Schema.Struct({ kind: Schema.Literals(["not_found", "forbidden", "invalid", "conflict"]), id: Schema.String }),
+  decide: (_, c) =>
+    c.kind === "not_found" ? fail(new NoSuchThing({ id: c.id }))
+    : c.kind === "forbidden" ? fail(new NotAllowed({ reason: "read-only" }))
+    : c.kind === "invalid" ? fail(new BadRequestDomain({ limit: 10 }))
+    : fail(new AlreadyDone({ id: c.id }))
+});
+
 const testCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
+  refuse: exposedCommandOf(Refuse),
   open_wallet: exposedCommandOf(OpenWallet),
   send_confirmation: exposedCommandOf(SendConfirmation)
 };
@@ -153,7 +171,7 @@ describe("commands-http integration (real Postgres)", () => {
     });
   });
 
-  it("DCB conflict: duplicate open_wallet returns 409 with violationCode/matchingEventsCount/hint", { timeout: 20_000 }, async () => {
+  it("DCB conflict: duplicate open_wallet returns 409 with violationCode/hint", { timeout: 20_000 }, async () => {
     const runId = crypto.randomUUID();
     const walletId = `wallet-conflict-${runId}`;
     await withServer(testCommands, {}, async (baseUrl) => {
@@ -172,7 +190,7 @@ describe("commands-http integration (real Postgres)", () => {
       const body = await jsonBody(second);
       assert.strictEqual(body.status, 409);
       assert.ok(typeof body.violationCode === "string" && body.violationCode.length > 0);
-      assert.strictEqual(typeof body.matchingEventsCount, "number");
+      assert.strictEqual(body.matchingEventsCount, undefined, "the count was dropped from the wire format");
       assert.ok(body.hint);
     });
   });
@@ -207,7 +225,7 @@ describe("commands-http integration (real Postgres)", () => {
       assert.strictEqual(res.status, 200);
       const body = await jsonBody(res);
       assert.deepStrictEqual(body, {
-        exposedCommands: [{ commandType: "open_wallet" }, { commandType: "send_confirmation" }]
+        exposedCommands: [{ commandType: "open_wallet" }, { commandType: "refuse" }, { commandType: "send_confirmation" }]
       });
     });
   });
@@ -268,4 +286,35 @@ describe("commands-http integration (real Postgres)", () => {
       });
     });
   });
+});
+
+describe("a domain error's kind decides the HTTP status (no per-command hook)", () => {
+  const post = (baseUrl: string, kind: string, id = "x1") =>
+    fetch(`${baseUrl}/api/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commandType: "refuse", command: { kind, id } })
+    });
+
+  for (const [kind, status, title, errorType, fields] of [
+    ["not_found", 404, "Not Found", "NoSuchThing", { id: "x1" }],
+    ["forbidden", 403, "Forbidden", "NotAllowed", { reason: "read-only" }],
+    ["invalid", 400, "Bad Request", "BadRequestDomain", { limit: 10 }],
+    ["conflict", 409, "Conflict", "AlreadyDone", { id: "x1" }]
+  ] as const) {
+    it(`${kind} -> ${status}, with the error's tag and fields as RFC 7807 extension members`, async () => {
+      await withServer(testCommands, {}, async (baseUrl) => {
+        const res = await post(baseUrl, kind);
+        assert.strictEqual(res.status, status);
+        const body = await jsonBody(res);
+        assert.strictEqual(body.status, status);
+        assert.strictEqual(body.title, title);
+        assert.strictEqual(body.errorType, errorType);
+        assert.deepStrictEqual(body.fields, fields);
+        assert.match(String(body.type), /^urn:crablet:problem:command-api:/);
+        assert.strictEqual(body.detail, errorType, "no message on the error, so the tag is the detail");
+        assert.strictEqual(body._tag, undefined, "no internal _tag leaks into the body");
+      });
+    });
+  }
 });

@@ -12,7 +12,8 @@ import { makeCommandApi, CommandEnvelope } from "./CommandApi.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError } from "./ProblemDetail.ts";
+import { kindOf } from "@crablet/commands/Errors";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, domainProblemOf } from "./ProblemDetail.ts";
 
 type CommandEnvelopePayload = Schema.Schema.Type<typeof CommandEnvelope>;
 
@@ -112,20 +113,24 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
             // `Duplicate` (command opted into failing on repeats) becomes a 409 `CommandConflict`
             // before the entry's own `mapError` hook - neither is ever this command's own domain error.
             // Everything else (the handler's own E) gets one chance via `entry.mapError` to become a real
-            // ProblemDetail (e.g. "wallet not found" -> 404) before falling through, unchanged, to the
-            // outer terminal `toProblemDetail` catch-all. `matchingEventsCount` is always 0: the SQL
-            // append does not report a count; the field is kept for wire compatibility.
+            // ProblemDetail (e.g. "wallet not found" -> 404). A declared domain error without a hook is
+            // presented generically by its KIND (see ProblemDetail.ts). Anything still unrecognized falls
+            // through, unchanged, to the outer terminal `toProblemDetail` catch-all (a generic 500).
             const executor = yield* CommandExecutor;
             const runExecute = executor.runDecoded(entry.command, command).pipe(
               Effect.catchTag("Conflict", (e) =>
-                Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION", 0))
+                Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION"))
               ),
               Effect.catchTag("Duplicate", (e) =>
-                Effect.fail(CommandConflict.of(e.message, "IDEMPOTENCY_VIOLATION", 0))
+                Effect.fail(CommandConflict.of(e.message, "IDEMPOTENCY_VIOLATION"))
               ),
-              Effect.catch((error) =>
-                error instanceof CommandConflict ? Effect.fail(error) : Effect.fail(entry.mapError?.(error) ?? error)
-              )
+              Effect.catch((error) => {
+                if (error instanceof CommandConflict) return Effect.fail(error);
+                const kind = kindOf(error);
+                return Effect.fail(
+                  entry.mapError?.(error) ?? (kind !== undefined ? domainProblemOf(kind, error) : error)
+                );
+              })
             );
 
             const result = yield* (correlationId !== null

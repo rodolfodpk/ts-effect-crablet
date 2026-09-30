@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import "effect/http-api"; // registers the `httpApiStatus` schema annotation used below
+import type { ErrorKind } from "@crablet/commands/Errors";
 
 // RFC 7807 (Problem Details for HTTP APIs) response bodies for the command API.
 //
@@ -34,8 +35,10 @@ export class CommandApiBadRequest extends Schema.Class<CommandApiBadRequest>("Co
   }
 }
 
-// Wraps eventstore's Conflict/Duplicate errors - see CommandApiLive.ts for the
-// translation. Extra RFC 7807 fields: violationCode, matchingEventsCount, hint.
+// A refused append: the command's decision went stale (`Conflict`, after its retries ran out) or it
+// repeated an operation it declared must fail (`Duplicate`). See CommandApiLive.ts for the translation.
+// `violationCode` says which check refused it: DCB_VIOLATION (the decision model changed),
+// GUARD_VIOLATION (a lifecycle guard changed) or IDEMPOTENCY_VIOLATION (already done).
 export class CommandConflict extends Schema.Class<CommandConflict>("CommandConflict")(
   {
     type: Schema.Literal(CommandApiDcbConcurrencyType),
@@ -43,26 +46,70 @@ export class CommandConflict extends Schema.Class<CommandConflict>("CommandConfl
     status: Schema.Literal(409),
     detail: Schema.String,
     violationCode: Schema.String,
-    matchingEventsCount: Schema.Number,
     hint: Schema.Literal("Refresh state and retry the command if it is still valid.")
   },
   { httpApiStatus: 409 }
 ) {
-  static of(detail: string, violationCode: string, matchingEventsCount: number): CommandConflict {
+  static of(detail: string, violationCode: string): CommandConflict {
     return new CommandConflict({
       type: CommandApiDcbConcurrencyType,
       title: "Conflict",
       status: 409,
       detail,
       violationCode,
-      matchingEventsCount,
       hint: "Refresh state and retry the command if it is still valid."
     });
   }
 }
 
-// Catch-all - detail is always this fixed generic string, never the real internal error message,
-// matching Java's explicit "message is not echoed" behavior for unexpected failures.
+// A command's own domain error (a `DomainError`, see @crablet/commands/Errors) presented generically:
+// the error's KIND decides the HTTP status, with no per-command hook needed.
+//   not_found -> 404   invalid -> 400   conflict -> 409   forbidden -> 403
+// `errorType` is the error's tag, `detail` its message (or the tag when it has none), and `fields` its
+// declared fields (RFC 7807 allows extension members). A command that wants a richer or differently
+// shaped response supplies its own `mapError` hook (see ExposedCommand.ts), which takes precedence.
+const domainProblemFields = {
+  type: Schema.String,
+  detail: Schema.String,
+  errorType: Schema.String,
+  fields: Schema.Record(Schema.String, Schema.Unknown)
+};
+
+export class CommandApiNotFound extends Schema.Class<CommandApiNotFound>("CommandApiNotFound")(
+  { ...domainProblemFields, title: Schema.Literal("Not Found"), status: Schema.Literal(404) },
+  { httpApiStatus: 404 }
+) {}
+export class CommandApiInvalid extends Schema.Class<CommandApiInvalid>("CommandApiInvalid")(
+  { ...domainProblemFields, title: Schema.Literal("Bad Request"), status: Schema.Literal(400) },
+  { httpApiStatus: 400 }
+) {}
+export class CommandApiDomainConflict extends Schema.Class<CommandApiDomainConflict>("CommandApiDomainConflict")(
+  { ...domainProblemFields, title: Schema.Literal("Conflict"), status: Schema.Literal(409) },
+  { httpApiStatus: 409 }
+) {}
+export class CommandApiForbidden extends Schema.Class<CommandApiForbidden>("CommandApiForbidden")(
+  { ...domainProblemFields, title: Schema.Literal("Forbidden"), status: Schema.Literal(403) },
+  { httpApiStatus: 403 }
+) {}
+
+export const domainProblemOf = (kind: ErrorKind, error: unknown): object => {
+  const tag = (error as { _tag?: string })._tag ?? "DomainError";
+  const message = (error as { message?: string }).message;
+  const declared = (error as { constructor?: { fields?: Record<string, unknown> } }).constructor?.fields ?? {};
+  const fields = Object.fromEntries(Object.keys(declared).map((key) => [key, (error as Record<string, unknown>)[key]]));
+  const common = { type: `urn:crablet:problem:command-api:${kind.replace("_", "-")}`, detail: message || tag, errorType: tag, fields };
+  switch (kind) {
+    case "not_found":
+      return new CommandApiNotFound({ ...common, title: "Not Found", status: 404 });
+    case "invalid":
+      return new CommandApiInvalid({ ...common, title: "Bad Request", status: 400 });
+    case "conflict":
+      return new CommandApiDomainConflict({ ...common, title: "Conflict", status: 409 });
+    case "forbidden":
+      return new CommandApiForbidden({ ...common, title: "Forbidden", status: 403 });
+  }
+};
+
 export class CommandApiUnexpectedError extends Schema.Class<CommandApiUnexpectedError>(
   "CommandApiUnexpectedError"
 )(

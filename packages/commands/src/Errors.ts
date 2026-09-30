@@ -15,6 +15,14 @@ export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly me
 //   forbidden  - the caller may not do this
 export type ErrorKind = "not_found" | "invalid" | "conflict" | "forbidden";
 
+// Marks an error instance as a declared domain error and carries its kind. A symbol-keyed property,
+// so it cannot collide with a domain error's own fields, and a type (`KindedError`) that transports can
+// require at compile time.
+export const DomainErrorKind: unique symbol = Symbol.for("@crablet/commands/DomainErrorKind");
+export interface KindedError {
+  readonly [DomainErrorKind]: ErrorKind;
+}
+
 // Declare a domain error: a tagged error class (catchable with `Effect.catchTag`) with typed fields,
 // plus its `kind` and field schemas as statics, for transports to read.
 //
@@ -32,7 +40,7 @@ type FieldValues<F extends Record<string, Schema.Constraint>> = { readonly [K in
 // inferred from `Data.TaggedError`) because TypeScript cannot `extend` a base class whose instance
 // type is a generic mapped type.
 export interface DomainErrorClass<Tag extends string, F extends Record<string, Schema.Constraint>> {
-  new (args: VoidIfEmpty<FieldValues<F>>): Cause.YieldableError & { readonly _tag: Tag } & FieldValues<F>;
+  new (args: VoidIfEmpty<FieldValues<F>>): Cause.YieldableError & { readonly _tag: Tag } & FieldValues<F> & KindedError;
   readonly kind: ErrorKind;
   readonly fields: F;
 }
@@ -45,12 +53,15 @@ export const DomainError = <Tag extends string, F extends Record<string, Schema.
   class DomainErrorImpl extends Base {
     static readonly kind: ErrorKind = spec.kind;
     static readonly fields: F = spec.fields;
+    get [DomainErrorKind](): ErrorKind {
+      return spec.kind;
+    }
   }
   return DomainErrorImpl as unknown as DomainErrorClass<Tag, F>;
 };
 
-// The kind declared by a `DomainError` class, or undefined for any other value.
+// The kind declared by a `DomainError`, or undefined for any other value.
 export const kindOf = (error: unknown): ErrorKind | undefined => {
-  const kind = (error as { constructor?: { kind?: unknown } } | null | undefined)?.constructor?.kind;
+  const kind = (error as Partial<KindedError> | null | undefined)?.[DomainErrorKind];
   return kind === "not_found" || kind === "invalid" || kind === "conflict" || kind === "forbidden" ? kind : undefined;
 };
