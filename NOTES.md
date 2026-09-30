@@ -679,8 +679,16 @@ Also found, not yet fixed (tracked in the plan, Phase 5): the wallet's `WalletBa
 mis-attributes a transfer's receiver balance, and folding `newBalance` snapshots loses updates for
 concurrent (commutative) deposits.
 
-Test-infra note: Testcontainers' 10 s "container ports bound" wait is hard-coded, so integration runs
-can fail intermittently with "Timed out after 10000ms while waiting for container ports to be bound"
-when the Docker VM is busy (observed with a `kind` cluster running alongside). Every such failure seen
-was this timeout, never an assertion; re-running the file passes. A shared container per run would
-remove it.
+Test-infra note: Testcontainers' 10 s "container ports bound" wait is hard-coded, and `node --test` starts
+one container per test file in parallel, so integration runs failed intermittently on a busy Docker VM
+(`Timed out after 10000ms while waiting for container ports to be bound to the host`; never an
+assertion). Fixed in `@crablet/test-support`: container starts are serialized across processes with a
+mkdir lock, and that specific timeout is retried (3 attempts); the tests themselves still run in
+parallel, each on its own container. 4 consecutive full runs clean (98 tests).
+
+Tried and rejected: ONE shared Postgres container with a fresh database per test file. It passes when
+files run alone but breaks the poller tests when they run together: the poller only returns events from
+finished transactions (`transaction_id < pg_snapshot_xmin(pg_current_snapshot())`, an ordering
+guarantee), and that snapshot is cluster-wide, so open transactions in OTHER databases on the same
+server hold events back. Production corollary worth remembering: any long-running transaction anywhere
+on the cluster delays every poller (views, outbox, automations) until it finishes.
