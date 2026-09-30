@@ -2,9 +2,9 @@ import { Effect, Metric } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import type { Conflict } from "@crablet/eventstore/AppendErrors";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
-import type { CommandHandler } from "@crablet/commands";
+import type { Command } from "@crablet/commands/Command";
 import * as AutomationMetrics from "@crablet/metrics-otel/AutomationMetrics";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
@@ -23,10 +23,9 @@ const withEventContext = <A, E, R>(event: StoredEvent, effect: Effect.Effect<A, 
 // alone does not discharge its R), and threaded through here so this dispatcher itself never
 // touches ambient services directly.
 export type ExecuteDecision = <T, HE>(
-  commandType: string,
-  command: T,
-  handler: CommandHandler<T, HE>
-) => Effect.Effect<unknown, HE | Conflict | Duplicate | SqlError, never>;
+  command: Command<T, HE>,
+  input: T
+) => Effect.Effect<unknown, HE | Conflict | SqlError, never>;
 
 // Port of internal.AutomationDispatcher.java: routes handle(automationName, events) to the
 // registered AutomationHandler for that name; dies loudly on an unregistered automation (mirrors
@@ -64,7 +63,7 @@ export const makeAutomationEventHandler = (
             if (decision._tag === "ExecuteCommand") {
               yield* withEventContext(
                 event,
-                executeDecision(automation.commandType, decision.command, automation.handler)
+                executeDecision(automation.command, decision.input)
               );
             }
           }

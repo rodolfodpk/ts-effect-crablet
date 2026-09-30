@@ -5,7 +5,9 @@ import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
+import type { Command } from "./Command.ts";
 import type * as CD from "./CommandDecision.ts";
+import type { InvalidInput } from "./Errors.ts";
 import * as ExecutionResultNS from "./ExecutionResult.ts";
 import type { ExecutionResult } from "./ExecutionResult.ts";
 
@@ -29,6 +31,32 @@ export interface CommandExecutorService {
   ) => Effect.Effect<
     ExecutionResult,
     E | Conflict | Duplicate | SqlError,
+    EventStore | CommandAuditStore | SqlClient.SqlClient
+  >;
+
+  // Run a defined command (see Command.ts). `run` takes UNTRUSTED input: it is validated against the
+  // command's schema first (`InvalidInput`). `runDecoded` takes input that is already the command's
+  // typed input (e.g. built by an automation) and skips validation.
+  //
+  // Both re-run the whole command - a fresh transaction and a fresh load - up to `command.retries`
+  // times when the append is refused with `Conflict` (a peer changed something in the boundary since
+  // this run loaded it); `decide` is pure and the transaction rolled back, so retrying is safe. Only a
+  // `Conflict` is retried, and the last one is reported if the retries run out. `Duplicate` can only
+  // fail a command that declared `onDuplicate: "fail"`; otherwise a repeat is an idempotent success.
+  readonly run: <In, Err>(
+    command: Command<In, Err>,
+    input: unknown
+  ) => Effect.Effect<
+    ExecutionResult,
+    Err | InvalidInput | Conflict | SqlError,
+    EventStore | CommandAuditStore | SqlClient.SqlClient
+  >;
+  readonly runDecoded: <In, Err>(
+    command: Command<In, Err>,
+    input: In
+  ) => Effect.Effect<
+    ExecutionResult,
+    Err | Conflict | SqlError,
     EventStore | CommandAuditStore | SqlClient.SqlClient
   >;
 }
@@ -106,7 +134,46 @@ export const CommandExecutorLive = Layer.effect(
         [["command_type", commandType]]
       );
 
-    const service: CommandExecutorService = { execute };
+    // Execute, re-running after a Conflict while retries remain (each attempt is its own transaction).
+    const runDecoded = <In, Err>(command: Command<In, Err>, input: In) => {
+      const attempt = (
+        retriesUsed: number
+      ): Effect.Effect<
+        ExecutionResult,
+        Err | SqlError | Conflict | Duplicate,
+        EventStore | CommandAuditStore | SqlClient.SqlClient
+      > =>
+        execute(command.name, input, command.handler).pipe(
+          Effect.catchTag("Conflict", (conflict) =>
+            retriesUsed < command.retries
+              ? Effect.andThen(
+                  Metric.update(
+                    Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }),
+                    1
+                  ),
+                  attempt(retriesUsed + 1)
+                )
+              : Effect.fail(conflict)
+          )
+        );
+      // The executor reports `Duplicate` for every command, but only a command that declared
+      // `onDuplicate: "fail"` can produce one that should reach the caller: for any other command the
+      // executor has already turned it into an idempotent success, so none can arrive here.
+      return attempt(0).pipe(
+        Effect.catchTag("Duplicate", (duplicate) =>
+          command.duplicates === "fail" ? Effect.fail(duplicate) : Effect.die(duplicate)
+        )
+      ) as Effect.Effect<
+        ExecutionResult,
+        Err | Conflict | SqlError,
+        EventStore | CommandAuditStore | SqlClient.SqlClient
+      >;
+    };
+
+    const run = <In, Err>(command: Command<In, Err>, input: unknown) =>
+      Effect.flatMap(command.decodeInput(input), (decoded) => runDecoded(command, decoded));
+
+    const service: CommandExecutorService = { execute, run, runDecoded };
     return service;
   })
 );

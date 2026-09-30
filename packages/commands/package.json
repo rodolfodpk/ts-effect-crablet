@@ -8,7 +8,9 @@
     "./CommandDecision": "./src/CommandDecision.ts",
     "./ExecutionResult": "./src/ExecutionResult.ts",
     "./Event": "./src/Event.ts",
-    "./Model": "./src/Model.ts"
+    "./Model": "./src/Model.ts",
+    "./Errors": "./src/Errors.ts",
+    "./Command": "./src/Command.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",

@@ -1,0 +1,185 @@
+import { Effect } from "effect";
+import * as Schema from "effect/Schema";
+import type { SqlError } from "effect/sql/SqlError";
+import { EventStore, type EventStoreService } from "@crablet/eventstore";
+import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import { Duplicate } from "@crablet/eventstore/AppendErrors";
+import * as LogPositionNS from "@crablet/eventstore/LogPosition";
+import * as Query from "@crablet/eventstore/Query";
+import type { Query as QueryType } from "@crablet/eventstore/Query";
+import * as CD from "./CommandDecision.ts";
+import type { CommandHandler } from "./CommandExecutor.ts";
+import { InvalidInput } from "./Errors.ts";
+import type { ModelInstance } from "./Model.ts";
+
+// A command is one declaration of "what happens when this request arrives":
+//
+//     export const Deposit = defineCommand({
+//       name: "deposit",
+//       input: Schema.Struct({ walletId: Schema.String, depositId: Schema.String, amount: Schema.Positive }),
+//       model: (c) => WalletModel.of({ id: c.walletId, ...period }),           // state + boundary
+//       consistency: () => concurrent({ guard: WalletModel.lifecycleQuery(...) }), // optional; default strict()
+//       idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId }),   // optional
+//       decide: (wallet, c) =>
+//         wallet.exists ? emit(DepositMade({ ... })) : fail(new WalletNotFound({ walletId: c.walletId }))
+//     });
+//
+// `decide` is PURE: no Effect, no event store. The framework does everything around it, in one
+// transaction: check idempotency -> `prepare` -> load the model -> `decide` -> append under the
+// consistency condition. Run it with `CommandExecutor.run(Deposit, input)`.
+
+// ---------------------------------------------------------------------------------------------
+// What `decide` returns: emit events, do nothing, or refuse with a typed error.
+// ---------------------------------------------------------------------------------------------
+
+export interface Emit {
+  readonly _tag: "Emit";
+  readonly events: ReadonlyArray<AppendEvent>;
+}
+export interface Noop {
+  readonly _tag: "Noop";
+  readonly reason: string | null;
+}
+export interface Fail<E> {
+  readonly _tag: "Fail";
+  readonly error: E;
+}
+export type Decision<E = never> = Emit | Noop | Fail<E>;
+
+export const emit = (...events: ReadonlyArray<AppendEvent>): Emit => ({ _tag: "Emit", events });
+export const noop = (reason: string | null = null): Noop => ({ _tag: "Noop", reason });
+export const fail = <E>(error: E): Fail<E> => ({ _tag: "Fail", error });
+
+// The command's error type is INFERRED from what `decide` can return: the union of every `fail(...)`.
+type ErrorOf<D> = D extends Fail<infer E> ? E : never;
+
+// ---------------------------------------------------------------------------------------------
+// How the append is protected against concurrent changes.
+// ---------------------------------------------------------------------------------------------
+
+export type Consistency =
+  | { readonly _tag: "Strict" }
+  | { readonly _tag: "Concurrent"; readonly guard: QueryType | null };
+
+// Fail (with `Conflict`) if ANYTHING in the model's boundary changed since it was loaded. The safe
+// default: use it whenever the decision reads state that other commands also change.
+export const strict = (): Consistency => ({ _tag: "Strict" });
+
+// Safe to run in parallel with itself - concurrent runs of this command do not conflict with each
+// other. Optionally a `guard` query (typically the lifecycle events, e.g. "is the wallet closed?")
+// still fails the append if one of THOSE changed since load. The guard must not include event types
+// this command appends, or concurrent runs would conflict with each other.
+export const concurrent = (opts: { readonly guard?: QueryType } = {}): Consistency => ({
+  _tag: "Concurrent",
+  guard: opts.guard ?? null
+});
+
+// ---------------------------------------------------------------------------------------------
+// The defined command.
+// ---------------------------------------------------------------------------------------------
+
+export interface Command<In, Err> {
+  readonly name: string;
+  // Validate untrusted input against the schema. Fails with `InvalidInput`.
+  readonly decodeInput: (raw: unknown) => Effect.Effect<In, InvalidInput>;
+  // The compiled handler, run by the executor inside its transaction.
+  readonly handler: CommandHandler<In, Err | SqlError>;
+  // How many times the executor re-runs the whole command (fresh transaction, fresh load) after a
+  // `Conflict`, before giving up with that `Conflict`.
+  readonly retries: number;
+  // Whether a repeat of an already-done operation is reported as success or as `Duplicate`.
+  readonly duplicates: "return" | "fail";
+}
+
+export const defaultRetries = 3;
+
+export const defineCommand = <
+  I extends Schema.Constraint,
+  S = undefined,
+  D extends Decision<any> = Decision<never>,
+  P = undefined,
+  PE = never,
+  OD extends "return" | "fail" = "return"
+>(def: {
+  readonly name: string;
+  readonly input: I;
+  // Effectful pre-step that may read (or even append to) the store; its result is passed on as the
+  // second argument of `model` and the third of `decide`. Runs inside the command's transaction, so
+  // if the command is retried or fails, whatever it appended is rolled back with it.
+  readonly prepare?: (input: Schema.Schema.Type<I>, eventStore: EventStoreService) => Effect.Effect<P, PE>;
+  // Omit for commands that need no state (e.g. "record that this happened"); `decide` then gets
+  // `undefined` and the default consistency is `concurrent()`.
+  readonly model?: (input: Schema.Schema.Type<I>, prepared: P) => ModelInstance<S>;
+  readonly consistency?: (input: Schema.Schema.Type<I>, prepared: P) => Consistency; // default strict()
+  // "Has this exact operation already been done?" as a query. Depends on the INPUT only, so it is
+  // checked before `prepare`/`decide` ever run: on a retry the state has moved on (e.g. the balance is
+  // already reduced), so re-deciding could wrongly fail. It is also re-checked atomically at append.
+  readonly idempotentBy?: (input: Schema.Schema.Type<I>) => QueryType;
+  // A repeat is reported as a successful "already done" ("return", the default, safe for retries) or
+  // fails with `Duplicate` ("fail", e.g. "open a wallet that already exists").
+  readonly onDuplicate?: OD;
+  readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P) => D;
+  // Conflict retries (default 3; 0 turns retrying off).
+  readonly retries?: number;
+}): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never)> => {
+  type In = Schema.Schema.Type<I>;
+  const duplicates: "return" | "fail" = def.onDuplicate ?? "return";
+
+  const decode = Schema.decodeUnknownEffect(def.input as unknown as Schema.Decoder<unknown>) as (
+    raw: unknown
+  ) => Effect.Effect<In, Schema.SchemaError>;
+  const decodeInput = (raw: unknown) =>
+    Effect.mapError(decode(raw), (e) => new InvalidInput({ message: e.message }));
+
+  const handler = ((input: In) =>
+    Effect.gen(function* () {
+      const eventStore = yield* EventStore;
+
+      // 1. Idempotency pre-check, before anything else (see `idempotentBy`).
+      const idempotency = def.idempotentBy?.(input) ?? null;
+      if (idempotency !== null) {
+        if (Query.isEmpty(idempotency)) {
+          return yield* Effect.die(new Error(`command "${def.name}": idempotentBy returned an empty query`));
+        }
+        if (yield* eventStore.exists(idempotency)) {
+          return duplicates === "fail"
+            ? yield* Effect.fail(new Duplicate({ message: `Duplicate operation: "${def.name}" was already done` }))
+            : CD.noOp("DUPLICATE_OPERATION");
+        }
+      }
+
+      // 2. Prepare, 3. load the model.
+      const prepared = (def.prepare ? yield* def.prepare(input, eventStore) : undefined) as P;
+      const model = def.model?.(input, prepared) ?? null;
+      const loaded = model !== null ? yield* model.load(eventStore) : null;
+
+      // 4. Decide (pure).
+      const decision = def.decide(loaded?.state as S, input, prepared) as Decision<ErrorOf<D>>;
+      if (decision._tag === "Fail") return yield* Effect.fail(decision.error);
+      if (decision._tag === "Noop") return CD.noOp(decision.reason);
+      if (decision.events.length === 0) return CD.noOp("NO_EVENTS");
+
+      // 5. Build the append: events + the condition the chosen consistency implies.
+      const consistency = def.consistency?.(input, prepared) ?? (model !== null ? strict() : concurrent());
+      let append: CD.Append;
+      if (consistency._tag === "Strict") {
+        if (model === null || loaded === null) {
+          return yield* Effect.die(new Error(`command "${def.name}": strict consistency needs a model`));
+        }
+        append = CD.nonCommutative(decision.events, model.query, loaded.logPosition);
+      } else if (consistency.guard !== null) {
+        if (loaded === null) {
+          return yield* Effect.die(new Error(`command "${def.name}": a consistency guard needs a model (for its position)`));
+        }
+        // Throws if the guard includes an event type this command appends (see CD.withLifecycleGuard).
+        append = CD.withLifecycleGuard(decision.events, consistency.guard, loaded.logPosition);
+      } else {
+        append = CD.commutative(...decision.events);
+      }
+      return idempotency !== null
+        ? CD.withIdempotencyQuery(append, idempotency, duplicates === "fail" ? "THROW" : "RETURN_IDEMPOTENT")
+        : append;
+    })) as CommandHandler<In, ErrorOf<D> | PE | SqlError | (OD extends "fail" ? Duplicate : never)>;
+
+  return { name: def.name, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
+};

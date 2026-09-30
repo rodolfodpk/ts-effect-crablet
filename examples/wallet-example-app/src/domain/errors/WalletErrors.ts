@@ -1,31 +1,35 @@
-import { Data } from "effect";
+import * as Schema from "effect/Schema";
+import { DomainError } from "@crablet/commands/Errors";
 
-// Port of com.crablet.examples.wallet.exceptions.* - plain typed command-handler failures, mapped
-// to HTTP by the wallet app's own ExposedCommand.mapError hooks (api/WalletProblems.ts), not by
-// commands-http itself. Same Data.TaggedError pattern eventstore's AppendErrors.ts primer
-// establishes for this whole codebase.
-export class WalletNotFound extends Data.TaggedError("WalletNotFound")<{
-  readonly walletId: string;
-}> {}
+// The wallet's domain errors: plain typed failures of command handlers, each declaring what KIND of
+// refusal it is. The HTTP layer maps kinds (and these specific errors) to responses
+// (api/WalletProblems.ts); the domain never mentions a status code.
+export class WalletNotFound extends DomainError("WalletNotFound", {
+  fields: { walletId: Schema.String },
+  kind: "not_found"
+}) {}
 
-export class WalletAlreadyExists extends Data.TaggedError("WalletAlreadyExists")<{
-  readonly walletId: string;
-}> {}
+export class WalletAlreadyExists extends DomainError("WalletAlreadyExists", {
+  fields: { walletId: Schema.String },
+  kind: "conflict"
+}) {}
 
-export class InsufficientFunds extends Data.TaggedError("InsufficientFunds")<{
-  readonly walletId: string;
-  readonly currentBalance: number;
-  readonly requestedAmount: number;
-}> {}
+export class InsufficientFunds extends DomainError("InsufficientFunds", {
+  fields: { walletId: Schema.String, currentBalance: Schema.Number, requestedAmount: Schema.Number },
+  kind: "invalid"
+}) {}
 
-export class InvalidOperation extends Data.TaggedError("InvalidOperation")<{
-  readonly message: string;
-}> {}
+export class InvalidOperation extends DomainError("InvalidOperation", {
+  fields: { message: Schema.String },
+  kind: "invalid"
+}) {}
 
-export class OptimisticLock extends Data.TaggedError("OptimisticLock")<{
-  readonly message: string;
-}> {}
+export class OptimisticLock extends DomainError("OptimisticLock", {
+  fields: { message: Schema.String },
+  kind: "conflict"
+}) {}
 
-export class DuplicateOperation extends Data.TaggedError("DuplicateOperation")<{
-  readonly message: string;
-}> {}
+export class DuplicateOperation extends DomainError("DuplicateOperation", {
+  fields: { message: Schema.String },
+  kind: "conflict"
+}) {}

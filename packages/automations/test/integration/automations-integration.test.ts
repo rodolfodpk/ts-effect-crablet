@@ -8,9 +8,11 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
+import * as Schema from "effect/Schema";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import * as CD from "@crablet/commands/CommandDecision";
+import { defineCommand, emit, noop } from "@crablet/commands/Command";
+import { defineEvent } from "@crablet/commands/Event";
 import { makeAutomationsProcessor } from "../../src/AutomationsModule.ts";
 import { automationHandlerOf } from "../../src/AutomationHandler.ts";
 import { executeCommand, noOp } from "../../src/AutomationDecision.ts";
@@ -98,10 +100,6 @@ const baseAutomationsConfig: AutomationsConfig = {
   maxErrors: 5
 };
 
-interface SendConfirmationCommand {
-  readonly orderId: string;
-}
-
 describe("automations module integration (real Postgres)", () => {
   it("trigger event -> decide -> real CommandExecutor -> resulting event, with progress + correlation/causation propagation", { timeout: 20_000 }, async () => {
     const runId = crypto.randomUUID();
@@ -111,16 +109,22 @@ describe("automations module integration (real Postgres)", () => {
     const orderId = `order-${runId}`;
     const triggerCorrelationId = crypto.randomUUID();
 
-    const commandHandler = (cmd: SendConfirmationCommand) =>
-      Effect.succeed(CD.commutative(AppendEvent.of(confirmationType, "order_id", cmd.orderId, {})));
+    const ConfirmationSent = defineEvent(confirmationType, {
+      schema: Schema.Struct({ orderId: Schema.String }),
+      tags: (d) => ({ order_id: d.orderId })
+    });
+    const sendConfirmation = defineCommand({
+      name: "SendConfirmationCommand",
+      input: Schema.Struct({ orderId: Schema.String }),
+      decide: (_, c) => emit(ConfirmationSent(c))
+    });
 
     const automation = automationHandlerOf(
       automationName,
-      "SendConfirmationCommand",
-      commandHandler,
+      sendConfirmation,
       (event) =>
         Effect.succeed([
-          executeCommand<SendConfirmationCommand>({
+          executeCommand({
             orderId: event.tags.find((t) => t.key === "order_id")!.value
           })
         ]),
@@ -178,8 +182,8 @@ describe("automations module integration (real Postgres)", () => {
     const automationName = `noop-automation-${runId}`;
     const triggerType = `NoopTrigger-${runId}`;
 
-    const commandHandler = (_cmd: unknown) => Effect.succeed(CD.noOp());
-    const automation = automationHandlerOf(automationName, "NoopCommand", commandHandler, () => Effect.succeed([noOp()]), {
+    const noopCommand = defineCommand({ name: "NoopCommand", input: Schema.Unknown, decide: () => noop() });
+    const automation = automationHandlerOf(automationName, noopCommand, () => Effect.succeed([noOp()]), {
       eventTypes: new Set([triggerType])
     });
 

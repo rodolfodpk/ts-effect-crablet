@@ -1,17 +1,14 @@
-// Port of com.crablet.automations.AutomationDecision - a sealed interface in Java
-// (ExecuteCommand(Object command) / NoOp(String reason)), a discriminated union here.
+// What an automation decides to do about one event: run its command with some input, or nothing.
 //
-// Deliberately narrower than Java's: the command's handler is NOT carried on the decision.
-// Java resolves the right CommandHandler by runtime type lookup; this repo's CommandExecutor has
-// no such lookup (see ADR-0008 - every call site passes the handler explicitly), so
-// AutomationHandler.ts binds one CommandHandler<T, HE> once, at construction, instead. That keeps
-// this type a plain data union, with no function value inside it.
+// A plain data union - the command itself is NOT carried on the decision. AutomationHandler.ts binds
+// one defined command `Command<T, HE>` once, at construction (there is no runtime command lookup;
+// see ADR-0008), so a decision only needs the INPUT for that command.
 export interface ExecuteCommand<T> {
   readonly _tag: "ExecuteCommand";
-  readonly command: T;
+  readonly input: T;
 }
 
-export const executeCommand = <T>(command: T): ExecuteCommand<T> => ({ _tag: "ExecuteCommand", command });
+export const executeCommand = <T>(input: T): ExecuteCommand<T> => ({ _tag: "ExecuteCommand", input });
 
 export interface NoOp {
   readonly _tag: "NoOp";

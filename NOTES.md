@@ -784,3 +784,48 @@ the Phase 0 spike to Effect 4 and the Phase 1 API.
 Known flake, seen once in ~15 runs on a busy machine: a test's `PgClient` failing with "Connection timed
 out" at connect (the client's default connect timeout). Same family as the container-start timeout; if
 it recurs, centralise the test `PgClient.layer(...)` in `@crablet/test-support` with a longer timeout.
+
+## Phase 3 (API redesign) - `defineCommand`, `run`, retry, typed errors
+
+`@crablet/commands/Command` (+ `Errors`): a command is one declaration; `decide` is pure.
+
+```ts
+const Book = defineCommand({
+  name: "book_seat",
+  input: Schema.Struct({ seatId: Schema.String, guest: Schema.String, bookingId: Schema.String }),
+  model: (c) => SeatModel.of({ id: c.seatId }),                      // state + consistency boundary
+  idempotentBy: (c) => SeatBooked.where({ booking_id: c.bookingId }),  // optional
+  decide: (seat, c) => seat.taken ? fail(new SeatTaken({ seatId: c.seatId })) : emit(SeatBooked(c))
+});
+yield* executor.run(Book, rawInput);   // validate -> transaction -> retry on Conflict
+```
+
+- **Pipeline** (inside the executor's transaction): idempotency pre-check -> `prepare` -> load the model
+  -> `decide` -> append under the condition the consistency implies. `strict()` is the default (fail if
+  anything in the model's boundary changed since load); `concurrent({ guard? })` for commands safe to run
+  in parallel with themselves; a model-less command defaults to `concurrent()`. Consistency and
+  idempotency are independent, so all six combinations work (unit-tested against the expected
+  `AppendCondition`s).
+- **`idempotentBy` depends on the input only and runs BEFORE `prepare`/`decide`** (and is re-checked
+  atomically at append). On a retry the state has moved on, so re-deciding could wrongly fail - this is
+  what the old Withdraw handler hand-rolled (racily) with an `exists()` pre-check.
+- **`run(command, raw)` validates** (`InvalidInput`) then executes; **`runDecoded(command, typed)`** skips
+  validation (automations use it). **Conflict retry**: a `Conflict` re-runs the whole command - fresh
+  transaction, fresh load, pure `decide` again - up to `command.retries` (default 3; 0 disables), counted
+  in `crablet.command.conflict_retries`. The loser of a race therefore usually ends with the DOMAIN
+  answer ("seat taken"), not a `Conflict`. `Duplicate` reaches the caller only for commands that declare
+  `onDuplicate: "fail"`.
+- **Errors are inferred**: the command's error type is the union of every `fail(...)` in `decide`, plus
+  `prepare`'s failures, plus `Duplicate` only when opted in (compile-time asserts in
+  `command.test.ts`, sanity-checked to fail when wrong). `DomainError(tag, { fields, kind })` declares a
+  domain error with a neutral `kind` (`not_found | invalid | conflict | forbidden`) - NOT an HTTP status;
+  commands-http will map kinds in Phase 6. The wallet's errors now use it (same names/fields/tags).
+- **Automations** bind a defined `Command<T, HE>` instead of (command-type string + raw handler);
+  decisions carry the command's `input`; the module runs them with `runDecoded`. The wallet's welcome
+  notification is now a `defineCommand` (model-less, idempotent per wallet).
+- Tested against real Postgres with a barrier in `prepare` so BOTH commands load before EITHER appends
+  (deterministic, no timing luck): same-seat race -> one wins and the loser fails with the domain error;
+  `retries: 0` -> the loser surfaces `Conflict`; different seats never conflict; strict + idempotent race
+  -> one Created + one Idempotent; `onDuplicate: "fail"` (sequential and racing).
+- Still to come: the hand-written wallet handlers (`CD.*`) are replaced in Phase 5; `ExposedCommand`/HTTP in
+  Phase 6. `execute` stays public until then.

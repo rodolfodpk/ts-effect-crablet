@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import * as CD from "@crablet/commands/CommandDecision";
 import { makeAutomationProcessorConfigs } from "../src/internal/AutomationProcessorConfig.ts";
 import { automationHandlerOf } from "../src/AutomationHandler.ts";
+import { testCommand } from "./fixtures/testCommand.ts";
 import type { AutomationsConfig } from "../src/AutomationsConfig.ts";
 import { noOp } from "../src/AutomationDecision.ts";
 
@@ -18,11 +18,10 @@ const baseConfig: AutomationsConfig = {
   maxErrors: 10
 };
 
-const fakeHandler = (automationName: string, fields: Parameters<typeof automationHandlerOf>[4] = {}) =>
+const fakeHandler = (automationName: string, fields: Parameters<typeof automationHandlerOf>[3] = {}) =>
   automationHandlerOf(
     automationName,
-    "TestCommand",
-    (_command: unknown) => Effect.succeed(CD.noOp()),
+    testCommand,
     () => Effect.succeed([noOp()]),
     fields
   );

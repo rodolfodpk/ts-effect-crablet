@@ -55,9 +55,19 @@ const make = (
 export const commutative = (...events: ReadonlyArray<AppendEvent>): Append => make(events, AppendCondition.empty());
 
 // Add an idempotency check to ANY append (commutative, guarded or strict): refuse, or report
-// "already done", if an event of `eventType` tagged `tagKey=tagValue` already exists. The check runs
-// before the concurrency check, so a retry after the state has moved on is "already done", not a
-// spurious conflict.
+// "already done", if anything matching `query` already exists. The check runs before the
+// concurrency check, so a retry after the state has moved on is "already done", not a spurious
+// conflict.
+export const withIdempotencyQuery = (
+  decision: Append,
+  query: QueryType,
+  onDuplicate: OnDuplicate = "RETURN_IDEMPOTENT"
+): Append => {
+  if (Query.isEmpty(query)) throw new Error("idempotency query must not be empty");
+  return { ...decision, condition: { ...decision.condition, idempotencyQuery: query }, onDuplicate };
+};
+
+// The common case of the above: an event of `eventType` tagged `tagKey=tagValue` already exists.
 export const withIdempotency = (
   decision: Append,
   eventType: string,
@@ -68,11 +78,7 @@ export const withIdempotency = (
   if (!eventType.trim()) throw new Error("idempotency eventType must not be blank");
   if (!tagKey.trim()) throw new Error("idempotency tagKey must not be blank");
   if (!tagValue.trim()) throw new Error("idempotency tagValue must not be blank");
-  return {
-    ...decision,
-    condition: { ...decision.condition, idempotencyQuery: Query.forEventAndTag(eventType, tagKey, tagValue) },
-    onDuplicate
-  };
+  return withIdempotencyQuery(decision, Query.forEventAndTag(eventType, tagKey, tagValue), onDuplicate);
 };
 
 // Earlier names for the same operation, kept until defineCommand replaces hand-written handlers.

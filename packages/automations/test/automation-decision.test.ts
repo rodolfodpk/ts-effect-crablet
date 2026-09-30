@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { executeCommand, noOp } from "../src/AutomationDecision.ts";
 
 describe("AutomationDecision constructors", () => {
-  test("executeCommand wraps the given command", () => {
+  test("executeCommand wraps the input for the bound command", () => {
     const decision = executeCommand({ orderId: "o-1" });
-    expect(decision).toEqual({ _tag: "ExecuteCommand", command: { orderId: "o-1" } });
+    expect(decision).toEqual({ _tag: "ExecuteCommand", input: { orderId: "o-1" } });
   });
 
   test("noOp carries no payload", () => {

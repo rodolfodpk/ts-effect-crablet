@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import * as CD from "@crablet/commands/CommandDecision";
 import { makeAutomationEventHandler, type ExecuteDecision } from "../src/internal/AutomationEventHandler.ts";
 import { automationHandlerOf } from "../src/AutomationHandler.ts";
 import { executeCommand, noOp } from "../src/AutomationDecision.ts";
+import { testCommand } from "./fixtures/testCommand.ts";
 
 const fakeEvent = (position: bigint, correlationId: string | null = null): StoredEvent => ({
   type: "OrderPlaced",
@@ -24,14 +24,12 @@ describe("makeAutomationEventHandler", () => {
     const seenB: Array<string> = [];
     const automationA = automationHandlerOf(
       "automation-a",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       () => Effect.sync(() => (seenA.push("decided"), [noOp()]))
     );
     const automationB = automationHandlerOf(
       "automation-b",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       () => Effect.sync(() => (seenB.push("decided"), [noOp()]))
     );
     const executeDecision: ExecuteDecision = () => Effect.succeed(undefined);
@@ -47,8 +45,7 @@ describe("makeAutomationEventHandler", () => {
   test("dies on an unregistered automation name", async () => {
     const automation = automationHandlerOf(
       "automation-a",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       () => Effect.succeed([noOp()])
     );
     const executeDecision: ExecuteDecision = () => Effect.succeed(undefined);
@@ -61,12 +58,11 @@ describe("makeAutomationEventHandler", () => {
     const executed: Array<unknown> = [];
     const automation = automationHandlerOf(
       "automation-a",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       () => Effect.succeed([noOp()])
     );
-    const executeDecision: ExecuteDecision = (_commandType, command) =>
-      Effect.sync(() => (executed.push(command), undefined));
+    const executeDecision: ExecuteDecision = (_command, input) =>
+      Effect.sync(() => (executed.push(input), undefined));
     const handler = makeAutomationEventHandler([automation], executeDecision);
 
     const handled = await Effect.runPromise(handler.handle("automation-a", [fakeEvent(1n), fakeEvent(2n)]));
@@ -79,12 +75,11 @@ describe("makeAutomationEventHandler", () => {
     const executed: Array<unknown> = [];
     const automation = automationHandlerOf(
       "automation-a",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       (event) => Effect.succeed([executeCommand({ step: "first", position: event.position }), executeCommand({ step: "second", position: event.position })])
     );
-    const executeDecision: ExecuteDecision = (_commandType, command) =>
-      Effect.sync(() => (executed.push(command), undefined));
+    const executeDecision: ExecuteDecision = (_command, input) =>
+      Effect.sync(() => (executed.push(input), undefined));
     const handler = makeAutomationEventHandler([automation], executeDecision);
 
     const handled = await Effect.runPromise(handler.handle("automation-a", [fakeEvent(1n)]));
@@ -100,8 +95,7 @@ describe("makeAutomationEventHandler", () => {
     const seenIds: Array<{ correlationId: string | null; causationId: bigint | null }> = [];
     const automation = automationHandlerOf(
       "automation-a",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       () => Effect.succeed([executeCommand({ noop: true })])
     );
     const executeDecision: ExecuteDecision = () =>
@@ -122,8 +116,7 @@ describe("makeAutomationEventHandler", () => {
     const decidedPositions: Array<bigint> = [];
     const automation = automationHandlerOf(
       "automation-a",
-      "TestCommand",
-      () => Effect.succeed(CD.noOp()),
+      testCommand,
       (event) => Effect.sync(() => (decidedPositions.push(event.position), [noOp()]))
     );
     const executeDecision: ExecuteDecision = () => Effect.succeed(undefined);

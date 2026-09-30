@@ -57,8 +57,8 @@ export const makeAutomationsProcessor = (
     const commandAuditStore = yield* CommandAuditStore;
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
-    const executeDecision: ExecuteDecision = (commandType, command, handler) =>
-      commandExecutor.execute(commandType, command, handler).pipe(
+    const executeDecision: ExecuteDecision = (command, input) =>
+      commandExecutor.runDecoded(command, input).pipe(
         Effect.provideService(EventStore, eventStore),
         Effect.provideService(CommandAuditStore, commandAuditStore),
         Effect.provideService(SqlClient.SqlClient, sql)
