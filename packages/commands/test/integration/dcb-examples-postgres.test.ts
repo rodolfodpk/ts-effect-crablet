@@ -2,19 +2,21 @@
 // Postgres: each is "several actors, one invariant, exactly the right outcome".
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Redacted } from "effect";
+import { Effect, Metric, Redacted } from "effect";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
+import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import * as Crablet from "../../src/Crablet.ts";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
+import { barrier } from "../support/barrier.ts";
 import {
-  ConfirmSignUp,
-  CreateInvoice,
-  RegisterAccount,
   SignUpInitiated,
   TokenInvalid,
-  UsernameClaimed
+  UsernameClaimed,
+  confirmSignUpWith,
+  createInvoiceWith,
+  registerAccountWith
 } from "../support/dcb-examples.ts";
 
 let db: TestDb;
@@ -38,6 +40,10 @@ const errorOf = (exit: any) => exit.cause?.reasons?.find((r: any) => r._tag === 
 const exitAll = (effects: ReadonlyArray<Effect.Effect<any, any, any>>) =>
   Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length });
 const uid = () => crypto.randomUUID().slice(0, 8);
+// Every racer has LOADED (in `prepare`) before any appends, so the commands really overlap. The recorded
+// conflict retries prove it: the losers were refused at append time and re-decided.
+const retriesOf = (commandType: string) =>
+  Effect.map(Metric.value(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: commandType })), (m) => m.count);
 
 describe("dcb.events examples on Postgres", () => {
   it("unique username: two people registering the same name at once - exactly one gets it", async () => {
@@ -45,12 +51,17 @@ describe("dcb.events examples on Postgres", () => {
     const exits = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        return yield* exitAll([
-          executor.run(RegisterAccount, { username: name, now: Date.now() }),
-          executor.run(RegisterAccount, { username: name.toUpperCase(), now: Date.now() })
+        const register = registerAccountWith(yield* barrier(2));
+        const exits = yield* exitAll([
+          executor.run(register, { username: name, now: Date.now() }),
+          executor.run(register, { username: name.toUpperCase(), now: Date.now() })
         ]);
+        return { exits, retries: yield* retriesOf("register_account_raced") };
       })
-    );
+    ).then(({ exits, retries }) => {
+      assert.ok(retries >= 1, `the commands did not actually race (retries: ${retries})`);
+      return exits;
+    });
     assert.equal(exits.filter((e) => e._tag === "Success").length, 1);
     assert.ok(errorOf(exits.find((e) => e._tag === "Failure")) instanceof UsernameClaimed);
   });
@@ -61,7 +72,9 @@ describe("dcb.events examples on Postgres", () => {
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
         const sql = yield* SqlClient.SqlClient;
-        const exits = yield* exitAll([1, 2, 3, 4].map((n) => executor.run(CreateInvoice, { invoiceData: `inv ${n}` })));
+        const create = createInvoiceWith(yield* barrier(4), 3);
+        const exits = yield* exitAll([1, 2, 3, 4].map((n) => executor.run(create, { invoiceData: `inv ${n}` })));
+        assert.ok((yield* retriesOf("create_invoice_raced")) >= 3, "all four loaded the same state, so at least three had to retry");
         assert.deepEqual(exits.map((e) => e._tag), ["Success", "Success", "Success", "Success"]);
         const rows = yield* sql<{ n: number }>`
           SELECT (data->>'invoiceNumber')::int AS n FROM crablet_events WHERE type = 'InvoiceCreated' ORDER BY position`;
@@ -79,10 +92,13 @@ describe("dcb.events examples on Postgres", () => {
         const es = yield* EventStore;
         yield* es.append([SignUpInitiated({ email, otp, name: "Ann" })]);
         const executor = yield* CommandExecutor;
-        return yield* exitAll([
-          executor.run(ConfirmSignUp, { email, otp, now: Date.now() }),
-          executor.run(ConfirmSignUp, { email, otp, now: Date.now() })
+        const confirm = confirmSignUpWith(yield* barrier(2));
+        const exits = yield* exitAll([
+          executor.run(confirm, { email, otp, now: Date.now() }),
+          executor.run(confirm, { email, otp, now: Date.now() })
         ]);
+        assert.ok((yield* retriesOf("confirm_sign_up_raced")) >= 1, "the confirmations did not actually race");
+        return exits;
       })
     );
     assert.equal(exits.filter((e) => e._tag === "Success").length, 1);

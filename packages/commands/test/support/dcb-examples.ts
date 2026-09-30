@@ -1,6 +1,7 @@
 // The four examples from https://dcb.events/examples/ (unique username, invoice number, dynamic product
 // price, opt-in token), written against this framework to see where the API fits and where it strains.
 // In the examples' words each decision reads events by TAG and appends under the resulting condition.
+import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
@@ -43,13 +44,18 @@ const UsernameModel = defineModel({
 
 export class UsernameClaimed extends DomainError("UsernameClaimed", { fields: { username: Schema.String }, kind: "conflict" }) {}
 
-export const RegisterAccount = defineCommand({
-  name: "register_account",
-  // `now` is an input so the decision stays pure (and testable at any date)
-  input: Schema.Struct({ username: Schema.String, now: Schema.Number }),
-  model: (c) => UsernameModel.of({ id: c.username.toLowerCase() }),
-  decide: (name, c) => (name.claimed || c.now < name.reservedUntil ? fail(new UsernameClaimed({ username: c.username })) : emit(AccountRegistered(c)))
-});
+// `wait` (test-only) runs in `prepare`, i.e. BEFORE the model is loaded; see support/barrier.ts.
+const registerAccount = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    // `now` is an input so the decision stays pure (and testable at any date)
+    input: Schema.Struct({ username: Schema.String, now: Schema.Number }),
+    prepare: () => wait,
+    model: (c) => UsernameModel.of({ id: c.username.toLowerCase() }),
+    decide: (name, c) => (name.claimed || c.now < name.reservedUntil ? fail(new UsernameClaimed({ username: c.username })) : emit(AccountRegistered(c)))
+  });
+export const RegisterAccount = registerAccount("register_account", Effect.void);
+export const registerAccountWith = (wait: Effect.Effect<void>) => registerAccount("register_account_raced", wait);
 
 // ---------------------------------------------------------------------------------------------
 // 2. Invoice number: unique AND gap-free
@@ -61,12 +67,17 @@ export const InvoiceCreated = defineEvent("InvoiceCreated", {
 });
 const InvoiceSeries = defineModel({ by: "series", initial: () => ({ next: 1 }) }).on(InvoiceCreated, (_, d) => ({ next: d.invoiceNumber + 1 }));
 
-export const CreateInvoice = defineCommand({
-  name: "create_invoice",
-  input: Schema.Struct({ invoiceData: Schema.String }),
-  model: () => InvoiceSeries.of({ id: "main" }),
-  decide: (series, c) => emit(InvoiceCreated({ invoiceNumber: series.next, invoiceData: c.invoiceData }))
-});
+const createInvoice = (name: string, wait: Effect.Effect<void>, retries?: number) =>
+  defineCommand({
+    name,
+    input: Schema.Struct({ invoiceData: Schema.String }),
+    prepare: () => wait,
+    model: () => InvoiceSeries.of({ id: "main" }),
+    ...(retries !== undefined ? { retries } : {}),
+    decide: (series, c) => emit(InvoiceCreated({ invoiceNumber: series.next, invoiceData: c.invoiceData }))
+  });
+export const CreateInvoice = createInvoice("create_invoice", Effect.void);
+export const createInvoiceWith = (wait: Effect.Effect<void>, retries: number) => createInvoice("create_invoice_raced", wait, retries);
 
 // ---------------------------------------------------------------------------------------------
 // 3. Dynamic product price: an order is valid only at prices that were valid when displayed
@@ -142,9 +153,11 @@ const PendingSignUp = defineModel({
 
 export class TokenInvalid extends DomainError("TokenInvalid", { fields: { reason: Schema.String }, kind: "invalid" }) {}
 
-export const ConfirmSignUp = defineCommand({
-  name: "confirm_sign_up",
+const confirmSignUp = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+  name,
   input: Schema.Struct({ email: Schema.String, otp: Schema.String, now: Schema.Number }),
+  prepare: () => wait,
   model: (c) => PendingSignUp.of({ id: c.email.toLowerCase(), otp: c.otp }),
   decide: (s, c) =>
     s.initiatedAt === null
@@ -154,4 +167,6 @@ export const ConfirmSignUp = defineCommand({
         : c.now - s.initiatedAt > TOKEN_TTL_MS
           ? fail(new TokenInvalid({ reason: "expired" }))
           : emit(SignUpConfirmed({ email: c.email, otp: c.otp, name: s.name }))
-});
+  });
+export const ConfirmSignUp = confirmSignUp("confirm_sign_up", Effect.void);
+export const confirmSignUpWith = (wait: Effect.Effect<void>) => confirmSignUp("confirm_sign_up_raced", wait);
