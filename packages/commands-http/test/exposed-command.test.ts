@@ -1,27 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import * as CD from "@crablet/commands/CommandDecision";
+import { defineCommand, noop } from "@crablet/commands/Command";
 import { exposedCommandOf, type ExposedCommand } from "../src/ExposedCommand.ts";
 
-interface OpenWalletCommand {
-  readonly walletId: string;
-}
-
-const OpenWalletSchema = Schema.Struct({ walletId: Schema.String });
+const OpenWallet = defineCommand({
+  name: "open_wallet",
+  input: Schema.Struct({ walletId: Schema.String }),
+  decide: () => noop()
+});
 
 describe("exposedCommandOf", () => {
-  test("bundles a schema and handler into one entry", () => {
-    const handler = (_cmd: OpenWalletCommand) => Effect.succeed(CD.noOp());
-    const entry = exposedCommandOf(OpenWalletSchema, handler);
+  test("wraps a defined command, with no error hook by default", () => {
+    const entry = exposedCommandOf(OpenWallet);
+    expect(entry.command).toBe(OpenWallet);
+    expect(entry.mapError).toBeUndefined();
+  });
 
-    expect(entry.schema).toBe(OpenWalletSchema);
-    expect(entry.handler).toBe(handler);
+  test("carries an optional hook that presents the command's own errors", () => {
+    const hook = (_error: never) => ({ type: "problem" });
+    expect(exposedCommandOf(OpenWallet, hook).mapError).toBe(hook);
   });
 
   test("a map of entries supports lookup by commandType key", () => {
-    const openWallet = exposedCommandOf(OpenWalletSchema, (_cmd: OpenWalletCommand) => Effect.succeed(CD.noOp()));
-    // Registry is type-erased at this boundary - see ExposedCommand.ts's primer.
+    const openWallet = exposedCommandOf(OpenWallet);
+    // The registry is type-erased at this boundary - see ExposedCommand.ts.
     const commands: Readonly<Record<string, ExposedCommand<any, any>>> = { open_wallet: openWallet };
 
     expect(commands["open_wallet"]).toBe(openWallet);

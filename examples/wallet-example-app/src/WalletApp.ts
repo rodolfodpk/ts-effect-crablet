@@ -29,11 +29,11 @@ import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts"
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
 import { WalletNotFoundProblem, InsufficientFundsProblem } from "./api/WalletProblems.ts";
-import { openWalletCommandHandler, type OpenWalletCommand } from "./domain/commands/OpenWalletCommand.ts";
-import { depositCommandHandler, type DepositCommand } from "./domain/commands/DepositCommand.ts";
-import { withdrawCommandHandler, type WithdrawCommand } from "./domain/commands/WithdrawCommand.ts";
-import { transferMoneyCommandHandler, type TransferMoneyCommand } from "./domain/commands/TransferMoneyCommand.ts";
-import { closeWalletCommandHandler, type CloseWalletCommand } from "./domain/commands/CloseWalletCommand.ts";
+import { OpenWallet } from "./domain/commands/OpenWalletCommand.ts";
+import { Deposit } from "./domain/commands/DepositCommand.ts";
+import { Withdraw } from "./domain/commands/WithdrawCommand.ts";
+import { TransferMoney } from "./domain/commands/TransferMoneyCommand.ts";
+import { CloseWallet } from "./domain/commands/CloseWalletCommand.ts";
 import { WalletNotFound, InsufficientFunds } from "./domain/errors/WalletErrors.ts";
 
 export interface WalletAppConfig {
@@ -150,56 +150,26 @@ export const startBackgroundProcessors = (
     return { viewsHandle, automationsHandle, outboxHandle };
   });
 
-// Port of CommandApiExposedCommands.fromPackages("com.crablet.examples.wallet") - except only the
-// 5 wallet commands, deliberately NOT SendWelcomeNotificationCommand (an automation-triggered
-// internal command, not a public write API - see this port's plan for the full reasoning; Java's
-// own package-prefix-based allowlist happens to reach it too, which reads as an accident of coarse
-// matching rather than deliberate intent). Each entry's `mapError` hook translates this app's own
-// domain errors (WalletNotFound/InsufficientFunds) into the RFC 7807 wire shapes declared as
-// `extraErrors` on the combined HttpApi below - everything else falls through to
-// commands-http's own generic 500 catch-all, unchanged.
-// `ExposedCommand<any, any>` - see ExposedCommand.ts's own primer on this registry's type erasure.
+// The wallet's public write API: the 5 wallet commands, deliberately NOT SendWelcomeNotification (an
+// automation-triggered internal command, not a public write API). Each entry's `mapError` hook
+// translates this app's own domain errors (WalletNotFound/InsufficientFunds) into the RFC 7807 wire
+// shapes declared as `extraErrors` on the combined HttpApi below - everything else falls through to
+// commands-http's own generic mapping, unchanged. `ExposedCommand<any, any>` - see ExposedCommand.ts's
+// own primer on this registry's type erasure.
+const notFound = (error: unknown) => (error instanceof WalletNotFound ? WalletNotFoundProblem.of(error.walletId) : undefined);
+const notFoundOrInsufficient = (error: unknown) =>
+  error instanceof WalletNotFound
+    ? WalletNotFoundProblem.of(error.walletId)
+    : error instanceof InsufficientFunds
+      ? InsufficientFundsProblem.of(error.walletId, error.currentBalance, error.requestedAmount)
+      : undefined;
+
 const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
-  open_wallet: exposedCommandOf(
-    Schema.Struct({ walletId: Schema.String, owner: Schema.String, initialBalance: Schema.Number }),
-    openWalletCommandHandler
-  ),
-  deposit: exposedCommandOf(
-    Schema.Struct({ depositId: Schema.String, walletId: Schema.String, amount: Schema.Number, description: Schema.String }),
-    depositCommandHandler,
-    (error) => (error instanceof WalletNotFound ? WalletNotFoundProblem.of(error.walletId) : undefined)
-  ),
-  withdraw: exposedCommandOf(
-    Schema.Struct({ withdrawalId: Schema.String, walletId: Schema.String, amount: Schema.Number, description: Schema.String }),
-    withdrawCommandHandler,
-    (error) =>
-      error instanceof WalletNotFound
-        ? WalletNotFoundProblem.of(error.walletId)
-        : error instanceof InsufficientFunds
-          ? InsufficientFundsProblem.of(error.walletId, error.currentBalance, error.requestedAmount)
-          : undefined
-  ),
-  transfer_money: exposedCommandOf(
-    Schema.Struct({
-      transferId: Schema.String,
-      fromWalletId: Schema.String,
-      toWalletId: Schema.String,
-      amount: Schema.Number,
-      description: Schema.String
-    }),
-    transferMoneyCommandHandler,
-    (error) =>
-      error instanceof WalletNotFound
-        ? WalletNotFoundProblem.of(error.walletId)
-        : error instanceof InsufficientFunds
-          ? InsufficientFundsProblem.of(error.walletId, error.currentBalance, error.requestedAmount)
-          : undefined
-  ),
-  close_wallet: exposedCommandOf(
-    Schema.Struct({ walletId: Schema.String }),
-    closeWalletCommandHandler,
-    (error) => (error instanceof WalletNotFound ? WalletNotFoundProblem.of(error.walletId) : undefined)
-  )
+  open_wallet: exposedCommandOf(OpenWallet),
+  deposit: exposedCommandOf(Deposit, notFound),
+  withdraw: exposedCommandOf(Withdraw, notFoundOrInsufficient),
+  transfer_money: exposedCommandOf(TransferMoney, notFoundOrInsufficient),
+  close_wallet: exposedCommandOf(CloseWallet, notFound)
 };
 
 // Port of the app's own HTTP composition: commands-http's generic write group + WalletQueryApi's

@@ -1,86 +1,28 @@
-import { Effect } from "effect";
-import { EventStore } from "@crablet/eventstore";
-import * as LogPositionNS from "@crablet/eventstore/LogPosition";
-import * as Query from "@crablet/eventstore/Query";
-import * as Tag from "@crablet/eventstore/Tag";
-import type { SqlError } from "effect/sql/SqlError";
-import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
-import type { CommandHandler } from "@crablet/commands";
-import * as CD from "@crablet/commands/CommandDecision";
+import * as Schema from "effect/Schema";
+import { defineCommand, emit, fail } from "@crablet/commands/Command";
+import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
+import { resolveActivePeriod, periodTags } from "../period/WalletStatementPeriodResolver.ts";
+import { Positive } from "../WalletInputs.ts";
+import { WalletModel, WithdrawalMade } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
-import * as WalletEvents from "../events/WalletEvents.ts";
-import * as WalletQueryPatterns from "../WalletQueryPatterns.ts";
-import { walletBalanceProjector, hasSufficientFunds } from "../WalletBalanceProjector.ts";
-import { resolveActivePeriod } from "../period/WalletStatementPeriodResolver.ts";
-import { WalletNotFound, InsufficientFunds, InvalidOperation } from "../errors/WalletErrors.ts";
 
-export interface WithdrawCommand {
-  readonly withdrawalId: string;
-  readonly walletId: string;
-  readonly amount: number;
-  readonly description: string;
-}
+const input = Schema.Struct({ withdrawalId: Schema.String, walletId: Schema.String, amount: Positive, description: Schema.String });
+export type WithdrawCommand = Schema.Schema.Type<typeof input>;
 
-// Port of com.crablet.examples.wallet.commands.WithdrawCommandHandler - including its `handle()`
-// override, not just `decide()`. Withdrawals are order-sensitive (a real balance check), so a full
-// NonCommutative log-position DCB check is required - but on retry, the balance has already
-// been reduced by the first successful attempt, so re-running the balance check would wrongly
-// throw InsufficientFunds. The duplicate pre-check below (does a WithdrawalMade for this
-// withdrawal_id already exist?) must run *before* any balance logic, short-circuiting to NoOp -
-// exactly mirroring Java's handler overriding `handle()` to pre-empt `decide()` entirely, rather
-// than just adding idempotency at the decision level the way Deposit does.
-export const withdrawCommandHandler: CommandHandler<
-  WithdrawCommand,
-  WalletNotFound | InsufficientFunds | InvalidOperation | SqlError | Conflict | Duplicate
-> = (command) =>
-  Effect.gen(function* () {
-    if (command.amount <= 0) return yield* Effect.fail(new InvalidOperation({ message: "amount must be positive" }));
-
-    const eventStore = yield* EventStore;
-
-    const alreadyProcessed = yield* eventStore.exists(
-      Query.forEventAndTag(WalletEvents.WITHDRAWAL_MADE, WalletTags.WITHDRAWAL_ID, command.withdrawalId)
-    );
-    if (alreadyProcessed) return CD.noOp("Duplicate withdrawal");
-
-    const period = yield* resolveActivePeriod(eventStore, command.walletId);
-    const projection = yield* eventStore.project(
-      WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.walletId, period.year, period.month),
-      LogPositionNS.zero(),
-      [walletBalanceProjector]
-    );
-
-    if (!projection.state.exists) return yield* Effect.fail(new WalletNotFound({ walletId: command.walletId }));
-    if (!hasSufficientFunds(projection.state, command.amount)) {
-      return yield* Effect.fail(
-        new InsufficientFunds({
-          walletId: command.walletId,
-          currentBalance: projection.state.balance,
-          requestedAmount: command.amount
-        })
-      );
-    }
-
-    const newBalance = projection.state.balance - command.amount;
-    const event = WalletEvents.withdrawalMade(
-      {
-        withdrawalId: command.withdrawalId,
-        walletId: command.walletId,
-        amount: command.amount,
-        newBalance,
-        withdrawnAt: new Date().toISOString(),
-        description: command.description
-      },
-      [
-        Tag.of(WalletTags.YEAR, String(period.year)),
-        Tag.of(WalletTags.MONTH, String(period.month)),
-        Tag.of(WalletTags.STATEMENT_ID, period.statementId)
-      ]
-    );
-
-    return CD.nonCommutative(
-      event,
-      WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.walletId, period.year, period.month),
-      projection.logPosition
-    );
-  });
+// Order-sensitive (a real balance check), so strict: it fails if anything in the wallet's period changed
+// since it was read. And idempotent on the withdrawal id: on a retry the balance has already been
+// reduced, so re-running the balance check would wrongly say "insufficient funds" - the idempotency check
+// runs first and reports "already done".
+export const Withdraw = defineCommand({
+  name: "withdraw",
+  input,
+  prepare: (c, es) => resolveActivePeriod(es, c.walletId),
+  model: (c, period) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
+  idempotentBy: (c) => WithdrawalMade.where({ [WalletTags.WITHDRAWAL_ID]: c.withdrawalId }),
+  decide: (wallet, c, period) =>
+    !wallet.exists
+      ? fail(new WalletNotFound({ walletId: c.walletId }))
+      : wallet.balance < c.amount
+        ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
+        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: new Date().toISOString() }, periodTags(period)))
+});

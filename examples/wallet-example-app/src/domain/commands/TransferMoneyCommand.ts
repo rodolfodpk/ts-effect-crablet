@@ -1,110 +1,57 @@
 import { Effect } from "effect";
-import { EventStore } from "@crablet/eventstore";
-import * as LogPositionNS from "@crablet/eventstore/LogPosition";
+import * as Schema from "effect/Schema";
+import { defineCommand, emit, fail } from "@crablet/commands/Command";
+import { all } from "@crablet/commands/Model";
 import * as Tag from "@crablet/eventstore/Tag";
-import type { SqlError } from "effect/sql/SqlError";
-import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
-import type { CommandHandler } from "@crablet/commands";
-import * as CD from "@crablet/commands/CommandDecision";
-import * as WalletTags from "../WalletTags.ts";
-import * as WalletEvents from "../events/WalletEvents.ts";
-import * as WalletQueryPatterns from "../WalletQueryPatterns.ts";
-import { walletBalanceProjector, hasSufficientFunds } from "../WalletBalanceProjector.ts";
+import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
 import { resolveActivePeriod } from "../period/WalletStatementPeriodResolver.ts";
-import { WalletNotFound, InsufficientFunds, InvalidOperation } from "../errors/WalletErrors.ts";
+import { Positive } from "../WalletInputs.ts";
+import { MoneyTransferred, WalletModel } from "../WalletModel.ts";
+import * as WalletTags from "../WalletTags.ts";
 
-export interface TransferMoneyCommand {
-  readonly transferId: string;
-  readonly fromWalletId: string;
-  readonly toWalletId: string;
-  readonly amount: number;
-  readonly description: string;
-}
+const input = Schema.Struct({
+  transferId: Schema.String,
+  fromWalletId: Schema.String,
+  toWalletId: Schema.String,
+  amount: Positive,
+  description: Schema.String
+}).pipe(Schema.check(Schema.makeFilter((c) => c.fromWalletId !== c.toWalletId || "fromWalletId and toWalletId must differ")));
+export type TransferMoneyCommand = Schema.Schema.Type<typeof input>;
 
-// Port of com.crablet.examples.wallet.commands.TransferMoneyCommandHandler. Order-sensitive
-// (affects two wallets' balances at once) - NonCommutative over both wallets' combined
-// period-scoped decision model (WalletQueryPatterns.transferPeriodDecisionModel), validating
-// existence + sufficient funds for both sides before a single non-commutative append.
-export const transferMoneyCommandHandler: CommandHandler<
-  TransferMoneyCommand,
-  WalletNotFound | InsufficientFunds | InvalidOperation | SqlError | Conflict | Duplicate
-> = (command) =>
-  Effect.gen(function* () {
-    if (command.amount <= 0) return yield* Effect.fail(new InvalidOperation({ message: "amount must be positive" }));
-    if (command.fromWalletId === command.toWalletId) {
-      return yield* Effect.fail(new InvalidOperation({ message: "fromWalletId and toWalletId must differ" }));
-    }
-
-    const eventStore = yield* EventStore;
-
-    // Both wallets are period-resolved independently - each may be in a different lazily-opened
-    // statement (e.g. one wallet already touched this month, the other hasn't) - but both share
-    // the *same* current calendar month/year by construction (resolveActivePeriod always resolves
-    // "now"), so the combined decision model below stays internally consistent.
-    const fromPeriod = yield* resolveActivePeriod(eventStore, command.fromWalletId);
-    const toPeriod = yield* resolveActivePeriod(eventStore, command.toWalletId);
-
-    const decisionModel = WalletQueryPatterns.transferPeriodDecisionModel(
-      command.fromWalletId,
-      command.toWalletId,
-      fromPeriod.year,
-      fromPeriod.month
-    );
-    const projection = yield* eventStore.project(decisionModel, LogPositionNS.zero(), [walletBalanceProjector]);
-
-    // walletBalanceProjector folds one shared state across BOTH wallets' events, which would
-    // conflate their balances - project each wallet's own period-scoped query separately instead
-    // for the actual balance figures, reusing the already-resolved periods above.
-    const fromProjection = yield* eventStore.project(
-      WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.fromWalletId, fromPeriod.year, fromPeriod.month),
-      LogPositionNS.zero(),
-      [walletBalanceProjector]
-    );
-    const toProjection = yield* eventStore.project(
-      WalletQueryPatterns.singleWalletActivePeriodDecisionModel(command.toWalletId, toPeriod.year, toPeriod.month),
-      LogPositionNS.zero(),
-      [walletBalanceProjector]
-    );
-
-    if (!fromProjection.state.exists) return yield* Effect.fail(new WalletNotFound({ walletId: command.fromWalletId }));
-    if (!toProjection.state.exists) return yield* Effect.fail(new WalletNotFound({ walletId: command.toWalletId }));
-    if (!hasSufficientFunds(fromProjection.state, command.amount)) {
-      return yield* Effect.fail(
-        new InsufficientFunds({
-          walletId: command.fromWalletId,
-          currentBalance: fromProjection.state.balance,
-          requestedAmount: command.amount
-        })
-      );
-    }
-
-    const fromBalance = fromProjection.state.balance - command.amount;
-    const toBalance = toProjection.state.balance + command.amount;
-
-    // Both wallets resolve their "active period" against the same `now`, so fromPeriod/toPeriod
-    // always share the same (year, month) in practice - one shared plain year/month tag pair on
-    // the event (not separate from/to-prefixed variants), matching what
-    // WalletQueryPatterns.singleWalletActivePeriodItems' MoneyTransferred query items actually
-    // filter on (plain YEAR/MONTH tags, alongside the role-specific from_wallet_id/to_wallet_id
-    // tag).
-    const event = WalletEvents.moneyTransferred(
-      {
-        transferId: command.transferId,
-        fromWalletId: command.fromWalletId,
-        toWalletId: command.toWalletId,
-        amount: command.amount,
-        fromBalance,
-        toBalance,
-        transferredAt: new Date().toISOString(),
-        description: command.description
-      },
-      [
-        Tag.of(WalletTags.YEAR, String(fromPeriod.year)),
-        Tag.of(WalletTags.MONTH, String(fromPeriod.month)),
-        Tag.of(WalletTags.FROM_STATEMENT_ID, fromPeriod.statementId),
-        Tag.of(WalletTags.TO_STATEMENT_ID, toPeriod.statementId)
-      ]
-    );
-
-    return CD.nonCommutative(event, decisionModel, projection.logPosition);
-  });
+// Affects two wallets' balances at once, so strict over BOTH wallets' combined boundary: a change to
+// either refuses a stale decision. Each wallet resolves its own statement period first (either may
+// lazily open one), sequentially because both may append.
+export const TransferMoney = defineCommand({
+  name: "transfer_money",
+  input,
+  prepare: (c, es) =>
+    Effect.gen(function* () {
+      const from = yield* resolveActivePeriod(es, c.fromWalletId);
+      const to = yield* resolveActivePeriod(es, c.toWalletId);
+      return { from, to };
+    }),
+  model: (c, p) =>
+    all({
+      from: WalletModel.of({ id: c.fromWalletId, year: p.from.year, month: p.from.month }),
+      to: WalletModel.of({ id: c.toWalletId, year: p.to.year, month: p.to.month })
+    }),
+  decide: ({ from, to }, c, p) =>
+    !from.exists
+      ? fail(new WalletNotFound({ walletId: c.fromWalletId }))
+      : !to.exists
+        ? fail(new WalletNotFound({ walletId: c.toWalletId }))
+        : from.balance < c.amount
+          ? fail(new InsufficientFunds({ walletId: c.fromWalletId, currentBalance: from.balance, requestedAmount: c.amount }))
+          : emit(
+              MoneyTransferred(
+                { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: new Date().toISOString() },
+                // both wallets share the current period; each side's own statement id is tagged for the views
+                [
+                  Tag.of(WalletTags.YEAR, String(p.from.year)),
+                  Tag.of(WalletTags.MONTH, String(p.from.month)),
+                  Tag.of(WalletTags.FROM_STATEMENT_ID, p.from.statementId),
+                  Tag.of(WalletTags.TO_STATEMENT_ID, p.to.statementId)
+                ]
+              )
+            )
+});

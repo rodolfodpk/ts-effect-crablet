@@ -871,3 +871,49 @@ idempotency keys and consistency boundaries on those values. Covered by a perman
 Side-task from the plan, already done in Phase F: the `pg_snapshot_xmin` filter that could hide committed
 conflicts was removed there (and is covered by `append-multi-item.test.ts`). Not done: the optional PGlite
 (Postgres-in-WASM) tier - the in-memory store plus the conformance/differential proof covers the need.
+
+## Phase 5 (API redesign) - the wallet example ported
+
+The regression gate for the whole redesign: the five wallet commands, the statement-period resolver and the
+balance fold now use `defineCommand` / `defineModel`; `WalletBalanceProjector.ts` and
+`WalletQueryPatterns.ts` are DELETED (their job is the model's); `WalletEvents.ts` shrank to event-type
+names and payload types derived from the event definitions (the views read those). The existing wallet
+end-to-end suite - HTTP 404/400/409 mappings, automation, correlation/causation, outbox, statement views -
+passes with its ASSERTIONS UNCHANGED (only how `domain-commands`/`wallet-model` tests invoke commands
+changed: `executor.run(Deposit, ...)` instead of `execute("deposit", ..., handler)`). 129 integration tests,
+2 clean runs.
+
+**Measured** (code lines, excluding comments, blanks and imports; before = the pre-redesign code):
+
+| | before | after |
+|---|---|---|
+| OpenWallet | 20 | 9 |
+| Deposit | 40 | 14 |
+| Withdraw | 55 | 15 |
+| TransferMoney | 69 | 41 |
+| CloseWallet | 12 | 11 |
+| **the five commands** | **196** | **90** |
+| statement-period resolver | 132 | 73 |
+| balance projector + query patterns + event constructors | 189 | 14 (derived event names/types) |
+| whole domain incl. the new model file | 517 | 294 |
+
+Transfer misses the plan's "~20 lines" target: it is the one command that needs a two-wallet `prepare`, a
+combined model, a long refusal chain and four period/statement tags on its event; the structure is right
+but it is not short. Deposit and Withdraw hit the target (14 and 15).
+
+**Behaviour changes worth knowing**
+- Input validation moved into the schemas: a non-positive amount, a blank name, a negative initial balance
+  or a wallet transferring to itself is now `InvalidInput` (HTTP 400 "Invalid payload") instead of a
+  domain `InvalidOperation` (which the HTTP layer had no mapping for, so it surfaced as a 500).
+- Withdraw's hand-rolled `exists()` pre-check is now `idempotentBy`, checked again atomically at append.
+- The resolver's `ActivePeriod` no longer returns a log position (nothing used it: the command's model
+  loads its own after `prepare`).
+- The two wallet bugs from the spike stay fixed (receiver balance; concurrent deposits fold by amount).
+- HTTP: `commands-http` now exposes DEFINED commands (`exposedCommandOf(command, mapError?)`): decoding is
+  the command's own schema, execution is `runDecoded`, so HTTP gets conflict retry too. (Pulled forward
+  from Phase 6, because the wallet app could not keep running without it.)
+
+New tests: `wallet-commands.test.ts` (16 BDD tests of the real wallet commands with NO database, using
+`given(...).when(...)`, incl. "a deposit to an unknown wallet leaves no statement behind" and "a retried
+withdrawal is 'already done' even though the balance no longer covers it"); `wallet-model.test.ts` now
+asserts the model directly (queries, fold, both regressions).

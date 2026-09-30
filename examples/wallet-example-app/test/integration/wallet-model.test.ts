@@ -11,12 +11,13 @@ import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/Co
 import * as AppendCondition from "@crablet/eventstore/AppendCondition";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { Conflict } from "@crablet/eventstore/AppendErrors";
-import { CommandExecutor, CommandExecutorLive, type CommandHandler } from "@crablet/commands";
+import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import type { Command } from "@crablet/commands/Command";
 import { all } from "@crablet/commands/Model";
-import { openWalletCommandHandler } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { depositCommandHandler } from "../../src/domain/commands/DepositCommand.ts";
-import { withdrawCommandHandler } from "../../src/domain/commands/WithdrawCommand.ts";
-import { transferMoneyCommandHandler } from "../../src/domain/commands/TransferMoneyCommand.ts";
+import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
+import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
+import { Withdraw } from "../../src/domain/commands/WithdrawCommand.ts";
+import { TransferMoney } from "../../src/domain/commands/TransferMoneyCommand.ts";
 import { WalletModel } from "../../src/domain/WalletModel.ts";
 
 let db: TestDb;
@@ -50,8 +51,8 @@ const now = new Date();
 const period = { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
 const id = (p: string) => `${p}-${crypto.randomUUID()}`;
 
-const exec = <T, E>(type: string, command: T, handler: CommandHandler<T, E>) =>
-  run(Effect.flatMap(CommandExecutor, (e) => e.execute(type, command, handler)));
+const exec = <T, E>(_name: string, input: T, command: Command<T, E>) =>
+  run(Effect.flatMap(CommandExecutor, (e) => e.runDecoded(command, input)));
 
 const loadWallet = (walletId: string) =>
   run(Effect.flatMap(EventStore, (es) => WalletModel.of({ id: walletId, ...period }).load(es)));
@@ -60,14 +61,14 @@ describe("wallet model against real Postgres", () => {
   it("state after real commands: deposits, withdrawals and a transfer, for sender AND receiver", async () => {
     const a = id("a");
     const b = id("b");
-    await exec("open_wallet", { walletId: a, owner: "Ann", initialBalance: 100 }, openWalletCommandHandler);
-    await exec("open_wallet", { walletId: b, owner: "Bob", initialBalance: 0 }, openWalletCommandHandler);
-    await exec("deposit", { depositId: id("d"), walletId: a, amount: 25, description: "" }, depositCommandHandler);
-    await exec("withdraw", { withdrawalId: id("x"), walletId: a, amount: 10, description: "" }, withdrawCommandHandler);
+    await exec("open_wallet", { walletId: a, owner: "Ann", initialBalance: 100 }, OpenWallet);
+    await exec("open_wallet", { walletId: b, owner: "Bob", initialBalance: 0 }, OpenWallet);
+    await exec("deposit", { depositId: id("d"), walletId: a, amount: 25, description: "" }, Deposit);
+    await exec("withdraw", { withdrawalId: id("x"), walletId: a, amount: 10, description: "" }, Withdraw);
     await exec(
       "transfer_money",
       { transferId: id("t"), fromWalletId: a, toWalletId: b, amount: 40, description: "" },
-      transferMoneyCommandHandler
+      TransferMoney
     );
 
     assert.deepEqual((await loadWallet(a)).state, { exists: true, balance: 75 }); // 100 + 25 - 10 - 40
@@ -77,7 +78,7 @@ describe("wallet model against real Postgres", () => {
 
   it("the boundary query + log position work as a real append condition (multi-item, via the SQL path)", async () => {
     const w = id("w");
-    await exec("open_wallet", { walletId: w, owner: "Ann", initialBalance: 10 }, openWalletCommandHandler);
+    await exec("open_wallet", { walletId: w, owner: "Ann", initialBalance: 10 }, OpenWallet);
 
     const model = WalletModel.of({ id: w, ...period });
     const { logPosition } = await run(Effect.flatMap(EventStore, (es) => model.load(es)));
@@ -88,7 +89,7 @@ describe("wallet model against real Postgres", () => {
     await run(Effect.flatMap(EventStore, (es) => es.append(probe(), condition)));
 
     // A deposit lands in the boundary (a scoped, period-tagged event - matched by one item of the query).
-    await exec("deposit", { depositId: id("d"), walletId: w, amount: 5, description: "" }, depositCommandHandler);
+    await exec("deposit", { depositId: id("d"), walletId: w, amount: 5, description: "" }, Deposit);
 
     // The same stale decision is now refused, as a boundary Conflict.
     const refused = await run(
@@ -106,8 +107,8 @@ describe("wallet model against real Postgres", () => {
   it("a two-wallet model reads both wallets and guards both: a change to EITHER refuses a stale decision", async () => {
     const a = id("a");
     const b = id("b");
-    await exec("open_wallet", { walletId: a, owner: "Ann", initialBalance: 50 }, openWalletCommandHandler);
-    await exec("open_wallet", { walletId: b, owner: "Bob", initialBalance: 50 }, openWalletCommandHandler);
+    await exec("open_wallet", { walletId: a, owner: "Ann", initialBalance: 50 }, OpenWallet);
+    await exec("open_wallet", { walletId: b, owner: "Bob", initialBalance: 50 }, OpenWallet);
 
     const both = all({ from: WalletModel.of({ id: a, ...period }), to: WalletModel.of({ id: b, ...period }) });
     const { state, logPosition } = await run(Effect.flatMap(EventStore, (es) => both.load(es)));
@@ -115,7 +116,7 @@ describe("wallet model against real Postgres", () => {
     assert.equal(state.to.balance, 50);
 
     // Only the RECEIVER changes.
-    await exec("deposit", { depositId: id("d"), walletId: b, amount: 1, description: "" }, depositCommandHandler);
+    await exec("deposit", { depositId: id("d"), walletId: b, amount: 1, description: "" }, Deposit);
 
     const outcome = await run(
       Effect.flatMap(EventStore, (es) =>

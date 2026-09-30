@@ -98,8 +98,9 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
               return yield* Effect.fail(CommandApiBadRequest.of(`Unknown command type: ${payload.commandType}`));
             }
 
-            const command = yield* Schema.decodeUnknownEffect(entry.schema as Schema.Decoder<unknown>)(payload.command).pipe(
-              Effect.catchTag("SchemaError", () =>
+            // Validation belongs to the command itself: its input schema.
+            const command = yield* entry.command.decodeInput(payload.command).pipe(
+              Effect.catchTag("InvalidInput", () =>
                 Effect.fail(CommandApiBadRequest.of(`Invalid payload for commandType: ${payload.commandType}`))
               )
             );
@@ -115,7 +116,7 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
             // outer terminal `toProblemDetail` catch-all. `matchingEventsCount` is always 0: the SQL
             // append does not report a count; the field is kept for wire compatibility.
             const executor = yield* CommandExecutor;
-            const runExecute = executor.execute(payload.commandType, command, entry.handler).pipe(
+            const runExecute = executor.runDecoded(entry.command, command).pipe(
               Effect.catchTag("Conflict", (e) =>
                 Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION", 0))
               ),

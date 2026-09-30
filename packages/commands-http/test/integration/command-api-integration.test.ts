@@ -13,7 +13,8 @@ import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import * as CD from "@crablet/commands/CommandDecision";
+import { defineCommand, emit } from "@crablet/commands/Command";
+import * as Query from "@crablet/eventstore/Query";
 import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
 import { exposedCommandOf, type ExposedCommand } from "../../src/ExposedCommand.ts";
 import type { CommandApiConfig } from "../../src/CommandApiConfig.ts";
@@ -48,32 +49,26 @@ after(async () => {
   await db.stop();
 });
 
-interface OpenWalletCommand {
-  readonly walletId: string;
-}
-const OpenWalletSchema = Schema.Struct({ walletId: Schema.String });
-const openWalletHandler = (cmd: OpenWalletCommand) =>
-  Effect.succeed(
-    CD.idempotent(AppendEvent.of("WalletOpened", "wallet_id", cmd.walletId, {}), "WalletOpened", "wallet_id", cmd.walletId, "THROW")
-  );
+// onDuplicate "fail": opening the same wallet twice is a genuine conflict (409), not a silent no-op.
+const OpenWallet = defineCommand({
+  name: "open_wallet",
+  input: Schema.Struct({ walletId: Schema.String }),
+  idempotentBy: (c) => Query.forEventAndTag("WalletOpened", "wallet_id", c.walletId),
+  onDuplicate: "fail",
+  decide: (_, c) => emit(AppendEvent.of("WalletOpened", "wallet_id", c.walletId, {}))
+});
 
-interface SendConfirmationCommand {
-  readonly orderId: string;
-}
-const SendConfirmationSchema = Schema.Struct({ orderId: Schema.String });
-const sendConfirmationHandler = (cmd: SendConfirmationCommand) =>
-  Effect.succeed(
-    CD.commutativeIdempotent(
-      CD.commutative(AppendEvent.of("ConfirmationSent", "order_id", cmd.orderId, {})),
-      "ConfirmationSent",
-      "order_id",
-      cmd.orderId
-    )
-  );
+// default onDuplicate: a repeat is an idempotent success (200).
+const SendConfirmation = defineCommand({
+  name: "send_confirmation",
+  input: Schema.Struct({ orderId: Schema.String }),
+  idempotentBy: (c) => Query.forEventAndTag("ConfirmationSent", "order_id", c.orderId),
+  decide: (_, c) => emit(AppendEvent.of("ConfirmationSent", "order_id", c.orderId, {}))
+});
 
 const testCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
-  open_wallet: exposedCommandOf(OpenWalletSchema, openWalletHandler),
-  send_confirmation: exposedCommandOf(SendConfirmationSchema, sendConfirmationHandler)
+  open_wallet: exposedCommandOf(OpenWallet),
+  send_confirmation: exposedCommandOf(SendConfirmation)
 };
 
 // Builds a fresh ephemeral-port HTTP server for the duration of one test (Effect.scoped tears it

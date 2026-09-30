@@ -139,3 +139,12 @@ export const WalletModel = defineModel({
     (w, d, ctx) => ({ ...w, balance: w.balance + (d.toWalletId === ctx.id ? d.amount : -d.amount) }),
     { by: [WalletTags.FROM_WALLET_ID, WalletTags.TO_WALLET_ID] }
   );
+
+// Whether a wallet exists, from its lifecycle events alone - no period, no balance. The boundary of
+// commands that only care about the wallet being open or closed (closing it).
+export const WalletLifecycleModel = defineModel({
+  by: WalletTags.WALLET_ID,
+  initial: () => ({ exists: false })
+})
+  .lifecycle(WalletOpened, () => ({ exists: true }))
+  .lifecycle(WalletClosed, () => ({ exists: false }));

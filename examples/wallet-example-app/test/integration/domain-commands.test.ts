@@ -13,11 +13,11 @@ import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import { openWalletCommandHandler, type OpenWalletCommand } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { depositCommandHandler, type DepositCommand } from "../../src/domain/commands/DepositCommand.ts";
-import { withdrawCommandHandler, type WithdrawCommand } from "../../src/domain/commands/WithdrawCommand.ts";
-import { transferMoneyCommandHandler, type TransferMoneyCommand } from "../../src/domain/commands/TransferMoneyCommand.ts";
-import { closeWalletCommandHandler, type CloseWalletCommand } from "../../src/domain/commands/CloseWalletCommand.ts";
+import { OpenWallet, type OpenWalletCommand } from "../../src/domain/commands/OpenWalletCommand.ts";
+import { Deposit, type DepositCommand } from "../../src/domain/commands/DepositCommand.ts";
+import { Withdraw, type WithdrawCommand } from "../../src/domain/commands/WithdrawCommand.ts";
+import { TransferMoney, type TransferMoneyCommand } from "../../src/domain/commands/TransferMoneyCommand.ts";
+import { CloseWallet, type CloseWalletCommand } from "../../src/domain/commands/CloseWalletCommand.ts";
 import { WalletNotFound, InsufficientFunds } from "../../src/domain/errors/WalletErrors.ts";
 
 // Deliberately no applyAppMigrations() here (unlike statement-view.test.ts and the E2E suite) -
@@ -56,7 +56,7 @@ const openWallet = (walletId: string, owner = "Alice", initialBalance = 0) =>
     Effect.gen(function* () {
       const executor = yield* CommandExecutor;
       const command: OpenWalletCommand = { walletId, owner, initialBalance };
-      return yield* executor.execute("open_wallet", command, openWalletCommandHandler);
+      return yield* executor.run(OpenWallet, command);
     })
   );
 
@@ -70,7 +70,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
         const command: OpenWalletCommand = { walletId, owner: "Alice", initialBalance: 100 };
-        return yield* executor.execute("open_wallet", command, openWalletCommandHandler).pipe(
+        return yield* executor.run(OpenWallet, command).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("Duplicate", (e) => Effect.succeed(e))
         );
@@ -92,7 +92,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
           amount: 25,
           description: "test deposit"
         };
-        return yield* executor.execute("deposit", command, depositCommandHandler);
+        return yield* executor.run(Deposit, command);
       })
     );
     assert.strictEqual(result.wasIdempotent, false);
@@ -107,7 +107,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
           amount: 10,
           description: "ghost"
         };
-        return yield* executor.execute("deposit", command, depositCommandHandler).pipe(
+        return yield* executor.run(Deposit, command).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("WalletNotFound", (e) => Effect.succeed(e))
         );
@@ -129,7 +129,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
           amount: 100,
           description: "too much"
         };
-        return yield* executor.execute("withdraw", command, withdrawCommandHandler).pipe(
+        return yield* executor.run(Withdraw, command).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("InsufficientFunds", (e) => Effect.succeed(e))
         );
@@ -146,7 +146,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
         const command: WithdrawCommand = { withdrawalId, walletId, amount: 10, description: "ok" };
-        return yield* executor.execute("withdraw", command, withdrawCommandHandler);
+        return yield* executor.run(Withdraw, command);
       })
     );
     assert.strictEqual(first.wasIdempotent, false);
@@ -155,7 +155,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
         const command: WithdrawCommand = { withdrawalId, walletId, amount: 10, description: "ok" };
-        return yield* executor.execute("withdraw", command, withdrawCommandHandler);
+        return yield* executor.run(Withdraw, command);
       })
     );
     assert.strictEqual(retry.wasIdempotent, true, "duplicate withdrawal_id should short-circuit to NoOp/idempotent");
@@ -177,7 +177,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
           amount: 40,
           description: "test transfer"
         };
-        return yield* executor.execute("transfer_money", command, transferMoneyCommandHandler);
+        return yield* executor.run(TransferMoney, command);
       })
     );
     assert.strictEqual(result.wasIdempotent, false);
@@ -192,7 +192,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
           amount: 1000,
           description: "too much"
         };
-        return yield* executor.execute("transfer_money", command, transferMoneyCommandHandler).pipe(
+        return yield* executor.run(TransferMoney, command).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("InsufficientFunds", (e) => Effect.succeed(e))
         );
@@ -209,7 +209,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
         const command: CloseWalletCommand = { walletId };
-        return yield* executor.execute("close_wallet", command, closeWalletCommandHandler);
+        return yield* executor.run(CloseWallet, command);
       })
     );
     assert.strictEqual(result.wasIdempotent, false);
@@ -219,7 +219,7 @@ describe("wallet domain command handlers (real Postgres)", () => {
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
         const command: CloseWalletCommand = { walletId: ghostWalletId };
-        return yield* executor.execute("close_wallet", command, closeWalletCommandHandler).pipe(
+        return yield* executor.run(CloseWallet, command).pipe(
           Effect.map(() => "success" as const),
           Effect.catchTag("WalletNotFound", (e) => Effect.succeed(e))
         );
