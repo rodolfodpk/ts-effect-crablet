@@ -11,15 +11,16 @@
     "./Model": "./src/Model.ts",
     "./Errors": "./src/Errors.ts",
     "./Command": "./src/Command.ts",
-    "./testing/Scenario": "./src/testing/Scenario.ts"
+    "./testing/Scenario": "./src/testing/Scenario.ts",
+    "./Crablet": "./src/Crablet.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",
     "@crablet/eventstore": "workspace:*",
-    "@crablet/metrics-otel": "workspace:*"
+    "@crablet/metrics-otel": "workspace:*",
+    "@effect/sql-pg": "4.0.0-rc.118"
   },
   "devDependencies": {
-    "@crablet/test-support": "workspace:*",
-    "@effect/sql-pg": "4.0.0-rc.118"
+    "@crablet/test-support": "workspace:*"
   }
 }

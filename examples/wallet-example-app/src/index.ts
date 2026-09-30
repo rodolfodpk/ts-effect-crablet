@@ -1,12 +1,8 @@
 import { createServer } from "node:http";
 import { Effect, Layer, Redacted } from "effect";
-import { SqlClient } from "effect/sql";
-import { PgClient } from "@effect/sql-pg";
 import { HttpRouter } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
-import { EventStore, EventStoreLive } from "@crablet/eventstore";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import * as Crablet from "@crablet/commands/Crablet";
 import { migrate } from "./migrate.ts";
 import { startBackgroundProcessors, makeWalletApiLayer } from "./WalletApp.ts";
 
@@ -24,18 +20,13 @@ const port = Number(process.env["PORT"] ?? 8080);
 async function main(): Promise<void> {
   await migrate(connInfo);
 
-  const pgLayer = PgClient.layer({
+  const appLayer = Crablet.layer({
     host: connInfo.host,
     port: connInfo.port,
     database: connInfo.database,
     username: connInfo.username,
     password: Redacted.make(connInfo.password)
   });
-  const coreLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive);
-  const appLayer = Layer.provideMerge(coreLayers, pgLayer) as unknown as Layer.Layer<
-    CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient,
-    never
-  >;
 
   const program = Effect.gen(function* () {
     yield* startBackgroundProcessors();
@@ -47,7 +38,7 @@ async function main(): Promise<void> {
     );
   });
 
-  await Effect.runPromise(Effect.provide(program, appLayer) as Effect.Effect<never, never, never>);
+  await Effect.runPromise(Effect.provide(program, appLayer));
 }
 
 main().catch((error) => {
