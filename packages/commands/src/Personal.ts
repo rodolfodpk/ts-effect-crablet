@@ -117,3 +117,24 @@ export const redact = (schema: Schema.Top, value: unknown, replacement: string =
   };
   return go(astOf(schema), value);
 };
+
+// Every string / number found at the marked paths of `value`, normalised for comparison (trimmed, lower-cased). A marked
+// object or array contributes every string and number inside it. Used by the tag guard (see Event.ts).
+export const personalValues = (schema: Schema.Top, value: unknown): ReadonlyArray<string> => {
+  const out: Array<string> = [];
+  const collect = (v: unknown): void => {
+    if (typeof v === "string" || typeof v === "number") out.push(String(v).trim().toLowerCase());
+    else if (Array.isArray(v)) v.forEach(collect);
+    else if (isRecord(v)) Object.values(v).forEach(collect);
+  };
+  const at = (v: unknown, path: ReadonlyArray<string>): void => {
+    if (v === null || v === undefined) return;
+    if (path.length === 0) return collect(v);
+    const [head, ...tail] = path;
+    if (head === "[]") (Array.isArray(v) ? v : []).forEach((item) => at(item, tail));
+    else if (head === "*") (isRecord(v) ? Object.values(v) : []).forEach((item) => at(item, tail));
+    else if (isRecord(v)) at(v[head!], tail);
+  };
+  for (const path of personalPaths(schema)) at(value, path === "(root)" ? [] : path.split("."));
+  return out;
+};

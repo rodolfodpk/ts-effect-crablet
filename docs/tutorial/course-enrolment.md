@@ -68,6 +68,11 @@ const Subscribe = defineCommand({
 });
 ```
 
+A note on the ids: the tutorial uses readable ids (`ann`, `math-101`) so the examples are easy to follow. In a real system, put **opaque ids** in events and
+tags (`student_7f3a...`), and keep names, emails and other personal data out of tags altogether: tags are stored as plain, indexed text and cannot be erased or
+redacted. Mark such fields once with `personal(...)` (from `@crablet/commands/Personal`) wherever they appear in an event or a command input, and the framework
+redacts them in the command audit and flags them in the API description; building an event whose tag repeats a personal value fails.
+
 Three things to notice:
 
 - `decide` is a **pure function** of the state and the input. It either returns `emit(...)` events or `fail(...)` with a typed error.

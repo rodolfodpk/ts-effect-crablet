@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
-import { REDACTED, hasPersonalData, personal, personalPaths, redact } from "../src/Personal.ts";
+import { REDACTED, hasPersonalData, personal, personalPaths, personalValues, redact } from "../src/Personal.ts";
+import * as Tag from "@crablet/eventstore/Tag";
 import { defineEvent } from "../src/Event.ts";
 
 const Address = Schema.Struct({ street: personal(Schema.String), city: Schema.String });
@@ -130,5 +131,51 @@ describe("redact", () => {
   test("a value that does not fit the schema's shape is returned unchanged", () => {
     expect(redact(Person, "not an object")).toBe("not an object");
     expect(redact(Schema.Struct({ xs: Schema.Array(personal(Schema.String)) }), { xs: "nope" })).toEqual({ xs: "nope" });
+  });
+});
+
+describe("personalValues", () => {
+  test("collects the (normalised) values at the marked paths, nested and in arrays and records", () => {
+    const value = {
+      id: "u1", email: " Ann@Example.com ", nick: "Annie", early: "XX", phone: "+55 11",
+      nested: { taxId: "123", ok: 1 }, addresses: [{ street: "Rua A", city: "SP" }], maybe: null, notes: { a: "Secret" }, amount: 3
+    };
+    expect([...personalValues(Person, value)].sort()).toEqual(["+55 11", "123", "ann@example.com", "annie", "rua a", "secret", "xx"].sort());
+  });
+
+  test("a marked object contributes every string and number inside it; absent values contribute nothing", () => {
+    const S = Schema.Struct({ contact: personal(Schema.Struct({ a: Schema.String, n: Schema.Int })), id: Schema.String });
+    expect(personalValues(S, { contact: { a: "X", n: 7 }, id: "i" })).toEqual(["x", "7"]);
+    expect(personalValues(Schema.Struct({ phone: Schema.optionalKey(personal(Schema.String)) }), {})).toEqual([]);
+  });
+});
+
+describe("the tag guard in defineEvent", () => {
+  const Data = Schema.Struct({ userId: Schema.String, email: personal(Schema.String), plan: Schema.String });
+
+  test("an event with no personal field is untouched", () => {
+    const Plain = defineEvent("Plain", { schema: Schema.Struct({ userId: Schema.String }), tags: (d) => ({ user_id: d.userId }) });
+    expect(Plain({ userId: "u1" }).tags.map((t) => t.value)).toEqual(["u1"]);
+  });
+
+  test("a tag that equals a personal field's value is refused, whatever its case or spacing", () => {
+    const Bad = defineEvent("Bad", { schema: Data, tags: (d) => ({ user_id: d.userId, email: d.email.toLowerCase() }) });
+    expect(() => Bad({ userId: "u1", email: "Ann@Example.com", plan: "pro" })).toThrow(/tag "email" carries a value that is also in a field marked personal/);
+    const Spaced = defineEvent("Spaced", { schema: Data, tags: (d) => ({ who: ` ${d.email} ` }) });
+    expect(() => Spaced({ userId: "u1", email: "ann@example.com", plan: "pro" })).toThrow(/tag "who"/);
+  });
+
+  test("a list of tags and a number are checked too; extra tags added at build time as well", () => {
+    const Many = defineEvent("Many", { schema: Schema.Struct({ ids: Schema.Array(Schema.String), secret: personal(Schema.String) }), tags: (d) => ({ id: d.ids }) });
+    expect(() => Many({ ids: ["a", "TOP"], secret: "top" })).toThrow(/tag "id"/);
+    expect(Many({ ids: ["a", "b"], secret: "top" }).tags.length).toBe(2);
+
+    const Extra = defineEvent("Extra", { schema: Data, tags: (d) => ({ user_id: d.userId }) });
+    expect(() => Extra({ userId: "u1", email: "ann@example.com", plan: "pro" }, [Tag.of("x", "ann@example.com")])).toThrow(/tag "x"/);
+  });
+
+  test("a value DERIVED from a personal field (an opaque id, a hash) is what a tag should use, and is accepted", () => {
+    const Good = defineEvent("Good", { schema: Data, tags: (d) => ({ user_id: d.userId, email_key: `h-${d.email.length}` }) });
+    expect(Good({ userId: "u1", email: "ann@example.com", plan: "pro" }).tags.map((t) => t.key).sort()).toEqual(["email_key", "user_id"]);
   });
 });

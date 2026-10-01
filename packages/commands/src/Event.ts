@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
+import { hasPersonalData, personalValues } from "./Personal.ts";
 
 // An event definition is the single source of truth for one kind of event: its type name, its
 // payload schema, which tags it carries, and how to query for it. Command handlers, models and
@@ -52,6 +53,24 @@ export const defineEvent = <
 ): EventDef<Type, Schema.Schema.Type<S>, Extract<keyof T, string>> => {
   const decode = Schema.decodeUnknownSync(def.schema as never) as (raw: unknown) => Schema.Schema.Type<S>;
 
+  const hasPersonal = hasPersonalData(def.schema as never);
+
+  // Tags are stored as plain, indexed text and can never be encrypted or redacted: personal data must not be in one.
+  // When the payload marks fields `personal(...)`, building the event fails (a defect, caught in tests) if any tag value
+  // equals one of them (compared trimmed and lower-cased, because tags are lower-cased). It catches direct reuse only: a
+  // value derived from a personal field (a hash, an opaque id) is exactly what a tag SHOULD use, and is not detected.
+  const guardTags = (data: Schema.Schema.Type<S>, tags: ReadonlyArray<Tag.Tag>): void => {
+    if (!hasPersonal) return;
+    const personalSet = new Set(personalValues(def.schema as never, data));
+    for (const tag of tags) {
+      if (personalSet.has(tag.value.trim().toLowerCase())) {
+        throw new Error(
+          `event "${type}": the tag "${tag.key}" carries a value that is also in a field marked personal(...). Tags are stored as plain indexed text and cannot be erased or redacted: tag an opaque id (or a hash) instead.`
+        );
+      }
+    }
+  };
+
   const build = (data: Schema.Schema.Type<S>, extraTags: ReadonlyArray<Tag.Tag> = []) => {
     const builder = AppendEvent.builder(type);
     // `tag` lower-cases the key and skips null/undefined values. A list value becomes one tag per
@@ -62,7 +81,9 @@ export const defineEvent = <
         : [value as TagValue | null | undefined];
       for (const one of values) builder.tag(key, one);
     }
-    return builder.tags(extraTags).data(data).build();
+    const built = builder.tags(extraTags).data(data).build();
+    guardTags(data, built.tags);
+    return built;
   };
 
   const where = (filter: Record<string, TagValue | undefined> = {}) =>

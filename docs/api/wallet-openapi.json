@@ -140,7 +140,12 @@
                     "type": "string"
                   },
                   "owner": {
-                    "type": "string"
+                    "type": "string",
+                    "allOf": [
+                      {
+                        "x-personal": true
+                      }
+                    ]
                   },
                   "initialBalance": {
                     "type": "number",

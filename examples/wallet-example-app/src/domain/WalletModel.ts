@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { defineEvent } from "@crablet/commands/Event";
 import { defineModel } from "@crablet/commands/Model";
+import { personal } from "@crablet/commands/Personal";
 import * as WalletTags from "./WalletTags.ts";
 
 // The wallet's events and its decision model, declared once. Each event owns its payload schema and
@@ -11,7 +12,7 @@ import * as WalletTags from "./WalletTags.ts";
 export const WalletOpened = defineEvent("WalletOpened", {
   schema: Schema.Struct({
     walletId: Schema.String,
-    owner: Schema.String,
+    owner: personal(Schema.String), // a person's name: marked once, so the audit, the log API and the description treat it as personal data
     initialBalance: Schema.Number,
     openedAt: Schema.String
   }),

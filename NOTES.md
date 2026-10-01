@@ -1040,3 +1040,10 @@ asserts the model directly (queries, fold, both regressions).
 - Retention: `purgeCommandAudit({ olderThan })` and `startAuditRetention({ olderThan, every })` (a detached fiber, off unless the app starts it). The table is not the source of truth, so deleting is safe.
 - Cost to know: one extra INSERT per created command (it is in the same transaction). `command.name` must be 1-64 characters (checked at definition) because the column is limited to 64.
 - `crablet_module_scan_progress` / `crablet_processor_scan_progress` remain unused.
+
+## Privacy P3 - the tag guard and the examples
+
+- `defineEvent` refuses to build an event whose tag value equals a value in a field marked `personal(...)` (trimmed, case-insensitive; list tags, numbers and `extraTags` included). It catches direct reuse only: a derived
+  value (a hash, an opaque id) is what a tag should use and is accepted. Events without personal fields are untouched.
+- Examples fixed: the wallet's `owner` is personal in `WalletOpened`, `OpenWallet`, `SendWelcomeNotification` and `WelcomeNotificationSent` (the wallet spec now flags it `x-personal`); the DCB opt-in-token example tags an opaque
+  `email_key` (sha-256 prefix) instead of the email; the username example keeps the handle as its uniqueness tag with a comment on the trade-off; the tutorial says to use opaque ids in real systems.

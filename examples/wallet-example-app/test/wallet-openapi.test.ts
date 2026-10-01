@@ -37,6 +37,13 @@ describe("wallet OpenAPI document", () => {
     expect(Object.keys(insufficient.properties.fields.properties).sort()).toEqual(["currentBalance", "requestedAmount", "walletId"]);
   });
 
+  test("personal data is flagged in the description: the owner's name is x-personal, balances and ids are not", () => {
+    const props = spec.paths["/api/commands/open_wallet"].post.requestBody.content["application/json"].schema.properties;
+    expect(JSON.stringify(props.owner)).toContain('"x-personal":true');
+    expect(JSON.stringify(props.walletId)).not.toContain("x-personal");
+    expect(JSON.stringify(props.initialBalance)).not.toContain("x-personal");
+  });
+
   test("problems are application/problem+json", () => {
     const notFound = spec.paths["/api/commands/deposit"].post.responses["404"].content;
     expect(Object.keys(notFound)).toEqual(["application/problem+json"]);

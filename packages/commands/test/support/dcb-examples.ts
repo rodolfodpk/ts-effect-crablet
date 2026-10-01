@@ -1,18 +1,22 @@
 // The four examples from https://dcb.events/examples/ (unique username, invoice number, dynamic product
 // price, opt-in token), written against this framework to see where the API fits and where it strains.
 // In the examples' words each decision reads events by TAG and appends under the resulting condition.
+import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { all, defineModel, type ModelInstance } from "../../src/Model.ts";
+import { personal } from "../../src/Personal.ts";
 import { afterLoad } from "./barrier.ts";
 
 const MINUTE = 60_000;
 
 // ---------------------------------------------------------------------------------------------
 // 1. Unique username
+// A username is a public handle used here as the uniqueness KEY, so it is the tag. Whether a handle counts as personal data is the
+// app's call; if it does, tag an opaque key derived from it instead (see the sign-up example below) - tags cannot be erased.
 // ---------------------------------------------------------------------------------------------
 export const AccountRegistered = defineEvent("AccountRegistered", {
   schema: Schema.Struct({ username: Schema.String }),
@@ -135,17 +139,21 @@ export const OrderProducts = defineCommand({
 // 4. Opt-in token: a one-time password confirms a sign-up once, within an hour
 // ---------------------------------------------------------------------------------------------
 export const TOKEN_TTL_MS = 60 * MINUTE;
+// The email is personal data, so it is marked `personal` and is NOT a tag (tags are plain indexed text and cannot be erased):
+// the events are found by an opaque key derived from it. `defineEvent` refuses a tag that equals a personal field's value.
+const emailKey = (email: string): string => createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 16);
+const signUpData = Schema.Struct({ email: personal(Schema.String), otp: Schema.String, name: personal(Schema.String) });
 export const SignUpInitiated = defineEvent("SignUpInitiated", {
-  schema: Schema.Struct({ email: Schema.String, otp: Schema.String, name: Schema.String }),
-  tags: (d) => ({ email: d.email.toLowerCase(), otp: d.otp })
+  schema: signUpData,
+  tags: (d) => ({ email_key: emailKey(d.email), otp: d.otp })
 });
 export const SignUpConfirmed = defineEvent("SignUpConfirmed", {
-  schema: Schema.Struct({ email: Schema.String, otp: Schema.String, name: Schema.String }),
-  tags: (d) => ({ email: d.email.toLowerCase(), otp: d.otp })
+  schema: signUpData,
+  tags: (d) => ({ email_key: emailKey(d.email), otp: d.otp })
 });
-// bound by email, scoped to the one otp being confirmed
+// bound by the email KEY, scoped to the one otp being confirmed
 const PendingSignUp = defineModel({
-  by: "email",
+  by: "email_key",
   initial: () => ({ initiatedAt: null as number | null, name: "", confirmed: false }),
   scope: (s: { otp: string }) => ({ otp: s.otp })
 })
@@ -158,8 +166,8 @@ const confirmSignUp = (name: string, wait: Effect.Effect<void>) =>
   defineCommand({
   name,
   errors: [TokenInvalid],
-  input: Schema.Struct({ email: Schema.String, otp: Schema.String, now: Schema.Number }),
-  model: (c) => afterLoad(PendingSignUp.of({ id: c.email.toLowerCase(), otp: c.otp }), wait),
+  input: Schema.Struct({ email: personal(Schema.String), otp: Schema.String, now: Schema.Number }),
+  model: (c) => afterLoad(PendingSignUp.of({ id: emailKey(c.email), otp: c.otp }), wait),
   decide: (s, c) =>
     s.initiatedAt === null
       ? fail(new TokenInvalid({ reason: "unknown" }))

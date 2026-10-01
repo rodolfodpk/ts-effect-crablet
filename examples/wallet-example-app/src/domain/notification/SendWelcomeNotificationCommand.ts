@@ -1,9 +1,10 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, emit } from "@crablet/commands/Command";
+import { personal } from "@crablet/commands/Personal";
 import * as WalletTags from "../WalletTags.ts";
 import { WelcomeNotificationSent } from "./WelcomeNotificationSent.ts";
 
-const input = Schema.Struct({ walletId: Schema.String, owner: Schema.String });
+const input = Schema.Struct({ walletId: Schema.String, owner: personal(Schema.String) });
 export type SendWelcomeNotificationCommand = Schema.Schema.Type<typeof input>;
 
 // Issued by the wallet-opened automation, not exposed over HTTP. Needs no state, and is idempotent per

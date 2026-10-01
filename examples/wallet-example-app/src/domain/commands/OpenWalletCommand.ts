@@ -1,10 +1,11 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, emit } from "@crablet/commands/Command";
+import { personal } from "@crablet/commands/Personal";
 import { NonBlank, NonNegative } from "../WalletInputs.ts";
 import { WalletOpened } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
-const input = Schema.Struct({ walletId: NonBlank, owner: NonBlank, initialBalance: NonNegative });
+const input = Schema.Struct({ walletId: NonBlank, owner: personal(NonBlank), initialBalance: NonNegative });
 export type OpenWalletCommand = Schema.Schema.Type<typeof input>;
 
 // Needs no state. Idempotent on the wallet id with onDuplicate "fail": a second "open" for the same
