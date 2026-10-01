@@ -954,3 +954,17 @@ asserts the model directly (queries, fold, both regressions).
   still takes a single value. Found while writing the dcb.events examples (`test/support/dcb-examples.ts`), where an
   order touches many products and a rename touches two usernames; both previously needed `extraTags` or two tag keys.
 - Each extra tag is one more (type, tag) append lock (V5), so keep lists modest.
+
+## Read your own writes (V6 + waitUntilProcessed)
+
+- `append_events_if` now returns the position of the last appended event (`V6__crablet_append_returns_position.sql`:
+  `append_events_batch` returns it, `last_position` in the JSONB result). `EventStore.append` returns
+  `AppendResult { transactionId, lastPosition }` (was the transaction id string); the in-memory store does the same,
+  and a conformance case checks both stores. `ExecutionResult.lastPosition` carries it (null for an idempotent repeat).
+- `@crablet/views/WaitUntilProcessed`: `waitUntilProcessed(subscription, position, { timeout, interval })` polls the view's
+  progress. "Caught up" is NOT "progress >= position": a view's cursor only lands on events its subscription matches, so a
+  command whose last event the view ignores would never reach it. A view has caught up when progress passed the position OR
+  no committed event the subscription matches remains in (progress, position] (`hasPendingSelectedEvents` in event-poller,
+  which, unlike the poller's own fetch, has no xmin visibility cut-off - it asks what exists, not what is safe to read yet).
+  Typed failures: `WaitTimeout` (reports how far the view got) and `ViewFailed` (status FAILED: fail fast).
+- Not done: waiting on outbox / automations progress (same idea, other progress tables); a poll-free wake-up via NOTIFY.

@@ -1,6 +1,7 @@
 import { Effect, Exit, Layer, Semaphore } from "effect";
 import { EventStore, existsProjector, type EventStoreService, type StoredEvent } from "../EventStore.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
+import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
 import { Conflict, Duplicate } from "../AppendErrors.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
@@ -40,7 +41,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   let transactionCounter = 0;
   const lock = Semaphore.makeUnsafe(1);
 
-  const store = (events: ReadonlyArray<AppendEvent>, correlationId: string | null, causationId: bigint | null): string => {
+  const store = (events: ReadonlyArray<AppendEvent>, correlationId: string | null, causationId: bigint | null): AppendResult => {
     const transactionId = String(++transactionCounter);
     for (const e of events) {
       log.push({
@@ -55,7 +56,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         causationId
       });
     }
-    return transactionId;
+    return { transactionId, lastPosition: BigInt(log.length) };
   };
 
   const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>

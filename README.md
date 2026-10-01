@@ -93,6 +93,20 @@ Errors declared with `DomainError(tag, { fields, kind })` carry a neutral `kind`
 `invalid`, `conflict`, `forbidden`); the REST API (`packages/commands-http`) maps kinds to 404/400/409/403
 with no per-command code, and will not let you expose a command whose errors it cannot present.
 
+## Reading your own writes
+
+Views are updated asynchronously, a moment after the command that caused the change. When a caller needs to see its
+own write (an HTTP response that shows the new balance), wait for the view to catch up to the command's position:
+
+```ts
+const result = yield* executor.run(Deposit, input);            // result.lastPosition: where its events ended
+yield* waitUntilProcessed(walletBalanceViewSubscription, result.lastPosition);   // @crablet/views/WaitUntilProcessed
+// ... one read of the view now includes the deposit
+```
+
+`lastPosition` is `null` for an idempotent repeat (nothing was appended), which returns at once. The wait fails with
+`WaitTimeout` if the view does not catch up in time and with `ViewFailed` if the view is marked FAILED.
+
 ## Packages
 
 | Package | What it is |

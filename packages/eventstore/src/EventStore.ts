@@ -4,6 +4,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
 import type { Tag } from "./Tag.ts";
 import type { AppendEvent } from "./AppendEvent.ts";
+import type { AppendResult } from "./AppendResult.ts";
 import * as AppendConditionNS from "./AppendCondition.ts";
 import type { AppendCondition } from "./AppendCondition.ts";
 import * as QueryNS from "./Query.ts";
@@ -72,11 +73,11 @@ export interface EventStoreService {
   // the append can also be refused with `Conflict` (something matching the concurrency query is newer
   // than the position the decision was made at) or `Duplicate` (the idempotency query already matches).
   readonly append: {
-    (events: ReadonlyArray<AppendEvent>): Effect.Effect<string, SqlError>;
+    (events: ReadonlyArray<AppendEvent>): Effect.Effect<AppendResult, SqlError>;
     (
       events: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
-    ): Effect.Effect<string, Conflict | Duplicate | SqlError>;
+    ): Effect.Effect<AppendResult, Conflict | Duplicate | SqlError>;
   };
 
   readonly project: <T>(
@@ -186,7 +187,7 @@ export const EventStoreLive = Layer.effect(
     const appendWith = (
       events: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
-    ): Effect.Effect<string, Conflict | Duplicate | SqlError> => {
+    ): Effect.Effect<AppendResult, Conflict | Duplicate | SqlError> => {
       if (events.length === 0) {
         return Effect.die("Cannot append empty events list");
       }

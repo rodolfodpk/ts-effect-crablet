@@ -22,19 +22,10 @@ export interface EventSelectionQuery {
   readonly params: ReadonlyArray<unknown>;
 }
 
-export const buildEventSelectionQuery = (
-  selection: EventSelection,
-  lastPosition: bigint,
-  batchSize: number
-): EventSelectionQuery => {
-  const clauses: Array<string> = [];
-  const params: Array<unknown> = [];
-  let paramIndex = 1;
-
-  clauses.push(`e.position > $${paramIndex++}`);
-  params.push(lastPosition.toString());
-
-  clauses.push("e.transaction_id < pg_snapshot_xmin(pg_current_snapshot())");
+// The selection's own clauses (types / required tags / any-of tags / exact tags), appended to `clauses`
+// and `params`. Shared by the poller's fetch and by "is anything still pending up to position p?".
+const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>, params: Array<unknown>): void => {
+  let paramIndex = params.length + 1;
 
   if (selection.eventTypes.size > 0) {
     clauses.push(`e.type = ANY($${paramIndex++})`);
@@ -60,8 +51,24 @@ export const buildEventSelectionQuery = (
     clauses.push(`e.tags @> $${paramIndex++}::text[]`);
     params.push(literals);
   }
+};
 
-  const limitParamIndex = paramIndex++;
+export const buildEventSelectionQuery = (
+  selection: EventSelection,
+  lastPosition: bigint,
+  batchSize: number
+): EventSelectionQuery => {
+  const clauses: Array<string> = [];
+  const params: Array<unknown> = [];
+
+  clauses.push(`e.position > $${params.length + 1}`);
+  params.push(lastPosition.toString());
+
+  clauses.push("e.transaction_id < pg_snapshot_xmin(pg_current_snapshot())");
+
+  pushSelectionClauses(selection, clauses, params);
+
+  const limitParamIndex = params.length + 1;
   params.push(batchSize);
 
   const sqlText =
@@ -70,6 +77,24 @@ export const buildEventSelectionQuery = (
     `FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.position ASC LIMIT $${limitParamIndex}`;
 
   return { sql: sqlText, params };
+};
+
+// Is there any COMMITTED event the selection matches with `after < position <= upTo`? Unlike the poller's
+// fetch this has no visibility cut-off: it asks about events that exist, not about what the poller may
+// safely read yet, so a view whose cursor is behind `upTo` only counts as caught up when none remain.
+export const buildPendingSelectionQuery = (
+  selection: EventSelection,
+  after: bigint,
+  upTo: bigint
+): EventSelectionQuery => {
+  const clauses: Array<string> = [];
+  const params: Array<unknown> = [];
+  clauses.push(`e.position > $${params.length + 1}`);
+  params.push(after.toString());
+  clauses.push(`e.position <= $${params.length + 1}`);
+  params.push(upTo.toString());
+  pushSelectionClauses(selection, clauses, params);
+  return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} LIMIT 1`, params };
 };
 
 export interface StoredEventRow {

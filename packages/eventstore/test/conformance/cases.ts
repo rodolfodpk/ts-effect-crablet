@@ -23,6 +23,22 @@ export interface ConformanceCase {
 
 export const cases: ReadonlyArray<ConformanceCase> = [
   {
+    name: "an append reports the position of its LAST event, and later appends report higher ones",
+    run: async (h) => {
+      const id = uid();
+      const first = await h.run(
+        Effect.flatMap(EventStore, (es) => es.append([ev("ConfPos", [["k", id]]), ev("ConfPos", [["k", id]]), ev("ConfPos", [["k", id]])]))
+      );
+      const { state } = await read(h, Query.forEventAndTag("ConfPos", "k", id));
+      assert.equal(state.length, 3);
+      assert.equal(first.lastPosition, state[2]!.position, "lastPosition is the third event's position");
+      assert.equal(typeof first.transactionId, "string");
+
+      const second = await h.run(Effect.flatMap(EventStore, (es) => es.append([ev("ConfPos", [["k", id]])])));
+      assert.ok(second.lastPosition > first.lastPosition);
+    }
+  },
+  {
     name: "an unconditional append stores the event; reading it back returns type, tags and data",
     run: async (h) => {
       const id = uid();

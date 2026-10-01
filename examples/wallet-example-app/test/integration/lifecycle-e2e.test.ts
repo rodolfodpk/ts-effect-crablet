@@ -2,15 +2,18 @@
 // app (background processors + HTTP server).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { CommandExecutorLive } from "@crablet/commands";
+import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
+import { walletBalanceViewSubscription } from "../../src/views/WalletViewConfig.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -116,5 +119,22 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
 
     await waitUntilAsync(() => getJson(`/api/wallets/${fromWalletId}`), (body) => body["balance"] === 125);
     await waitUntilAsync(() => getJson(`/api/wallets/${toWalletId}`), (body) => body["balance"] === 75);
+  });
+
+  it("read your own write: run a command, wait for the balance view, then read it ONCE (no polling)", async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    assert.strictEqual((await post("open_wallet", { walletId, owner: "Bea", initialBalance: 10 })).status, 201);
+    await waitUntilAsync(() => getJson(`/api/wallets/${walletId}`), (body) => body["balance"] === 10);
+
+    const result = await runtime.runPromise(
+      Effect.flatMap(CommandExecutor, (executor) =>
+        executor.run(Deposit, { depositId: crypto.randomUUID(), walletId, amount: 50, description: "gift" })
+      )
+    );
+    assert.ok(result.lastPosition !== null, "a command that appended events reports the position it reached");
+
+    await runtime.runPromise(waitUntilProcessed(walletBalanceViewSubscription, result.lastPosition));
+    const body = await getJson(`/api/wallets/${walletId}`); // a single read, no retry loop
+    assert.strictEqual(body["balance"], 60);
   });
 });

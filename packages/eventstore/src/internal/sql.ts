@@ -3,6 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { Tag } from "../Tag.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
+import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
 import type { Query } from "../Query.ts";
 import type { LogPosition } from "../LogPosition.ts";
@@ -62,6 +63,7 @@ interface AppendResultJson {
   readonly error_code?: "DCB_VIOLATION" | "IDEMPOTENCY_VIOLATION";
   readonly events_count?: number;
   readonly transaction_id?: string;
+  readonly last_position?: string;
 }
 
 export interface AppendOptions {
@@ -78,7 +80,7 @@ export const appendEventsIf = (
   events: ReadonlyArray<AppendEvent>,
   condition: AppendCondition,
   options?: AppendOptions
-): Effect.Effect<string, Conflict | Duplicate | SqlError> =>
+): Effect.Effect<AppendResult, Conflict | Duplicate | SqlError> =>
   Effect.gen(function* () {
     const types = events.map((e) => e.type);
     const tagLiterals = events.map((e) => encodeTagsLiteral(e.tags));
@@ -117,10 +119,10 @@ export const appendEventsIf = (
         : yield* new Conflict({ message: `AppendCondition violated: ${message}`, kind: "boundary" });
     }
 
-    if (!result.transaction_id) {
-      return yield* Effect.die("append_events_if returned success but no transaction_id");
+    if (!result.transaction_id || result.last_position === undefined) {
+      return yield* Effect.die("append_events_if returned success but no transaction_id / last_position");
     }
-    return result.transaction_id;
+    return { transactionId: result.transaction_id, lastPosition: BigInt(result.last_position) } satisfies AppendResult;
   });
 
 export interface StoredEventRow {

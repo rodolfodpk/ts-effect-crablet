@@ -8,7 +8,8 @@
     "./ViewProjector": "./src/ViewProjector.ts",
     "./ViewSubscription": "./src/ViewSubscription.ts",
     "./ViewsConfig": "./src/ViewsConfig.ts",
-    "./ViewManagementService": "./src/ViewManagementService.ts"
+    "./ViewManagementService": "./src/ViewManagementService.ts",
+    "./WaitUntilProcessed": "./src/WaitUntilProcessed.ts"
   },
   "dependencies": {
     "effect": "4.0.0-rc.118",

@@ -48,7 +48,7 @@ describe("EventStore public API parity (Phase 1)", () => {
     const result = await run(
       Effect.gen(function* () {
         const store = yield* EventStore;
-        const transactionId = yield* store.append([
+        const { transactionId } = yield* store.append([
           AppendEvent.of("SpikeTestEvent", "spike_id", spikeId, { hello: "world" })
         ]);
         const projection = yield* store.project(
@@ -202,7 +202,7 @@ describe("EventStore public API parity (Phase 1)", () => {
               commandId,
               new Date()
             );
-            const eventTransactionId = yield* store.append([
+            const { transactionId: eventTransactionId } = yield* store.append([
               AppendEvent.of("SpikeAuditEvent", "spike_id", spikeId, {})
             ]);
 
