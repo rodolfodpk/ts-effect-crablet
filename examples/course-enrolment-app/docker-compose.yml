@@ -1,0 +1,15 @@
+# A local Postgres for the tutorial (docs/tutorial/course-enrolment.md):   docker compose up -d
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: courses_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${COURSES_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d courses_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
