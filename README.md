@@ -66,6 +66,26 @@ const first  = await scenario.when(BookSeat, { seatId: "12A", guest: "Ann" });  
 const second = await scenario.when(BookSeat, { seatId: "12A", guest: "Bob" });  // second.error is a SeatTaken
 ```
 
+**Run it right now** - the three declarations above plus this scenario are a complete script,
+[`examples/quickstart/src/quickstart.ts`](./examples/quickstart/src/quickstart.ts); no database needed:
+
+```bash
+bun install
+node examples/quickstart/src/quickstart.ts
+```
+
+```text
+12A for Ann -> created: SeatBooked
+12A for Bob -> failed: SeatTaken
+12B for Bob -> created: SeatBooked
+12A for Cy, after a SeatBooked in the history -> failed: SeatTaken
+```
+
+You never load events yourself: when a command runs, the executor queries the events in the model's boundary
+(`SeatBooked` tagged `seat_id=12A`), folds them through the model's `.on` handlers into the state `decide` receives,
+and makes the append conditional on nothing newer having arrived in that boundary. The last line seeds the history
+with `given(SeatBooked(...))` to show it.
+
 **Run it** against Postgres with one layer:
 
 ```ts
@@ -78,7 +98,7 @@ const program = Effect.gen(function* () {
 Effect.runPromise(Effect.provide(program, AppLive));
 ```
 
-(The code above is tested: see [`packages/commands/test/quickstart.test.ts`](./packages/commands/test/quickstart.test.ts).)
+(The code above is tested: see [`packages/commands/test/quickstart.test.ts`](./packages/commands/test/quickstart.test.ts), and the script's output by [`examples/quickstart/test/quickstart.test.ts`](./examples/quickstart/test/quickstart.test.ts).)
 
 ## What a command can say
 

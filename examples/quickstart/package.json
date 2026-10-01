@@ -1,0 +1,13 @@
+{
+  "name": "quickstart",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/quickstart.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0-rc.118",
+    "@crablet/commands": "workspace:*"
+  }
+}
