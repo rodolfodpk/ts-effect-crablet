@@ -37,10 +37,12 @@ export const runStep2 = (conn: DbConnInfo, log: (line: string) => void = () => {
     const subscribe = (studentId: string, courseId: string) =>
       outcomeOf(executor.run(Subscribe, { studentId, courseId }), [[CourseFull, "CourseFull"]]);
 
+    // #region step2-race
     // Rule 1: a course holds at most `capacity` students. Two students race for the LAST seat.
     yield* executor.run(DefineCourse, { courseId: `physics-${id}`, capacity: 1 });
     const lastSeat = yield* Effect.all([subscribe(`ann-${id}`, `physics-${id}`), subscribe(`bob-${id}`, `physics-${id}`)], { concurrency: 2 });
     log(`two students race for the last seat: ${lastSeat.join(", ")}`);
+    // #endregion step2-race
 
     // Rule 2: a student takes at most 3 courses. The fourth is refused.
     const studentLimit: Array<"subscribed" | "StudentAtLimit"> = [];

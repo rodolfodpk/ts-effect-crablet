@@ -1011,3 +1011,14 @@ asserts the model directly (queries, fold, both regressions).
   command route declares `query` (views waitable) the client requires `query: {}`. Typed command clients come from an OpenAPI generator on the document.
 - README "HTTP API and OpenAPI"; `docs/adr/0011-http-api-from-the-domain-model.md` records the decisions (per-command routes, errors on the command, problem+json, checked-in
   description, read-your-writes outcome in the body, no GraphQL) and the changes for HTTP clients.
+
+## Tutorial - course enrolment (docs/tutorial/course-enrolment.md, examples/course-enrolment-app)
+
+- Four steps: (1) a capacity-only rule in memory (`tutorial/step1-capacity-only.test.ts`, no Docker); (2) the final two-rule domain against Postgres
+  (`docker compose up`, `src/migrate.ts`, `scripts/step2-postgres.ts`); (3) the HTTP API + generated OpenAPI (`src/CourseApp.ts`, checked-in
+  `docs/api/course-enrolment-openapi.json`); (4) a seats-left view, `GET /api/courses/:id` and `?waitFor=course-seats-view`.
+- It cannot rot: `test/tutorial-sync.test.ts` fails when a tagged code block differs from its `// #region` in the source (it caught a real drift while writing),
+  when a link / script / test path is missing, or when a curl URL is not a route of the checked-in spec.
+- Followed literally from a fresh `docker compose down -v` it reproduces the document's outputs verbatim (positions 10-14 included).
+- Honest limits: steps 2-4 need Docker (no in-memory executor, by decision); step 2's race is natural, not forced - the forced-overlap proofs for the same domain are in the commands
+  package's tests; the view projector guards redeliveries with `last_position`.

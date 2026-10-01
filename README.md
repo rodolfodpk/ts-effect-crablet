@@ -19,6 +19,9 @@ everything is wired with layers.
 
 ## Quick start
 
+> New here? [**The tutorial**](./docs/tutorial/course-enrolment.md) builds a small course-enrolment service in four steps - in memory, then Postgres,
+> then an HTTP API with a generated OpenAPI description, then read-your-writes - and every block in it is a tested file.
+
 A command is a pure decision over state derived from events. Three declarations (the packages are not
 published to npm yet; imports come from the workspace, e.g. `@crablet/commands/Command`):
 
@@ -150,6 +153,7 @@ untyped because they are built at run time). Why it is shaped this way: [ADR-001
 | `packages/automations` | Automations: react to an event by issuing a follow-up command |
 | `packages/commands-http` | A REST API over your commands, with RFC 7807 problem-detail errors |
 | `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations) |
+| `examples/course-enrolment-app` | The [tutorial](./docs/tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view with `?waitFor=` |
 | `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 
 ## Build & test
@@ -173,7 +177,8 @@ The coverage badge only covers the fast Bun unit suite, not the Postgres-backed 
 
 ## Learn more
 
-- [`examples/wallet-example-app`](./examples/wallet-example-app) - a complete application: commands, views, an automation, an outbox and HTTP.
+- [`docs/tutorial/course-enrolment.md`](./docs/tutorial/course-enrolment.md) - a 30-minute tutorial with a runnable example (`examples/course-enrolment-app`).
+- [`examples/wallet-example-app`](./examples/wallet-example-app) - a complete application at full size: commands, views, an automation, an outbox and HTTP.
 - [`docs/dcb-guide.md`](./docs/dcb-guide.md) - what a dynamic consistency boundary is, through two runnable examples (a transfer between two accounts; course enrolment), with their tests.
 - [`docs/adr/`](./docs/adr/README.md) - the lasting design decisions and why they were made. Start with [ADR-0010](./docs/adr/0010-declarative-command-api.md).
 - [`NOTES.md`](./NOTES.md) - a running log of findings, gotchas and phase-by-phase status.
