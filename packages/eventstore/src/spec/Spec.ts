@@ -1,7 +1,7 @@
 import type { AppendCondition } from "../AppendCondition.ts";
 import type { Query, QueryItem } from "../Query.ts";
 import type { Tag } from "../Tag.ts";
-
+import type { LogPosition } from "../LogPosition.ts";
 // The SPECIFICATION of reads and conditional appends, as pure functions over a list of events.
 //
 // The Postgres implementation (`append_events_if` and `queryEvents`) and the in-memory store both
@@ -14,6 +14,7 @@ export interface SpecEvent {
   readonly type: string;
   readonly tags: ReadonlyArray<Tag>;
   readonly position: bigint;
+  readonly transactionId?: string;
 }
 
 // An item matches an event when (types is empty OR the event's type is one of them) AND (the event
@@ -41,6 +42,14 @@ export const queryMatches = (query: Query, event: SpecEvent): boolean => {
 // query has no informative items performs no such check (as opposed to a read, where it matches all).
 export type Verdict = "ok" | "duplicate" | "conflict";
 
+// The cursor is a (transactionId, position) pair, compared in that order (the order a load returns events in);
+// a cursor or an event without a transaction id compares by position alone.
+const isAfterCursor = (e: SpecEvent, cursor: LogPosition): boolean =>
+  cursor.transactionId === null || e.transactionId === undefined
+    ? e.position > cursor.position
+    : BigInt(e.transactionId) > BigInt(cursor.transactionId) ||
+      (BigInt(e.transactionId) === BigInt(cursor.transactionId) && e.position > cursor.position);
+
 export const checkAppend = (log: ReadonlyArray<SpecEvent>, condition: AppendCondition): Verdict => {
   const idempotency = informativeItems(condition.idempotencyQuery);
   if (idempotency.length > 0 && log.some((e) => idempotency.some((i) => itemMatches(i, e)))) {
@@ -49,7 +58,7 @@ export const checkAppend = (log: ReadonlyArray<SpecEvent>, condition: AppendCond
   const concurrency = informativeItems(condition.concurrencyQuery);
   if (
     concurrency.length > 0 &&
-    log.some((e) => e.position > condition.afterPosition.position && concurrency.some((i) => itemMatches(i, e)))
+    log.some((e) => isAfterCursor(e, condition.afterPosition) && concurrency.some((i) => itemMatches(i, e)))
   ) {
     return "conflict";
   }

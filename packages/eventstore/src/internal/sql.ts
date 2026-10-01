@@ -43,7 +43,8 @@ const APPEND_EVENTS_IF_SQL = `
     $1::text[], $2::text[], $3::jsonb[],
     $4::jsonb, $5::bigint, $6::jsonb,
     $7::timestamptz, $8::uuid, $9::bigint,
-    $10::text, $11::text
+    $10::text, $11::text,
+    $12::xid8
   ) AS result
 `;
 
@@ -103,7 +104,9 @@ export const appendEventsIf = (
       correlationId,
       causationId === null ? null : causationId.toString(),
       options?.notifyChannel ?? null,
-      options?.notifyPayload ?? null
+      options?.notifyPayload ?? null,
+      // The cursor is a (transaction_id, position) pair; null (an old-style position) compares by position only.
+      concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null)
     ]);
 
     const result = rows[0]?.result;
@@ -134,6 +137,9 @@ export interface StoredEventRow {
   readonly occurred_at: Date;
   readonly correlation_id: string | null;
   readonly causation_id: string | null;
+  // True when the event's transaction had finished before this read's snapshot (xid below its xmin): every
+  // event that becomes visible later sorts AFTER the last settled one in (transaction_id, position) order.
+  readonly settled?: boolean;
 }
 
 // Reads the events matching a query after a position.
@@ -149,8 +155,14 @@ export const queryEvents = (
 
     let positionClause = "";
     if (after.position > 0n) {
-      positionClause = `position > $${paramIndex++}`;
-      params.push(after.position.toString());
+      if (after.transactionId !== null && after.transactionId !== "0") {
+        // A cursor from a previous load: (transaction_id, position) order, the order its events came back in.
+        positionClause = `(transaction_id, position) > ($${paramIndex++}::xid8, $${paramIndex++}::bigint)`;
+        params.push(after.transactionId, after.position.toString());
+      } else {
+        positionClause = `position > $${paramIndex++}`;
+        params.push(after.position.toString());
+      }
     }
 
     for (const item of query.items) {
@@ -177,7 +189,8 @@ export const queryEvents = (
     const sqlText =
       // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
       // ORDER BY uses the qualified column so it sorts by the real xid8, not the text alias.
-      "SELECT type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id " +
+      "SELECT type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, " +
+      "(transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled " +
       `FROM crablet_events${whereSql} ORDER BY crablet_events.transaction_id, position ASC`;
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
   });

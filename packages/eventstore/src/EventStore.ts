@@ -171,7 +171,13 @@ export const EventStoreLive = Layer.effect(
               state = projector.transition(state, event);
             }
           }
-          lastLogPosition = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
+          // The cursor only advances over SETTLED events (their transaction had finished when we read): an
+          // event that commits later can have a lower position than one we loaded, but never a lower
+          // (transaction_id, position) than the last settled one. A loaded-but-unsettled event stays above the
+          // cursor, so the append condition reports it as a conflict and the command is retried with it settled.
+          if (row.settled !== false) {
+            lastLogPosition = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
+          }
         }
 
         return { state: state as T, logPosition: lastLogPosition };
