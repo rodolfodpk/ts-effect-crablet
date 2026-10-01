@@ -12,6 +12,25 @@
         "typescript": "7.0.2",
       },
     },
+    "examples/course-enrolment-app": {
+      "name": "course-enrolment-app",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/commands": "workspace:*",
+        "@crablet/commands-http": "workspace:*",
+        "@crablet/db-migrations": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/views": "workspace:*",
+        "@effect/platform-node": "4.0.0-rc.118",
+        "@effect/sql-pg": "4.0.0-rc.118",
+        "effect": "4.0.0-rc.118",
+        "pg": "8.23.0",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+      },
+    },
     "examples/wallet-example-app": {
       "name": "wallet-example-app",
       "version": "0.0.0",
@@ -367,6 +386,8 @@
     "compress-commons": ["compress-commons@6.0.2", "", { "dependencies": { "crc-32": "^1.2.0", "crc32-stream": "^6.0.0", "is-stream": "^2.0.1", "normalize-path": "^3.0.0", "readable-stream": "^4.0.0" } }, "sha512-6FqVXeETqWPoGcfzrXb37E50NP0LXT8kAMu5ooZayhWWdgEY4lBEEcbQNXtkuKQsGduxiIcI4gOTsxTmuq/bSg=="],
 
     "core-util-is": ["core-util-is@1.0.3", "", {}, "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ=="],
+
+    "course-enrolment-app": ["course-enrolment-app@workspace:examples/course-enrolment-app"],
 
     "cpu-features": ["cpu-features@0.0.10", "", { "dependencies": { "buildcheck": "~0.0.6", "nan": "^2.19.0" } }, "sha512-9IkYqtX3YHPCzoVg1Py+o9057a3i0fp7S530UWokCSaFVTc7CwXPRiOjRjBQQ18ZCNafx78YfnG+HALxtVmOGA=="],
 

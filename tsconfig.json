@@ -18,6 +18,7 @@
     "packages/*/src/**/*.ts",
     "packages/*/test/**/*.ts",
     "examples/*/src/**/*.ts",
-    "examples/*/test/**/*.ts"
+    "examples/*/test/**/*.ts",
+    "examples/*/tutorial/**/*.ts"
   ]
 }

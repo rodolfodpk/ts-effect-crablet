@@ -1,0 +1,26 @@
+{
+  "name": "course-enrolment-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.ts",
+    "migrate": "node src/migrate.ts",
+    "docs:api": "node scripts/generate-openapi.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0-rc.118",
+    "@effect/sql-pg": "4.0.0-rc.118",
+    "@effect/platform-node": "4.0.0-rc.118",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/commands": "workspace:*",
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/views": "workspace:*",
+    "@crablet/commands-http": "workspace:*",
+    "@crablet/db-migrations": "workspace:*",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*"
+  }
+}
