@@ -4,12 +4,12 @@ import type { SqlError } from "effect/sql/SqlError";
 
 // What the command API needs to know about a view in order to let a request wait for it ("read your own
 // writes", see @crablet/views/WaitUntilProcessed): a function that resolves once the view has caught up to a
-// log position. The app supplies one per view name; this package never imports the views package, it only
+// write (a log position and the transaction that appended it). The app supplies one per view name; this package never imports the views package, it only
 // needs the function and the two outcomes it distinguishes (the failure shapes below are structurally the ones
 // `waitUntilProcessed` fails with, so it can be passed as is):
 //
 //     viewWaiters: {
-//       "wallet-balance-view": (position, { timeout }) => waitUntilProcessed(walletBalanceViewSubscription, position, { timeout })
+//       "wallet-balance-view": (write, { timeout }) => waitUntilProcessed(walletBalanceViewSubscription, write, { timeout })
 //     }
 export interface ViewWaitTimeout {
   readonly _tag: "WaitTimeout";
@@ -18,8 +18,13 @@ export interface ViewWaitTimeout {
 export interface ViewWaitFailed {
   readonly _tag: "ViewFailed";
 }
+// The point in the log a command's events reached. Structurally a ProgressCursor of the pollers.
+export interface WriteMarker {
+  readonly transactionId: string;
+  readonly position: bigint;
+}
 export type ViewWaiter = (
-  position: bigint,
+  write: WriteMarker,
   options: { readonly timeout: Duration.Duration }
 ) => Effect.Effect<void, ViewWaitTimeout | ViewWaitFailed | SqlError, SqlClient.SqlClient>;
 

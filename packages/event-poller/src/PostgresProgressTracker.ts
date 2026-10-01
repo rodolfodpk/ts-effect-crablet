@@ -3,6 +3,8 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { ProgressTableNotReady, type ProgressTracker } from "./ProgressTracker.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import * as ProgressCursorNS from "./ProgressCursor.ts";
+import type { ProgressCursor } from "./ProgressCursor.ts";
 import { assertSafeIdentifier } from "./internal/identifiers.ts";
 
 // Single-key progress table shape (matches crablet_view_progress/crablet_automation_progress in
@@ -57,22 +59,28 @@ export const makePostgresProgressTracker = <I extends string>(
         (rows) => rows[0]?.status ?? "ACTIVE"
       );
 
-    const getLastPosition = (id: I): Effect.Effect<bigint, SqlError | ProgressTableNotReady> =>
+    // transaction ids are xid8, which the Postgres client has no binary codec for: read as text, write with a cast.
+    const getCursor = (id: I): Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady> =>
       mapTableNotReady(
         Effect.map(
-          sql.unsafe<{ last_position: string }>(
-            `SELECT last_position FROM ${table} WHERE ${idCol} = $1`,
+          sql.unsafe<{ last_position: string; last_transaction_id: string }>(
+            `SELECT last_position::text AS last_position, last_transaction_id::text AS last_transaction_id
+             FROM ${table} WHERE ${idCol} = $1`,
             [id]
           ),
-          (rows) => (rows[0] ? BigInt(rows[0].last_position) : 0n)
+          (rows) =>
+            rows[0]
+              ? ProgressCursorNS.of(rows[0].last_transaction_id, BigInt(rows[0].last_position))
+              : ProgressCursorNS.zero
         )
       );
 
-    const updateProgress = (id: I, position: bigint): Effect.Effect<void, SqlError> =>
+    const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void, SqlError> =>
       Effect.asVoid(
         sql.unsafe(
-          `UPDATE ${table} SET last_position = $2, last_updated_at = now() WHERE ${idCol} = $1`,
-          [id, position.toString()]
+          `UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
+           WHERE ${idCol} = $1`,
+          [id, cursor.position.toString(), cursor.transactionId]
         )
       );
 
@@ -107,8 +115,8 @@ export const makePostgresProgressTracker = <I extends string>(
       );
 
     const tracker: ProgressTracker<I> = {
-      getLastPosition,
-      updateProgress,
+      getCursor,
+      updateCursor,
       recordError,
       resetErrorCount,
       getStatus,

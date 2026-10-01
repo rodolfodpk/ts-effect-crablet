@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventFetcher } from "./EventFetcher.ts";
 import type { EventSelection } from "./EventSelection.ts";
+import type { ProgressCursor } from "./ProgressCursor.ts";
 import { buildEventSelectionQuery, buildPendingSelectionQuery, parseStoredEventRow, type StoredEventRow } from "./internal/sql.ts";
 
 // A generic, selection-keyed EventFetcher against crablet_events/crablet_event_tags - the query
@@ -24,9 +25,9 @@ export const makeSqlEventFetcher = <I>(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
-    const fetchEvents = (_processorId: I, lastPosition: bigint, batchSize: number) =>
+    const fetchEvents = (_processorId: I, cursor: ProgressCursor, batchSize: number) =>
       Effect.gen(function* () {
-        const query = buildEventSelectionQuery(selection, lastPosition, batchSize);
+        const query = buildEventSelectionQuery(selection, cursor, batchSize);
         const rows = yield* sql.unsafe<StoredEventRow>(query.sql, query.params);
         return rows.map(parseStoredEventRow);
       });
@@ -35,14 +36,14 @@ export const makeSqlEventFetcher = <I>(
     return fetcher;
   });
 
-// Is there any committed event `selection` matches with `after < position <= upTo`? Answers "has a
+// Is there any committed event `selection` matches in `(after, upTo]`, in (transaction_id, position) order? Answers "has a
 // consumer of this selection got everything up to `upTo`?" (nothing left for it to process there),
 // which is not the same as its cursor having reached `upTo`: a cursor only ever lands on events the
 // selection matched.
 export const hasPendingSelectedEvents = (
   selection: EventSelection,
-  after: bigint,
-  upTo: bigint
+  after: ProgressCursor,
+  upTo: ProgressCursor
 ): Effect.Effect<boolean, SqlError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

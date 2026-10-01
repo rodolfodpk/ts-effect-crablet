@@ -40,7 +40,7 @@ const courseCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
 // processed the write, so the caller's next read is not stale. commands-http never imports the views package; this
 // map is the whole connection.
 const courseViewWaiters: Readonly<Record<string, ViewWaiter>> = {
-  [COURSE_SEATS_VIEW]: (position, { timeout }) => waitUntilProcessed(courseSeatsViewSubscription, position, { timeout })
+  [COURSE_SEATS_VIEW]: (write, { timeout }) => waitUntilProcessed(courseSeatsViewSubscription, write, { timeout })
 };
 // #endregion wait-for
 

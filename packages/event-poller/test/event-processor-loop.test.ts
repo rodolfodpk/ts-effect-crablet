@@ -11,11 +11,11 @@ import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.
 import { makeInMemoryEventFetcher } from "./fixtures/InMemoryEventFetcher.ts";
 import { makeInMemoryEventHandler } from "./fixtures/InMemoryEventHandler.ts";
 
-const storedEvent = (position: bigint, type = "TestEvent"): StoredEvent => ({
+const storedEvent = (position: bigint, type = "TestEvent", transactionId = position.toString()): StoredEvent => ({
   type,
   tags: [],
   data: {},
-  transactionId: position.toString(),
+  transactionId,
   position,
   occurredAt: new Date(0),
   correlationId: null,
@@ -139,8 +139,23 @@ describe("EventProcessor.process (direct call, no leadership gate)", () => {
 
     const handled = await run(handle.service.process(PROCESSOR_ID));
     expect(handled).toBe(2);
-    expect(await run(tracker.getLastPosition(PROCESSOR_ID))).toBe(2n);
+    expect((await run(tracker.getCursor(PROCESSOR_ID))).position).toBe(2n);
     expect((await run(handlerHandle.handledBatches)).length).toBe(1);
+  });
+
+  test("a row with a LOWER position but a HIGHER transaction id than one already handled is not skipped", async () => {
+    const { handle, eventsRef, tracker, handlerHandle } = await run(makeHarness());
+    // T1 (xid 10) got position 6; T2 (xid 11) got position 5. T1 commits first, so only its row is there at first.
+    await run(Ref.set(eventsRef, [storedEvent(6n, "Late", "10")]));
+    expect(await run(handle.service.process(PROCESSOR_ID))).toBe(1);
+
+    // T2 commits afterwards: position 5 is BELOW the cursor's position, but after it in (xid, position) order.
+    await run(Ref.set(eventsRef, [storedEvent(6n, "Late", "10"), storedEvent(5n, "Early", "11")]));
+    expect(await run(handle.service.process(PROCESSOR_ID))).toBe(1);
+
+    const handled = (await run(handlerHandle.handledBatches)).flat().map((e) => e.type);
+    expect(handled).toEqual(["Late", "Early"]);
+    expect((await run(tracker.getCursor(PROCESSOR_ID))).transactionId).toBe("11");
   });
 
   test("unknown processorId is a defect (Effect.die), not a typed failure", async () => {
@@ -155,7 +170,7 @@ describe("EventProcessor.process (direct call, no leadership gate)", () => {
 
     const exit = await run(Effect.exit(handle.service.process(PROCESSOR_ID)));
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(await run(tracker.getLastPosition(PROCESSOR_ID))).toBe(0n);
+    expect((await run(tracker.getCursor(PROCESSOR_ID))).position).toBe(0n);
     expect(await run(tracker.getStatus(PROCESSOR_ID))).toBe("ACTIVE"); // 1 error, well under maxErrors=10
   });
 });
@@ -193,7 +208,7 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
       yield* handle.service.start;
 
       // First tick should have already consumed the one available event.
-      const posAfterFirstTick = yield* waitUntil(tracker.getLastPosition(PROCESSOR_ID), (p) => p === 1n);
+      const posAfterFirstTick = yield* waitUntil(Effect.map(tracker.getCursor(PROCESSOR_ID), (c) => c.position), (p) => p === 1n);
       expect(posAfterFirstTick).toBe(1n);
       expect((yield* handlerHandle.handledBatches).length).toBe(1);
 
@@ -209,17 +224,17 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
       // backoff delay would otherwise elapse.
       yield* Ref.set(eventsRef, [storedEvent(1n), storedEvent(2n)]);
       yield* Queue.offer(wakeupQueue, { wildcard: true, types: new Set<string>(), tagKeys: new Set<string>() });
-      const posAfterWakeup = yield* waitUntil(tracker.getLastPosition(PROCESSOR_ID), (p) => p === 2n);
+      const posAfterWakeup = yield* waitUntil(Effect.map(tracker.getCursor(PROCESSOR_ID), (c) => c.position), (p) => p === 2n);
       expect(posAfterWakeup).toBe(2n);
 
       yield* handle.service.stop;
-      const statusesBeforeMoreTime = yield* tracker.getLastPosition(PROCESSOR_ID);
+      const statusesBeforeMoreTime = (yield* tracker.getCursor(PROCESSOR_ID)).position;
 
       // Nothing further happens after stop, even as we push more events and advance time.
       yield* Ref.set(eventsRef, [storedEvent(1n), storedEvent(2n), storedEvent(3n)]);
       yield* TestClock.adjust("10000 millis");
       for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
-      expect(yield* tracker.getLastPosition(PROCESSOR_ID)).toBe(statusesBeforeMoreTime);
+      expect((yield* tracker.getCursor(PROCESSOR_ID)).position).toBe(statusesBeforeMoreTime);
     });
 
     await Effect.runPromise(Effect.provide(program, TestClock.layer()));

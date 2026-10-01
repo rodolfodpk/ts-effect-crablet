@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
 import { makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
 import type { SqlClient } from "effect/sql";
+import * as ProgressCursorNS from "../src/ProgressCursor.ts";
 
 const KNOWN_IDS = ["view-a", "view-b"] as const;
 
@@ -57,13 +58,13 @@ describe("ProcessorManagementService lifecycle", () => {
 
   test("reset clears error count and re-activates a FAILED processor, without rewinding position", async () => {
     const { tracker, management } = await run(setup());
-    await run(tracker.updateProgress("view-a", 42n));
+    await run(tracker.updateCursor("view-a", ProgressCursorNS.of("42", 42n)));
     for (let i = 0; i < 10; i++) await run(tracker.recordError("view-a", "boom", 10));
     expect(await run(tracker.getStatus("view-a"))).toBe("FAILED");
 
     expect(await run(management.reset("view-a"))).toBe(true);
     expect(await run(tracker.getStatus("view-a"))).toBe("ACTIVE");
-    expect(await run(tracker.getLastPosition("view-a"))).toBe(42n);
+    expect((await run(tracker.getCursor("view-a"))).position).toBe(42n);
   });
 
   test("getAllStatuses reflects only known processorIds", async () => {

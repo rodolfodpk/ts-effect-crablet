@@ -10,6 +10,7 @@ import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { makeSqlEventFetcher } from "../../src/SqlEventFetcher.ts";
 import * as EventSelection from "../../src/EventSelection.ts";
+import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<EventStore | SqlClient.SqlClient, never>;
@@ -54,7 +55,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
         const fetcher = yield* makeSqlEventFetcher<string>(
           EventSelection.of({ eventTypes: new Set(["FetchTestTypeA"]) })
         );
-        return yield* fetcher.fetchEvents("proc", 0n, 1000);
+        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -84,7 +85,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
         const fetcher = yield* makeSqlEventFetcher<string>(
           EventSelection.of({ eventTypes: new Set(["FetchTestRequired"]), requiredTags: new Set(["k1", "k2"]) })
         );
-        return yield* fetcher.fetchEvents("proc", 0n, 1000);
+        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -110,7 +111,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
         const fetcher = yield* makeSqlEventFetcher<string>(
           EventSelection.of({ eventTypes: new Set(["FetchTestAnyOf"]), anyOfTags: new Set(["k1", "k9"]) })
         );
-        return yield* fetcher.fetchEvents("proc", 0n, 1000);
+        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -139,7 +140,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
             exactTags: new Map([["status", "open"]])
           })
         );
-        return yield* fetcher.fetchEvents("proc", 0n, 1000);
+        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -166,7 +167,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
         const fetcher = yield* makeSqlEventFetcher<string>(
           EventSelection.of({ exactTags: new Map([["marker", marker]]) })
         );
-        return yield* fetcher.fetchEvents("proc", 0n, 2);
+        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 2);
       })
     );
 
@@ -218,11 +219,11 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
           const fetcher = yield* makeSqlEventFetcher<string>(
             EventSelection.of({ exactTags: new Map([["marker", `${marker}A`]]) })
           );
-          const a = yield* fetcher.fetchEvents("proc", 0n, 1000);
+          const a = yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
           const fetcherB = yield* makeSqlEventFetcher<string>(
             EventSelection.of({ exactTags: new Map([["marker", `${marker}B`]]) })
           );
-          const b = yield* fetcherB.fetchEvents("proc", 0n, 1000);
+          const b = yield* fetcherB.fetchEvents("proc", ProgressCursorNS.zero, 1000);
           return { a, b };
         })
       );
@@ -239,7 +240,7 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () 
           const fetcher = yield* makeSqlEventFetcher<string>(
             EventSelection.of({ eventTypes: new Set(["GapTestEvent"]) })
           );
-          return yield* fetcher.fetchEvents("proc", 0n, 1000);
+          return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
         })
       );
       const markersSeen = rowsAfterCommit

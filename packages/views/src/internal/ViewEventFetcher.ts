@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventFetcher } from "@crablet/event-poller/EventFetcher";
+import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import type { ViewSubscription } from "../ViewSubscription.ts";
 
@@ -20,12 +21,12 @@ export const makeViewEventFetcher = (
 
     const fetchEvents = (
       viewName: string,
-      lastPosition: bigint,
+      cursor: ProgressCursor,
       batchSize: number
     ): Effect.Effect<ReadonlyArray<StoredEvent>, SqlError, never> => {
       const fetcher = fetchers.get(viewName);
       return fetcher
-        ? fetcher.fetchEvents(viewName, lastPosition, batchSize)
+        ? fetcher.fetchEvents(viewName, cursor, batchSize)
         : Effect.die(new Error(`Unknown view: ${viewName}`));
     };
 

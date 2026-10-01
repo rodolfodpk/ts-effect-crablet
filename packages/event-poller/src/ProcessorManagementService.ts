@@ -70,7 +70,7 @@ export const makeProcessorManagementService = <I>(
   // null if either side is null (empty events table, or no progress row yet).
   const getLag = (id: I): Effect.Effect<bigint | null, unknown> =>
     Effect.gen(function* () {
-      const lastPosition = yield* deps.progressTracker.getLastPosition(id);
+      const { position: lastPosition } = yield* deps.progressTracker.getCursor(id);
       const rows = yield* deps.sql.unsafe<{ lag: string | null }>(
         "SELECT (SELECT MAX(position) FROM crablet_events) - $1::bigint AS lag",
         [lastPosition.toString()]

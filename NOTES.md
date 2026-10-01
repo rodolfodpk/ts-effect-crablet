@@ -1047,3 +1047,9 @@ asserts the model directly (queries, fold, both regressions).
   value (a hash, an opaque id) is what a tag should use and is accepted. Events without personal fields are untouched.
 - Examples fixed: the wallet's `owner` is personal in `WalletOpened`, `OpenWallet`, `SendWelcomeNotification` and `WelcomeNotificationSent` (the wallet spec now flags it `x-personal`); the DCB opt-in-token example tags an opaque
   `email_key` (sha-256 prefix) instead of the email; the username example keeps the handle as its uniqueness tag with a comment on the trade-off; the tutorial says to use opaque ids in real systems.
+
+## Cursor fix - (transaction_id, position) (docs/adr/0012-transaction-position-cursors.md)
+- Found by a stress test: pollers permanently skipped 0.05-0.09% of events under concurrent writers, and the append condition could miss a conflict. Cause: `position` (nextval) and `transaction_id` (xid) can be taken in opposite orders, and `nextval()` itself assigns the transaction an xid. The deterministic reproductions are `packages/event-poller/test/integration/cursor-inversion.test.ts` and `packages/eventstore/test/integration/append-cursor-inversion.test.ts`.
+- V7 (append condition cursor) and V8 (progress tables, with a backfill that cannot put an undelivered event behind the cursor). Interfaces changed: `getCursor/updateCursor`, `fetchEvents(id, cursor, n)`, `waitUntilProcessed(sub, write)`, `ExecutionResult.lastTransactionId`.
+- Process: the integration suite starts one Postgres container per file; with 30+ files in parallel an occasional "before hook" hits its 60 s limit. Re-run the failing files alone before suspecting the code.
+

@@ -67,7 +67,8 @@ const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => b
 
 const getLastPosition = (viewName: string) =>
   run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }).pipe(
-    Effect.flatMap((t) => t.getLastPosition(viewName))
+    Effect.flatMap((t) => t.getCursor(viewName)),
+    Effect.map((cursor) => cursor.position)
   ));
 
 const getStatus = (viewName: string) =>

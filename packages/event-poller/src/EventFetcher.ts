@@ -1,7 +1,9 @@
 import type { Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
+import type { ProgressCursor } from "./ProgressCursor.ts";
 
-// Fetches the next batch of events for a processor. Failures go in Effect's typed error channel -
+// Fetches the next batch of events for a processor: the events AFTER `cursor` in (transaction_id, position)
+// order, from transactions that have finished (see ProgressCursor.ts). Failures go in Effect's typed error channel -
 // E defaults to `never` for fetchers that can't fail beyond defects.
 //
 // PATTERN NOTE - generic type parameters with defaults (`E = never, R = never`). Any concrete `EventFetcher` implementation fills in its OWN error/requirement types
@@ -14,7 +16,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 export interface EventFetcher<I, E = never, R = never> {
   readonly fetchEvents: (
     processorId: I,
-    lastPosition: bigint,
+    cursor: ProgressCursor,
     batchSize: number
   ) => Effect.Effect<ReadonlyArray<StoredEvent>, E, R>;
 }

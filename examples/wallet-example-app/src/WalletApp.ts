@@ -22,7 +22,7 @@ import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
 import { exposedCommandOf, type ExposedCommand } from "@crablet/commands-http/ExposedCommand";
-import type { ViewWaiter } from "@crablet/commands-http/ViewWaiter";
+import type { ViewWaiter, WriteMarker } from "@crablet/commands-http/ViewWaiter";
 import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
 import { makeWalletTransactionViewProjector } from "./views/WalletTransactionViewProjector.ts";
 import { makeWalletSummaryViewProjector } from "./views/WalletSummaryViewProjector.ts";
@@ -172,7 +172,7 @@ const walletViewWaiters: Readonly<Record<string, ViewWaiter>> = Object.fromEntri
   walletViewSubscriptions.map(
     (subscription) => [
       subscription.viewName,
-      (position: bigint, { timeout }: { readonly timeout: Duration.Duration }) => waitUntilProcessed(subscription, position, { timeout })
+      (write: WriteMarker, { timeout }: { readonly timeout: Duration.Duration }) => waitUntilProcessed(subscription, write, { timeout })
     ]
   )
 );

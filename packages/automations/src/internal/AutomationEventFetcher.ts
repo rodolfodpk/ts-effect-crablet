@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventFetcher } from "@crablet/event-poller/EventFetcher";
+import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
@@ -26,12 +27,12 @@ export const makeAutomationEventFetcher = (
 
     const fetchEvents = (
       automationName: string,
-      lastPosition: bigint,
+      cursor: ProgressCursor,
       batchSize: number
     ): Effect.Effect<ReadonlyArray<StoredEvent>, SqlError, never> => {
       const fetcher = fetchers.get(automationName);
       return fetcher
-        ? fetcher.fetchEvents(automationName, lastPosition, batchSize)
+        ? fetcher.fetchEvents(automationName, cursor, batchSize)
         : Effect.die(new Error(`Unknown automation: ${automationName}`));
     };
 

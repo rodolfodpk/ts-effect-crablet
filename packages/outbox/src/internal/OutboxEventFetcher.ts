@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventFetcher } from "@crablet/event-poller/EventFetcher";
+import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { fromKey } from "../TopicPublisherPair.ts";
 import type { TopicConfig } from "../TopicConfig.ts";
@@ -22,13 +23,13 @@ export const makeOutboxEventFetcher = (
 
     const fetchEvents = (
       key: string,
-      lastPosition: bigint,
+      cursor: ProgressCursor,
       batchSize: number
     ): Effect.Effect<ReadonlyArray<StoredEvent>, SqlError, never> => {
       const { topic } = fromKey(key);
       const fetcher = fetchers.get(topic);
       return fetcher
-        ? fetcher.fetchEvents(key, lastPosition, batchSize)
+        ? fetcher.fetchEvents(key, cursor, batchSize)
         : Effect.die(new Error(`Unknown topic: ${topic}`));
     };
 

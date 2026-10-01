@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/EventProcessor.ts",
     "./EventSelection": "./src/EventSelection.ts",
+    "./ProgressCursor": "./src/ProgressCursor.ts",
     "./EventFetcher": "./src/EventFetcher.ts",
     "./EventHandler": "./src/EventHandler.ts",
     "./ProcessorStatus": "./src/ProcessorStatus.ts",

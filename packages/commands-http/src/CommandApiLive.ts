@@ -145,9 +145,9 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       const view =
         wait === null
           ? undefined
-          : result.lastPosition === null
+          : result.lastPosition === null || result.lastTransactionId === null
             ? { name: wait.name, caughtUp: false, reason: "nothing_appended" as const }
-            : yield* wait.waiter(result.lastPosition, { timeout: Duration.millis(wait.timeoutMs) }).pipe(
+            : yield* wait.waiter({ transactionId: result.lastTransactionId, position: result.lastPosition }, { timeout: Duration.millis(wait.timeoutMs) }).pipe(
                 Effect.match({
                   onSuccess: () => ({ name: wait.name, caughtUp: true }),
                   onFailure: (e) => ({

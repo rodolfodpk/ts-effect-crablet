@@ -3,6 +3,8 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { ProgressTableNotReady, type ProgressTracker } from "@crablet/event-poller/ProgressTracker";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
+import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
+import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import { fromKey } from "../TopicPublisherPair.ts";
 
 // The Postgres error (with its SQLSTATE `code`) is the `cause` of the SqlError's `reason`.
@@ -13,7 +15,7 @@ const isUndefinedTable = (error: SqlError): boolean =>
 // (topic, publisher)-PK table `crablet_outbox_topic_progress`, since event-poller's
 // makePostgresProgressTracker assumes a single VARCHAR PK column that doesn't fit this schema.
 // `instanceId` is captured once at construction (like EventStoreLive captures `sql` once) because
-// ProgressTracker<I>.getLastPosition's interface signature takes no instanceId argument, yet it
+// ProgressTracker<I>.getCursor's interface signature takes no instanceId argument, yet it
 // still needs one to refresh leader_instance/leader_heartbeat on every call (see below).
 export const makeOutboxProgressTracker = (
   instanceId: string
@@ -44,31 +46,34 @@ export const makeOutboxProgressTracker = (
     // to fetch, so the heartbeat stays a real liveness signal during idle periods too, matching
     // what the migration's own column comment claims it means (no failover logic consumes it yet -
     // see the Phase 4 plan's heartbeat-design note).
-    const getLastPosition = (key: string): Effect.Effect<bigint, SqlError | ProgressTableNotReady> => {
+    const getCursor = (key: string): Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady> => {
       const { topic, publisher } = fromKey(key);
       return mapTableNotReady(
         Effect.map(
-          sql.unsafe<{ last_position: string }>(
+          sql.unsafe<{ last_position: string; last_transaction_id: string }>(
             `UPDATE crablet_outbox_topic_progress
              SET leader_instance = $3, leader_heartbeat = now()
              WHERE topic = $1 AND publisher = $2
-             RETURNING last_position`,
+             RETURNING last_position::text AS last_position, last_transaction_id::text AS last_transaction_id`,
             [topic, publisher, instanceId]
           ),
-          (rows) => (rows[0] ? BigInt(rows[0].last_position) : 0n)
+          (rows) =>
+            rows[0]
+              ? ProgressCursorNS.of(rows[0].last_transaction_id, BigInt(rows[0].last_position))
+              : ProgressCursorNS.zero
         )
       );
     };
 
-    const updateProgress = (key: string, position: bigint): Effect.Effect<void, SqlError> => {
+    const updateCursor = (key: string, cursor: ProgressCursor): Effect.Effect<void, SqlError> => {
       const { topic, publisher } = fromKey(key);
       return Effect.asVoid(
         sql.unsafe(
           `UPDATE crablet_outbox_topic_progress
-           SET last_position = $3, last_published_at = now(), updated_at = now(),
+           SET last_position = $3, last_transaction_id = $5::xid8, last_published_at = now(), updated_at = now(),
                leader_instance = $4, leader_heartbeat = now()
            WHERE topic = $1 AND publisher = $2`,
-          [topic, publisher, position.toString(), instanceId]
+          [topic, publisher, cursor.position.toString(), instanceId, cursor.transactionId]
         )
       );
     };
@@ -127,8 +132,8 @@ export const makeOutboxProgressTracker = (
     };
 
     const tracker: ProgressTracker<string> = {
-      getLastPosition,
-      updateProgress,
+      getCursor,
+      updateCursor,
       recordError,
       resetErrorCount,
       getStatus,

@@ -138,7 +138,7 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     );
     assert.ok(result.lastPosition !== null, "a command that appended events reports the position it reached");
 
-    await runtime.runPromise(waitUntilProcessed(walletBalanceViewSubscription, result.lastPosition));
+    await runtime.runPromise(waitUntilProcessed(walletBalanceViewSubscription, { transactionId: result.lastTransactionId!, position: result.lastPosition }));
     const body = await getJson(`/api/wallets/${walletId}`); // a single read, no retry loop
     assert.strictEqual(body["balance"], 60);
   });

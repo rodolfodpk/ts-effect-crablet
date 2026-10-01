@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import { isBackedOff, makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
+import * as ProgressCursorNS from "../src/ProgressCursor.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
@@ -18,7 +19,7 @@ describe("ProcessorManagementService: lag and backoff reporting", () => {
   test("getLag computes MAX(position) - lastPosition", async () => {
     const { tracker } = await run(makeInMemoryProgressTracker<string>());
     await run(tracker.autoRegister("view-a", "test-instance"));
-    await run(tracker.updateProgress("view-a", 7n));
+    await run(tracker.updateCursor("view-a", ProgressCursorNS.of("7", 7n)));
 
     const management = makeProcessorManagementService({
       progressTracker: tracker,

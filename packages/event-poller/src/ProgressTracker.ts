@@ -1,6 +1,7 @@
 import { Data, type Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import type { ProgressCursor } from "./ProgressCursor.ts";
 
 // "Progress table not ready yet" - typed, instead of string-matching a message: PostgresProgressTracker maps Postgres SQLSTATE
 // 42P01 (undefined_table) to this error, and EventProcessor's loop catches it as "not ready yet,
@@ -13,8 +14,9 @@ export class ProgressTableNotReady extends Data.TaggedError("ProgressTableNotRea
 
 // Tracks how far each processor has read.
 export interface ProgressTracker<I> {
-  readonly getLastPosition: (id: I) => Effect.Effect<bigint, SqlError | ProgressTableNotReady>;
-  readonly updateProgress: (id: I, position: bigint) => Effect.Effect<void, SqlError>;
+  // Where the processor resumes: the zero cursor when it has never run.
+  readonly getCursor: (id: I) => Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady>;
+  readonly updateCursor: (id: I, cursor: ProgressCursor) => Effect.Effect<void, SqlError>;
   readonly recordError: (id: I, error: string, maxErrors: number) => Effect.Effect<void, SqlError>;
   readonly resetErrorCount: (id: I) => Effect.Effect<void, SqlError>;
   // Defaults "ACTIVE" when no row exists yet.

@@ -66,7 +66,7 @@ export const runHandler = <T, E>(
     }
 
     const outcome = yield* eventStore.append(decision.events, decision.condition).pipe(
-      Effect.map((appended) => appended.lastPosition),
+      Effect.map((appended) => ({ lastPosition: appended.lastPosition, transactionId: appended.transactionId })),
       Effect.catchTag("Conflict", (conflict) =>
         // A lifecycle-guard decision reports its conflict as a guard conflict.
         Effect.fail(
@@ -83,7 +83,7 @@ export const runHandler = <T, E>(
       )
     );
 
-    return outcome === "idempotent" ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION") : ExecutionResultNS.created(outcome);
+    return outcome === "idempotent" ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION") : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
   });
 
 // Re-run `attempt` after a `Conflict`, up to `retries` more times (`onRetry` runs before each re-run).

@@ -1,6 +1,7 @@
 import type { Tag } from "@crablet/eventstore/Tag";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventSelection } from "../EventSelection.ts";
+import type { ProgressCursor } from "../ProgressCursor.ts";
 
 // Builds the WHERE clause for an EventSelection - dimensions AND together;
 // eventTypes empty = unrestricted, requiredTags = ALL keys present, anyOfTags = ANY key present,
@@ -9,14 +10,14 @@ import type { EventSelection } from "../EventSelection.ts";
 // exactTags reuses the same `tags @> ARRAY[...]::text[]` containment technique EventStore's own
 // queryEvents (packages/eventstore/src/internal/sql.ts) uses against crablet_events.tags directly.
 //
-// Includes a `transaction_id < pg_snapshot_xmin(pg_current_snapshot())` visibility filter, the
-// same technique append_events_if() itself uses for its conflict check: position is assigned at
-// nextval() time (mid-transaction) but transactions can commit out of order relative to when they
-// reserved their position. Without this filter, a poller that advances its cursor to
-// MAX(fetched.position) could permanently skip a row from a transaction that reserved a lower
-// position but committed later - the row would never become visible to a cursor that has already
-// moved past it. Bounding the fetch to positions whose producing transaction is guaranteed no
-// longer in-flight means any such gap is picked up on a later poll instead, once safe.
+// The fetch is a keyset on (transaction_id, position) bounded by `transaction_id < pg_snapshot_xmin(...)`.
+// `position` is assigned by nextval() when a row is inserted and `transaction_id` is the xid of the inserting
+// transaction; the two can be taken in opposite orders (a transaction with the LOWER xid can get the HIGHER
+// position and commit first). The xmin bound alone does not make a position cursor safe: it only says the rows
+// below xmin are final, not that no row with a LOWER position is still to come. Ordering by
+// (transaction_id, position) does: every transaction with an xid below xmin has finished, so every row that
+// appears later has an xid at or above that xmin and therefore sorts after every row already delivered
+// (docs/plans/poller-cursor-fix.md, ADR-0012).
 export interface EventSelectionQuery {
   readonly sql: string;
   readonly params: ReadonlyArray<unknown>;
@@ -55,14 +56,17 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
 
 export const buildEventSelectionQuery = (
   selection: EventSelection,
-  lastPosition: bigint,
+  cursor: ProgressCursor,
   batchSize: number
 ): EventSelectionQuery => {
   const clauses: Array<string> = [];
   const params: Array<unknown> = [];
 
-  clauses.push(`e.position > $${params.length + 1}`);
-  params.push(lastPosition.toString());
+  // The cursor is a (transaction_id, position) pair, compared in that order - NOT a bare position (see
+  // ProgressCursor.ts). Together with the xmin bound below, a row that appears after this fetch always sorts
+  // after everything fetched, so the cursor can move past the last row without ever skipping one.
+  clauses.push(`(e.transaction_id, e.position) > ($${params.length + 1}::xid8, $${params.length + 2}::bigint)`);
+  params.push(cursor.transactionId, cursor.position.toString());
 
   clauses.push("e.transaction_id < pg_snapshot_xmin(pg_current_snapshot())");
 
@@ -74,25 +78,25 @@ export const buildEventSelectionQuery = (
   const sqlText =
     // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
     "SELECT e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id " +
-    `FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.position ASC LIMIT $${limitParamIndex}`;
+    `FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.transaction_id ASC, e.position ASC LIMIT $${limitParamIndex}`;
 
   return { sql: sqlText, params };
 };
 
-// Is there any COMMITTED event the selection matches with `after < position <= upTo`? Unlike the poller's
-// fetch this has no visibility cut-off: it asks about events that exist, not about what the poller may
-// safely read yet, so a view whose cursor is behind `upTo` only counts as caught up when none remain.
+// Is there any COMMITTED event the selection matches in `(after, upTo]`, in (transaction_id, position) order?
+// Unlike the poller's fetch this has no visibility cut-off: it asks about events that exist, not about what the
+// poller may safely read yet, so a view whose cursor is behind `upTo` only counts as caught up when none remain.
 export const buildPendingSelectionQuery = (
   selection: EventSelection,
-  after: bigint,
-  upTo: bigint
+  after: ProgressCursor,
+  upTo: ProgressCursor
 ): EventSelectionQuery => {
   const clauses: Array<string> = [];
   const params: Array<unknown> = [];
-  clauses.push(`e.position > $${params.length + 1}`);
-  params.push(after.toString());
-  clauses.push(`e.position <= $${params.length + 1}`);
-  params.push(upTo.toString());
+  clauses.push(`(e.transaction_id, e.position) > ($${params.length + 1}::xid8, $${params.length + 2}::bigint)`);
+  params.push(after.transactionId, after.position.toString());
+  clauses.push(`(e.transaction_id, e.position) <= ($${params.length + 1}::xid8, $${params.length + 2}::bigint)`);
+  params.push(upTo.transactionId, upTo.position.toString());
   pushSelectionClauses(selection, clauses, params);
   return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} LIMIT 1`, params };
 };

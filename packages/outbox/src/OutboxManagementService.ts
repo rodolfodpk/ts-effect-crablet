@@ -65,7 +65,7 @@ const toDetails = (row: ProgressRow): OutboxProgressDetails => ({
 
 // `instanceId` here is for the management service's OWN progress-tracker instance (used only by
 // pause/resume/reset/getLag), not the running processor's - calling getLag (which reads
-// getLastPosition, and getLastPosition always refreshes leader_instance/leader_heartbeat as a
+// getCursor, and getCursor always refreshes leader_instance/leader_heartbeat as a
 // side effect - see internal/OutboxProgressTracker.ts) from an ops process will momentarily
 // attribute the heartbeat to whatever instanceId is passed here. Harmless: no failover logic
 // consumes these columns yet (see the Phase 4 plan), so this is a cosmetic quirk, not a

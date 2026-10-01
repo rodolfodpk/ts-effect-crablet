@@ -6,6 +6,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { makePostgresProgressTracker } from "../../src/PostgresProgressTracker.ts";
+import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<SqlClient.SqlClient, never>;
@@ -52,25 +53,25 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(SPEC);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateProgress(id, 42n);
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("7", 42n));
         yield* tracker.autoRegister(id, "instance-b"); // must NOT reset last_position back to 0
-        return yield* tracker.getLastPosition(id);
+        return yield* tracker.getCursor(id);
       })
     );
-    assert.strictEqual(result, 42n);
+    assert.deepStrictEqual(result, ProgressCursorNS.of("7", 42n));
   });
 
-  it("getLastPosition/updateProgress round-trip", async () => {
+  it("getCursor/updateCursor round-trip", async () => {
     const id = `view-${crypto.randomUUID()}`;
     const position = await run(
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(SPEC);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateProgress(id, 123n);
-        return yield* tracker.getLastPosition(id);
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("99", 123n));
+        return yield* tracker.getCursor(id);
       })
     );
-    assert.strictEqual(position, 123n);
+    assert.deepStrictEqual(position, ProgressCursorNS.of("99", 123n));
   });
 
   it("recordError increments error_count and flips to FAILED exactly at maxErrors", async () => {
@@ -142,7 +143,7 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
     assert.strictEqual(outcome, "not-ready");
   });
 
-  it("ProgressTableNotReady also surfaces from getLastPosition against a nonexistent table", async () => {
+  it("ProgressTableNotReady also surfaces from getCursor against a nonexistent table", async () => {
     const id = `view-${crypto.randomUUID()}`;
     const outcome = await run(
       Effect.gen(function* () {
@@ -150,7 +151,7 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
           tableName: "crablet_definitely_not_a_real_table",
           idColumn: "id"
         });
-        return yield* tracker.getLastPosition(id).pipe(
+        return yield* tracker.getCursor(id).pipe(
           Effect.map(() => "unexpected-success" as const),
           Effect.catchTag("ProgressTableNotReady", () => Effect.succeed("not-ready" as const))
         );

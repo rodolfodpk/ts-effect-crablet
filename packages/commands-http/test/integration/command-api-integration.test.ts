@@ -313,7 +313,7 @@ describe("commands-http integration (real Postgres)", () => {
 
     // Fake waiters (this package never imports the views package). `ok` also checks, from inside the wait, that the
     // command's events are already committed and visible - the order a real view wait relies on.
-    const record = (view: string): ViewWaiter => (position, { timeout }) =>
+    const record = (view: string): ViewWaiter => ({ position }, { timeout }) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const rows = yield* sql.unsafe<{ position: string }>("SELECT position::text AS position FROM crablet_events WHERE position = $1", [position.toString()]);

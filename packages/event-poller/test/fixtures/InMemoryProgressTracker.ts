@@ -1,10 +1,13 @@
 import { Effect, Ref } from "effect";
 import type { ProcessorStatus } from "../../src/ProcessorStatus.ts";
 import type { ProgressTracker } from "../../src/ProgressTracker.ts";
+import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
+import type { ProgressCursor } from "../../src/ProgressCursor.ts";
 
 interface Row {
   readonly status: ProcessorStatus;
   readonly lastPosition: bigint;
+  readonly cursor: ProgressCursor;
   readonly errorCount: number;
   readonly instanceId: string | null;
 }
@@ -21,15 +24,15 @@ export const makeInMemoryProgressTracker = <I>(): Effect.Effect<InMemoryProgress
   Effect.gen(function* () {
     const ref = yield* Ref.make<Map<I, Row>>(new Map());
 
-    const getLastPosition = (id: I): Effect.Effect<bigint> =>
-      Effect.map(Ref.get(ref), (m) => m.get(id)?.lastPosition ?? 0n);
+    const getCursor = (id: I): Effect.Effect<ProgressCursor> =>
+      Effect.map(Ref.get(ref), (m) => m.get(id)?.cursor ?? ProgressCursorNS.zero);
 
-    const updateProgress = (id: I, position: bigint): Effect.Effect<void> =>
+    const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void> =>
       Ref.update(ref, (m) => {
         const row = m.get(id);
         if (!row) return m;
         const next = new Map(m);
-        next.set(id, { ...row, lastPosition: position });
+        next.set(id, { ...row, lastPosition: cursor.position, cursor });
         return next;
       });
 
@@ -68,13 +71,13 @@ export const makeInMemoryProgressTracker = <I>(): Effect.Effect<InMemoryProgress
       Ref.update(ref, (m) => {
         if (m.has(id)) return m;
         const next = new Map(m);
-        next.set(id, { status: "ACTIVE", lastPosition: 0n, errorCount: 0, instanceId });
+        next.set(id, { status: "ACTIVE", lastPosition: 0n, cursor: ProgressCursorNS.zero, errorCount: 0, instanceId });
         return next;
       });
 
     const tracker: ProgressTracker<I> = {
-      getLastPosition,
-      updateProgress,
+      getCursor,
+      updateCursor,
       recordError,
       resetErrorCount,
       getStatus,

@@ -8,6 +8,8 @@ import type { ProcessorConfig } from "./ProcessorConfig.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 import type { EventFetcher } from "./EventFetcher.ts";
+import * as ProgressCursorNS from "./ProgressCursor.ts";
+import type { ProgressCursor } from "./ProgressCursor.ts";
 import type { EventHandler } from "./EventHandler.ts";
 import * as EventSelectionNS from "./EventSelection.ts";
 import type { EventSelection } from "./EventSelection.ts";
@@ -116,24 +118,24 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
         const ready = yield* Effect.gen(function* () {
           yield* deps.progressTracker.autoRegister(id, deps.instanceId);
-          const position = yield* deps.progressTracker.getLastPosition(id);
-          return position;
+          const cursor = yield* deps.progressTracker.getCursor(id);
+          return cursor;
         }).pipe(
-          Effect.map((position): { ready: true; position: bigint } => ({ ready: true, position })),
+          Effect.map((cursor): { ready: true; cursor: ProgressCursor } => ({ ready: true, cursor })),
           Effect.catchTag("ProgressTableNotReady", () =>
             Effect.succeed<{ ready: false }>({ ready: false })
           )
         );
         if (!ready.ready) return 0;
 
-        const events = yield* deps.fetcher.fetchEvents(id, ready.position, config.batchSize);
+        const events = yield* deps.fetcher.fetchEvents(id, ready.cursor, config.batchSize);
         if (events.length === 0) return 0;
 
         const handled = yield* deps.handler.handle(id, events).pipe(
           Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
         );
 
-        yield* deps.progressTracker.updateProgress(id, events[events.length - 1]!.position);
+        yield* deps.progressTracker.updateCursor(id, ProgressCursorNS.after(events[events.length - 1]!));
         yield* deps.progressTracker.resetErrorCount(id);
         return handled;
       });
