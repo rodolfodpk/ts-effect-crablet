@@ -1022,3 +1022,11 @@ asserts the model directly (queries, fold, both regressions).
 - Followed literally from a fresh `docker compose down -v` it reproduces the document's outputs verbatim (positions 10-14 included).
 - Honest limits: steps 2-4 need Docker (no in-memory executor, by decision); step 2's race is natural, not forced - the forced-overlap proofs for the same domain are in the commands
   package's tests; the view projector guards redeliveries with `last_position`.
+
+## Privacy P1 - marking personal data (packages/commands/src/Personal.ts)
+
+- `personal(schema)` marks a field once, where it is declared (an event payload or a command input). It is a NO-OP CHECK, not an annotation: in Effect an annotation added after `.check(...)` attaches to the last
+  check, so a walker would miss it depending on the order the schema was written in; a check is always found, survives composition, does not change decoding and emits `x-personal: true` into the generated JSON Schema.
+- `personalPaths(schema)` lists the marked paths (`email`, `addresses.[].street`, `notes.*`, `(root)`), `redact(schema, value)` returns a copy-on-write copy with them replaced by `"[redacted]"` (unknown keys are left for the caller;
+  `Schema.Class` is not walked; unions are conservative). `EventDef.schema` is now exposed (the event log API and the masking read it).
+- Upstream finding (rc.118): `Schema.isMinLength(n)` is described as `minLength: n-1` in the generated JSON Schema (the decoder is right). Not used on exposed inputs today; re-check on Effect 4.0.0.

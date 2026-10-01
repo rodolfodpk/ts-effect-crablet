@@ -32,6 +32,8 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   // tags that are scoping context rather than part of the event's own data (e.g. a period).
   (data: Data, extraTags?: ReadonlyArray<Tag.Tag>): AppendEvent.AppendEvent;
   readonly type: Type;
+  // The payload schema (what the event log API documents, and what personal-data handling reads: see Personal.ts).
+  readonly schema: Schema.Constraint;
   // Validate and narrow a stored event's raw JSON payload. Throws if the stored data does not match
   // the schema (a defect: the log contains something this definition cannot read).
   readonly decode: (raw: unknown) => Data;
@@ -71,7 +73,7 @@ export const defineEvent = <
         .map(([key, value]) => Tag.of(key, String(value)))
     );
 
-  return Object.assign(build, { type, decode, where }) as EventDef<
+  return Object.assign(build, { type, schema: def.schema as Schema.Constraint, decode, where }) as EventDef<
     Type,
     Schema.Schema.Type<S>,
     Extract<keyof T, string>
