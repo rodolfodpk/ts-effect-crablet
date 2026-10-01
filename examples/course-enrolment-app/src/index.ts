@@ -4,7 +4,7 @@ import { HttpRouter } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import { dbConnInfoFromEnv } from "./db.ts";
-import { makeCourseApiLayer } from "./CourseApp.ts";
+import { makeCourseApiLayer, startCourseViews } from "./CourseApp.ts";
 
 // Serves the API on :8080 (PORT). The database must exist and be migrated (docker compose up -d; node src/migrate.ts).
 // COURSES_DOCS=scalar|swagger also mounts a documentation page at /docs.
@@ -25,6 +25,7 @@ const server = HttpRouter.serve(
 ).pipe(Layer.provide(NodeHttpServer.layer(createServer, { port })));
 
 const program = Effect.gen(function* () {
+  yield* startCourseViews();
   yield* Effect.log(`course-enrolment-app listening on :${port}`);
   yield* Layer.launch(server);
 });

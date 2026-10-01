@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appMigrationDir = path.join(__dirname, "..", "db", "migration");
 
 // This app's own tables (the views), applied after the framework's core schema.
-export const appMigrationFiles: ReadonlyArray<string> = [];
+export const appMigrationFiles: ReadonlyArray<string> = ["V100__course_seats_view.sql"];
 
 // Applies the framework's core schema, then this app's own. Plain pg.Client, not Effect: deploy-time bootstrapping.
 // Run it ONCE against a fresh database (the migrations are not idempotent):   node src/migrate.ts

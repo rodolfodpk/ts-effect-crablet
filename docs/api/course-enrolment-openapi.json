@@ -57,7 +57,26 @@
           "commands"
         ],
         "operationId": "commands.execute_define_course",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "waitFor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: course-seats-view."
+            },
+            "required": false
+          },
+          {
+            "name": "waitTimeout",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
+            },
+            "required": false
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -143,7 +162,26 @@
           "commands"
         ],
         "operationId": "commands.execute_subscribe",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "waitFor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: course-seats-view."
+            },
+            "required": false
+          },
+          {
+            "name": "waitTimeout",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
+            },
+            "required": false
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -239,6 +277,68 @@
             }
           },
           "required": true
+        }
+      }
+    },
+    "/api/courses/{courseId}": {
+      "get": {
+        "tags": [
+          "courseQueries"
+        ],
+        "operationId": "courseQueries.getCourse",
+        "parameters": [
+          {
+            "name": "courseId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "courseId": {
+                      "type": "string"
+                    },
+                    "capacity": {
+                      "type": "integer"
+                    },
+                    "subscribers": {
+                      "type": "integer"
+                    },
+                    "seatsLeft": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "courseId",
+                    "capacity",
+                    "subscribers",
+                    "seatsLeft"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CourseNotFoundProblem",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseNotFoundProblem"
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -607,6 +707,9 @@
   "tags": [
     {
       "name": "commands"
+    },
+    {
+      "name": "courseQueries"
     }
   ]
 }

@@ -7,6 +7,7 @@ import { HttpApiClient } from "effect/http-api";
 import { FetchHttpClient } from "effect/http";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../support/startCourseAppForTest.ts";
+import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { makeCourseApi } from "../../src/CourseApp.ts";
 import { courseOpenApiFile } from "../../src/api/CourseOpenApi.ts";
 
@@ -14,6 +15,7 @@ let db: TestDb;
 let app: RunningCourseApp;
 before(async () => {
   db = await startTestDb();
+  await applyAppMigrations(db.connInfo);
   app = await startCourseAppForTest(db.connInfo);
 }, { timeout: 60_000 });
 after(async () => {
@@ -33,14 +35,15 @@ describe("tutorial step 3: the HTTP API", () => {
     assert.strictEqual(defined.status, 201);
     assert.match(String((await json(defined)).lastPosition), /^\d+$/);
 
-    assert.strictEqual((await post("subscribe", { studentId: "ann", courseId })).status, 201);
-    const repeat = await post("subscribe", { studentId: "ann", courseId });
+    const ann = `ann-${uid()}`;
+    assert.strictEqual((await post("subscribe", { studentId: ann, courseId })).status, 201);
+    const repeat = await post("subscribe", { studentId: ann, courseId });
     assert.strictEqual(repeat.status, 200);
     assert.strictEqual((await json(repeat)).status, "IDEMPOTENT");
   });
 
   it("an unknown course is a 404 problem naming the error and its fields", async () => {
-    const res = await post("subscribe", { studentId: "ann", courseId: "ghost" });
+    const res = await post("subscribe", { studentId: `ann-${uid()}`, courseId: "ghost" });
     assert.strictEqual(res.status, 404);
     assert.strictEqual(res.headers.get("content-type"), "application/problem+json");
     const body = await json(res);
@@ -51,8 +54,8 @@ describe("tutorial step 3: the HTTP API", () => {
   it("a full course is a 409 problem with the course's capacity", async () => {
     const courseId = `full-${uid()}`;
     await post("define_course", { courseId, capacity: 1 });
-    await post("subscribe", { studentId: "ann", courseId });
-    const res = await post("subscribe", { studentId: "bob", courseId });
+    await post("subscribe", { studentId: `ann-${uid()}`, courseId });
+    const res = await post("subscribe", { studentId: `bob-${uid()}`, courseId });
     assert.strictEqual(res.status, 409);
     const body = await json(res);
     assert.strictEqual(body["errorType"], "CourseFull");
@@ -102,14 +105,74 @@ describe("tutorial step 3: the HTTP API", () => {
     const courseId = `typed-${uid()}`;
     const program = Effect.gen(function* () {
       const client: any = yield* HttpApiClient.make(makeCourseApi(), { baseUrl: app.baseUrl });
-      const defined = yield* client.commands.execute_define_course({ payload: { courseId, capacity: 1 } });
-      yield* client.commands.execute_subscribe({ payload: { studentId: "ann", courseId } });
-      const refused = yield* Effect.flip(client.commands.execute_subscribe({ payload: { studentId: "bob", courseId } }));
+      const defined = yield* client.commands.execute_define_course({ payload: { courseId, capacity: 1 }, query: {} });
+      yield* client.commands.execute_subscribe({ payload: { studentId: `ann-${courseId}`, courseId }, query: {} });
+      const refused = yield* Effect.flip(client.commands.execute_subscribe({ payload: { studentId: `bob-${courseId}`, courseId }, query: {} }));
       return { defined, refused };
     });
     const { defined, refused } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)) as Effect.Effect<any>);
     assert.strictEqual(defined.status, "CREATED");
     assert.strictEqual(refused.errorType, "CourseFull");
     assert.deepStrictEqual(refused.fields, { courseId, capacity: 1 });
+  });
+
+  // ---- step 4: read your own writes ----
+  const getCourse = (courseId: string) => fetch(`${app.baseUrl}/api/courses/${courseId}`);
+
+  it("?waitFor=course-seats-view answers once the view has the write, so ONE read is enough - every time", async () => {
+    const courseId = `seats-${uid()}`;
+    assert.strictEqual((await post("define_course", { courseId, capacity: 5 })).status, 201);
+    for (const [n, name] of ["ann", "bob", "cy", "di"].entries()) {
+      const student = `${name}-${uid()}`;
+      const res = await fetch(`${app.baseUrl}/api/commands/subscribe?waitFor=course-seats-view`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: student, courseId })
+      });
+      assert.strictEqual(res.status, 201);
+      assert.deepStrictEqual((await json(res))["view"], { name: "course-seats-view", caughtUp: true });
+      // a single read, no retry loop, already reflects the subscription that just returned
+      assert.deepStrictEqual(await json(await getCourse(courseId)), { courseId, capacity: 5, subscribers: n + 1, seatsLeft: 4 - n });
+    }
+  });
+
+  it("a repeat subscription appended nothing: nothing to wait for, and the seats are not counted twice", async () => {
+    const courseId = `repeat-${uid()}`;
+    await post("define_course", { courseId, capacity: 3 });
+    const student = `ann-${uid()}`; // a fresh student: the 3-course limit is per student across the whole test file
+    const wait = () =>
+      fetch(`${app.baseUrl}/api/commands/subscribe?waitFor=course-seats-view`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: student, courseId })
+      });
+    assert.strictEqual((await wait()).status, 201);
+    const repeat = await wait();
+    assert.strictEqual(repeat.status, 200);
+    assert.deepStrictEqual((await json(repeat))["view"], { name: "course-seats-view", caughtUp: false, reason: "nothing_appended" });
+    assert.strictEqual((await json(await getCourse(courseId)))["subscribers"], 1);
+  });
+
+  it("an unknown view is refused before the command runs: nothing is written", async () => {
+    const courseId = `refused-${uid()}`;
+    await post("define_course", { courseId, capacity: 3 });
+    const student = `ann-${uid()}`;
+    const res = await fetch(`${app.baseUrl}/api/commands/subscribe?waitFor=no-such-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId: student, courseId })
+    });
+    assert.strictEqual(res.status, 400);
+    assert.match(String((await json(res))["detail"]), /one of: course-seats-view/);
+    // the subscription never happened: the same student can still take the course
+    assert.strictEqual((await post("subscribe", { studentId: student, courseId })).status, 201);
+  });
+
+  it("reading an unknown course is the same 404 problem the write API uses", async () => {
+    const res = await getCourse("ghost-course");
+    assert.strictEqual(res.status, 404);
+    const body = await json(res);
+    assert.strictEqual(body["errorType"], "CourseNotFound");
+    assert.deepStrictEqual(body["fields"], { courseId: "ghost-course" });
   });
 });

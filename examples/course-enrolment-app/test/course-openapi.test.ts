@@ -12,10 +12,32 @@ const spec = JSON.parse(text) as any;
 const operation = (name: string) => spec.paths[`/api/commands/${name}`].post;
 
 describe("course API OpenAPI document", () => {
-  test("is a valid OpenAPI 3.1 document with a route per command", async () => {
+  test("is a valid OpenAPI 3.1 document with a route per command and the read endpoint", async () => {
     expect((await validate(structuredClone(spec))).valid).toBe(true);
     expect(spec.info.title).toBe("Course Enrolment API");
-    expect(Object.keys(spec.paths).sort()).toEqual(["/api/commands", "/api/commands/define_course", "/api/commands/subscribe"]);
+    expect(Object.keys(spec.paths).sort()).toEqual([
+      "/api/commands",
+      "/api/commands/define_course",
+      "/api/commands/subscribe",
+      "/api/courses/{courseId}"
+    ]);
+  });
+
+  test("every command route can wait for the seats view; the read endpoint shares the write API's CourseNotFound problem", () => {
+    for (const command of ["define_course", "subscribe"]) {
+      const params = operation(command).parameters as Array<any>;
+      expect(params.map((p) => p.name).sort()).toEqual(["waitFor", "waitTimeout"]);
+      expect(params.find((p) => p.name === "waitFor").schema.description).toContain("course-seats-view");
+    }
+    const read = spec.paths["/api/courses/{courseId}"].get;
+    expect(read.responses["404"].content["application/problem+json"].schema).toEqual({ $ref: "#/components/schemas/CourseNotFoundProblem" });
+    expect(operation("subscribe").responses["404"].content["application/problem+json"].schema).toEqual({ $ref: "#/components/schemas/CourseNotFoundProblem" });
+    expect(Object.keys(spec.components.schemas.CourseResponse?.properties ?? spec.paths["/api/courses/{courseId}"].get.responses["200"].content["application/json"].schema.properties).sort()).toEqual([
+      "capacity",
+      "courseId",
+      "seatsLeft",
+      "subscribers"
+    ]);
   });
 
   test("request bodies are the commands' input schemas, constraints included", () => {

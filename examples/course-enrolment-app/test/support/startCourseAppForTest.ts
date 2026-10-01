@@ -5,7 +5,7 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import type { ConnInfo } from "@crablet/test-support";
-import { makeCourseApiLayer, type CourseAppConfig } from "../../src/CourseApp.ts";
+import { makeCourseApiLayer, startCourseViews, type CourseAppConfig } from "../../src/CourseApp.ts";
 
 export interface RunningCourseApp {
   readonly baseUrl: string;
@@ -23,6 +23,7 @@ export const startCourseAppForTest = async (conn: ConnInfo, config: CourseAppCon
       password: Redacted.make(conn.password)
     })
   );
+  const views = await runtime.runPromise(startCourseViews());
   const scope = await runtime.runPromise(Scope.make());
   const context = await runtime.runPromise(
     Scope.provide(
@@ -37,6 +38,8 @@ export const startCourseAppForTest = async (conn: ConnInfo, config: CourseAppCon
   return {
     baseUrl: `http://localhost:${port}`,
     stop: async () => {
+      // stop the view processor's fibers BEFORE closing the pool, or they keep polling a closed pool
+      await runtime.runPromise(views.service.stop);
       await runtime.runPromise(Scope.close(scope, Exit.void));
       await runtime.dispose();
     }
