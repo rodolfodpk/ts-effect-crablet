@@ -231,11 +231,11 @@ loads its state before any appends) for this same domain: see
 
 Exposing a command is one line each. Nothing else about HTTP is written:
 
-<!-- file: examples/course-enrolment-app/src/CourseApp.ts#expose -->
+<!-- file: examples/course-enrolment-app/src/CourseApi.ts#expose -->
 ```ts
 // The write API: one route per command, POST /api/commands/<name>. A command's declared `errors` are what the API
 // presents (status from each error's kind) and documents; there is no HTTP code to write per command.
-const courseCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
+export const courseCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
   define_course: exposedCommandOf(DefineCourse),
   subscribe: exposedCommandOf(Subscribe)
 };

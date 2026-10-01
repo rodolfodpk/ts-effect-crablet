@@ -5,8 +5,10 @@ import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import { viewSubscriptionOf, type ViewSubscription } from "@crablet/views/ViewSubscription";
 import { CourseDefined, StudentSubscribed } from "../domain/Enrolment.ts";
+import { COURSE_SEATS_VIEW } from "../CourseApi.ts";
 
-export const COURSE_SEATS_VIEW = "course-seats-view";
+// The name is defined next to the API (CourseApi.ts), which must not import this server-side file.
+export { COURSE_SEATS_VIEW };
 
 // What the view listens to: the two event types that change a course's seats.
 export const courseSeatsViewSubscription: ViewSubscription = viewSubscriptionOf(COURSE_SEATS_VIEW, {

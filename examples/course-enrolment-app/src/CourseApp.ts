@@ -1,11 +1,9 @@
 import { Effect, Layer } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
-import { HttpApi, HttpApiBuilder } from "effect/http-api";
-import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
+import { HttpApiBuilder } from "effect/http-api";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
-import { exposedCommandOf, type ExposedCommand } from "@crablet/commands-http/ExposedCommand";
 import type { EventStore } from "@crablet/eventstore";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { EventProcessorHandle } from "@crablet/event-poller";
@@ -14,10 +12,12 @@ import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import type { ViewWaiter } from "@crablet/commands-http/ViewWaiter";
-import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
-import { courseQueryGroup } from "./api/CourseQueryApi.ts";
+import { COURSE_SEATS_VIEW, courseCommands, makeCourseApi } from "./CourseApi.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
-import { COURSE_SEATS_VIEW, courseSeatsViewSubscription, makeCourseSeatsViewProjector } from "./views/CourseSeatsViewProjector.ts";
+import { courseSeatsViewSubscription, makeCourseSeatsViewProjector } from "./views/CourseSeatsViewProjector.ts";
+
+// The API definition lives in CourseApi.ts (browser-safe); re-exported so existing imports keep working.
+export { courseApiInfo, makeCourseApi } from "./CourseApi.ts";
 
 export interface CourseAppConfig {
   readonly basePath?: string;
@@ -25,15 +25,6 @@ export interface CourseAppConfig {
   readonly openApiPath?: string | false;
   readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string };
 }
-
-// #region expose
-// The write API: one route per command, POST /api/commands/<name>. A command's declared `errors` are what the API
-// presents (status from each error's kind) and documents; there is no HTTP code to write per command.
-const courseCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
-  define_course: exposedCommandOf(DefineCourse),
-  subscribe: exposedCommandOf(Subscribe)
-};
-// #endregion expose
 
 // #region wait-for
 // The views a write request may wait for (`?waitFor=course-seats-view`): the response is then sent only once that view has
@@ -43,21 +34,6 @@ const courseViewWaiters: Readonly<Record<string, ViewWaiter>> = {
   [COURSE_SEATS_VIEW]: (write, { timeout }) => waitUntilProcessed(courseSeatsViewSubscription, write, { timeout })
 };
 // #endregion wait-for
-
-export const courseApiInfo = {
-  title: "Course Enrolment API",
-  version: "1.0.0",
-  description: "Define courses and subscribe students: a course holds at most `capacity` students, a student takes at most 3 courses."
-} as const;
-
-// The API (separate from serving it, so its OpenAPI description can be produced without starting anything).
-export const makeCourseApi = (basePath: `/${string}` = "/api/commands") =>
-  withApiInfo(
-    HttpApi.make("courseApp")
-      .add(makeCommandApiGroup(basePath, courseCommands, { waitableViews: Object.keys(courseViewWaiters) }))
-      .add(courseQueryGroup),
-    courseApiInfo
-  );
 
 // Serves the API, its OpenAPI document and, when asked for, a documentation page.
 export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {

@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "exports": {
+    "./CourseApi": "./src/CourseApi.ts"
+  },
   "scripts": {
     "start": "node src/index.ts",
     "migrate": "node src/migrate.ts",
