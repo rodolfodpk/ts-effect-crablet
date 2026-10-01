@@ -22,6 +22,7 @@ const SeatModel = defineModel({ by: "seat_id", initial: () => ({ taken: false })
 class SeatTaken extends DomainError("SeatTaken", { fields: { seatId: Schema.String }, kind: "conflict" }) {}
 const BookSeat = defineCommand({
   name: "book_seat",
+  errors: [SeatTaken],
   input: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
   model: (c) => SeatModel.of({ id: c.seatId }),
   decide: (seat, c) => (seat.taken ? fail(new SeatTaken({ seatId: c.seatId })) : emit(SeatBooked(c)))

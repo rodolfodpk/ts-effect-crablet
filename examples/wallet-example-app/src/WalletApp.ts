@@ -34,7 +34,6 @@ import { Deposit } from "./domain/commands/DepositCommand.ts";
 import { Withdraw } from "./domain/commands/WithdrawCommand.ts";
 import { TransferMoney } from "./domain/commands/TransferMoneyCommand.ts";
 import { CloseWallet } from "./domain/commands/CloseWalletCommand.ts";
-import { WalletNotFound, InsufficientFunds } from "./domain/errors/WalletErrors.ts";
 
 export interface WalletAppConfig {
   readonly basePath?: string;
@@ -153,16 +152,16 @@ export const startBackgroundProcessors = (
   });
 
 // The wallet's public write API: the 5 wallet commands, deliberately NOT SendWelcomeNotification (an
-// automation-triggered internal command, not a public write API). Each entry declares the domain errors its
-// command can fail with: the API presents them by their kind (404 / 400 / ...) with their own fields, and
-// documents them in the API description. Leaving one out is a compile error. `ExposedCommand<any, any>` -
-// see ExposedCommand.ts's own primer on this registry's type erasure.
+// automation-triggered internal command, not a public write API). Each command declares its domain errors
+// (`errors: [...]`), which the API presents by their kind (404 / 400 / ...) with their own fields and documents
+// in the API description. `ExposedCommand<any, any>` - see ExposedCommand.ts's own primer on this registry's
+// type erasure.
 const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
   open_wallet: exposedCommandOf(OpenWallet),
-  deposit: exposedCommandOf(Deposit, { errors: [WalletNotFound] }),
-  withdraw: exposedCommandOf(Withdraw, { errors: [WalletNotFound, InsufficientFunds] }),
-  transfer_money: exposedCommandOf(TransferMoney, { errors: [WalletNotFound, InsufficientFunds] }),
-  close_wallet: exposedCommandOf(CloseWallet, { errors: [WalletNotFound] })
+  deposit: exposedCommandOf(Deposit),
+  withdraw: exposedCommandOf(Withdraw),
+  transfer_money: exposedCommandOf(TransferMoney),
+  close_wallet: exposedCommandOf(CloseWallet)
 };
 
 // The app's HTTP API: commands-http's write group (one route per wallet command) + WalletQueryApi's

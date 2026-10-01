@@ -10,6 +10,7 @@ export type CloseWalletCommand = Schema.Schema.Type<typeof input>;
 // transfers are protected against racing balance changes.
 export const CloseWallet = defineCommand({
   name: "close_wallet",
+  errors: [WalletNotFound],
   input,
   model: (c) => WalletLifecycleModel.of({ id: c.walletId }),
   decide: (wallet, c) =>

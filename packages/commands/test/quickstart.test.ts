@@ -28,6 +28,7 @@ class SeatTaken extends DomainError("SeatTaken", {
 // 3. A command: a pure decision. Nothing here touches a database.
 const BookSeat = defineCommand({
   name: "book_seat",
+  errors: [SeatTaken],      // the domain errors it can fail with: checked against `decide`, read by the REST API
   input: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
   model: (c) => SeatModel.of({ id: c.seatId }),
   decide: (seat, c) => (seat.taken ? fail(new SeatTaken({ seatId: c.seatId })) : emit(SeatBooked(c)))

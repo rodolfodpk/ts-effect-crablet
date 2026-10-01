@@ -23,6 +23,7 @@ export type TransferMoneyCommand = Schema.Schema.Type<typeof input>;
 // lazily open one), sequentially because both may append.
 export const TransferMoney = defineCommand({
   name: "transfer_money",
+  errors: [WalletNotFound, InsufficientFunds],
   input,
   prepare: (c, es) =>
     Effect.gen(function* () {

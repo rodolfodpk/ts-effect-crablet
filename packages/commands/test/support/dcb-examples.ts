@@ -49,6 +49,7 @@ export class UsernameClaimed extends DomainError("UsernameClaimed", { fields: { 
 const registerAccount = (name: string, wait: Effect.Effect<void>) =>
   defineCommand({
     name,
+    errors: [UsernameClaimed],
     // `now` is an input so the decision stays pure (and testable at any date)
     input: Schema.Struct({ username: Schema.String, now: Schema.Number }),
     model: (c) => afterLoad(UsernameModel.of({ id: c.username.toLowerCase() }), wait),
@@ -115,6 +116,7 @@ const priceIsValid = (p: Price, displayed: number, now: number) =>
 
 export const OrderProducts = defineCommand({
   name: "order_products",
+  errors: [InvalidPrice],
   input: Schema.Struct({
     items: Schema.Array(Schema.Struct({ productId: Schema.String, displayedPrice: Schema.Number })),
     now: Schema.Number
@@ -155,6 +157,7 @@ export class TokenInvalid extends DomainError("TokenInvalid", { fields: { reason
 const confirmSignUp = (name: string, wait: Effect.Effect<void>) =>
   defineCommand({
   name,
+  errors: [TokenInvalid],
   input: Schema.Struct({ email: Schema.String, otp: Schema.String, now: Schema.Number }),
   model: (c) => afterLoad(PendingSignUp.of({ id: c.email.toLowerCase(), otp: c.otp }), wait),
   decide: (s, c) =>

@@ -988,3 +988,10 @@ asserts the model directly (queries, fold, both regressions).
   (`bun run docs:api` regenerates it). An API change is a visible diff; a stale file fails the unit test (so CI).
 - Findings: `Schema.optional(X)` renders as `X | null` but the decoder refuses null -> use `Schema.optionalKey` (the input lint reports it); `Schema.Number` anywhere in
   the document renders as number-or-"Infinity" -> `Schema.Finite` (fixed in the wallet's error fields and read responses; the test asserts none remain).
+
+## OpenAPI step 1b - `errors` declared once, on the command
+
+- `defineCommand({ errors: [WalletNotFound, ...] })` replaces the exposure-time list: it is the single declaration, checked against `decide` and `prepare` (a domain error
+  that is not listed is a compile error naming it; non-domain errors are not subject to it). `Command.errors` carries the classes; `exposedCommandOf(command)` no longer takes
+  options and the API reads `command.errors` for the documented responses. Found by asking "decide already declares them" - the list must exist at run time (types are
+  erased) but need not be a second copy.

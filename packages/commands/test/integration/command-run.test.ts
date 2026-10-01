@@ -75,6 +75,7 @@ type Barrier = { readonly wait: Effect.Effect<void> };
 const bookSeat = (opts: { barrier?: Barrier; retries?: number; idempotent?: "return" | "fail" } = {}) =>
   defineCommand({
     name: "book_seat",
+    errors: [SeatTaken],
     input: bookingInput,
     model: (c) => (opts.barrier ? afterLoad(SeatModel.of({ id: c.seatId }), opts.barrier.wait) : SeatModel.of({ id: c.seatId })),
     ...(opts.idempotent !== undefined

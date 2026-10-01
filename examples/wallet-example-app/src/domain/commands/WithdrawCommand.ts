@@ -15,6 +15,7 @@ export type WithdrawCommand = Schema.Schema.Type<typeof input>;
 // runs first and reports "already done".
 export const Withdraw = defineCommand({
   name: "withdraw",
+  errors: [WalletNotFound, InsufficientFunds],
   input,
   prepare: (c, es) => resolveActivePeriod(es, c.walletId),
   model: (c, period) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),

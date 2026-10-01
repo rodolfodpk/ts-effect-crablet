@@ -30,6 +30,7 @@ const input = Schema.Struct({ id: Schema.String, by: Positive, opId: Schema.Stri
 
 const Increment = defineCommand({
   name: "increment",
+  errors: [NotOpen, TooLarge],
   input,
   model: (c) => CounterModel.of({ id: c.id }),
   decide: (counter, c) =>
@@ -271,6 +272,42 @@ describe("defineCommand: input", () => {
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 const assertType = <_T extends true>() => {};
 type HandlerErr<C extends { handler: (...a: any[]) => Effect.Effect<any, any, any> }> = Effect.Error<ReturnType<C["handler"]>>;
+
+describe("defineCommand: declared errors", () => {
+  class Other extends DomainError("Other", { fields: {}, kind: "invalid" }) {}
+  const failsWith = (id: string) => (id === "a" ? fail(new NotOpen({ id })) : fail(new TooLarge({ max: 1 })));
+
+  test("the declared classes are carried on the command, with their kind, tag and fields", () => {
+    expect(Increment.errors).toEqual([NotOpen, TooLarge]);
+    expect(Increment.errors.map((e) => `${e.tag}:${e.kind}`)).toEqual(["NotOpen:not_found", "TooLarge:invalid"]);
+    expect(Object.keys(Increment.errors[0]!.fields)).toEqual(["id"]);
+  });
+
+  test("a command with no domain errors declares none", () => {
+    expect(defineCommand({ name: "none", input, decide: () => noop() }).errors).toEqual([]);
+  });
+
+  test("decide cannot fail with a domain error that is not declared (the compile error names the class)", () => {
+    // @ts-expect-error - TooLarge is not declared (undeclaredDomainErrors: TooLarge)
+    defineCommand({ name: "x", input, errors: [NotOpen], decide: (_, c) => failsWith(c.id) });
+    // @ts-expect-error - nothing declared although decide fails with domain errors
+    defineCommand({ name: "x", input, decide: (_, c) => failsWith(c.id) });
+    // extra declared classes are fine
+    expect(defineCommand({ name: "x", input, errors: [NotOpen, TooLarge, Other], decide: (_, c) => failsWith(c.id) }).errors).toHaveLength(3);
+  });
+
+  test("prepare cannot fail with an undeclared domain error either", () => {
+    // @ts-expect-error - NotOpen is not declared
+    defineCommand({ name: "p", input, prepare: (c) => Effect.fail(new NotOpen({ id: c.id })), decide: () => noop() });
+    expect(
+      defineCommand({ name: "p", input, errors: [NotOpen], prepare: (c) => Effect.fail(new NotOpen({ id: c.id })), decide: () => noop() }).errors
+    ).toEqual([NotOpen]);
+  });
+
+  test("errors that are not domain errors need no declaration", () => {
+    expect(defineCommand({ name: "plain", input, decide: () => fail("just a string" as const) }).errors).toEqual([]);
+  });
+});
 
 describe("defineCommand: inferred types", () => {
   test("the handler's failures are exactly what decide can fail with (plus SqlError from the store)", () => {

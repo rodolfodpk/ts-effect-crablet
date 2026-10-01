@@ -18,11 +18,13 @@ const Done = defineEvent("Done", { schema: Schema.Struct({ walletId: Schema.Stri
 
 const Deposit = defineCommand({
   name: "deposit",
+  errors: [WalletNotFound],
   input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite.check(Schema.isGreaterThan(0)) }),
   decide: (_, c) => (c.walletId === "x" ? fail(new WalletNotFound({ walletId: c.walletId })) : emit(Done({ walletId: c.walletId })))
 });
 const Withdraw = defineCommand({
   name: "withdraw",
+  errors: [WalletNotFound, InsufficientFunds],
   input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite }),
   decide: (_, c) =>
     c.amount > 1 ? fail(new InsufficientFunds({ walletId: c.walletId, balance: 0 })) : fail(new WalletNotFound({ walletId: c.walletId }))
@@ -30,8 +32,8 @@ const Withdraw = defineCommand({
 const Open = defineCommand({ name: "open", input: Schema.Struct({ walletId: Schema.String }), decide: (_, c) => emit(Done(c)) });
 
 const registry: Readonly<Record<string, ExposedCommand<any, any>>> = {
-  deposit: exposedCommandOf(Deposit, { errors: [WalletNotFound] }),
-  withdraw: exposedCommandOf(Withdraw, { errors: [WalletNotFound, InsufficientFunds] }),
+  deposit: exposedCommandOf(Deposit),
+  withdraw: exposedCommandOf(Withdraw),
   open: exposedCommandOf(Open)
 };
 

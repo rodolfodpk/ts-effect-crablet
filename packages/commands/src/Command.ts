@@ -9,7 +9,7 @@ import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
 import * as CD from "./CommandDecision.ts";
 import type { CommandHandler } from "./CommandExecutor.ts";
-import { InvalidInput } from "./Errors.ts";
+import { InvalidInput, type AnyDomainErrorClass, type KindedError } from "./Errors.ts";
 import type { ModelInstance } from "./Model.ts";
 
 // A command is one declaration of "what happens when this request arrives":
@@ -53,6 +53,15 @@ export const fail = <E>(error: E): Fail<E> => ({ _tag: "Fail", error });
 // The command's error type is INFERRED from what `decide` can return: the union of every `fail(...)`.
 type ErrorOf<D> = D extends Fail<infer E> ? E : never;
 
+// A command's DOMAIN errors (those made by `DomainError`) must be declared in its `errors: [...]` list: the list
+// is what a transport reads at run time (to present and document them), and this check makes it complete -
+// `decide` (and `prepare`) cannot fail with a domain error that is not declared. Errors that are not domain errors
+// (a plain value, a framework error) are not subject to it. Evaluates to `unknown` (no constraint) when satisfied,
+// and to an object naming the missing classes otherwise, so the compiler's message says which one to add.
+type Declared<E, Es extends ReadonlyArray<AnyDomainErrorClass>> = [Extract<E, KindedError>] extends [InstanceType<Es[number]>]
+  ? unknown
+  : { readonly undeclaredDomainErrors: Exclude<Extract<E, KindedError>, InstanceType<Es[number]>> };
+
 // ---------------------------------------------------------------------------------------------
 // How the append is protected against concurrent changes.
 // ---------------------------------------------------------------------------------------------
@@ -82,6 +91,8 @@ export interface Command<In, Err> {
   readonly name: string;
   // The input schema the command validates against (also what a transport documents as its request body).
   readonly input: Schema.Constraint;
+  // The domain error classes the command can fail with (see `Declared`): what a transport presents and documents.
+  readonly errors: ReadonlyArray<AnyDomainErrorClass>;
   // Validate untrusted input against the schema. Fails with `InvalidInput`.
   readonly decodeInput: (raw: unknown) => Effect.Effect<In, InvalidInput>;
   // The compiled handler, run by the executor inside its transaction.
@@ -101,14 +112,18 @@ export const defineCommand = <
   D extends Decision<any> = Decision<never>,
   P = undefined,
   PE = never,
-  OD extends "return" | "fail" = "return"
+  OD extends "return" | "fail" = "return",
+  const Es extends ReadonlyArray<AnyDomainErrorClass> = []
 >(def: {
   readonly name: string;
   readonly input: I;
+  // The domain errors this command can fail with. Required for every one `decide` or `prepare` can fail with
+  // (a missing class is a compile error naming it); omit it for a command with no domain errors.
+  readonly errors?: Es;
   // Effectful pre-step that may read (or even append to) the store; its result is passed on as the
   // second argument of `model` and the third of `decide`. Runs inside the command's transaction, so
   // if the command is retried or fails, whatever it appended is rolled back with it.
-  readonly prepare?: (input: Schema.Schema.Type<I>, eventStore: EventStoreService) => Effect.Effect<P, PE>;
+  readonly prepare?: (input: Schema.Schema.Type<I>, eventStore: EventStoreService) => Effect.Effect<P, PE> & Declared<PE, Es>;
   // Omit for commands that need no state (e.g. "record that this happened"); `decide` then gets
   // `undefined` and the default consistency is `concurrent()`.
   readonly model?: (input: Schema.Schema.Type<I>, prepared: P) => ModelInstance<S>;
@@ -120,7 +135,7 @@ export const defineCommand = <
   // A repeat is reported as a successful "already done" ("return", the default, safe for retries) or
   // fails with `Duplicate` ("fail", e.g. "open a wallet that already exists").
   readonly onDuplicate?: OD;
-  readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P) => D;
+  readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
 }): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never)> => {
@@ -183,5 +198,5 @@ export const defineCommand = <
         : append;
     })) as CommandHandler<In, ErrorOf<D> | PE | SqlError | (OD extends "fail" ? Duplicate : never)>;
 
-  return { name: def.name, input: def.input, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
+  return { name: def.name, input: def.input, errors: def.errors ?? [], decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
 };

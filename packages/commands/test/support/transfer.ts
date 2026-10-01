@@ -51,6 +51,7 @@ export const transferInput = Schema.Struct({
 
 export const Transfer = defineCommand({
   name: "transfer",
+  errors: [AccountNotFound, InsufficientFunds],
   input: transferInput,
   // The decision reads TWO accounts. `all` makes the boundary the union of both accounts' events, so a
   // change to EITHER one after we loaded refuses the append (and the command is re-run).
@@ -72,6 +73,7 @@ export const Transfer = defineCommand({
 export const transferWith = (opts: { wait: Effect.Effect<void>; retries?: number }) =>
   defineCommand({
     name: "transfer_raced",
+    errors: [AccountNotFound, InsufficientFunds],
     input: transferInput,
     model: (c) => afterLoad(all({ from: AccountModel.of({ id: c.from }), to: AccountModel.of({ id: c.to }) }), opts.wait),
     retries: opts.retries ?? 3,

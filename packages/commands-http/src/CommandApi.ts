@@ -64,7 +64,7 @@ export const makeCommandApiGroup = (basePath: `/${string}`, commands: Registry):
       HttpApiEndpoint.post(executeEndpointName(commandType), `${basePath}/${commandType}` as `/${string}`, {
         payload: entry.command.input as unknown as Schema.Top,
         success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
-        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.errors.map((e) => problemSchemaOf(e))] as never
+        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.command.errors.map((e) => problemSchemaOf(e))] as never
       })
     );
   }

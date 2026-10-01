@@ -62,6 +62,15 @@ export const DomainError = <Tag extends string, F extends Record<string, Schema.
   return DomainErrorImpl as unknown as DomainErrorClass<Tag, F>;
 };
 
+// Any class made by `DomainError(...)`, seen from outside: constructible into an error `E`, carrying its
+// `kind`, `tag` and field schemas as statics. What a command declares in its `errors: [...]` list.
+export interface AnyDomainErrorClass<E = any> {
+  new (...args: any[]): E;
+  readonly kind: ErrorKind;
+  readonly tag: string;
+  readonly fields: Record<string, Schema.Top>;
+}
+
 // The kind declared by a `DomainError`, or undefined for any other value.
 export const kindOf = (error: unknown): ErrorKind | undefined => {
   const kind = (error as Partial<KindedError> | null | undefined)?.[DomainErrorKind];

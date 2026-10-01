@@ -7,7 +7,6 @@ import { domainProblemOf, problemSchemaOf } from "../src/ProblemDetail.ts";
 
 class NoSuchThing extends DomainError("NoSuchThing", { fields: { id: Schema.String }, kind: "not_found" }) {}
 class NotYours extends DomainError("NotYours", { fields: {}, kind: "forbidden" }) {}
-class Other extends DomainError("Other", { fields: {}, kind: "invalid" }) {}
 
 const OpenWallet = defineCommand({
   name: "open_wallet",
@@ -17,14 +16,16 @@ const OpenWallet = defineCommand({
 const Find = defineCommand({
   name: "find",
   input: Schema.Struct({ id: Schema.String }),
+  errors: [NoSuchThing, NotYours],
   decide: (_, c) => (c.id === "x" ? fail(new NoSuchThing({ id: c.id })) : fail(new NotYours()))
 });
 
 describe("exposedCommandOf", () => {
-  test("wraps a defined command; a command with no domain errors declares none", () => {
-    const entry = exposedCommandOf(OpenWallet);
-    expect(entry.command).toBe(OpenWallet);
-    expect(entry.errors).toEqual([]);
+  test("wraps a defined command; the command's declared errors are what the API documents", () => {
+    const entry = exposedCommandOf(Find);
+    expect(entry.command).toBe(Find);
+    expect(entry.command.errors).toEqual([NoSuchThing, NotYours]);
+    expect(exposedCommandOf(OpenWallet).command.errors).toEqual([]);
   });
 
   test("a map of entries supports lookup by command name", () => {
@@ -34,30 +35,6 @@ describe("exposedCommandOf", () => {
 
     expect(commands["open_wallet"]).toBe(openWallet);
     expect(commands["unknown_command"]).toBeUndefined();
-  });
-});
-
-describe("declaring a command's domain errors", () => {
-  test("the declared classes are carried on the entry, with their kind, tag and fields", () => {
-    const entry = exposedCommandOf(Find, { errors: [NoSuchThing, NotYours] });
-    expect(entry.errors).toEqual([NoSuchThing, NotYours]);
-    expect(entry.errors.map((e) => e.kind)).toEqual(["not_found", "forbidden"]);
-    expect(entry.errors.map((e) => e.tag)).toEqual(["NoSuchThing", "NotYours"]);
-    expect(Object.keys(entry.errors[0]!.fields)).toEqual(["id"]);
-  });
-
-  test("a command that can fail with domain errors cannot be exposed without declaring them", () => {
-    // @ts-expect-error - NoSuchThing / NotYours are domain errors this command can fail with
-    exposedCommandOf(Find);
-  });
-
-  test("leaving out a class the command can fail with is a compile error naming it; extra classes are fine", () => {
-    // @ts-expect-error - NotYours is not declared (the message says: missingErrorClasses: NotYours)
-    exposedCommandOf(Find, { errors: [NoSuchThing] });
-    // @ts-expect-error - nothing declared although the command can fail with domain errors
-    exposedCommandOf(Find, { errors: [] });
-    expect(exposedCommandOf(Find, { errors: [NoSuchThing, NotYours, Other] }).errors).toHaveLength(3);
-    expect(exposedCommandOf(OpenWallet, { errors: [] }).errors).toEqual([]);
   });
 
   test("a command failing with something that is not a domain error cannot be exposed at all", () => {

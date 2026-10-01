@@ -75,6 +75,7 @@ class AlreadyDone extends DomainError("AlreadyDone", { fields: { id: Schema.Stri
 
 const Refuse = defineCommand({
   name: "refuse",
+  errors: [NoSuchThing, NotAllowed, BadRequestDomain, AlreadyDone],
   input: Schema.Struct({ kind: Schema.Literals(["not_found", "forbidden", "invalid", "conflict"]), id: Schema.String }),
   decide: (_, c) =>
     c.kind === "not_found" ? fail(new NoSuchThing({ id: c.id }))
@@ -84,7 +85,7 @@ const Refuse = defineCommand({
 });
 
 const testCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
-  refuse: exposedCommandOf(Refuse, { errors: [NoSuchThing, NotAllowed, BadRequestDomain, AlreadyDone] }),
+  refuse: exposedCommandOf(Refuse),
   open_wallet: exposedCommandOf(OpenWallet),
   send_confirmation: exposedCommandOf(SendConfirmation)
 };

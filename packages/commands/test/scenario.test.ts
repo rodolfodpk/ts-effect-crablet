@@ -32,6 +32,7 @@ class Overdrawn extends DomainError("Overdrawn", {
 const Positive = Schema.Number.check(Schema.isGreaterThan(0));
 const Withdraw = defineCommand({
   name: "withdraw",
+  errors: [NoSuchAccount, Overdrawn],
   input: Schema.Struct({ id: Schema.String, amount: Positive, opId: Schema.String }),
   model: (c) => AccountModel.of({ id: c.id }),
   idempotentBy: (c) => Withdrawn.where({ op_id: c.opId }),
@@ -107,6 +108,7 @@ describe("given / when: command logic without a database", () => {
   test("a command that fails AFTER its prepare step appended something leaves no trace (transaction rollback)", async () => {
     const Audit = defineCommand({
       name: "audited-withdraw",
+      errors: [NoSuchAccount],
       input: Schema.Struct({ id: Schema.String }),
       // prepare writes an audit event - then decide refuses
       prepare: (c, es) => es.append([Audited({ id: c.id })]),

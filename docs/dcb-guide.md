@@ -55,6 +55,7 @@ export const transferInput = Schema.Struct({
 
 export const Transfer = defineCommand({
   name: "transfer",
+  errors: [AccountNotFound, InsufficientFunds],
   input: transferInput,
   // The decision reads TWO accounts. `all` makes the boundary the union of both accounts' events, so a
   // change to EITHER one after we loaded refuses the append (and the command is re-run).
@@ -178,6 +179,7 @@ const decide = ({ course, student }: { course: Course; student: Student }, c: { 
 
 export const Subscribe = defineCommand({
   name: "subscribe",
+  errors: [CourseNotFound, CourseFull, StudentAtLimit],
   input: subscribeInput,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),

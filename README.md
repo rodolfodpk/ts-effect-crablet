@@ -42,6 +42,7 @@ class SeatTaken extends DomainError("SeatTaken", {
 // 3. A command: a pure decision. Nothing here touches a database.
 const BookSeat = defineCommand({
   name: "book_seat",
+  errors: [SeatTaken],      // the domain errors it can fail with: checked against `decide`, read by the REST API
   input: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
   model: (c) => SeatModel.of({ id: c.seatId }),
   decide: (seat, c) => (seat.taken ? fail(new SeatTaken({ seatId: c.seatId })) : emit(SeatBooked(c)))
@@ -88,10 +89,12 @@ Effect.runPromise(Effect.provide(program, AppLive));
 | `prepare: (c, eventStore) => ...` | An effectful pre-step (look something up, open a statement); its result feeds `model` and `decide`; rolled back with the command |
 | `retries: 3` (default) | A `Conflict` re-runs the whole command with fresh state; `0` turns it off |
 | `fail(new MyDomainError(...))` | A typed failure. The command's error type is inferred from every `fail(...)` in `decide` |
+| `errors: [MyDomainError]` | The domain errors the command can fail with, declared once. `decide` (and `prepare`) cannot fail with a domain error that is not listed: the compile error names the missing class |
 
 Errors declared with `DomainError(tag, { fields, kind })` carry a neutral `kind` (`not_found`,
-`invalid`, `conflict`, `forbidden`); the REST API (`packages/commands-http`) maps kinds to 404/400/409/403
-with no per-command code, and will not let you expose a command whose errors it cannot present.
+`invalid`, `conflict`, `forbidden`). The REST API (`packages/commands-http`) reads a command's `errors`: it maps each
+kind to 404/400/409/403, presents the error's own fields in the response, and documents them in the generated OpenAPI
+description - with no per-command HTTP code. It will not let you expose a command whose errors it cannot present.
 
 ## Reading your own writes
 

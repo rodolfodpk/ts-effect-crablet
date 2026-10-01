@@ -67,6 +67,7 @@ const decide = ({ course, student }: { course: Course; student: Student }, c: { 
 
 export const Subscribe = defineCommand({
   name: "subscribe",
+  errors: [CourseNotFound, CourseFull, StudentAtLimit],
   input: subscribeInput,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
@@ -78,6 +79,7 @@ export const Subscribe = defineCommand({
 export const subscribeWith = (opts: { wait: Effect.Effect<void>; retries?: number }) =>
   defineCommand({
     name: "subscribe_raced",
+    errors: [CourseNotFound, CourseFull, StudentAtLimit],
     input: subscribeInput,
     model: (c) => afterLoad(all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }), opts.wait),
     retries: opts.retries ?? 3,

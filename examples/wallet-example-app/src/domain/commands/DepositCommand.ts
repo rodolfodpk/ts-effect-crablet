@@ -13,6 +13,7 @@ export type DepositCommand = Schema.Schema.Type<typeof input>;
 // close still does (the lifecycle guard), and a repeated deposit id is an idempotent success.
 export const Deposit = defineCommand({
   name: "deposit",
+  errors: [WalletNotFound],
   input,
   prepare: (c, es) => resolveActivePeriod(es, c.walletId),
   model: (c, period) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
