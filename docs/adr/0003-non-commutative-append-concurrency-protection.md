@@ -74,6 +74,8 @@ transaction was open. Two independent defects were found by tests (both reproduc
   committed peers visible because the check runs in a statement issued after the locks are taken (a
   fresh READ COMMITTED snapshot). Consequently **callers must run at READ COMMITTED**, the Postgres
   default; a caller-imposed REPEATABLE READ/SERIALIZABLE snapshot could predate a peer's commit.
+  (The cursor the check compares against later became a `(transaction_id, position)` pair; see
+  [ADR-0012](0012-transaction-position-cursors.md).)
   Events appended earlier in the *same* transaction and after the condition's position now count as
   conflicts (previously masked by the filter); no current command relies on that.
 - Locks are per item (sorted keys, so acquisition is deadlock-free; idempotency locks always before

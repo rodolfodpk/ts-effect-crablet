@@ -180,6 +180,20 @@ Errors declared with `DomainError(tag, { fields, kind })` carry a neutral `kind`
 kind to 404/400/409/403, presents the error's own fields in the response, and documents them in the generated OpenAPI
 description - with no per-command HTTP code. It will not let you expose a command whose errors it cannot present.
 
+## What views, the outbox and automations can rely on
+
+They are fed by pollers with these guarantees:
+
+- **No event is skipped.** A poller's cursor is a `(transaction_id, position)` pair, so an event that commits late with a lower
+  position than one already delivered is still delivered ([ADR-0012](./docs/adr/0012-transaction-position-cursors.md)).
+- **At-least-once.** A handler can see an event again (after a crash, or a reset), so it must be idempotent.
+- **Delivery order is by transaction, then position.** Events of unrelated transactions are not necessarily delivered in position
+  order, so do not use "position is bigger than the last one I saw" as a general idempotency check. It is safe only where the events
+  that touch one row are written one after another, as in the tutorial's seats view (commands that share a boundary are serialized).
+  Use the event's identity (as the wallet views do) when in doubt.
+- **A long-running transaction anywhere in the database delays delivery** until it ends (events are only read once their transaction
+  has finished), so alert on idle-in-transaction sessions.
+
 ## Reading your own writes
 
 Views are updated asynchronously, a moment after the command that caused the change. When a caller needs to see its

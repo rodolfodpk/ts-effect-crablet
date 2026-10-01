@@ -15,7 +15,9 @@ export const courseSeatsViewSubscription: ViewSubscription = viewSubscriptionOf(
 
 // #region projector
 // Seats per course. Each event is applied once even if it is delivered again: the row remembers the position of the
-// last event it applied, and an event at or before that position is ignored.
+// last event it applied, and an event at or before that position is ignored. That is sound here because the events that
+// touch one course are written one after another (their commands share a boundary), so a course's positions only grow;
+// for events of unrelated transactions, delivery order is not position order, so key idempotency on the event instead.
 const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
   switch (event.type) {
     case CourseDefined.type: {

@@ -59,3 +59,6 @@ chance to run.
   filter, verified by a dedicated two-transaction test (a higher position that commits first stays
   invisible until a still-open lower position also commits) — not explicit in the predecessor ground
   truth, but directly analogous to `append_events_if()`'s own conflict-check reasoning (ADR-0003).
+  **Update:** the xmin filter alone did not make a position cursor safe (a row with a lower position
+  could still commit behind the cursor). Fetches are now a keyset on `(transaction_id, position)`;
+  see [ADR-0012](0012-transaction-position-cursors.md).
