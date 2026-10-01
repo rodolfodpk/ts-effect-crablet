@@ -995,3 +995,11 @@ asserts the model directly (queries, fold, both regressions).
   that is not listed is a compile error naming it; non-domain errors are not subject to it). `Command.errors` carries the classes; `exposedCommandOf(command)` no longer takes
   options and the API reads `command.errors` for the documented responses. Found by asking "decide already declares them" - the list must exist at run time (types are
   erased) but need not be a second copy.
+
+## OpenAPI phase 4 - read your own writes over HTTP
+
+- `POST /api/commands/<name>?waitFor=<view>&waitTimeout=<ms>`: after the command commits, the handler waits (via the app's `ViewWaiter` for that name) and reports
+  `view: { name, caughtUp, reason? }` in the 201/200 body. Failure to catch up is reported in the body, never as an error status. Idempotent repeats report
+  `nothing_appended` and do not call the waiter. Bad parameters are a 400 problem before the command runs (verified: nothing written).
+- `ViewWaiter` (commands-http) is structural: `waitUntilProcessed(subscription, position, { timeout })` satisfies it; the wallet maps each of its 4 view names.
+- The docs/api wallet document was regenerated (query parameters + `view` in the responses).

@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Duration, Effect, Layer } from "effect";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
@@ -11,6 +11,7 @@ import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
+import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import { makeAutomationsProcessor } from "@crablet/automations";
 import type { AutomationsConfig } from "@crablet/automations/AutomationsConfig";
 import { makeOutboxProcessor } from "@crablet/outbox";
@@ -21,6 +22,7 @@ import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
 import { exposedCommandOf, type ExposedCommand } from "@crablet/commands-http/ExposedCommand";
+import type { ViewWaiter } from "@crablet/commands-http/ViewWaiter";
 import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
 import { makeWalletTransactionViewProjector } from "./views/WalletTransactionViewProjector.ts";
 import { makeWalletSummaryViewProjector } from "./views/WalletSummaryViewProjector.ts";
@@ -164,6 +166,17 @@ const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
   close_wallet: exposedCommandOf(CloseWallet)
 };
 
+// The views a write request may wait for (`?waitFor=wallet-balance-view`): the response is then sent only once that
+// view has processed the write, so the caller's next read is not stale. One entry per wallet view.
+const walletViewWaiters: Readonly<Record<string, ViewWaiter>> = Object.fromEntries(
+  walletViewSubscriptions.map(
+    (subscription) => [
+      subscription.viewName,
+      (position: bigint, { timeout }: { readonly timeout: Duration.Duration }) => waitUntilProcessed(subscription, position, { timeout })
+    ]
+  )
+);
+
 // The app's HTTP API: commands-http's write group (one route per wallet command) + WalletQueryApi's
 // hand-written reads, combined into ONE HttpApi. A function of `basePath` because the command routes live under it.
 // Separate from `makeWalletApiLayer` so the API DESCRIPTION can be produced without serving anything
@@ -176,7 +189,12 @@ export const walletApiInfo = {
 } as const;
 
 export const makeWalletApi = (basePath: `/${string}` = "/api/commands") =>
-  withApiInfo(HttpApi.make("walletApp").add(makeCommandApiGroup(basePath, walletCommands)).add(walletQueryGroup), walletApiInfo);
+  withApiInfo(
+    HttpApi.make("walletApp")
+      .add(makeCommandApiGroup(basePath, walletCommands, { waitableViews: Object.keys(walletViewWaiters) }))
+      .add(walletQueryGroup),
+    walletApiInfo
+  );
 
 // Serves the API: the commands and reads, the OpenAPI document (at /openapi.json unless `openApiPath` says
 // otherwise) and, when asked for, a documentation page.
@@ -186,7 +204,8 @@ export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
 
   const commandsLive = makeCommandApiGroupLive(api, walletCommands, {
     basePath,
-    correlationHeaderEnabled: true
+    correlationHeaderEnabled: true,
+    viewWaiters: walletViewWaiters
   });
   const queryLive = makeWalletQueryApiLive(api);
 

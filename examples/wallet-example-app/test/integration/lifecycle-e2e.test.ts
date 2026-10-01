@@ -144,4 +144,35 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     const served = await getJson("/openapi.json");
     assert.deepStrictEqual(served, JSON.parse(readFileSync(walletOpenApiFile, "utf8")));
   });
+
+  it("over HTTP: ?waitFor=<view> answers only once the view has the write, so ONE read is enough", async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    const open = await post("open_wallet", { walletId, owner: "Cy", initialBalance: 10 });
+    assert.strictEqual(open.status, 201);
+    await waitUntilAsync(() => getJson(`/api/wallets/${walletId}`), (body) => body["balance"] === 10);
+
+    const res = await fetch(`${app.baseUrl}/api/commands/deposit?waitFor=wallet-balance-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ depositId: crypto.randomUUID(), walletId, amount: 25, description: "wait for me" })
+    });
+    assert.strictEqual(res.status, 201);
+    const body = (await res.json()) as Record<string, any>;
+    assert.deepStrictEqual(body["view"], { name: "wallet-balance-view", caughtUp: true });
+    assert.match(String(body["lastPosition"]), /^\d+$/);
+
+    // a single read, no retry loop
+    assert.strictEqual((await getJson(`/api/wallets/${walletId}`))["balance"], 35);
+  });
+
+  it("an unknown view is refused before the command runs", async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    const res = await fetch(`${app.baseUrl}/api/commands/open_wallet?waitFor=no-such-view`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletId, owner: "Di", initialBalance: 0 })
+    });
+    assert.strictEqual(res.status, 400);
+    assert.strictEqual((await fetch(`${app.baseUrl}/api/wallets/${walletId}`)).status, 404, "the wallet was never opened");
+  });
 });

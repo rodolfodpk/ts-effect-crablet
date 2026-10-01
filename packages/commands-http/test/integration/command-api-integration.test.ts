@@ -2,7 +2,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { Context, Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Context, Duration, Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
@@ -19,6 +19,7 @@ import * as Query from "@crablet/eventstore/Query";
 import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
 import { exposedCommandOf, type ExposedCommand } from "../../src/ExposedCommand.ts";
 import type { CommandApiConfig } from "../../src/CommandApiConfig.ts";
+import type { ViewWaiter } from "../../src/ViewWaiter.ts";
 
 const jsonBody = (res: Response): Promise<Record<string, unknown>> => res.json() as Promise<Record<string, unknown>>;
 
@@ -303,6 +304,116 @@ describe("commands-http integration (real Postgres)", () => {
       }
       await withServer(testCommands, { docs: { ui: "scalar", path: "/reference" } }, async (baseUrl) => {
         assert.strictEqual((await fetch(`${baseUrl}/reference`)).status, 200);
+      });
+    });
+  });
+
+  describe("read your own writes: ?waitFor=<view>", () => {
+    const waits: Array<{ view: string; position: bigint; timeoutMs: number; committed: boolean }> = [];
+
+    // Fake waiters (this package never imports the views package). `ok` also checks, from inside the wait, that the
+    // command's events are already committed and visible - the order a real view wait relies on.
+    const record = (view: string): ViewWaiter => (position, { timeout }) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const rows = yield* sql.unsafe<{ position: string }>("SELECT position::text AS position FROM crablet_events WHERE position = $1", [position.toString()]);
+        waits.push({ view, position, timeoutMs: Duration.toMillis(timeout), committed: rows.length === 1 });
+      });
+    const viewWaiters: Record<string, ViewWaiter> = {
+      ok: record("ok"),
+      slow: () => Effect.fail({ _tag: "WaitTimeout", reached: 0n } as const),
+      failed: () => Effect.fail({ _tag: "ViewFailed" } as const),
+      broken: () => Effect.fail({ _tag: "SqlError" } as never)
+    };
+    const open = (baseUrl: string, query: string, walletId: string = crypto.randomUUID()) =>
+      fetch(`${baseUrl}/api/commands/open_wallet${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId })
+      });
+
+    it("waits for the view after the command is committed, and reports that it caught up", { timeout: 20_000 }, async () => {
+      waits.length = 0;
+      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+        const res = await open(baseUrl, "?waitFor=ok");
+        assert.strictEqual(res.status, 201);
+        const body = await jsonBody(res);
+        assert.deepStrictEqual(body.view, { name: "ok", caughtUp: true });
+        assert.strictEqual(waits.length, 1);
+        assert.strictEqual(waits[0]!.position, BigInt(String(body.lastPosition)), "waited for the position the response reports");
+        assert.strictEqual(waits[0]!.committed, true, "the command's events were committed before the wait began");
+        assert.strictEqual(waits[0]!.timeoutMs, 5000, "default wait timeout");
+      });
+    });
+
+    it("waitTimeout is passed on", { timeout: 20_000 }, async () => {
+      waits.length = 0;
+      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+        assert.strictEqual((await open(baseUrl, "?waitFor=ok&waitTimeout=1234")).status, 201);
+        assert.strictEqual(waits[0]!.timeoutMs, 1234);
+      });
+    });
+
+    it("a view that did not catch up is reported in the body; the write is still a success (never an error status)", { timeout: 20_000 }, async () => {
+      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+        for (const [view, reason] of [["slow", "timeout"], ["failed", "view_failed"], ["broken", "unavailable"]] as const) {
+          const res = await open(baseUrl, `?waitFor=${view}`);
+          assert.strictEqual(res.status, 201, view);
+          assert.deepStrictEqual((await jsonBody(res)).view, { name: view, caughtUp: false, reason });
+        }
+      });
+    });
+
+    it("an idempotent repeat appended nothing: there is nothing to wait for, and the waiter is not called", { timeout: 20_000 }, async () => {
+      waits.length = 0;
+      const orderId = `order-${crypto.randomUUID()}`;
+      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+        const confirm = () =>
+          fetch(`${baseUrl}/api/commands/send_confirmation?waitFor=ok`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId })
+          });
+        assert.strictEqual((await confirm()).status, 201);
+        assert.strictEqual(waits.length, 1);
+        const repeat = await confirm();
+        assert.strictEqual(repeat.status, 200);
+        assert.deepStrictEqual((await jsonBody(repeat)).view, { name: "ok", caughtUp: false, reason: "nothing_appended" });
+        assert.strictEqual(waits.length, 1, "no second wait");
+      });
+    });
+
+    it("without the parameters the response has no `view`", { timeout: 20_000 }, async () => {
+      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+        assert.strictEqual("view" in (await jsonBody(await open(baseUrl, ""))), false);
+      });
+    });
+
+    it("bad parameters are a 400 BEFORE the command runs: nothing is written", { timeout: 20_000 }, async () => {
+      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+        for (const query of ["?waitFor=nope", "?waitTimeout=500", "?waitFor=ok&waitTimeout=0", "?waitFor=ok&waitTimeout=99999", "?waitFor=ok&waitTimeout=abc"]) {
+          const walletId = `wallet-${crypto.randomUUID()}`;
+          const res = await open(baseUrl, query, walletId);
+          assert.strictEqual(res.status, 400, query);
+          assert.strictEqual(res.headers.get("content-type"), "application/problem+json");
+          const written = await runtime.runPromise(
+            Effect.gen(function* () {
+              const sql = yield* SqlClient.SqlClient;
+              return yield* sql.unsafe<{ position: string }>("SELECT position::text AS position FROM crablet_events WHERE tags @> $1::text[]", [[`wallet_id=${walletId}`]]);
+            })
+          );
+          assert.strictEqual(written.length, 0, `${query}: the command must not have run`);
+        }
+        const unknown = await jsonBody(await open(baseUrl, "?waitFor=nope"));
+        assert.match(String(unknown.detail), /one of: ok, slow, failed, broken/);
+      });
+    });
+
+    it("with no views configured, waitFor is refused and says so", { timeout: 20_000 }, async () => {
+      await withServer(testCommands, {}, async (baseUrl) => {
+        const res = await open(baseUrl, "?waitFor=ok");
+        assert.strictEqual(res.status, 400);
+        assert.match(String((await jsonBody(res)).detail), /no views can be waited for/);
       });
     });
   });

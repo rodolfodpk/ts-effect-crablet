@@ -10,6 +10,7 @@
     "./ProblemDetail": "./src/ProblemDetail.ts",
     "./InputJsonSchema": "./src/InputJsonSchema.ts",
     "./ApiDescription": "./src/ApiDescription.ts",
+    "./ViewWaiter": "./src/ViewWaiter.ts",
     "./CommandApiLive": "./src/CommandApiLive.ts"
   },
   "dependencies": {

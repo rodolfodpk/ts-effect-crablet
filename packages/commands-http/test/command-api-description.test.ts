@@ -118,3 +118,32 @@ describe("how optional fields are described", () => {
     expect(specOf(Schema.Struct({ id: Schema.String })).additionalProperties).toBe(false);
   });
 });
+
+describe("waiting for a view (read your own writes)", () => {
+  const withViews = OpenApi.fromApi(makeCommandApi("/api/commands", registry, undefined, { waitableViews: ["wallet-balance-view", "wallet-summary-view"] })) as any;
+  const parameters = (name: string) => withViews.paths[`/api/commands/${name}`].post.parameters as Array<any>;
+
+  test("each command route accepts optional waitFor and waitTimeout query parameters, naming the views it can wait for", () => {
+    for (const name of ["deposit", "withdraw", "open"]) {
+      const byName = Object.fromEntries(parameters(name).map((p) => [p.name, p]));
+      expect(Object.keys(byName).sort()).toEqual(["waitFor", "waitTimeout"]);
+      expect(byName.waitFor.in).toBe("query");
+      expect(byName.waitFor.required).toBe(false);
+      expect(byName.waitFor.schema.description).toContain("wallet-balance-view, wallet-summary-view");
+      expect(byName.waitTimeout.schema.description).toContain("1 to 30000");
+    }
+  });
+
+  test("the response says whether the view caught up (view is present only when asked for)", () => {
+    const created = withViews.components.schemas.CommandCreated;
+    expect(created.required).toEqual(["status", "reason", "lastPosition"]);
+    expect(Object.keys(created.properties)).toContain("view");
+    const view = withViews.components.schemas.ViewWaitResult;
+    expect(view.required).toEqual(["name", "caughtUp"]);
+    expect(view.properties.reason.enum).toEqual(["timeout", "view_failed", "unavailable", "nothing_appended"]);
+  });
+
+  test("with no waitable views the parameters are not part of the description", () => {
+    expect(post("deposit").parameters ?? []).toEqual([]);
+  });
+});
