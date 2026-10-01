@@ -1,0 +1,612 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Course Enrolment API",
+    "version": "1.0.0",
+    "description": "Define courses and subscribe students: a course holds at most `capacity` students, a student takes at most 3 courses."
+  },
+  "paths": {
+    "/api/commands": {
+      "get": {
+        "tags": [
+          "commands"
+        ],
+        "operationId": "commands.listExposedCommands",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "exposedCommands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "commandType": {
+                            "type": "string"
+                          },
+                          "inputSchema": {}
+                        },
+                        "required": [
+                          "commandType",
+                          "inputSchema"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "exposedCommands"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commands/define_course": {
+      "post": {
+        "tags": [
+          "commands"
+        ],
+        "operationId": "commands.execute_define_course",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "CommandIdempotent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandIdempotent"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "CommandCreated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "CommandApiBadRequest",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiBadRequestEncoded"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CommandConflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandConflictEncoded"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "CommandApiUnexpectedError",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiUnexpectedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "courseId": {
+                    "type": "string"
+                  },
+                  "capacity": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "courseId",
+                  "capacity"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/commands/subscribe": {
+      "post": {
+        "tags": [
+          "commands"
+        ],
+        "operationId": "commands.execute_subscribe",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "CommandIdempotent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandIdempotent"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "CommandCreated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "CommandApiBadRequest",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiBadRequestEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CourseNotFoundProblem",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseNotFoundProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CommandConflict | CourseFullProblem | StudentAtLimitProblem",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CommandConflictEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CourseFullProblem"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StudentAtLimitProblem"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "CommandApiUnexpectedError",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiUnexpectedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "studentId": {
+                    "type": "string"
+                  },
+                  "courseId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "studentId",
+                  "courseId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CourseNotFoundProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Not Found"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              404
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errorType": {
+            "type": "string",
+            "enum": [
+              "CourseNotFound"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "courseId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "courseId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errorType",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
+      "CommandApiUnexpectedErrorEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:command-api:unexpected-error"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Internal Server Error"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              500
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "enum": [
+              "Unexpected command API error"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "StudentAtLimitProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Conflict"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              409
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errorType": {
+            "type": "string",
+            "enum": [
+              "StudentAtLimit"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "studentId": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "studentId",
+              "limit"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errorType",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
+      "CourseFullProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Conflict"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              409
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errorType": {
+            "type": "string",
+            "enum": [
+              "CourseFull"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "courseId": {
+                "type": "string"
+              },
+              "capacity": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "courseId",
+              "capacity"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errorType",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
+      "CommandConflictEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:command-api:dcb-concurrency"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Conflict"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              409
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "violationCode": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string",
+            "enum": [
+              "Refresh state and retry the command if it is still valid."
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "violationCode",
+          "hint"
+        ],
+        "additionalProperties": false
+      },
+      "CommandApiBadRequestEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:command-api:bad-request"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Bad Request"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              400
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "CommandIdempotent": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "IDEMPOTENT"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastPosition": {
+            "type": "null"
+          },
+          "view": {
+            "$ref": "#/components/schemas/ViewWaitResult"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "lastPosition"
+        ],
+        "additionalProperties": false
+      },
+      "ViewWaitResult": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "caughtUp": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "timeout",
+              "view_failed",
+              "unavailable",
+              "nothing_appended"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "caughtUp"
+        ],
+        "additionalProperties": false
+      },
+      "CommandCreated": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "CREATED"
+            ]
+          },
+          "reason": {
+            "type": "null"
+          },
+          "lastPosition": {
+            "type": "string"
+          },
+          "view": {
+            "$ref": "#/components/schemas/ViewWaitResult"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "lastPosition"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {}
+  },
+  "security": [],
+  "tags": [
+    {
+      "name": "commands"
+    }
+  ]
+}
