@@ -52,10 +52,10 @@ const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => b
 };
 
 const post = (commandType: string, command: unknown) =>
-  fetch(`${app.baseUrl}/api/commands`, {
+  fetch(`${app.baseUrl}/api/commands/${commandType}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ commandType, command })
+    body: JSON.stringify(command)
   });
 
 const getJson = (path: string) => fetch(`${app.baseUrl}${path}`).then((res) => res.json() as Promise<Record<string, unknown>>);

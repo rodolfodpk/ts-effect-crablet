@@ -84,7 +84,7 @@ const Refuse = defineCommand({
 });
 
 const testCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
-  refuse: exposedCommandOf(Refuse),
+  refuse: exposedCommandOf(Refuse, { errors: [NoSuchThing, NotAllowed, BadRequestDomain, AlreadyDone] }),
   open_wallet: exposedCommandOf(OpenWallet),
   send_confirmation: exposedCommandOf(SendConfirmation)
 };
@@ -135,14 +135,16 @@ describe("commands-http integration (real Postgres)", () => {
     const runId = crypto.randomUUID();
     const walletId = `wallet-${runId}`;
     await withServer(testCommands, {}, async (baseUrl) => {
-      const res = await fetch(`${baseUrl}/api/commands`, {
+      const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commandType: "open_wallet", command: { walletId } })
+        body: JSON.stringify({ walletId })
       });
       assert.strictEqual(res.status, 201);
       const body = await jsonBody(res);
-      assert.deepStrictEqual(body, { status: "CREATED", reason: null });
+      assert.strictEqual(body.status, "CREATED");
+      assert.strictEqual(body.reason, null);
+      assert.match(String(body.lastPosition), /^\d+$/, "the position of the last appended event, as a string");
     });
 
     const row = await getEventRow(`WalletOpened`);
@@ -154,10 +156,10 @@ describe("commands-http integration (real Postgres)", () => {
     const orderId = `order-${runId}`;
     await withServer(testCommands, {}, async (baseUrl) => {
       const post = () =>
-        fetch(`${baseUrl}/api/commands`, {
+        fetch(`${baseUrl}/api/commands/send_confirmation`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ commandType: "send_confirmation", command: { orderId } })
+          body: JSON.stringify({ orderId })
         });
 
       const first = await post();
@@ -168,6 +170,7 @@ describe("commands-http integration (real Postgres)", () => {
       const body = await jsonBody(second);
       assert.strictEqual(body.status, "IDEMPOTENT");
       assert.ok(body.reason, "expected a non-empty idempotency reason");
+      assert.strictEqual(body.lastPosition, null, "a repeat appended nothing");
     });
   });
 
@@ -176,10 +179,10 @@ describe("commands-http integration (real Postgres)", () => {
     const walletId = `wallet-conflict-${runId}`;
     await withServer(testCommands, {}, async (baseUrl) => {
       const post = () =>
-        fetch(`${baseUrl}/api/commands`, {
+        fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ commandType: "open_wallet", command: { walletId } })
+          body: JSON.stringify({ walletId })
         });
 
       const first = await post();
@@ -195,38 +198,54 @@ describe("commands-http integration (real Postgres)", () => {
     });
   });
 
-  it("unknown commandType returns 400", { timeout: 20_000 }, async () => {
+  it("an unknown command has no route: 404", { timeout: 20_000 }, async () => {
     await withServer(testCommands, {}, async (baseUrl) => {
-      const res = await fetch(`${baseUrl}/api/commands`, {
+      const res = await fetch(`${baseUrl}/api/commands/does_not_exist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commandType: "does_not_exist", command: {} })
+        body: "{}"
       });
-      assert.strictEqual(res.status, 400);
-      const body = await jsonBody(res);
-      assert.strictEqual(body.status, 400);
+      assert.strictEqual(res.status, 404);
     });
   });
 
-  it("malformed JSON body is rejected with a 4xx status", { timeout: 20_000 }, async () => {
+  it("a payload that does not match the command's input is a 400 problem naming the command", { timeout: 20_000 }, async () => {
     await withServer(testCommands, {}, async (baseUrl) => {
-      const res = await fetch(`${baseUrl}/api/commands`, {
+      const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId: 42 })
+      });
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual(res.headers.get("content-type"), "application/problem+json");
+      const body = await jsonBody(res);
+      assert.strictEqual(body.status, 400);
+      assert.strictEqual(body.detail, "Invalid payload for command: open_wallet");
+    });
+  });
+
+  it("a malformed JSON body gets the same 400 problem (not an empty-bodied default)", { timeout: 20_000 }, async () => {
+    await withServer(testCommands, {}, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{not valid json"
       });
-      assert.ok(res.status >= 400 && res.status < 500, `expected a 4xx status, got ${res.status}`);
+      assert.strictEqual(res.status, 400);
+      const body = await jsonBody(res);
+      assert.strictEqual(body.detail, "Invalid payload for command: open_wallet");
     });
   });
 
-  it("GET lists the exposed command types", { timeout: 20_000 }, async () => {
+  it("GET lists the exposed commands, each with its input as JSON Schema", { timeout: 20_000 }, async () => {
     await withServer(testCommands, {}, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/commands`);
       assert.strictEqual(res.status, 200);
-      const body = await jsonBody(res);
-      assert.deepStrictEqual(body, {
-        exposedCommands: [{ commandType: "open_wallet" }, { commandType: "refuse" }, { commandType: "send_confirmation" }]
-      });
+      const body = (await jsonBody(res)) as { exposedCommands: Array<{ commandType: string; inputSchema: any }> };
+      assert.deepStrictEqual(body.exposedCommands.map((c) => c.commandType), ["open_wallet", "refuse", "send_confirmation"]);
+      const openWallet = body.exposedCommands.find((c) => c.commandType === "open_wallet")!;
+      assert.deepStrictEqual(openWallet.inputSchema.schema.required, ["walletId"]);
+      assert.strictEqual(openWallet.inputSchema.schema.properties.walletId.type, "string");
     });
   });
 
@@ -241,10 +260,10 @@ describe("commands-http integration (real Postgres)", () => {
     it("a supplied correlation id is echoed back", { timeout: 20_000 }, async () => {
       const correlationId = crypto.randomUUID();
       await withServer(testCommands, { correlationHeaderEnabled: true }, async (baseUrl) => {
-        const res = await fetch(`${baseUrl}/api/commands`, {
+        const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Correlation-Id": correlationId },
-          body: JSON.stringify({ commandType: "open_wallet", command: { walletId: crypto.randomUUID() } })
+          body: JSON.stringify({ walletId: crypto.randomUUID() })
         });
         assert.strictEqual(res.status, 201);
         assert.strictEqual(res.headers.get("x-correlation-id"), correlationId);
@@ -253,10 +272,10 @@ describe("commands-http integration (real Postgres)", () => {
 
     it("a missing correlation id is generated and echoed", { timeout: 20_000 }, async () => {
       await withServer(testCommands, { correlationHeaderEnabled: true }, async (baseUrl) => {
-        const res = await fetch(`${baseUrl}/api/commands`, {
+        const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ commandType: "open_wallet", command: { walletId: crypto.randomUUID() } })
+          body: JSON.stringify({ walletId: crypto.randomUUID() })
         });
         assert.strictEqual(res.status, 201);
         assert.ok(res.headers.get("x-correlation-id"), "expected a generated correlation id to be echoed");
@@ -265,10 +284,10 @@ describe("commands-http integration (real Postgres)", () => {
 
     it("a malformed correlation id is rejected with 400", { timeout: 20_000 }, async () => {
       await withServer(testCommands, { correlationHeaderEnabled: true }, async (baseUrl) => {
-        const res = await fetch(`${baseUrl}/api/commands`, {
+        const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Correlation-Id": "not-a-uuid" },
-          body: JSON.stringify({ commandType: "open_wallet", command: { walletId: crypto.randomUUID() } })
+          body: JSON.stringify({ walletId: crypto.randomUUID() })
         });
         assert.strictEqual(res.status, 400);
       });
@@ -276,10 +295,10 @@ describe("commands-http integration (real Postgres)", () => {
 
     it("when disabled, an inbound correlation id is ignored (not echoed)", { timeout: 20_000 }, async () => {
       await withServer(testCommands, { correlationHeaderEnabled: false }, async (baseUrl) => {
-        const res = await fetch(`${baseUrl}/api/commands`, {
+        const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Correlation-Id": crypto.randomUUID() },
-          body: JSON.stringify({ commandType: "open_wallet", command: { walletId: crypto.randomUUID() } })
+          body: JSON.stringify({ walletId: crypto.randomUUID() })
         });
         assert.strictEqual(res.status, 201);
         assert.strictEqual(res.headers.get("x-correlation-id"), null);
@@ -290,10 +309,10 @@ describe("commands-http integration (real Postgres)", () => {
 
 describe("a domain error's kind decides the HTTP status (no per-command hook)", () => {
   const post = (baseUrl: string, kind: string, id = "x1") =>
-    fetch(`${baseUrl}/api/commands`, {
+    fetch(`${baseUrl}/api/commands/refuse`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ commandType: "refuse", command: { kind, id } })
+      body: JSON.stringify({ kind, id })
     });
 
   for (const [kind, status, title, errorType, fields] of [

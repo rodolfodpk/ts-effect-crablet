@@ -43,6 +43,7 @@ export interface DomainErrorClass<Tag extends string, F extends Record<string, S
   new (args: VoidIfEmpty<FieldValues<F>>): Cause.YieldableError & { readonly _tag: Tag } & FieldValues<F> & KindedError;
   readonly kind: ErrorKind;
   readonly fields: F;
+  readonly tag: Tag;
 }
 
 export const DomainError = <Tag extends string, F extends Record<string, Schema.Constraint>>(
@@ -53,6 +54,7 @@ export const DomainError = <Tag extends string, F extends Record<string, Schema.
   class DomainErrorImpl extends Base {
     static readonly kind: ErrorKind = spec.kind;
     static readonly fields: F = spec.fields;
+    static readonly tag: Tag = tag;
     get [DomainErrorKind](): ErrorKind {
       return spec.kind;
     }

@@ -40,35 +40,35 @@ after(async () => {
 });
 
 const post = (commandType: string, command: unknown) =>
-  fetch(`${app.baseUrl}/api/commands`, {
+  fetch(`${app.baseUrl}/api/commands/${commandType}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ commandType, command })
+    body: JSON.stringify(command)
   });
 
 describe("wallet error mapping E2E (RFC 7807 problem details over real HTTP)", () => {
-  it("deposit to a nonexistent wallet -> 404 WalletNotFoundProblem", async () => {
+  it("deposit to a nonexistent wallet -> 404, the domain error's tag and fields as a problem", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const res = await post("deposit", { depositId: crypto.randomUUID(), walletId, amount: 10, description: "x" });
     assert.strictEqual(res.status, 404);
+    assert.strictEqual(res.headers.get("content-type"), "application/problem+json");
     const body = (await res.json()) as Record<string, unknown>;
-    assert.strictEqual(body["type"], "urn:wallet-example-app:problem:wallet-not-found");
+    assert.strictEqual(body["type"], "urn:crablet:problem:command-api:not-found");
     assert.strictEqual(body["status"], 404);
-    assert.ok(typeof body["detail"] === "string" && body["detail"].includes(walletId));
+    assert.strictEqual(body["errorType"], "WalletNotFound");
+    assert.deepStrictEqual(body["fields"], { walletId });
   });
 
-  it("withdraw more than the balance -> 400 InsufficientFundsProblem with balance/requested detail", async () => {
+  it("withdraw more than the balance -> a problem carrying the error's own fields (balance and requested amount)", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const openRes = await post("open_wallet", { walletId, owner: "Bob", initialBalance: 20 });
     assert.strictEqual(openRes.status, 201);
 
     const res = await post("withdraw", { withdrawalId: crypto.randomUUID(), walletId, amount: 500, description: "too much" });
-    assert.strictEqual(res.status, 400);
     const body = (await res.json()) as Record<string, unknown>;
-    assert.strictEqual(body["type"], "urn:wallet-example-app:problem:insufficient-funds");
-    assert.strictEqual(body["status"], 400);
-    assert.strictEqual(body["currentBalance"], 20);
-    assert.strictEqual(body["requestedAmount"], 500);
+    assert.strictEqual(body["errorType"], "InsufficientFunds");
+    assert.strictEqual(res.status, body["status"]);
+    assert.deepStrictEqual(body["fields"], { walletId, currentBalance: 20, requestedAmount: 500 });
   });
 
   it("opening the same wallet twice -> 409 conflict (Idempotent onDuplicate: THROW)", async () => {
@@ -82,7 +82,7 @@ describe("wallet error mapping E2E (RFC 7807 problem details over real HTTP)", (
     assert.strictEqual(body["violationCode"], "IDEMPOTENCY_VIOLATION");
   });
 
-  it("transfer from a nonexistent wallet -> 404 WalletNotFoundProblem", async () => {
+  it("transfer from a nonexistent wallet -> 404 naming that wallet", async () => {
     const toWalletId = `wallet-${crypto.randomUUID()}`;
     await post("open_wallet", { walletId: toWalletId, owner: "Frank", initialBalance: 0 });
 
@@ -96,7 +96,7 @@ describe("wallet error mapping E2E (RFC 7807 problem details over real HTTP)", (
     });
     assert.strictEqual(res.status, 404);
     const body = (await res.json()) as Record<string, unknown>;
-    assert.strictEqual(body["type"], "urn:wallet-example-app:problem:wallet-not-found");
-    assert.ok(typeof body["detail"] === "string" && body["detail"].includes(missingFromWalletId));
+    assert.strictEqual(body["errorType"], "WalletNotFound");
+    assert.deepStrictEqual(body["fields"], { walletId: missingFromWalletId });
   });
 });

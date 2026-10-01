@@ -8,24 +8,21 @@ import type { SqlClient } from "effect/sql";
 import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import { makeCommandApi, CommandEnvelope } from "./CommandApi.ts";
+import { executeEndpointName, listedCommands, makeCommandApi } from "./CommandApi.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
 import { kindOf } from "@crablet/commands/Errors";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, domainProblemOf } from "./ProblemDetail.ts";
 
-type CommandEnvelopePayload = Schema.Schema.Type<typeof CommandEnvelope>;
-
 // What running a command needs from the environment: the executor plus what `execute` itself uses.
 export type CommandApiRequirements = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient;
 
 // Duck-typed on the RFC 7807 shape (type/title/status/detail) rather than `instanceof` against a
-// fixed list of known classes - this is what lets ExposedCommand.ts's per-command `mapError` hook
-// surface an app-owned domain-error class (e.g. examples/wallet-example-app's own
-// WalletNotFoundProblem) without commands-http needing to know that class exists. Anything that
-// doesn't already look like a ProblemDetail (a framework-internal decode/encode error, an
-// unrecognized handler-thrown value, ...) becomes a generic 500 with the real message not echoed.
+// fixed list of known classes: a domain error's problem is a plain object built from its declared
+// kind and fields (see ProblemDetail.ts). Anything that doesn't already look like a problem (a
+// framework-internal decode/encode error, an unrecognized handler-thrown value, ...) becomes a generic
+// 500 with the real message not echoed.
 const isProblemDetailShaped = (value: unknown): value is object =>
   typeof value === "object" &&
   value !== null &&
@@ -40,11 +37,11 @@ const CORRELATION_HEADER = "x-correlation-id";
 
 const uuid = Schema.String.check(Schema.isUUID());
 
-// `commands` is the app-supplied flat map (commandType -> schema + handler); each entry keeps its own
+// `commands` is the app-supplied flat map (name -> command + declared errors); each entry keeps its own
 // concrete T/E, so the map itself is type-erased at this boundary (see ExposedCommand.ts).
 //
 // Takes the full composed `api` as a parameter (generic over whatever bigger `HttpApi` the caller
-// built, as long as it contains a `"commands"` group shaped like `makeCommandApiGroup` produces)
+// built, as long as it contains a `"commands"` group made by `makeCommandApiGroup` from the SAME registry)
 // rather than building it internally, so a consuming app can compose this group alongside its own
 // groups under one router. Returns just the group's implementation Layer, like
 // `HttpApiBuilder.group` itself - wrapping it in `HttpApiBuilder.layer(...)` is the caller's job
@@ -56,11 +53,7 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
 ): Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> => {
   const correlationHeaderEnabled = config.correlationHeaderEnabled ?? false;
 
-  const listExposedCommands = Effect.sync(() => ({
-    exposedCommands: Object.keys(commands)
-      .sort()
-      .map((commandType) => ({ commandType }))
-  }));
+  const listExposedCommands = Effect.sync(() => ({ exposedCommands: listedCommands(commands) }));
 
   // Resolves the optional correlation id: disabled -> ignore any inbound header entirely; enabled +
   // present -> validate as a UUID (fail 400 if malformed) and echo it back; enabled + absent ->
@@ -82,77 +75,67 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
     return raw;
   });
 
+  // One handler per exposed command. The body is decoded here, with the command's own `decodeInput`, rather
+  // than by the HTTP framework (`handleRaw`), so a malformed or invalid body answers with a problem body.
+  const handleCommand = (commandType: string, entry: ExposedCommand<any, any>) =>
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const invalidPayload = () => CommandApiBadRequest.of(`Invalid payload for command: ${commandType}`);
+      const raw = yield* request.json.pipe(Effect.mapError(invalidPayload));
+      // Validation belongs to the command itself: its input schema.
+      const input = yield* entry.command.decodeInput(raw).pipe(Effect.mapError(invalidPayload));
+
+      const correlationId = yield* resolveCorrelationId;
+
+      // Only the command-execution call itself runs inside CorrelationContext - request parsing and
+      // validation above deliberately do not. A `Conflict` (stale decision) or a `Duplicate` (command
+      // opted into failing on repeats) becomes a 409 `CommandConflict` - neither is ever this command's own
+      // domain error. A declared domain error is presented by its KIND with its own fields (see
+      // ProblemDetail.ts). Anything still unrecognized falls through, unchanged, to the terminal
+      // `toProblemDetail` catch-all below (a generic 500).
+      const executor = yield* CommandExecutor;
+      const runExecute = executor.runDecoded(entry.command, input).pipe(
+        Effect.catchTag("Conflict", (e) =>
+          Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION"))
+        ),
+        Effect.catchTag("Duplicate", (e) => Effect.fail(CommandConflict.of(e.message, "IDEMPOTENCY_VIOLATION"))),
+        Effect.catch((error) => {
+          if (error instanceof CommandConflict) return Effect.fail(error);
+          const kind = kindOf(error);
+          return Effect.fail(kind !== undefined ? domainProblemOf(kind, error) : error);
+        })
+      );
+
+      const result = yield* correlationId !== null
+        ? CorrelationContext.withCorrelationId(correlationId)(runExecute)
+        : runExecute;
+
+      // Raw response: the status (201 created / 200 idempotent) and optional correlation header are
+      // chosen here, after the command ran.
+      return HttpServerResponse.jsonUnsafe(
+        result.wasIdempotent
+          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null }
+          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition) },
+        {
+          status: result.wasIdempotent ? 200 : 201,
+          ...(correlationId !== null ? { headers: { [CORRELATION_HEADER]: correlationId } } : {})
+        }
+      );
+    }).pipe(
+      Effect.catch((error) => Effect.fail(toProblemDetail(error))),
+      Effect.catchDefect((defect) => Effect.fail(toProblemDetail(defect)))
+    );
+
   // `HttpApiBuilder.group as any`: its signature requires "commands" to be statically known as a
-  // member of `Groups`, which an arbitrary caller-supplied generic `Groups` can't prove to the
-  // compiler (that is the point of accepting *any* bigger api that contains this group at runtime),
-  // so the whole call is cast. Narrow, deliberate type-erasure at this one dynamic-composition
-  // boundary - `payload`'s shape is recovered below via `CommandEnvelopePayload`.
+  // member of `Groups`, and the endpoint names are only known at run time (one per registry entry), so
+  // the whole call is cast. Narrow, deliberate type-erasure at this one dynamic-composition boundary.
   const groupBuilder = HttpApiBuilder.group as any;
   const CommandsLive: Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> = groupBuilder(api, "commands", (handlers: any) =>
     Effect.succeed(
-      handlers
-        .handle("listExposedCommands", () => listExposedCommands)
-        .handle("executeCommand", ({ payload }: { payload: CommandEnvelopePayload }) =>
-          Effect.gen(function* () {
-            const entry = commands[payload.commandType];
-            if (!entry) {
-              return yield* Effect.fail(CommandApiBadRequest.of(`Unknown command type: ${payload.commandType}`));
-            }
-
-            // Validation belongs to the command itself: its input schema.
-            const command = yield* entry.command.decodeInput(payload.command).pipe(
-              Effect.catchTag("InvalidInput", () =>
-                Effect.fail(CommandApiBadRequest.of(`Invalid payload for commandType: ${payload.commandType}`))
-              )
-            );
-
-            const correlationId = yield* resolveCorrelationId;
-
-            // Only the command-execution call itself runs inside CorrelationContext - request
-            // parsing/validation above deliberately does not. A `Conflict` (stale decision) or a
-            // `Duplicate` (command opted into failing on repeats) becomes a 409 `CommandConflict`
-            // before the entry's own `mapError` hook - neither is ever this command's own domain error.
-            // Everything else (the handler's own E) gets one chance via `entry.mapError` to become a real
-            // ProblemDetail (e.g. "wallet not found" -> 404). A declared domain error without a hook is
-            // presented generically by its KIND (see ProblemDetail.ts). Anything still unrecognized falls
-            // through, unchanged, to the outer terminal `toProblemDetail` catch-all (a generic 500).
-            const executor = yield* CommandExecutor;
-            const runExecute = executor.runDecoded(entry.command, command).pipe(
-              Effect.catchTag("Conflict", (e) =>
-                Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION"))
-              ),
-              Effect.catchTag("Duplicate", (e) =>
-                Effect.fail(CommandConflict.of(e.message, "IDEMPOTENCY_VIOLATION"))
-              ),
-              Effect.catch((error) => {
-                if (error instanceof CommandConflict) return Effect.fail(error);
-                const kind = kindOf(error);
-                return Effect.fail(
-                  entry.mapError?.(error) ?? (kind !== undefined ? domainProblemOf(kind, error) : error)
-                );
-              })
-            );
-
-            const result = yield* (correlationId !== null
-              ? CorrelationContext.withCorrelationId(correlationId)(runExecute)
-              : runExecute);
-
-            // Raw response: the status (200 idempotent / 201 created) and optional correlation header
-            // are chosen here, after the command ran.
-            return HttpServerResponse.jsonUnsafe(
-              result.wasIdempotent
-                ? { status: "IDEMPOTENT" as const, reason: result.reason }
-                : { status: "CREATED" as const, reason: null },
-              {
-                status: result.wasIdempotent ? 200 : 201,
-                ...(correlationId !== null ? { headers: { [CORRELATION_HEADER]: correlationId } } : {})
-              }
-            );
-          }).pipe(
-            Effect.catch((error) => Effect.fail(toProblemDetail(error))),
-            Effect.catchDefect((defect) => Effect.fail(toProblemDetail(defect)))
-          )
-        )
+      Object.entries(commands).reduce(
+        (h: any, [commandType, entry]) => h.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, entry)),
+        handlers.handle("listExposedCommands", () => listExposedCommands)
+      )
     )
   );
 
@@ -167,6 +150,6 @@ export const makeCommandApiLive = (
   config: CommandApiConfig = {}
 ) => {
   const basePath = (config.basePath ?? defaultBasePath) as `/${string}`;
-  const api = makeCommandApi(basePath);
+  const api = makeCommandApi(basePath, commands);
   return HttpApiBuilder.layer(api).pipe(Layer.provide(makeCommandApiGroupLive(api, commands, config)));
 };

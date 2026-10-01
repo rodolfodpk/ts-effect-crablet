@@ -28,7 +28,6 @@ import { walletViewSubscriptions } from "./views/WalletViewConfig.ts";
 import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
-import { WalletNotFoundProblem, InsufficientFundsProblem } from "./api/WalletProblems.ts";
 import { OpenWallet } from "./domain/commands/OpenWalletCommand.ts";
 import { Deposit } from "./domain/commands/DepositCommand.ts";
 import { Withdraw } from "./domain/commands/WithdrawCommand.ts";
@@ -150,25 +149,16 @@ export const startBackgroundProcessors = (
   });
 
 // The wallet's public write API: the 5 wallet commands, deliberately NOT SendWelcomeNotification (an
-// automation-triggered internal command, not a public write API). Each entry's `mapError` hook
-// translates this app's own domain errors (WalletNotFound/InsufficientFunds) into the RFC 7807 wire
-// shapes declared as `extraErrors` on the combined HttpApi below - everything else falls through to
-// commands-http's own generic mapping, unchanged. `ExposedCommand<any, any>` - see ExposedCommand.ts's
-// own primer on this registry's type erasure.
-const notFound = (error: unknown) => (error instanceof WalletNotFound ? WalletNotFoundProblem.of(error.walletId) : undefined);
-const notFoundOrInsufficient = (error: unknown) =>
-  error instanceof WalletNotFound
-    ? WalletNotFoundProblem.of(error.walletId)
-    : error instanceof InsufficientFunds
-      ? InsufficientFundsProblem.of(error.walletId, error.currentBalance, error.requestedAmount)
-      : undefined;
-
+// automation-triggered internal command, not a public write API). Each entry declares the domain errors its
+// command can fail with: the API presents them by their kind (404 / 400 / ...) with their own fields, and
+// documents them in the API description. Leaving one out is a compile error. `ExposedCommand<any, any>` -
+// see ExposedCommand.ts's own primer on this registry's type erasure.
 const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
   open_wallet: exposedCommandOf(OpenWallet),
-  deposit: exposedCommandOf(Deposit, notFound),
-  withdraw: exposedCommandOf(Withdraw, notFoundOrInsufficient),
-  transfer_money: exposedCommandOf(TransferMoney, notFoundOrInsufficient),
-  close_wallet: exposedCommandOf(CloseWallet, notFound)
+  deposit: exposedCommandOf(Deposit, { errors: [WalletNotFound] }),
+  withdraw: exposedCommandOf(Withdraw, { errors: [WalletNotFound, InsufficientFunds] }),
+  transfer_money: exposedCommandOf(TransferMoney, { errors: [WalletNotFound, InsufficientFunds] }),
+  close_wallet: exposedCommandOf(CloseWallet, { errors: [WalletNotFound] })
 };
 
 // The app's HTTP composition: commands-http's generic write group + WalletQueryApi's
@@ -176,7 +166,7 @@ const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
 export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = HttpApi.make("walletApp")
-    .add(makeCommandApiGroup(basePath, [WalletNotFoundProblem, InsufficientFundsProblem]))
+    .add(makeCommandApiGroup(basePath, walletCommands))
     .add(walletQueryGroup);
 
   const commandsLive = makeCommandApiGroupLive(api, walletCommands, {

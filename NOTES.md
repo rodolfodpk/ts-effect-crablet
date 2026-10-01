@@ -968,3 +968,14 @@ asserts the model directly (queries, fold, both regressions).
   which, unlike the poller's own fetch, has no xmin visibility cut-off - it asks what exists, not what is safe to read yet).
   Typed failures: `WaitTimeout` (reports how far the view got) and `ViewFailed` (status FAILED: fail fast).
 - Not done: waiting on outbox / automations progress (same idea, other progress tables); a poll-free wake-up via NOTIFY.
+
+## OpenAPI phase 2 - per-command routes (commands-http)
+
+- One route per exposed command (`POST {basePath}/{name}`) built from the registry at startup; the request body is the command's input schema, the
+  documented failures are the framework's own plus the command's DECLARED domain errors (`exposedCommandOf(command, { errors: [...] })`, checked at
+  compile time). Problems are `application/problem+json`. The generic `{ commandType, command }` endpoint, `mapError` and `extraErrors` are removed.
+- Handlers use `handleRaw` and the command's own `decodeInput`: HttpApi's default payload failure is an empty-bodied 400, ours is a problem body. This also
+  fixed the old "malformed JSON gives an empty body" follow-up.
+- Response: `{ status: "CREATED", reason: null, lastPosition: "<position>" }` (201) or `{ status: "IDEMPOTENT", reason, lastPosition: null }` (200).
+- Wallet ported: registry declares errors per command, `InsufficientFundsProblem` deleted, e2e tests post to the new paths and assert the new problem shape
+  (`errorType` + `fields`). `command-api-description.test.ts` checks the generated description without a server.

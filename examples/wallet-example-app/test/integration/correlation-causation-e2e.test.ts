@@ -81,10 +81,10 @@ describe("correlation/causation propagation E2E (HTTP -> event store -> automati
     const walletId = `wallet-${crypto.randomUUID()}`;
     const correlationId = crypto.randomUUID();
 
-    const res = await fetch(`${app.baseUrl}/api/commands`, {
+    const res = await fetch(`${app.baseUrl}/api/commands/open_wallet`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-correlation-id": correlationId },
-      body: JSON.stringify({ commandType: "open_wallet", command: { walletId, owner: "Karl", initialBalance: 0 } })
+      body: JSON.stringify({ walletId, owner: "Karl", initialBalance: 0 })
     });
     assert.strictEqual(res.status, 201);
     assert.strictEqual(res.headers.get("x-correlation-id"), correlationId);
@@ -106,10 +106,10 @@ describe("correlation/causation propagation E2E (HTTP -> event store -> automati
 
   it("without an inbound correlation header, one is generated, echoed back, and stored on the event", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
-    const res = await fetch(`${app.baseUrl}/api/commands`, {
+    const res = await fetch(`${app.baseUrl}/api/commands/open_wallet`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commandType: "open_wallet", command: { walletId, owner: "Liam", initialBalance: 0 } })
+      body: JSON.stringify({ walletId, owner: "Liam", initialBalance: 0 })
     });
     assert.strictEqual(res.status, 201);
     const generatedCorrelationId = res.headers.get("x-correlation-id");

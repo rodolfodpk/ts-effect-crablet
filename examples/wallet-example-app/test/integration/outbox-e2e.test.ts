@@ -52,10 +52,10 @@ after(async () => {
 });
 
 const post = (commandType: string, command: unknown) =>
-  fetch(`${app.baseUrl}/api/commands`, {
+  fetch(`${app.baseUrl}/api/commands/${commandType}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ commandType, command })
+    body: JSON.stringify(command)
   });
 
 const waitUntilAsync = async <A>(check: () => A, predicate: (a: A) => boolean, timeoutMs = 10_000) => {

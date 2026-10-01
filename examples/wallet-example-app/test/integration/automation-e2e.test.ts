@@ -45,10 +45,10 @@ after(async () => {
 });
 
 const post = (commandType: string, command: unknown) =>
-  fetch(`${app.baseUrl}/api/commands`, {
+  fetch(`${app.baseUrl}/api/commands/${commandType}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ commandType, command })
+    body: JSON.stringify(command)
   });
 
 const collectingProjector = {

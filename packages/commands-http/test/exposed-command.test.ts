@@ -1,30 +1,33 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
-import { defineCommand, noop } from "@crablet/commands/Command";
+import { defineCommand, fail, noop } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
-import { fail } from "@crablet/commands/Command";
 import { exposedCommandOf, type ExposedCommand } from "../src/ExposedCommand.ts";
-import { domainProblemOf } from "../src/ProblemDetail.ts";
+import { domainProblemOf, problemSchemaOf } from "../src/ProblemDetail.ts";
+
+class NoSuchThing extends DomainError("NoSuchThing", { fields: { id: Schema.String }, kind: "not_found" }) {}
+class NotYours extends DomainError("NotYours", { fields: {}, kind: "forbidden" }) {}
+class Other extends DomainError("Other", { fields: {}, kind: "invalid" }) {}
 
 const OpenWallet = defineCommand({
   name: "open_wallet",
   input: Schema.Struct({ walletId: Schema.String }),
   decide: () => noop()
 });
+const Find = defineCommand({
+  name: "find",
+  input: Schema.Struct({ id: Schema.String }),
+  decide: (_, c) => (c.id === "x" ? fail(new NoSuchThing({ id: c.id })) : fail(new NotYours()))
+});
 
 describe("exposedCommandOf", () => {
-  test("wraps a defined command, with no error hook by default", () => {
+  test("wraps a defined command; a command with no domain errors declares none", () => {
     const entry = exposedCommandOf(OpenWallet);
     expect(entry.command).toBe(OpenWallet);
-    expect(entry.mapError).toBeUndefined();
+    expect(entry.errors).toEqual([]);
   });
 
-  test("carries an optional hook that presents the command's own errors", () => {
-    const hook = (_error: never) => ({ type: "problem" });
-    expect(exposedCommandOf(OpenWallet, hook).mapError).toBe(hook);
-  });
-
-  test("a map of entries supports lookup by commandType key", () => {
+  test("a map of entries supports lookup by command name", () => {
     const openWallet = exposedCommandOf(OpenWallet);
     // The registry is type-erased at this boundary - see ExposedCommand.ts.
     const commands: Readonly<Record<string, ExposedCommand<any, any>>> = { open_wallet: openWallet };
@@ -34,51 +37,18 @@ describe("exposedCommandOf", () => {
   });
 });
 
-class NoSuchThing extends DomainError("NoSuchThing", { fields: { id: Schema.String }, kind: "not_found" }) {}
-
-describe("what can be exposed (checked by the type checker)", () => {
-  test("a command failing with declared domain errors needs no hook", () => {
-    const Find = defineCommand({ name: "find", input: Schema.Struct({ id: Schema.String }), decide: (_, c) => fail(new NoSuchThing({ id: c.id })) });
-    expect(exposedCommandOf(Find).command).toBe(Find);
-  });
-
-  test("a command failing with an error the API cannot present is a compile error unless a hook presents it", () => {
-    const Bad = defineCommand({ name: "bad", input: Schema.Struct({ id: Schema.String }), decide: () => fail("just a string" as const) });
-    // @ts-expect-error - "just a string" is neither a declared domain error nor a framework error
-    exposedCommandOf(Bad);
-    // with a hook, anything goes
-    expect(exposedCommandOf(Bad, (e) => ({ type: "urn:x", e })).mapError).toBeDefined();
-  });
-});
-
-describe("domainProblemOf", () => {
-  test("presents a declared domain error by its kind, with tag and fields", () => {
-    const problem = domainProblemOf("not_found", new NoSuchThing({ id: "a1" })) as Record<string, unknown>;
-    expect(problem).toMatchObject({ status: 404, title: "Not Found", errorType: "NoSuchThing", fields: { id: "a1" }, detail: "NoSuchThing" });
-  });
-});
-
-class NotYours extends DomainError("NotYours", { fields: {}, kind: "forbidden" }) {}
-class Other extends DomainError("Other", { fields: {}, kind: "invalid" }) {}
-
 describe("declaring a command's domain errors", () => {
-  const Find = defineCommand({
-    name: "find",
-    input: Schema.Struct({ id: Schema.String }),
-    decide: (_, c) => (c.id === "x" ? fail(new NoSuchThing({ id: c.id })) : fail(new NotYours()))
-  });
-
-  test("the declared classes are carried on the entry, with their kind and fields", () => {
+  test("the declared classes are carried on the entry, with their kind, tag and fields", () => {
     const entry = exposedCommandOf(Find, { errors: [NoSuchThing, NotYours] });
     expect(entry.errors).toEqual([NoSuchThing, NotYours]);
     expect(entry.errors.map((e) => e.kind)).toEqual(["not_found", "forbidden"]);
+    expect(entry.errors.map((e) => e.tag)).toEqual(["NoSuchThing", "NotYours"]);
     expect(Object.keys(entry.errors[0]!.fields)).toEqual(["id"]);
   });
 
-  test("an entry without declarations has none, and the hook form still works", () => {
-    expect(exposedCommandOf(Find).errors).toEqual([]);
-    const hook = (_e: unknown) => ({ type: "p" });
-    expect(exposedCommandOf(Find, hook).errors).toEqual([]);
+  test("a command that can fail with domain errors cannot be exposed without declaring them", () => {
+    // @ts-expect-error - NoSuchThing / NotYours are domain errors this command can fail with
+    exposedCommandOf(Find);
   });
 
   test("leaving out a class the command can fail with is a compile error naming it; extra classes are fine", () => {
@@ -87,8 +57,37 @@ describe("declaring a command's domain errors", () => {
     // @ts-expect-error - nothing declared although the command can fail with domain errors
     exposedCommandOf(Find, { errors: [] });
     expect(exposedCommandOf(Find, { errors: [NoSuchThing, NotYours, Other] }).errors).toHaveLength(3);
+    expect(exposedCommandOf(OpenWallet, { errors: [] }).errors).toEqual([]);
+  });
 
-    const NoDomainErrors = defineCommand({ name: "plain", input: Schema.Struct({ id: Schema.String }), decide: () => noop() });
-    expect(exposedCommandOf(NoDomainErrors, { errors: [] }).errors).toEqual([]);
+  test("a command failing with something that is not a domain error cannot be exposed at all", () => {
+    const Bad = defineCommand({ name: "bad", input: Schema.Struct({ id: Schema.String }), decide: () => fail("just a string" as const) });
+    // @ts-expect-error - "just a string" is neither a declared domain error nor a framework error
+    exposedCommandOf(Bad);
+  });
+});
+
+describe("what a declared error looks like on the wire", () => {
+  test("domainProblemOf: status and title come from the kind; the error's declared fields ride along", () => {
+    expect(domainProblemOf("not_found", new NoSuchThing({ id: "t1" }))).toEqual({
+      type: "urn:crablet:problem:command-api:not-found",
+      title: "Not Found",
+      status: 404,
+      detail: "NoSuchThing",
+      errorType: "NoSuchThing",
+      fields: { id: "t1" }
+    });
+  });
+
+  test("problemSchemaOf: one schema per class, the same instance every time, accepting exactly that problem", () => {
+    const schema = problemSchemaOf(NoSuchThing);
+    expect(problemSchemaOf(NoSuchThing)).toBe(schema);
+    expect(problemSchemaOf(NotYours)).not.toBe(schema);
+
+    const decode = Schema.decodeUnknownExit(schema as never);
+    expect(decode(domainProblemOf("not_found", new NoSuchThing({ id: "t1" })))._tag).toBe("Success");
+    // another error's problem, or the right problem with the wrong fields, is not this schema
+    expect(decode(domainProblemOf("forbidden", new NotYours()))._tag).toBe("Failure");
+    expect(decode({ ...(domainProblemOf("not_found", new NoSuchThing({ id: "t1" })) as object), fields: { id: 5 } })._tag).toBe("Failure");
   });
 });
