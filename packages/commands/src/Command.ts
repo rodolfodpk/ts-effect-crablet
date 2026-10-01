@@ -80,6 +80,8 @@ export const concurrent = (opts: { readonly guard?: QueryType } = {}): Consisten
 
 export interface Command<In, Err> {
   readonly name: string;
+  // The input schema the command validates against (also what a transport documents as its request body).
+  readonly input: Schema.Constraint;
   // Validate untrusted input against the schema. Fails with `InvalidInput`.
   readonly decodeInput: (raw: unknown) => Effect.Effect<In, InvalidInput>;
   // The compiled handler, run by the executor inside its transaction.
@@ -181,5 +183,5 @@ export const defineCommand = <
         : append;
     })) as CommandHandler<In, ErrorOf<D> | PE | SqlError | (OD extends "fail" ? Duplicate : never)>;
 
-  return { name: def.name, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
+  return { name: def.name, input: def.input, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
 };

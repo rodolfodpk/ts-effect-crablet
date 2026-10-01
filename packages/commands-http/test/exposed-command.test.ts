@@ -57,3 +57,38 @@ describe("domainProblemOf", () => {
     expect(problem).toMatchObject({ status: 404, title: "Not Found", errorType: "NoSuchThing", fields: { id: "a1" }, detail: "NoSuchThing" });
   });
 });
+
+class NotYours extends DomainError("NotYours", { fields: {}, kind: "forbidden" }) {}
+class Other extends DomainError("Other", { fields: {}, kind: "invalid" }) {}
+
+describe("declaring a command's domain errors", () => {
+  const Find = defineCommand({
+    name: "find",
+    input: Schema.Struct({ id: Schema.String }),
+    decide: (_, c) => (c.id === "x" ? fail(new NoSuchThing({ id: c.id })) : fail(new NotYours()))
+  });
+
+  test("the declared classes are carried on the entry, with their kind and fields", () => {
+    const entry = exposedCommandOf(Find, { errors: [NoSuchThing, NotYours] });
+    expect(entry.errors).toEqual([NoSuchThing, NotYours]);
+    expect(entry.errors.map((e) => e.kind)).toEqual(["not_found", "forbidden"]);
+    expect(Object.keys(entry.errors[0]!.fields)).toEqual(["id"]);
+  });
+
+  test("an entry without declarations has none, and the hook form still works", () => {
+    expect(exposedCommandOf(Find).errors).toEqual([]);
+    const hook = (_e: unknown) => ({ type: "p" });
+    expect(exposedCommandOf(Find, hook).errors).toEqual([]);
+  });
+
+  test("leaving out a class the command can fail with is a compile error naming it; extra classes are fine", () => {
+    // @ts-expect-error - NotYours is not declared (the message says: missingErrorClasses: NotYours)
+    exposedCommandOf(Find, { errors: [NoSuchThing] });
+    // @ts-expect-error - nothing declared although the command can fail with domain errors
+    exposedCommandOf(Find, { errors: [] });
+    expect(exposedCommandOf(Find, { errors: [NoSuchThing, NotYours, Other] }).errors).toHaveLength(3);
+
+    const NoDomainErrors = defineCommand({ name: "plain", input: Schema.Struct({ id: Schema.String }), decide: () => noop() });
+    expect(exposedCommandOf(NoDomainErrors, { errors: [] }).errors).toEqual([]);
+  });
+});

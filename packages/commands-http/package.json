@@ -8,6 +8,7 @@
     "./ExposedCommand": "./src/ExposedCommand.ts",
     "./CommandApiConfig": "./src/CommandApiConfig.ts",
     "./ProblemDetail": "./src/ProblemDetail.ts",
+    "./InputJsonSchema": "./src/InputJsonSchema.ts",
     "./CommandApiLive": "./src/CommandApiLive.ts"
   },
   "dependencies": {
