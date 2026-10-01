@@ -44,7 +44,7 @@ known limitation for now rather than building a custom retry wrapper.
 
 ## Addendum (Phase M, Effect 4): the `PgClient.notify` bug is gone
 
-On `@effect/sql-pg` 4.0.0-rc.118, `PgClient.notify(channel, payload)` works with a dynamic payload
+On `@effect/sql-pg` 4.0.0-rc.118 (and still on 4.0.0), `PgClient.notify(channel, payload)` works with a dynamic payload
 (verified against Postgres by swapping it in for the workaround and running the LISTEN/NOTIFY
 tests). The `notify()` helper in `Listen.ts` was deleted; call `pg.notify(channel, payload)`.
 

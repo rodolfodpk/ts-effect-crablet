@@ -7,7 +7,7 @@
     "start": "node src/quickstart.ts"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.118",
+    "effect": "4.0.0",
     "@crablet/commands": "workspace:*"
   }
 }

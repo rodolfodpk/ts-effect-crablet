@@ -20,8 +20,8 @@
     "./InstanceId": "./src/InstanceId.ts"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.118",
-    "@effect/sql-pg": "4.0.0-rc.118",
+    "effect": "4.0.0",
+    "@effect/sql-pg": "4.0.0",
     "@crablet/eventstore": "workspace:*",
     "@crablet/metrics-otel": "workspace:*"
   },

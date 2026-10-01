@@ -14,13 +14,13 @@
     "./CommandApiLive": "./src/CommandApiLive.ts"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.118",
+    "effect": "4.0.0",
     "@crablet/commands": "workspace:*",
     "@crablet/eventstore": "workspace:*"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.118",
-    "@effect/sql-pg": "4.0.0-rc.118",
+    "@effect/platform-node": "4.0.0",
+    "@effect/sql-pg": "4.0.0",
     "@crablet/test-support": "workspace:*"
   }
 }

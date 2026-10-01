@@ -1,8 +1,8 @@
-# ADR-0009: Build on Effect 4 (release candidate), pinned exactly
+# ADR-0009: Build on Effect 4, pinned exactly
 
 ## Status
 
-Accepted (Phase M)
+Accepted (Phase M). Updated 2026-10-01: Effect 4.0.0 is released and the repo moved from `4.0.0-rc.118` to `4.0.0` (see the addendum at the end).
 
 ## Context
 
@@ -11,12 +11,12 @@ The repo started on Effect 3.21 (`effect`, `@effect/sql`, `@effect/sql-pg`, `@ef
 ecosystem and folds `@effect/sql` and `@effect/platform` into the core `effect` package. The API
 redesign planned for this repo is a breaking rewrite of the low-level command/event-store surface
 anyway, so migrating first avoids doing that work twice. Effect 4 is a release candidate
-(`4.0.0-rc.118` when this was decided); npm has no separate LTS line.
+(`4.0.0-rc.118` when this was decided; `4.0.0` shipped later, see the addendum); npm has no separate LTS line.
 
 ## Decision
 
 - Depend on `effect`, `@effect/sql-pg` and `@effect/platform-node` at the **same exact** version
-  (`4.0.0-rc.118`); no ranges. Bump deliberately, all three together, and re-run the whole suite.
+  (`4.0.0`; it was `4.0.0-rc.118` until the stable release); no ranges. Bump deliberately, all three together, and re-run the whole suite.
 - Import SQL from `effect/sql`, HTTP from `effect/http` and `effect/http-api`. The migration guide
   written for the beta shows an `effect/unstable/*` prefix; in this release candidate the modules
   live at those unprefixed paths (check `node_modules/effect/package.json` `exports`).
@@ -55,3 +55,13 @@ anyway, so migrating first avoids doing that work twice. Effect 4 is a release c
 - ADR-0004, ADR-0005 and ADR-0006 were each re-verified on v4 and carry an addendum.
 - The `pg` package is no longer a transitive requirement of the Effect SQL layer, so a deployment
   needs it only for tooling that uses a raw client.
+
+## Addendum (2026-10-01): moved to 4.0.0
+
+`effect`, `@effect/sql-pg` and `@effect/platform-node` (and `@effect/platform-browser`) were published at `4.0.0`, now the npm `latest`
+tag. The bump was tried first in a throwaway worktree and then applied: every `package.json` pin changed from `4.0.0-rc.118` to `4.0.0`, with no
+code change. Typecheck clean, 300 unit and 202 integration tests green (the integration suite twice), and the generated OpenAPI
+descriptions in `docs/api/` are byte-identical. The imports named above (`effect/sql`, `effect/http`, `effect/http-api`) are unchanged in the
+stable release. ADR-0004 and ADR-0005 were verified on rc.118 and their behaviour held on 4.0.0 (the whole suite exercises both). The rule stands:
+bump all Effect packages together, exact versions, full suite.
+

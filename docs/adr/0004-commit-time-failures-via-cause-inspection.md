@@ -30,7 +30,7 @@ normal `Fail` path) rather than relying on `Effect.catchTag("SqlError", ...)`.
 
 ## Addendum (Phase M, Effect 4): re-verified
 
-Checked against a real Postgres on Effect 4 (`4.0.0-rc.118`):
+Checked against a real Postgres on Effect 4 (`4.0.0-rc.118`; the suite still passes on `4.0.0`):
 
 - A failure raised **at COMMIT** (forced deterministically with a `DEFERRABLE INITIALLY DEFERRED`
   unique constraint) still surfaces from `SqlClient.withTransaction` as a `Die` defect (whose value is

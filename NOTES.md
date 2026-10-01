@@ -694,9 +694,9 @@ guarantee), and that snapshot is cluster-wide, so open transactions in OTHER dat
 server hold events back. Production corollary worth remembering: any long-running transaction anywhere
 on the cluster delays every poller (views, outbox, automations) until it finishes.
 
-## Phase M - migration to Effect 4 (release candidate)
+## Phase M - migration to Effect 4 (release candidate, then 4.0.0)
 
-`effect`, `@effect/sql-pg`, `@effect/platform-node` all pinned to `4.0.0-rc.118`; `@effect/sql` and
+`effect`, `@effect/sql-pg`, `@effect/platform-node` all pinned to `4.0.0` (they were `4.0.0-rc.118` until the stable release on 2026-10-01; the bump needed no code change); `@effect/sql` and
 `@effect/platform` dropped (now `effect/sql`, `effect/http`, `effect/http-api`). Decision and the full
 list of non-obvious changes: [ADR-0009](docs/adr/0009-effect-4-release-candidate.md). Everything
 passes: typecheck, 84 unit tests, 89 integration tests (3 consecutive clean runs).
