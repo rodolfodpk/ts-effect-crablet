@@ -1,6 +1,6 @@
 // Runs under Node (Testcontainers). `CommandExecutor.run` with defined commands against real
 // Postgres: conflict retry, idempotency and input validation. Races are made deterministic with a
-// barrier in `prepare` so that BOTH commands load before EITHER appends (no timing luck).
+// barrier AFTER the model has loaded, so that BOTH commands load before EITHER appends (no timing luck).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Deferred, Effect, Layer, Metric, Redacted, Ref } from "effect";
@@ -18,6 +18,7 @@ import { concurrent, defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError, InvalidInput } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { defineModel } from "../../src/Model.ts";
+import { afterLoad } from "../support/barrier.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient, never>;
@@ -75,8 +76,7 @@ const bookSeat = (opts: { barrier?: Barrier; retries?: number; idempotent?: "ret
   defineCommand({
     name: "book_seat",
     input: bookingInput,
-    prepare: () => opts.barrier?.wait ?? Effect.void,
-    model: (c) => SeatModel.of({ id: c.seatId }),
+    model: (c) => (opts.barrier ? afterLoad(SeatModel.of({ id: c.seatId }), opts.barrier.wait) : SeatModel.of({ id: c.seatId })),
     ...(opts.idempotent !== undefined
       ? { idempotentBy: (c: { bookingId: string }) => SeatBooked.where({ booking_id: c.bookingId }), onDuplicate: opts.idempotent }
       : {}),

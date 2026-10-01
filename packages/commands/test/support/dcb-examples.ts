@@ -7,6 +7,7 @@ import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { all, defineModel, type ModelInstance } from "../../src/Model.ts";
+import { afterLoad } from "./barrier.ts";
 
 const MINUTE = 60_000;
 
@@ -44,14 +45,13 @@ const UsernameModel = defineModel({
 
 export class UsernameClaimed extends DomainError("UsernameClaimed", { fields: { username: Schema.String }, kind: "conflict" }) {}
 
-// `wait` (test-only) runs in `prepare`, i.e. BEFORE the model is loaded; see support/barrier.ts.
+// `wait` (test-only) runs right after the model has loaded; see support/barrier.ts.
 const registerAccount = (name: string, wait: Effect.Effect<void>) =>
   defineCommand({
     name,
     // `now` is an input so the decision stays pure (and testable at any date)
     input: Schema.Struct({ username: Schema.String, now: Schema.Number }),
-    prepare: () => wait,
-    model: (c) => UsernameModel.of({ id: c.username.toLowerCase() }),
+    model: (c) => afterLoad(UsernameModel.of({ id: c.username.toLowerCase() }), wait),
     decide: (name, c) => (name.claimed || c.now < name.reservedUntil ? fail(new UsernameClaimed({ username: c.username })) : emit(AccountRegistered(c)))
   });
 export const RegisterAccount = registerAccount("register_account", Effect.void);
@@ -71,8 +71,7 @@ const createInvoice = (name: string, wait: Effect.Effect<void>, retries?: number
   defineCommand({
     name,
     input: Schema.Struct({ invoiceData: Schema.String }),
-    prepare: () => wait,
-    model: () => InvoiceSeries.of({ id: "main" }),
+    model: () => afterLoad(InvoiceSeries.of({ id: "main" }), wait),
     ...(retries !== undefined ? { retries } : {}),
     decide: (series, c) => emit(InvoiceCreated({ invoiceNumber: series.next, invoiceData: c.invoiceData }))
   });
@@ -157,8 +156,7 @@ const confirmSignUp = (name: string, wait: Effect.Effect<void>) =>
   defineCommand({
   name,
   input: Schema.Struct({ email: Schema.String, otp: Schema.String, now: Schema.Number }),
-  prepare: () => wait,
-  model: (c) => PendingSignUp.of({ id: c.email.toLowerCase(), otp: c.otp }),
+  model: (c) => afterLoad(PendingSignUp.of({ id: c.email.toLowerCase(), otp: c.otp }), wait),
   decide: (s, c) =>
     s.initiatedAt === null
       ? fail(new TokenInvalid({ reason: "unknown" }))

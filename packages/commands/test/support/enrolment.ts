@@ -7,6 +7,7 @@ import { defineCommand, emit, fail, noop } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { all, defineModel } from "../../src/Model.ts";
+import { afterLoad } from "./barrier.ts";
 
 // ---- START GUIDE ----
 export const CourseDefined = defineEvent("CourseDefined", {
@@ -73,13 +74,12 @@ export const Subscribe = defineCommand({
 });
 // ---- END GUIDE ----
 
-// Test-only variant with a barrier in `prepare` (see support/transfer.ts).
+// Test-only variant with a barrier after the model has loaded (see support/barrier.ts).
 export const subscribeWith = (opts: { wait: Effect.Effect<void>; retries?: number }) =>
   defineCommand({
     name: "subscribe_raced",
     input: subscribeInput,
-    prepare: () => opts.wait,
-    model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
+    model: (c) => afterLoad(all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }), opts.wait),
     retries: opts.retries ?? 3,
     decide
   });

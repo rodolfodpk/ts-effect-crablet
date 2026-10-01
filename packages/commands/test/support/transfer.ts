@@ -7,6 +7,7 @@ import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { all, defineModel } from "../../src/Model.ts";
+import { afterLoad } from "./barrier.ts";
 
 // ---- START GUIDE ----
 // Events. Note there are no streams or aggregates: an event is found by its TAGS.
@@ -66,14 +67,13 @@ export const Transfer = defineCommand({
 });
 // ---- END GUIDE ----
 
-// Test-only variant: the same command, but `prepare` waits at a barrier so that several runs have all
-// LOADED before any of them appends - a deterministic race instead of timing luck.
+// Test-only variant: the same command, but it waits at a barrier AFTER loading its model, so that several
+// runs have all LOADED before any of them appends - a deterministic race instead of timing luck.
 export const transferWith = (opts: { wait: Effect.Effect<void>; retries?: number }) =>
   defineCommand({
     name: "transfer_raced",
     input: transferInput,
-    prepare: () => opts.wait,
-    model: (c) => all({ from: AccountModel.of({ id: c.from }), to: AccountModel.of({ id: c.to }) }),
+    model: (c) => afterLoad(all({ from: AccountModel.of({ id: c.from }), to: AccountModel.of({ id: c.to }) }), opts.wait),
     retries: opts.retries ?? 3,
     decide: ({ from, to }, c) =>
       !from.exists || !to.exists
