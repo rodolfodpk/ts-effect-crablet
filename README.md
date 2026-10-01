@@ -22,11 +22,15 @@ everything is wired with layers.
 > New here? [**The tutorial**](./docs/tutorial/course-enrolment.md) builds a small course-enrolment service in four steps - in memory, then Postgres,
 > then an HTTP API with a generated OpenAPI description, then read-your-writes - and every block in it is a tested file.
 
-A command is a pure decision over state derived from events. Three declarations (the packages are not
-published to npm yet; imports come from the workspace, e.g. `@crablet/commands/Command`):
+A command is a pure decision over state derived from events. A seat must be added before it can be booked
+(the packages are not published to npm yet; imports come from the workspace, e.g. `@crablet/commands/Command`):
 
 ```ts
-// 1. An event: its name, its payload, and the tags it can be found by.
+// 1. Events: their names, their payloads, and the tags they can be found by.
+const SeatAdded = defineEvent("SeatAdded", {
+  schema: Schema.Struct({ seatId: Schema.String }),
+  tags: (d) => ({ seat_id: d.seatId })
+});
 const SeatBooked = defineEvent("SeatBooked", {
   schema: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
   tags: (d) => ({ seat_id: d.seatId })
@@ -34,21 +38,39 @@ const SeatBooked = defineEvent("SeatBooked", {
 
 // 2. A model: what the events mean for one seat - and, from the same declaration, which events
 //    could change that answer (the command's consistency boundary).
-const SeatModel = defineModel({ by: "seat_id", initial: () => ({ taken: false }) })
-  .on(SeatBooked, () => ({ taken: true }));
+const SeatModel = defineModel({ by: "seat_id", initial: () => ({ exists: false, taken: false }) })
+  .on(SeatAdded, (seat) => ({ ...seat, exists: true }))
+  .on(SeatBooked, (seat) => ({ ...seat, taken: true }));
 
+class SeatNotFound extends DomainError("SeatNotFound", {
+  fields: { seatId: Schema.String },
+  kind: "not_found"
+}) {}
 class SeatTaken extends DomainError("SeatTaken", {
   fields: { seatId: Schema.String },
   kind: "conflict"
 }) {}
 
-// 3. A command: a pure decision. Nothing here touches a database.
+// 3. Commands: pure decisions. Nothing here touches a database.
+const AddSeat = defineCommand({
+  name: "add_seat",
+  errors: [],
+  input: Schema.Struct({ seatId: Schema.String }),
+  model: (c) => SeatModel.of({ id: c.seatId }),
+  decide: (seat, c) => (seat.exists ? noop("already added") : emit(SeatAdded(c)))
+});
+
 const BookSeat = defineCommand({
   name: "book_seat",
-  errors: [SeatTaken],      // the domain errors it can fail with: checked against `decide`, read by the REST API
+  errors: [SeatNotFound, SeatTaken],      // the domain errors it can fail with: checked against `decide`, read by the REST API
   input: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
   model: (c) => SeatModel.of({ id: c.seatId }),
-  decide: (seat, c) => (seat.taken ? fail(new SeatTaken({ seatId: c.seatId })) : emit(SeatBooked(c)))
+  decide: (seat, c) =>
+    !seat.exists
+      ? fail(new SeatNotFound({ seatId: c.seatId }))
+      : seat.taken
+        ? fail(new SeatTaken({ seatId: c.seatId }))
+        : emit(SeatBooked(c))
 });
 ```
 
@@ -57,16 +79,52 @@ The model's boundary is derived from the events it handles, so `BookSeat` is con
 cannot both succeed; the loser is retried and gets `SeatTaken`. Bookings of different seats never
 contend.
 
+**As an [Event Model](https://eventmodeling.org/)** - time runs left to right; the same declarations, seen as the blueprint:
+
+```text
+ Screen     ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐        ┌─────────┐
+            │ Add seat│ │Book seat│ │Book seat│ │Book seat│ │  Seat   │        │  Seat   │
+            │  (12A)  │ │(12A,Ann)│ │(12A,Bob)│ │(99Z,Bob)│ │   map   │        │   map   │
+            └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └─────────┘        └─────────┘
+                 │           │           │           │           ▲                  ▲
+ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─
+                 ▼           ▼           ▼           ▼           │                  │
+ Command    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐      │                  │
+            │ AddSeat │ │BookSeat │ │BookSeat │ │BookSeat │      │                  │
+            └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘      │                  │
+   SeatModel    exists:no   exists:yes  exists:yes  exists:no     │                  │
+   at decide    taken:no    taken:no    taken:yes   taken:no      │                  │
+ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─
+                 ▼           ▼           ▼           ▼           │                  │
+ Event log  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐      │                  │
+            │SeatAdded│▶│SeatBook-│ │SeatTaken│ │SeatNot- │      │                  │
+            │seat=12A │ │ed 12A   │ │ rejected│ │Found    │      │                  │
+            └────┬────┘ └────┬────┘ │  (409)  │ │rejected │      │                  │
+                 │           │      └─────────┘ │  (404)  │      │                  │
+                 │           │       (errors write no event)     │                  │
+ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─
+                 ▼           ▼                                   │                  │
+ Read model ┌──────────────────────────────────────────────────────────────────────────┐
+            │ AvailableSeats:   12A listed  ──────▶  12A removed      (updated async) │
+            └──────────────────────────────────────────────────────────────────────────┘
+```
+
+The read model is not part of this quick start (it needs the poller; the [tutorial](./docs/tutorial/course-enrolment.md)
+builds one). The Given/When/Then of a scenario is the same picture: *given* `SeatAdded(12A)` and `SeatBooked(12A)`,
+*when* `BookSeat(12A, Cy)`, *then* `SeatTaken`.
+
 **Test it without a database** - the real pipeline (validation, idempotency, load, decide, conditional
 append) against an in-memory store that enforces the same rules as Postgres:
 
 ```ts
 const scenario = given();                                                       // an empty history
+await scenario.when(AddSeat,  { seatId: "12A" });                               // outcome === "created"
 const first  = await scenario.when(BookSeat, { seatId: "12A", guest: "Ann" });  // first.outcome === "created"
 const second = await scenario.when(BookSeat, { seatId: "12A", guest: "Bob" });  // second.error is a SeatTaken
+const third  = await scenario.when(BookSeat, { seatId: "99Z", guest: "Bob" });  // third.error is a SeatNotFound
 ```
 
-**Run it right now** - the three declarations above plus this scenario are a complete script,
+**Run it right now** - the declarations above plus these scenarios are a complete script,
 [`examples/quickstart/src/quickstart.ts`](./examples/quickstart/src/quickstart.ts); no database needed:
 
 ```bash
@@ -75,16 +133,19 @@ node examples/quickstart/src/quickstart.ts
 ```
 
 ```text
-12A for Ann -> created: SeatBooked
-12A for Bob -> failed: SeatTaken
-12B for Bob -> created: SeatBooked
-12A for Cy, after a SeatBooked in the history -> failed: SeatTaken
+add 12A            -> created: SeatAdded
+add 12A again      -> idempotent: nothing appended
+book 12A for Ann   -> created: SeatBooked
+book 12A for Bob   -> failed: SeatTaken
+book 99Z for Bob   -> failed: SeatNotFound
+book 12A for Cy, history: SeatAdded + SeatBooked -> failed: SeatTaken
 ```
 
 You never load events yourself: when a command runs, the executor queries the events in the model's boundary
-(`SeatBooked` tagged `seat_id=12A`), folds them through the model's `.on` handlers into the state `decide` receives,
-and makes the append conditional on nothing newer having arrived in that boundary. The last line seeds the history
-with `given(SeatBooked(...))` to show it.
+(`SeatAdded` and `SeatBooked` tagged `seat_id=12A`), folds them through the model's `.on` handlers into the state
+`decide` receives, and makes the append conditional on nothing newer having arrived in that boundary. The last line
+seeds the history with `given(SeatAdded(...), SeatBooked(...))` to show it. `AddSeat` is idempotent: adding a seat
+that exists is a `noop`, so nothing is appended.
 
 **Run it** against Postgres with one layer:
 

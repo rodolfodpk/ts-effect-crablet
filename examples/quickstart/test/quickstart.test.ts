@@ -4,9 +4,11 @@ import { run } from "../src/quickstart.ts";
 
 test("the quick start prints what the README says it does", async () => {
   expect(await run()).toEqual([
-    "12A for Ann -> created: SeatBooked",
-    "12A for Bob -> failed: SeatTaken",
-    "12B for Bob -> created: SeatBooked",
-    "12A for Cy, after a SeatBooked in the history -> failed: SeatTaken"
+    "add 12A            -> created: SeatAdded",
+    "add 12A again      -> idempotent: nothing appended",
+    "book 12A for Ann   -> created: SeatBooked",
+    "book 12A for Bob   -> failed: SeatTaken",
+    "book 99Z for Bob   -> failed: SeatNotFound",
+    "book 12A for Cy, history: SeatAdded + SeatBooked -> failed: SeatTaken"
   ]);
 });
