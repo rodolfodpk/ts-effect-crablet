@@ -18,6 +18,20 @@ export interface CommandAuditStoreService {
     commandId: string,
     occurredAt: Date
   ) => Effect.Effect<boolean, SqlError>;
+
+  // Records one executed command with its metadata (correlation id, actor, ...) and returns its generated id.
+  // `dataJson` is what ends up in `crablet_commands.data`: the caller decides how much of the command to keep
+  // (see @crablet/commands/CommandAudit for the redaction modes).
+  readonly record: (entry: {
+    readonly type: string;
+    readonly dataJson: string;
+    readonly metadataJson: string | null;
+    readonly occurredAt: Date;
+  }) => Effect.Effect<string, SqlError>;
+
+  // Deletes audit rows older than `before`; returns how many. The audit table is not the source of truth, so this
+  // is safe retention (events are untouched).
+  readonly purge: (before: Date) => Effect.Effect<number, SqlError>;
 }
 
 // Same Context.Service + Layer.effect service pattern as EventStore.ts - see that file's primer for
@@ -31,6 +45,12 @@ const STORE_COMMAND_SQL = `
 `;
 
 const STORE_COMMAND_IF_ABSENT_SQL = `${STORE_COMMAND_SQL} RETURNING true AS inserted`;
+
+const RECORD_COMMAND_SQL = `
+  INSERT INTO crablet_commands (command_id, transaction_id, type, data, metadata, occurred_at)
+  VALUES (gen_random_uuid(), pg_current_xact_id(), $1, $2::jsonb, $3::jsonb, $4::timestamptz)
+  RETURNING command_id::text AS command_id
+`;
 
 export const CommandAuditStoreLive = Layer.effect(
   CommandAuditStore,
@@ -49,6 +69,18 @@ export const CommandAuditStoreLive = Layer.effect(
       );
 
     const service: CommandAuditStoreService = {
+      record: (entry) =>
+        Effect.map(
+          sql.unsafe<{ command_id: string }>(RECORD_COMMAND_SQL, [entry.type, entry.dataJson, entry.metadataJson, entry.occurredAt.toISOString()]),
+          (rows) => rows[0]!.command_id
+        ),
+
+      purge: (before) =>
+        Effect.map(
+          sql.unsafe<{ command_id: string }>("DELETE FROM crablet_commands WHERE occurred_at < $1::timestamptz RETURNING command_id", [before.toISOString()]),
+          (rows) => rows.length
+        ),
+
       storeCommand: (commandJson, commandType, occurredAt) =>
         insert(null, commandJson, commandType, occurredAt),
 

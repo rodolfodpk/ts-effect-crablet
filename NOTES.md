@@ -1030,3 +1030,13 @@ asserts the model directly (queries, fold, both regressions).
 - `personalPaths(schema)` lists the marked paths (`email`, `addresses.[].street`, `notes.*`, `(root)`), `redact(schema, value)` returns a copy-on-write copy with them replaced by `"[redacted]"` (unknown keys are left for the caller;
   `Schema.Class` is not walked; unions are conservative). `EventDef.schema` is now exposed (the event log API and the masking read it).
 - Upstream finding (rc.118): `Schema.isMinLength(n)` is described as `minLength: n-1` in the generated JSON Schema (the decoder is right). Not used on exposed inputs today; re-check on Effect 4.0.0.
+
+## Privacy P2 - the command audit (packages/commands/src/CommandAudit.ts)
+
+- `CommandExecutor` now records every command that APPENDED events in `crablet_commands`, in the command's own transaction: the row's `transaction_id` is the transaction that wrote its events ("which request caused this
+  event?"), and a refused, rolled-back or stale-then-retried attempt leaves no row. Idempotent repeats and no-ops record nothing.
+- What is stored is minimal by default: `payload: "redacted"` (fields marked `personal(...)` replaced by `"[redacted]"`), `"none"` (no input), `"full"` (explicit opt-in), `"off"` (no row). Set with `Crablet.layer(pg, { audit: { payload } })`
+  (a `Context.Reference`, overridable with `Effect.provideService`). Metadata holds the correlation id and an app-supplied actor (`withActor`); without authentication the framework records what and when, not who.
+- Retention: `purgeCommandAudit({ olderThan })` and `startAuditRetention({ olderThan, every })` (a detached fiber, off unless the app starts it). The table is not the source of truth, so deleting is safe.
+- Cost to know: one extra INSERT per created command (it is in the same transaction). `command.name` must be 1-64 characters (checked at definition) because the column is limited to 64.
+- `crablet_module_scan_progress` / `crablet_processor_scan_progress` remain unused.

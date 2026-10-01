@@ -5,6 +5,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "./CommandExecutor.ts";
+import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
 
 // Everything the framework needs, in one layer: Postgres connection in, working command executor and
 // event store out.
@@ -27,5 +28,19 @@ export type PgConfig = Parameters<typeof PgClient.layer>[0];
 
 export type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
 
-export const layer = (pg: PgConfig): Layer.Layer<Services, SqlError> =>
-  Layer.provideMerge(Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive), PgClient.layer(pg));
+// `options.audit` sets what the command audit stores (see CommandAudit.ts): `{ payload: "redacted" | "none" | "full" | "off" }`,
+// "redacted" by default.
+export interface CrabletOptions {
+  readonly audit?: Partial<AuditConfig>;
+}
+
+export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<Services, SqlError> =>
+  Layer.provideMerge(
+    Layer.mergeAll(
+      CommandExecutorLive,
+      EventStoreLive,
+      CommandAuditStoreLive,
+      Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" })
+    ),
+    PgClient.layer(pg)
+  );

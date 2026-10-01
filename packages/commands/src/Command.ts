@@ -140,6 +140,8 @@ export const defineCommand = <
   readonly retries?: number;
 }): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never)> => {
   type In = Schema.Schema.Type<I>;
+  // The audit table stores the name in a column limited to 64 characters: fail at definition time, not mid-request.
+  if (def.name.length < 1 || def.name.length > 64) throw new Error(`command name must be 1-64 characters, got ${def.name.length}: "${def.name}"`);
   const duplicates: "return" | "fail" = def.onDuplicate ?? "return";
 
   const decode = Schema.decodeUnknownEffect(def.input as unknown as Schema.Decoder<unknown>) as (

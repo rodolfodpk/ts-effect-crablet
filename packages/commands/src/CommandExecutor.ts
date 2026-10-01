@@ -6,6 +6,7 @@ import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command } from "./Command.ts";
+import { recordCommand } from "./CommandAudit.ts";
 import type * as CD from "./CommandDecision.ts";
 import type { InvalidInput } from "./Errors.ts";
 import * as ExecutionResultNS from "./ExecutionResult.ts";
@@ -122,7 +123,7 @@ export const CommandExecutorLive = Layer.effect(
     // One attempt: the handler and its append inside one transaction. `Duplicate` is reported here for
     // every command; `runDecoded` turns it into an idempotent success unless the command opted in.
     const execute = <T, E>(
-      commandType: string,
+      definition: Command<T, E>,
       command: T,
       handler: CommandHandler<T, E>
     ): Effect.Effect<
@@ -140,25 +141,33 @@ export const CommandExecutorLive = Layer.effect(
       // dedicated idempotentDuplicates increment when the result comes back idempotent.
       CommandMetrics.observe(
         CommandMetrics.handle,
-        sql.withTransaction(runHandler(handler, command)).pipe(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const result = yield* runHandler(handler, command);
+            // A command that appended events leaves an audit row IN THE SAME transaction (see CommandAudit.ts):
+            // a repeat that appended nothing records nothing, and a rolled-back command leaves no row.
+            if (!result.wasIdempotent) yield* recordCommand(definition, command);
+            return result;
+          })
+        ).pipe(
           Effect.catch((error) => (isDeadlock(error) ? Effect.fail(deadlockConflict) : Effect.fail(error))),
           Effect.tap((result) => {
             if (!result.wasIdempotent) return Effect.void;
             const taggedCounter: Metric.Counter<number> = Metric.withAttributes(
               CommandMetrics.idempotentDuplicates,
-              { command_type: commandType }
+              { command_type: definition.name }
             );
             return Metric.update(taggedCounter, 1);
           })
         ),
-        [["command_type", commandType]]
+        [["command_type", definition.name]]
       );
 
     // Execute, re-running after a Conflict while retries remain (each attempt is its own transaction).
     const runDecoded = <In, Err>(command: Command<In, Err>, input: In) =>
       withConflictRetry(
         command.retries,
-        execute(command.name, input, command.handler),
+        execute(command, input, command.handler),
         Metric.update(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }), 1)
         // The executor reports `Duplicate` for every command, but only a command that declared
         // `onDuplicate: "fail"` can produce one that should reach the caller: for any other command

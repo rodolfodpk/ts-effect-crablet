@@ -8,6 +8,7 @@
     "./ExecutionResult": "./src/ExecutionResult.ts",
     "./Event": "./src/Event.ts",
     "./Personal": "./src/Personal.ts",
+    "./CommandAudit": "./src/CommandAudit.ts",
     "./Model": "./src/Model.ts",
     "./Errors": "./src/Errors.ts",
     "./Command": "./src/Command.ts",

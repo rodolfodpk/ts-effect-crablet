@@ -273,6 +273,14 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
 const assertType = <_T extends true>() => {};
 type HandlerErr<C extends { handler: (...a: any[]) => Effect.Effect<any, any, any> }> = Effect.Error<ReturnType<C["handler"]>>;
 
+describe("defineCommand: name", () => {
+  test("must be 1-64 characters (the command audit stores it in a column of that size): fail at definition, not mid-request", () => {
+    expect(() => defineCommand({ name: "x".repeat(65), input, decide: () => noop() })).toThrow(/1-64 characters/);
+    expect(() => defineCommand({ name: "", input, decide: () => noop() })).toThrow(/1-64 characters/);
+    expect(defineCommand({ name: "x".repeat(64), input, decide: () => noop() }).name).toHaveLength(64);
+  });
+});
+
 describe("defineCommand: declared errors", () => {
   class Other extends DomainError("Other", { fields: {}, kind: "invalid" }) {}
   const failsWith = (id: string) => (id === "a" ? fail(new NotOpen({ id })) : fail(new TooLarge({ max: 1 })));
