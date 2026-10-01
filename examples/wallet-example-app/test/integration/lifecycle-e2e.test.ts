@@ -4,6 +4,8 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { HttpApiClient } from "effect/http-api";
+import { FetchHttpClient } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive } from "@crablet/eventstore";
@@ -14,6 +16,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { walletOpenApiFile } from "../../src/api/WalletOpenApi.ts";
+import { makeWalletApi } from "../../src/WalletApp.ts";
 import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
 import { walletBalanceViewSubscription } from "../../src/views/WalletViewConfig.ts";
 
@@ -174,5 +177,33 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     });
     assert.strictEqual(res.status, 400);
     assert.strictEqual((await fetch(`${app.baseUrl}/api/wallets/${walletId}`)).status, 404, "the wallet was never opened");
+  });
+
+  it("a client DERIVED from the API (no codegen, no hand-written request code) drives the same flows, typed", async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    const program = Effect.gen(function* () {
+      const client: any = yield* HttpApiClient.make(makeWalletApi("/api/commands"), { baseUrl: app.baseUrl });
+
+      const opened = yield* client.commands.execute_open_wallet({ payload: { walletId, owner: "Eve", initialBalance: 5 }, query: {} });
+      const deposited = yield* client.commands.execute_deposit({
+        payload: { depositId: crypto.randomUUID(), walletId, amount: 20, description: "typed" },
+        query: { waitFor: "wallet-balance-view" }
+      });
+      // the read endpoint is part of the same API
+      const wallet = yield* client.walletQueries.getWallet({ params: { walletId } });
+      // a declared domain error arrives as its typed problem, not as a bare status
+      const missing = yield* Effect.flip(
+        client.commands.execute_deposit({ payload: { depositId: crypto.randomUUID(), walletId: `ghost-${walletId}`, amount: 1, description: "x" }, query: {} })
+      );
+      return { opened, deposited, wallet, missing };
+    });
+    const { opened, deposited, wallet, missing } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)) as Effect.Effect<any>);
+
+    assert.strictEqual(opened.status, "CREATED");
+    assert.strictEqual(deposited.status, "CREATED");
+    assert.deepStrictEqual(deposited.view, { name: "wallet-balance-view", caughtUp: true });
+    assert.strictEqual(wallet.balance, 25, "one read, already includes the deposit");
+    assert.strictEqual(missing.errorType, "WalletNotFound");
+    assert.deepStrictEqual(missing.fields, { walletId: `ghost-${walletId}` });
   });
 });

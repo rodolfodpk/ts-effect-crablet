@@ -19,3 +19,4 @@ records that this repo is now its own product and no code or API follows that pr
 - [ADR-0008: No command-type auto-discovery — handlers passed explicitly at every call site](0008-no-command-type-auto-discovery.md)
 - [ADR-0009: Build on Effect 4 (release candidate), pinned exactly](0009-effect-4-release-candidate.md)
 - [ADR-0010: A declarative command API (events, models, commands) over the append primitive](0010-declarative-command-api.md)
+- [ADR-0011: The HTTP API and its OpenAPI description are derived from the domain model](0011-http-api-from-the-domain-model.md)

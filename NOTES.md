@@ -1003,3 +1003,11 @@ asserts the model directly (queries, fold, both regressions).
   `nothing_appended` and do not call the waiter. Bad parameters are a 400 problem before the command runs (verified: nothing written).
 - `ViewWaiter` (commands-http) is structural: `waitUntilProcessed(subscription, position, { timeout })` satisfies it; the wallet maps each of its 4 view names.
 - The docs/api wallet document was regenerated (query parameters + `view` in the responses).
+
+## OpenAPI phase 5 - client, README, ADR-0011
+
+- `HttpApiClient.make(makeWalletApi(), { baseUrl })` drives the wallet over real HTTP in `lifecycle-e2e.test.ts` (open, deposit with `waitFor`, a read, a declared domain error
+  arriving as its typed problem). The command routes are untyped (`any`) in the derived client because the endpoint set is built at run time; the read group is typed. When every
+  command route declares `query` (views waitable) the client requires `query: {}`. Typed command clients come from an OpenAPI generator on the document.
+- README "HTTP API and OpenAPI"; `docs/adr/0011-http-api-from-the-domain-model.md` records the decisions (per-command routes, errors on the command, problem+json, checked-in
+  description, read-your-writes outcome in the body, no GraphQL) and the changes for HTTP clients.
