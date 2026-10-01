@@ -15,9 +15,11 @@
     "test:unit": "bun test packages/*/test/*.test.ts examples/*/test/*.test.ts",
     "test:unit:coverage": "bun test --coverage --coverage-reporter=lcov packages/*/test/*.test.ts examples/*/test/*.test.ts",
     "test:integration": "node --test \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "docs:api": "bun examples/wallet-example-app/scripts/generate-openapi.ts"
   },
   "devDependencies": {
+    "@readme/openapi-parser": "9.0.0",
     "@types/bun": "1.4.2",
     "@types/node": "24.19.0",
     "@types/pg": "8.23.1",

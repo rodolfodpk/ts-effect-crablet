@@ -17,7 +17,8 @@ import { makeOutboxProcessor } from "@crablet/outbox";
 import type { OutboxConfig } from "@crablet/outbox/OutboxConfig";
 import { topicConfigOf } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
-import { makeCommandApiGroup } from "@crablet/commands-http";
+import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
+import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
 import { exposedCommandOf, type ExposedCommand } from "@crablet/commands-http/ExposedCommand";
 import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
@@ -38,6 +39,9 @@ import { WalletNotFound, InsufficientFunds } from "./domain/errors/WalletErrors.
 export interface WalletAppConfig {
   readonly basePath?: string;
   readonly instanceId?: string;
+  // Where the OpenAPI document is served (default "/openapi.json"; false = none) and an optional docs page.
+  readonly openApiPath?: string | false;
+  readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string };
 }
 
 const defaultViewsConfig: ViewsConfig = {
@@ -161,13 +165,25 @@ const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
   close_wallet: exposedCommandOf(CloseWallet, { errors: [WalletNotFound] })
 };
 
-// The app's HTTP composition: commands-http's generic write group + WalletQueryApi's
-// hand-written reads, combined into ONE HttpApi served under one port.
+// The app's HTTP API: commands-http's write group (one route per wallet command) + WalletQueryApi's
+// hand-written reads, combined into ONE HttpApi. A function of `basePath` because the command routes live under it.
+// Separate from `makeWalletApiLayer` so the API DESCRIPTION can be produced without serving anything
+// (see scripts/generate-wallet-openapi.ts).
+export const walletApiInfo = {
+  title: "Wallet API",
+  version: "1.0.0",
+  description:
+    "Wallet example: write commands (one route each, errors presented as application/problem+json) and read endpoints over the view tables."
+} as const;
+
+export const makeWalletApi = (basePath: `/${string}` = "/api/commands") =>
+  withApiInfo(HttpApi.make("walletApp").add(makeCommandApiGroup(basePath, walletCommands)).add(walletQueryGroup), walletApiInfo);
+
+// Serves the API: the commands and reads, the OpenAPI document (at /openapi.json unless `openApiPath` says
+// otherwise) and, when asked for, a documentation page.
 export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
-  const api = HttpApi.make("walletApp")
-    .add(makeCommandApiGroup(basePath, walletCommands))
-    .add(walletQueryGroup);
+  const api = makeWalletApi(basePath);
 
   const commandsLive = makeCommandApiGroupLive(api, walletCommands, {
     basePath,
@@ -175,5 +191,8 @@ export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   });
   const queryLive = makeWalletQueryApiLive(api);
 
-  return HttpApiBuilder.layer(api).pipe(Layer.provide(commandsLive), Layer.provide(queryLive));
+  return Layer.merge(
+    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive)),
+    apiDocsLayer(api, config)
+  );
 };

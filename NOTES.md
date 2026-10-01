@@ -979,3 +979,12 @@ asserts the model directly (queries, fold, both regressions).
 - Response: `{ status: "CREATED", reason: null, lastPosition: "<position>" }` (201) or `{ status: "IDEMPOTENT", reason, lastPosition: null }` (200).
 - Wallet ported: registry declares errors per command, `InsufficientFundsProblem` deleted, e2e tests post to the new paths and assert the new problem shape
   (`errorType` + `fields`). `command-api-description.test.ts` checks the generated description without a server.
+
+## OpenAPI phase 3 - the description, served and checked in
+
+- `HttpApiBuilder.layer(api, { openapiPath })` serves the document (default `/openapi.json`); `docs: { ui: "scalar" | "swagger" }` mounts a page (off by default).
+  `ApiDescription.ts` (`apiLayerOptions`, `apiDocsLayer`) is shared by `makeCommandApiLive` and the wallet app; `withApiInfo` sets title / version / description.
+- Valid and stable: `wallet-openapi.test.ts` validates the generated document with `@readme/openapi-parser` and compares it with `docs/api/wallet-openapi.json`
+  (`bun run docs:api` regenerates it). An API change is a visible diff; a stale file fails the unit test (so CI).
+- Findings: `Schema.optional(X)` renders as `X | null` but the decoder refuses null -> use `Schema.optionalKey` (the input lint reports it); `Schema.Number` anywhere in
+  the document renders as number-or-"Infinity" -> `Schema.Finite` (fixed in the wallet's error fields and read responses; the test asserts none remain).

@@ -256,6 +256,56 @@ describe("commands-http integration (real Postgres)", () => {
     });
   });
 
+  describe("the API description", () => {
+    it("OpenAPI document is served at /openapi.json by default, describing every command route", { timeout: 20_000 }, async () => {
+      await withServer(testCommands, {}, async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/openapi.json`);
+        assert.strictEqual(res.status, 200);
+        assert.match(res.headers.get("content-type") ?? "", /application\/json/);
+        const spec = (await res.json()) as any;
+        assert.strictEqual(spec.openapi, "3.1.0");
+        assert.strictEqual(spec.info.title, "Command API");
+        assert.deepStrictEqual(Object.keys(spec.paths).sort(), [
+          "/api/commands",
+          "/api/commands/open_wallet",
+          "/api/commands/refuse",
+          "/api/commands/send_confirmation"
+        ]);
+        // the four declared domain errors of `refuse`, each at the status of its kind
+        assert.deepStrictEqual(
+          Object.keys(spec.paths["/api/commands/refuse"].post.responses).sort(),
+          ["200", "201", "400", "403", "404", "409", "500"]
+        );
+      });
+    });
+
+    it("the document can be moved or turned off", { timeout: 20_000 }, async () => {
+      await withServer(testCommands, { openApiPath: "/api/spec.json" }, async (baseUrl) => {
+        assert.strictEqual((await fetch(`${baseUrl}/api/spec.json`)).status, 200);
+        assert.strictEqual((await fetch(`${baseUrl}/openapi.json`)).status, 404);
+      });
+      await withServer(testCommands, { openApiPath: false }, async (baseUrl) => {
+        assert.strictEqual((await fetch(`${baseUrl}/openapi.json`)).status, 404);
+      });
+    });
+
+    it("no documentation page unless asked for; Scalar and Swagger UI when configured", { timeout: 30_000 }, async () => {
+      await withServer(testCommands, {}, async (baseUrl) => {
+        assert.strictEqual((await fetch(`${baseUrl}/docs`)).status, 404);
+      });
+      for (const ui of ["scalar", "swagger"] as const) {
+        await withServer(testCommands, { docs: { ui } }, async (baseUrl) => {
+          const res = await fetch(`${baseUrl}/docs`);
+          assert.strictEqual(res.status, 200, `${ui} page`);
+          assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+        });
+      }
+      await withServer(testCommands, { docs: { ui: "scalar", path: "/reference" } }, async (baseUrl) => {
+        assert.strictEqual((await fetch(`${baseUrl}/reference`)).status, 200);
+      });
+    });
+  });
+
   describe("correlation header (correlationHeaderEnabled: true)", () => {
     it("a supplied correlation id is echoed back", { timeout: 20_000 }, async () => {
       const correlationId = crypto.randomUUID();

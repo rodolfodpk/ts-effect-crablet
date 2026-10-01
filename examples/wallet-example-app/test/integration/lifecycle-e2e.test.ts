@@ -2,6 +2,7 @@
 // app (background processors + HTTP server).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
@@ -12,6 +13,7 @@ import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { walletOpenApiFile } from "../../src/api/WalletOpenApi.ts";
 import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
 import { walletBalanceViewSubscription } from "../../src/views/WalletViewConfig.ts";
 
@@ -136,5 +138,10 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     await runtime.runPromise(waitUntilProcessed(walletBalanceViewSubscription, result.lastPosition));
     const body = await getJson(`/api/wallets/${walletId}`); // a single read, no retry loop
     assert.strictEqual(body["balance"], 60);
+  });
+
+  it("serves its own OpenAPI document at /openapi.json - the one checked in at docs/api", async () => {
+    const served = await getJson("/openapi.json");
+    assert.deepStrictEqual(served, JSON.parse(readFileSync(walletOpenApiFile, "utf8")));
   });
 });

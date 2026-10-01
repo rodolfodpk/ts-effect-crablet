@@ -7,6 +7,7 @@ import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import { makeCommandApi } from "../src/CommandApi.ts";
 import { exposedCommandOf, type ExposedCommand } from "../src/ExposedCommand.ts";
+import { inputJsonSchemaProblems } from "../src/InputJsonSchema.ts";
 
 class WalletNotFound extends DomainError("WalletNotFound", { fields: { walletId: Schema.String }, kind: "not_found" }) {}
 class InsufficientFunds extends DomainError("InsufficientFunds", {
@@ -78,5 +79,40 @@ describe("the API description of the command routes", () => {
   test("the same error class is ONE component shared by every route that declares it", () => {
     const ref = (name: string) => post(name).responses["404"].content["application/problem+json"].schema.$ref;
     expect(ref("deposit")).toBe(ref("withdraw"));
+  });
+});
+
+describe("how optional fields are described", () => {
+  const specOf = (input: Schema.Constraint) => {
+    const command = defineCommand({ name: "probe", input, decide: (_: unknown, c: any) => emit(Done({ walletId: String(c.id) })) });
+    const api = OpenApi.fromApi(makeCommandApi("/api/commands", { probe: exposedCommandOf(command as never) })) as any;
+    return api.paths["/api/commands/probe"].post.requestBody.content["application/json"].schema;
+  };
+
+  test("Schema.optionalKey: not required, and described as its own type", () => {
+    const body = specOf(Schema.Struct({ id: Schema.String, note: Schema.optionalKey(Schema.String), count: Schema.optionalKey(Schema.Int) }));
+    expect(body.required).toEqual(["id"]);
+    expect(body.properties.note).toEqual({ type: "string" });
+    expect(body.properties.count).toEqual({ type: "integer" });
+  });
+
+  test("Schema.optional is described as nullable, which the decoder would refuse: the lint reports it", () => {
+    const input = Schema.Struct({ id: Schema.String, note: Schema.optional(Schema.String), nested: Schema.Struct({ deep: Schema.optional(Schema.Int) }) });
+    expect(specOf(input).properties.note).toEqual({ anyOf: [{ type: "string" }, { type: "null" }] });
+
+    const command = defineCommand({ name: "probe", input, decide: (_, c) => emit(Done({ walletId: c.id })) });
+    const problems = inputJsonSchemaProblems(command);
+    expect(problems).toHaveLength(2);
+    expect(problems.join("\n")).toContain('field "note"');
+    expect(problems.join("\n")).toContain('field "nested.deep"');
+  });
+
+  test("a legitimate NullOr is not flagged", () => {
+    const command = defineCommand({ name: "probe", input: Schema.Struct({ id: Schema.String, memo: Schema.NullOr(Schema.String) }), decide: (_, c) => emit(Done({ walletId: c.id })) });
+    expect(inputJsonSchemaProblems(command)).toEqual([]);
+  });
+
+  test("the description accepts no properties the command does not declare", () => {
+    expect(specOf(Schema.Struct({ id: Schema.String })).additionalProperties).toBe(false);
   });
 });

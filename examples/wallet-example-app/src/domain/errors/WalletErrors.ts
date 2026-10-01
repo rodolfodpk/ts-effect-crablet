@@ -15,7 +15,7 @@ export class WalletAlreadyExists extends DomainError("WalletAlreadyExists", {
 }) {}
 
 export class InsufficientFunds extends DomainError("InsufficientFunds", {
-  fields: { walletId: Schema.String, currentBalance: Schema.Number, requestedAmount: Schema.Number },
+  fields: { walletId: Schema.String, currentBalance: Schema.Finite, requestedAmount: Schema.Finite },
   kind: "invalid"
 }) {}
 

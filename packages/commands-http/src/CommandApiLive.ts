@@ -9,6 +9,7 @@ import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { executeEndpointName, listedCommands, makeCommandApi } from "./CommandApi.ts";
+import { apiDocsLayer, apiLayerOptions } from "./ApiDescription.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
@@ -151,5 +152,8 @@ export const makeCommandApiLive = (
 ) => {
   const basePath = (config.basePath ?? defaultBasePath) as `/${string}`;
   const api = makeCommandApi(basePath, commands);
-  return HttpApiBuilder.layer(api).pipe(Layer.provide(makeCommandApiGroupLive(api, commands, config)));
+  return Layer.merge(
+    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(makeCommandApiGroupLive(api, commands, config))),
+    apiDocsLayer(api, config)
+  );
 };

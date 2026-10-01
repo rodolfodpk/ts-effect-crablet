@@ -8,7 +8,7 @@ import { WalletNotFoundProblem } from "./WalletProblems.ts";
 export const WalletResponse = Schema.Struct({
   walletId: Schema.String,
   owner: Schema.String,
-  balance: Schema.Number,
+  balance: Schema.Finite,
   lastUpdatedAt: Schema.String
 });
 
@@ -16,7 +16,7 @@ export const TransactionResponse = Schema.Struct({
   transactionId: Schema.String,
   walletId: Schema.String,
   eventType: Schema.String,
-  amount: Schema.Number,
+  amount: Schema.Finite,
   description: Schema.String,
   occurredAt: Schema.String
 });
@@ -27,11 +27,11 @@ export const TransactionsResponse = Schema.Struct({
 
 export const WalletSummaryResponse = Schema.Struct({
   walletId: Schema.String,
-  totalDeposits: Schema.Number,
-  totalWithdrawals: Schema.Number,
-  totalTransfersIn: Schema.Number,
-  totalTransfersOut: Schema.Number,
-  currentBalance: Schema.Number,
+  totalDeposits: Schema.Finite,
+  totalWithdrawals: Schema.Finite,
+  totalTransfersIn: Schema.Finite,
+  totalTransfersOut: Schema.Finite,
+  currentBalance: Schema.Finite,
   lastTransactionAt: Schema.NullOr(Schema.String)
 });
 

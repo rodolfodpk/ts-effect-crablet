@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/http-api";
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { inputJsonSchema } from "./InputJsonSchema.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf } from "./ProblemDetail.ts";
@@ -71,8 +71,26 @@ export const makeCommandApiGroup = (basePath: `/${string}`, commands: Registry):
   return group;
 };
 
-export const makeCommandApi = (basePath: `/${string}`, commands: Registry) =>
-  HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, commands));
+// What the API description says about the API as a whole.
+export interface ApiInfo {
+  readonly title: string;
+  readonly version: string;
+  readonly description?: string;
+}
+
+export const defaultApiInfo: ApiInfo = { title: "Command API", version: "1.0.0" };
+
+// Attaches the title / version / description the generated OpenAPI document shows.
+export const withApiInfo = <Id extends string, Groups extends HttpApiGroup.Constraint>(
+  api: HttpApi.HttpApi<Id, Groups>,
+  info: ApiInfo
+): HttpApi.HttpApi<Id, Groups> =>
+  api.annotateMerge(
+    OpenApi.annotations({ title: info.title, version: info.version, ...(info.description !== undefined ? { description: info.description } : {}) })
+  );
+
+export const makeCommandApi = (basePath: `/${string}`, commands: Registry, info: ApiInfo = defaultApiInfo) =>
+  withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, commands)), info);
 
 export const listedCommands = (commands: Registry) =>
   Object.keys(commands)

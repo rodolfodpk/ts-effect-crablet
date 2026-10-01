@@ -9,6 +9,7 @@
     "./CommandApiConfig": "./src/CommandApiConfig.ts",
     "./ProblemDetail": "./src/ProblemDetail.ts",
     "./InputJsonSchema": "./src/InputJsonSchema.ts",
+    "./ApiDescription": "./src/ApiDescription.ts",
     "./CommandApiLive": "./src/CommandApiLive.ts"
   },
   "dependencies": {
