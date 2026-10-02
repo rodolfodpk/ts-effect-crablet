@@ -496,7 +496,8 @@ Things to try:
 <!-- file: examples/course-enrolment-ui/vite.config.ts#proxy -->
 ```ts
 // The course API (examples/course-enrolment-app) listens on :8080. Proxying it makes the page and the API ONE origin in
-// the browser, so the server needs no CORS handling.
+// the browser, so the server needs no CORS handling. (To call the API on its own origin instead, set VITE_API_URL and start the
+// server with COURSES_CORS_ORIGINS=<this page's origin>; see src/api.ts.)
 const api = `http://localhost:${process.env["PORT"] ?? 8080}`;
 
 export default defineConfig({
@@ -507,7 +508,27 @@ export default defineConfig({
 ```
 
 **The client is derived from the API definition**, not re-declared. `course-enrolment-app/CourseApi` is the module the server serves (routes, request and response Schemas,
-the domain errors); the page builds its client from it with `HttpApiClient.make(makeCourseApi())`. Because the registry in step 3 kept its command names, the client is typed
+the domain errors); the page builds its client from it with `HttpApiClient.make(makeCourseApi())`. By default the URLs are relative, which works because the dev server proxies the API
+(above). To call the API on another origin directly instead, set `VITE_API_URL` and let the server allow the page's origin (CORS is off unless asked for):
+
+<!-- file: examples/course-enrolment-ui/src/api.ts#client -->
+```ts
+// Where the API is. Unset: relative URLs, which works when the page and the API share an origin (the Vite dev proxy does that, and so
+// would serving the page from the API server). With VITE_API_URL set (for example http://localhost:8080) the page calls that origin
+// directly, which needs CORS on the server (COURSES_CORS_ORIGINS=<the page's origin>, see @crablet/commands-http/Cors).
+// `import.meta.env` is Vite's (and Bun's); under plain Node, as in the integration test, it is absent and the base is relative.
+export const apiBaseUrl: string | undefined = (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || undefined;
+const makeClient = () => HttpApiClient.make(makeCourseApi(), apiBaseUrl === undefined ? {} : { baseUrl: apiBaseUrl });
+```
+
+```bash
+# the server (examples/course-enrolment-app): allow the page's origin
+COURSES_CORS_ORIGINS=http://localhost:5173 node src/index.ts
+# the page (examples/course-enrolment-ui): call the API directly, no proxy
+VITE_API_URL=http://localhost:8080 bun run dev
+```
+
+Because the registry in step 3 kept its command names, the client is typed
 *per command*: `execute_subscribe` takes exactly `{ studentId, courseId }` (a misspelled field does not compile), and fails with exactly the problems `subscribe` declares, plus
 the transport's error and a Schema error. No cast, no copy of the wire format:
 
@@ -520,21 +541,21 @@ const queryOf = (waitForView: boolean) => (waitForView ? { waitFor: COURSE_SEATS
 // field does not compile) and fails with exactly the problems that command declares, plus the transport's and the Schema's.
 export const defineCourseCall = (courseId: string, capacity: number, options: { readonly waitForView: boolean }) =>
   Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(makeCourseApi());
+    const client = yield* makeClient();
     const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: queryOf(options.waitForView) });
     return outcomeOf(answer);
   });
 
 export const subscribeCall = (studentId: string, courseId: string, options: { readonly waitForView: boolean }) =>
   Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(makeCourseApi());
+    const client = yield* makeClient();
     const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: queryOf(options.waitForView) });
     return outcomeOf(answer);
   });
 
 export const getCourse = (courseId: string) =>
   Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(makeCourseApi());
+    const client = yield* makeClient();
     return yield* client.courseQueries.getCourse({ params: { courseId } });
   });
 
@@ -678,7 +699,7 @@ Building a client is the quickest way to find what an API is missing. Each of th
 - **The command client is typed per command** only while the registry keeps its literal keys (step 3): annotate it as a `Record<string, ...>` and the client falls back to one loosely typed endpoint.
 - **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`), so this page never sees the server's 400 for a bad payload. A client that does
   not validate first (curl, another language, a generated client) gets the same information from the server: the 400 problem lists every failing field in `errors`, with a path and the check's message.
-- **No CORS** in `commands-http`: a browser app on another origin needs a proxy or its own handling.
+- **CORS is opt-in.** `commands-http` sends no CORS header unless the app adds `corsLayer({ allowedOrigins })`; it refuses an empty list (Effect's own middleware reads that as "every origin") and credentials with `"*"`. A page behind a proxy or served by the API needs none.
 - **No list or search endpoint**, so the page asks for a course id.
 - **No live updates**: a second tab does not see a subscription until it reads. Views are asynchronous and there is no push channel.
 

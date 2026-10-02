@@ -3,6 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { HttpApiBuilder } from "effect/http-api";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
+import { corsLayer, type CorsConfig } from "@crablet/commands-http/Cors";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
 import type { EventStore } from "@crablet/eventstore";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -24,6 +25,9 @@ export interface CourseAppConfig {
   // Where the OpenAPI document is served (default "/openapi.json"; false = none) and an optional documentation page.
   readonly openApiPath?: string | false;
   readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string };
+  // CORS for a page served from ANOTHER origin (a different host or port). Off unless set: a page behind a dev proxy, or served by
+  // this server, needs none. See @crablet/commands-http/Cors.
+  readonly cors?: CorsConfig;
 }
 
 // #region wait-for
@@ -41,10 +45,11 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const api = makeCourseApi(basePath);
   const commandsLive = makeCommandApiGroupLive(api, courseCommands, { basePath, viewWaiters: courseViewWaiters });
   const queryLive = makeCourseQueryApiLive(api);
-  return Layer.merge(
+  const served = Layer.merge(
     HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive)),
     apiDocsLayer(api, config)
   );
+  return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));
 };
 
 const viewsConfig: ViewsConfig = {

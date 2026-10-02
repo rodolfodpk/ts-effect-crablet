@@ -11,7 +11,8 @@
     "./InputJsonSchema": "./src/InputJsonSchema.ts",
     "./ApiDescription": "./src/ApiDescription.ts",
     "./ViewWaiter": "./src/ViewWaiter.ts",
-    "./CommandApiLive": "./src/CommandApiLive.ts"
+    "./CommandApiLive": "./src/CommandApiLive.ts",
+    "./Cors": "./src/Cors.ts"
   },
   "dependencies": {
     "effect": "4.0.0",

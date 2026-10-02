@@ -8,6 +8,15 @@ import { Effect, Schema } from "effect";
 import { HttpApiClient } from "effect/http-api";
 import { COURSE_SEATS_VIEW, CourseResponse, ViewWaitResult, makeCourseApi } from "course-enrolment-app/CourseApi";
 
+// #region client
+// Where the API is. Unset: relative URLs, which works when the page and the API share an origin (the Vite dev proxy does that, and so
+// would serving the page from the API server). With VITE_API_URL set (for example http://localhost:8080) the page calls that origin
+// directly, which needs CORS on the server (COURSES_CORS_ORIGINS=<the page's origin>, see @crablet/commands-http/Cors).
+// `import.meta.env` is Vite's (and Bun's); under plain Node, as in the integration test, it is absent and the base is relative.
+export const apiBaseUrl: string | undefined = (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || undefined;
+const makeClient = () => HttpApiClient.make(makeCourseApi(), apiBaseUrl === undefined ? {} : { baseUrl: apiBaseUrl });
+// #endregion client
+
 // What a command answered: created, or "already done" (an idempotent repeat) with the reason; and, when the request
 // asked to wait for a view (`?waitFor=`), whether that view had caught up with the write when the answer was sent.
 export const CommandOutcome = Schema.Struct({
@@ -25,21 +34,21 @@ const queryOf = (waitForView: boolean) => (waitForView ? { waitFor: COURSE_SEATS
 // field does not compile) and fails with exactly the problems that command declares, plus the transport's and the Schema's.
 export const defineCourseCall = (courseId: string, capacity: number, options: { readonly waitForView: boolean }) =>
   Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(makeCourseApi());
+    const client = yield* makeClient();
     const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: queryOf(options.waitForView) });
     return outcomeOf(answer);
   });
 
 export const subscribeCall = (studentId: string, courseId: string, options: { readonly waitForView: boolean }) =>
   Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(makeCourseApi());
+    const client = yield* makeClient();
     const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: queryOf(options.waitForView) });
     return outcomeOf(answer);
   });
 
 export const getCourse = (courseId: string) =>
   Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(makeCourseApi());
+    const client = yield* makeClient();
     return yield* client.courseQueries.getCourse({ params: { courseId } });
   });
 
