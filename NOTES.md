@@ -1073,3 +1073,7 @@ asserts the model directly (queries, fold, both regressions).
 - OpenAPI: purely additive (`CommandApiBadRequest.errors`, a new `InputIssue` component; 66 lines added to each document, none removed) - the first change made under ADR-0013's additive/breaking rules.
 - The TypeScript page never sees it (its derived client validates with the same Schema before sending and reports a `SchemaError`); the value is for clients that do not validate first. The page's `Rejected` case shows the paths when present.
 
+## Browser-safety guard (docs/plans/api-follow-ups.md, item F's first step)
+- `examples/course-enrolment-app/test/browser-safe.test.ts` bundles `src/CourseApi.ts` for the browser in-process (`Bun.build`, metafile, about 80 ms) and fails on any Node module, Postgres driver or server-side package it reaches. It runs in CI through `test:unit`, which closes the gap that CI never builds the UI. The server entry `CourseApp.ts` is the built-in negative control; a `node:os` import added to the domain module was checked to fail it.
+- After the contract/behavior split (item F proper) the same test is tightened to forbid anything from the server-side domain module.
+
