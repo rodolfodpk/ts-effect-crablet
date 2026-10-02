@@ -2,7 +2,9 @@ import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { inputJsonSchema } from "./InputJsonSchema.ts";
 import { defaultWaitTimeoutMs, maxWaitTimeoutMs } from "./ViewWaiter.ts";
-import type { ExposedCommand } from "./ExposedCommand.ts";
+import type { ExposedCommand, Presentable } from "./ExposedCommand.ts";
+import type { AnyCommandContract } from "@crablet/commands/Contract";
+import type { Command } from "@crablet/commands/Command";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
@@ -81,6 +83,8 @@ const UnexpectedProblem = asProblem(CommandApiUnexpectedError);
 export const executeEndpointName = (commandType: string) => `execute_${commandType}`;
 
 type Registry = Readonly<Record<string, ExposedCommand<any, any, any, any>>>;
+// What the GROUP needs from each entry: only the public part (input Schema and declared errors).
+type GroupSource = Readonly<Record<string, { readonly command: { readonly input: Schema.Constraint; readonly errors: ReadonlyArray<any> } }>>;
 
 // ---- the group's STATIC type (the loop in `makeCommandApiGroup` builds exactly this) ----
 //
@@ -108,7 +112,7 @@ type CommandEndpoint<K extends string, BasePath extends string, X> = HttpApiEndp
   typeof CommandCreatedResponse | typeof CommandIdempotentResponse,
   CommandErrorSchemas<X>
 >;
-export type CommandGroup<BasePath extends string, C extends Registry> = HttpApiGroup.HttpApiGroup<
+export type CommandGroup<BasePath extends string, C extends GroupSource> = HttpApiGroup.HttpApiGroup<
   "commands",
   | HttpApiEndpoint.HttpApiEndpoint<"listExposedCommands", "GET", BasePath, never, never, never, never, typeof ExposedCommandsResponse>
   | { [K in keyof C & string]: CommandEndpoint<K, BasePath, C[K]> }[keyof C & string]
@@ -124,27 +128,90 @@ export type CommandGroup<BasePath extends string, C extends Registry> = HttpApiG
 // check the runtime, the type tests in test/typed-client.types.ts check the type).
 // `waitableViews`: names of the views a request may wait for (`?waitFor=`, `?waitTimeout=`); none by default. (The
 // query is part of the static type either way; with no waitable view the server answers any `waitFor` with a 400.)
-export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C extends Registry>(
+// The command API can be declared from CONTRACTS (the public part of each command, see @crablet/commands/Contract) or, as before,
+// from a registry of exposed commands. From contracts, the route name is the contract's own `name`, and the module that declares the API
+// imports nothing of the commands' behavior.
+type AsRegistry<C extends ReadonlyArray<AnyCommandContract>> = { readonly [K in C[number] as K["name"]]: { readonly command: K } };
+type Entry = { readonly name: string; readonly input: Schema.Constraint; readonly errors: ReadonlyArray<DeclaredDomainError> };
+const entriesOf = (source: ReadonlyArray<AnyCommandContract> | Registry): ReadonlyArray<Entry> =>
+  Array.isArray(source)
+    ? source.map((contract: AnyCommandContract) => ({ name: contract.name, input: contract.input, errors: contract.errors as ReadonlyArray<DeclaredDomainError> }))
+    : Object.entries(source as Registry).map(([name, entry]) => ({ name, input: entry.command.input, errors: entry.command.errors as ReadonlyArray<DeclaredDomainError> }));
+
+export function makeCommandApiGroup<const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
+  basePath: BasePath,
+  contracts: C,
+  options?: { readonly waitableViews?: ReadonlyArray<string> }
+): CommandGroup<BasePath, AsRegistry<C>>;
+export function makeCommandApiGroup<const BasePath extends `/${string}`, const C extends Registry>(
   basePath: BasePath,
   commands: C,
+  options?: { readonly waitableViews?: ReadonlyArray<string> }
+): CommandGroup<BasePath, C>;
+export function makeCommandApiGroup(
+  basePath: `/${string}`,
+  source: ReadonlyArray<AnyCommandContract> | Registry,
   options: { readonly waitableViews?: ReadonlyArray<string> } = {}
-): CommandGroup<BasePath, C> => {
+): unknown {
   const waitableViews = options.waitableViews ?? [];
   let group: any = HttpApiGroup.make("commands").add(
     HttpApiEndpoint.get("listExposedCommands", basePath, { success: ExposedCommandsResponse })
   );
-  for (const [commandType, entry] of Object.entries(commands as Registry)) {
+  for (const entry of entriesOf(source)) {
     group = group.add(
-      HttpApiEndpoint.post(executeEndpointName(commandType), `${basePath}/${commandType}` as `/${string}`, {
-        payload: entry.command.input as unknown as Schema.Top,
+      HttpApiEndpoint.post(executeEndpointName(entry.name), `${basePath}/${entry.name}` as `/${string}`, {
+        payload: entry.input as unknown as Schema.Top,
         ...(waitableViews.length > 0 ? { query: waitQuery(waitableViews) } : {}),
         success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
-        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.command.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
+        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
       })
     );
   }
-  return group as CommandGroup<BasePath, C>;
+  return group;
+}
+
+// The server's side of a list of contracts: for each contract, the implemented command, built from THAT contract with
+// `defineCommand({ ...Contract, ... })`. A missing command, an extra one, or one built from a different contract does not compile; a
+// command that can fail with an error the API cannot present (`Presentable`) does not compile either. (A command whose input Schema is
+// strictly WIDER than the contract's is structurally assignable and not caught here: `checkImplementations` catches it at startup.)
+export type Implementations<C extends ReadonlyArray<AnyCommandContract>> = {
+  readonly [N in C[number]["name"]]: Command<any, Presentable, Extract<C[number], { readonly name: N }>["input"], Extract<C[number], { readonly name: N }>["errors"]>;
 };
+
+export class ContractMismatch extends Error {
+  override readonly name = "ContractMismatch";
+  readonly problems: ReadonlyArray<string>;
+  // (no constructor parameter property: Node's type-stripping does not support the shorthand, see ADR-0001)
+  constructor(problems: ReadonlyArray<string>) {
+    super(`The commands do not implement the contracts:\n  - ${problems.join("\n  - ")}`);
+    this.problems = problems;
+  }
+}
+
+// Run when the server registers its implementations (cheap, once): every contract has a command under its name, there are no extras, and each
+// command was built from its contract - the very same `input` and `errors` objects - rather than hand-written to resemble it.
+export const checkImplementations = (
+  contracts: ReadonlyArray<AnyCommandContract>,
+  implementations: Readonly<Record<string, Command<any, any, any, any>>>
+): void => {
+  const problems: Array<string> = [];
+  const names = new Set(contracts.map((contract) => contract.name));
+  for (const contract of contracts) {
+    const implementation = implementations[contract.name];
+    if (implementation === undefined) problems.push(`no command for the contract "${contract.name}"`);
+    else {
+      if (implementation.name !== contract.name) problems.push(`the command registered as "${contract.name}" is named "${implementation.name}"`);
+      if (implementation.input !== contract.input) problems.push(`"${contract.name}": the command's input is not the contract's (build it with defineCommand({ ...Contract, ... }))`);
+      if (implementation.errors !== contract.errors) problems.push(`"${contract.name}": the command's declared errors are not the contract's (build it with defineCommand({ ...Contract, ... }))`);
+    }
+  }
+  for (const name of Object.keys(implementations)) if (!names.has(name)) problems.push(`"${name}" is implemented but has no contract`);
+  if (problems.length > 0) throw new ContractMismatch(problems);
+};
+
+// The registry form the server side takes, from implementations that passed `checkImplementations`.
+export const registryOf = (implementations: Readonly<Record<string, Command<any, any, any, any>>>): Registry =>
+  Object.fromEntries(Object.entries(implementations).map(([name, command]) => [name, { command }]));
 
 // What the API description says about the API as a whole.
 export interface ApiInfo {
@@ -164,12 +231,26 @@ export const withApiInfo = <Id extends string, Groups extends HttpApiGroup.Const
     OpenApi.annotations({ title: info.title, version: info.version, ...(info.description !== undefined ? { description: info.description } : {}) })
   );
 
-export const makeCommandApi = <const BasePath extends `/${string}`, const C extends Registry>(
+export function makeCommandApi<const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
+  basePath: BasePath,
+  contracts: C,
+  info?: ApiInfo,
+  options?: { readonly waitableViews?: ReadonlyArray<string> }
+): HttpApi.HttpApi<"commandApi", CommandGroup<BasePath, AsRegistry<C>>>;
+export function makeCommandApi<const BasePath extends `/${string}`, const C extends Registry>(
   basePath: BasePath,
   commands: C,
+  info?: ApiInfo,
+  options?: { readonly waitableViews?: ReadonlyArray<string> }
+): HttpApi.HttpApi<"commandApi", CommandGroup<BasePath, C>>;
+export function makeCommandApi(
+  basePath: `/${string}`,
+  source: ReadonlyArray<AnyCommandContract> | Registry,
   info: ApiInfo = defaultApiInfo,
   options: { readonly waitableViews?: ReadonlyArray<string> } = {}
-) => withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, commands, options)), info);
+): unknown {
+  return withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, source as never, options) as never), info);
+}
 
 export const listedCommands = (commands: Registry) =>
   Object.keys(commands)

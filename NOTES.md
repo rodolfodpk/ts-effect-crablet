@@ -1090,3 +1090,7 @@ asserts the model directly (queries, fold, both regressions).
 - The page: loads page one at startup, reloads it after every write (same wait setting as the read-back), a prefix filter, "More", and a click opens the course in the lookup. Collation note for tests: ordering is the database's, so the integration test asserts consistency (pages concatenate to the single page, ids sorted as the database sorted them) and only compares exact order for ids that sort the same under any collation.
 - Tests: `test/course-list.test.ts` (helpers), `test/integration/course-list.test.ts` (8, real Postgres: paging, prefix, escaping, bounds, subscriptions), the page's `test/courses.test.ts` and an end-to-end case that really pages (22 courses, 20 per page).
 
+## Contracts, phase 1 (docs/plans/api-follow-ups.md item F)
+- `commandContract({ name, input, errors })` (`@crablet/commands/Contract`) is the PUBLIC part of a command; the server spreads it into the unchanged `defineCommand({ ...Contract, model, decide })` (declare the contract as its own const - inline in the spread the error list is silently loosened). `makeCommandApiGroup`/`makeCommandApi` accept a list of contracts; the Live functions take `(contracts, implementations)` and check at construction that each command was built from its contract (`ContractMismatch`). The registry form stays until phase 3.
+- Node strip-only mode rejects constructor parameter properties (`constructor(readonly x: T)`); Bun does not, so unit tests cannot catch it. Only `node --test` imports reveal it.
+

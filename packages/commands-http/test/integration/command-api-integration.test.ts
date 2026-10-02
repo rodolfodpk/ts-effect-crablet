@@ -15,6 +15,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
+import { commandContract } from "@crablet/commands/Contract";
 import * as Query from "@crablet/eventstore/Query";
 import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
 import { exposedCommandOf, type ExposedCommand } from "../../src/ExposedCommand.ts";
@@ -52,9 +53,9 @@ after(async () => {
 });
 
 // onDuplicate "fail": opening the same wallet twice is a genuine conflict (409), not a silent no-op.
+const OpenWalletContract = commandContract({ name: "open_wallet", input: Schema.Struct({ walletId: Schema.String }) });
 const OpenWallet = defineCommand({
-  name: "open_wallet",
-  input: Schema.Struct({ walletId: Schema.String }),
+  ...OpenWalletContract,
   idempotentBy: (c) => Query.forEventAndTag("WalletOpened", "wallet_id", c.walletId),
   onDuplicate: "fail",
   decide: (_, c) => emit(AppendEvent.of("WalletOpened", "wallet_id", c.walletId, {}))
@@ -74,10 +75,13 @@ class NotAllowed extends DomainError("NotAllowed", { fields: { reason: Schema.St
 class BadRequestDomain extends DomainError("BadRequestDomain", { fields: { limit: Schema.Number }, kind: "invalid" }) {}
 class AlreadyDone extends DomainError("AlreadyDone", { fields: { id: Schema.String }, kind: "conflict" }) {}
 
-const Refuse = defineCommand({
+const RefuseContract = commandContract({
   name: "refuse",
   errors: [NoSuchThing, NotAllowed, BadRequestDomain, AlreadyDone],
-  input: Schema.Struct({ kind: Schema.Literals(["not_found", "forbidden", "invalid", "conflict"]), id: Schema.String }),
+  input: Schema.Struct({ kind: Schema.Literals(["not_found", "forbidden", "invalid", "conflict"]), id: Schema.String })
+});
+const Refuse = defineCommand({
+  ...RefuseContract,
   decide: (_, c) =>
     c.kind === "not_found" ? fail(new NoSuchThing({ id: c.id }))
     : c.kind === "forbidden" ? fail(new NotAllowed({ reason: "read-only" }))
@@ -91,6 +95,11 @@ const testCommands = {
   send_confirmation: exposedCommandOf(SendConfirmation)
 };
 
+// The same two commands declared from their CONTRACTS: the API's routes and problems come from the contracts alone, and the server is
+// handed the implementations (checked against the contracts when the layer is built).
+const contracts = [OpenWalletContract, RefuseContract];
+const implementations = { open_wallet: OpenWallet, refuse: Refuse };
+
 // Builds a fresh ephemeral-port HTTP server for the duration of one test (Effect.scoped tears it
 // down when `body` finishes), sharing the Postgres-backed ManagedRuntime built once in before().
 // Different tests need different CommandApiConfig (basePath/correlationHeaderEnabled), so the
@@ -100,7 +109,9 @@ const withServer = <A>(
   commands: Readonly<Record<string, ExposedCommand<any, any>>>,
   config: CommandApiConfig,
   body: (baseUrl: string) => Promise<A>
-): Promise<A> =>
+): Promise<A> => serve(makeCommandApiLive(commands, config), body);
+
+const serve = <A>(live: ReturnType<typeof makeCommandApiLive>, body: (baseUrl: string) => Promise<A>): Promise<A> =>
   runtime.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -110,7 +121,7 @@ const withServer = <A>(
         // (it's a sink, not a service provider), so without provideMerge, HttpServer.HttpServer
         // itself wouldn't survive into the built context below for the address lookup.
         const serverLayer = Layer.provideMerge(
-          HttpRouter.serve(makeCommandApiLive(commands, config)),
+          HttpRouter.serve(live),
           NodeHttpServer.layer(createServer, { port: 0 })
         );
         const context = yield* Layer.build(serverLayer);
@@ -501,4 +512,53 @@ describe("a domain error's kind decides the HTTP status (no per-command hook)", 
       });
     });
   }
+});
+
+// The same API declared from contracts: routes, request bodies and problems come from the contracts alone.
+describe("commands-http from contracts (real Postgres)", () => {
+  const post = (baseUrl: string, name: string, body: unknown) =>
+    fetch(`${baseUrl}/api/commands/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  it("a command declared from its contract runs: 201, and a repeat of an idempotent-by-fail command is the framework's 409", { timeout: 20_000 }, async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    await serve(makeCommandApiLive(contracts, implementations, {}), async (baseUrl) => {
+      assert.strictEqual((await post(baseUrl, "open_wallet", { walletId })).status, 201);
+      const again = await post(baseUrl, "open_wallet", { walletId });
+      assert.strictEqual(again.status, 409);
+      assert.strictEqual((await jsonBody(again))["violationCode"], "IDEMPOTENCY_VIOLATION");
+    });
+  });
+
+  it("a domain error the contract declares is presented by its kind, with its own fields", { timeout: 20_000 }, async () => {
+    await serve(makeCommandApiLive(contracts, implementations, {}), async (baseUrl) => {
+      const res = await post(baseUrl, "refuse", { kind: "not_found", id: "x-1" });
+      assert.strictEqual(res.status, 404);
+      assert.strictEqual(res.headers.get("content-type"), "application/problem+json");
+      const body = await jsonBody(res);
+      assert.strictEqual(body["errorType"], "NoSuchThing");
+      assert.deepStrictEqual(body["fields"], { id: "x-1" });
+    });
+  });
+
+  it("a bad payload is the 400 problem naming the field", { timeout: 20_000 }, async () => {
+    await serve(makeCommandApiLive(contracts, implementations, {}), async (baseUrl) => {
+      const res = await post(baseUrl, "open_wallet", { walletId: 42 });
+      assert.strictEqual(res.status, 400);
+      assert.deepStrictEqual((await jsonBody(res))["errors"], [{ path: ["walletId"], message: "Expected string" }]);
+    });
+  });
+
+  it("GET lists exactly the contracts", { timeout: 20_000 }, async () => {
+    await serve(makeCommandApiLive(contracts, implementations, {}), async (baseUrl) => {
+      const body = (await (await fetch(`${baseUrl}/api/commands`)).json()) as { exposedCommands: Array<{ commandType: string }> };
+      assert.deepStrictEqual(body.exposedCommands.map((c) => c.commandType), ["open_wallet", "refuse"]);
+    });
+  });
+
+  it("registering the wrong commands fails when the layer is built, naming every problem", () => {
+    assert.throws(
+      () => makeCommandApiLive(contracts, { open_wallet: OpenWallet } as never, {}),
+      (error: unknown) => error instanceof Error && error.name === "ContractMismatch" && /no command for the contract "refuse"/.test(error.message)
+    );
+  });
 });
