@@ -87,12 +87,20 @@ export const concurrent = (opts: { readonly guard?: QueryType } = {}): Consisten
 // The defined command.
 // ---------------------------------------------------------------------------------------------
 
-export interface Command<In, Err> {
+// `In` is the DECODED input type and `Err` the union of error instances; `I` and `Es` keep the input Schema and the declared
+// error classes themselves, at the type level, so a transport can derive a precisely typed API from them (a typed payload,
+// one typed problem per declared error). They default to the erased types, so code that accepts "any command" is unaffected.
+export interface Command<
+  In,
+  Err,
+  I extends Schema.Constraint = Schema.Constraint,
+  Es extends ReadonlyArray<AnyDomainErrorClass> = ReadonlyArray<AnyDomainErrorClass>
+> {
   readonly name: string;
   // The input schema the command validates against (also what a transport documents as its request body).
-  readonly input: Schema.Constraint;
+  readonly input: I;
   // The domain error classes the command can fail with (see `Declared`): what a transport presents and documents.
-  readonly errors: ReadonlyArray<AnyDomainErrorClass>;
+  readonly errors: Es;
   // Validate untrusted input against the schema. Fails with `InvalidInput`.
   readonly decodeInput: (raw: unknown) => Effect.Effect<In, InvalidInput>;
   // The compiled handler, run by the executor inside its transaction.
@@ -138,7 +146,7 @@ export const defineCommand = <
   readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
-}): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never)> => {
+}): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never), I, Es> => {
   type In = Schema.Schema.Type<I>;
   // The audit table stores the name in a column limited to 64 characters: fail at definition time, not mid-request.
   if (def.name.length < 1 || def.name.length > 64) throw new Error(`command name must be 1-64 characters, got ${def.name.length}: "${def.name}"`);
@@ -200,5 +208,5 @@ export const defineCommand = <
         : append;
     })) as CommandHandler<In, ErrorOf<D> | PE | SqlError | (OD extends "fail" ? Duplicate : never)>;
 
-  return { name: def.name, input: def.input, errors: def.errors ?? [], decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
+  return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
 };
