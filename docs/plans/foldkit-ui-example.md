@@ -44,7 +44,7 @@ In a scratch directory (not committed): install `foldkit@0.165.0` against effect
 ### 1. The package and a read-only page (0.5 day)
 First the refactor: move `makeCourseApi` (and `courseApiInfo`, `courseCommands`, `courseViewWaiters`' names list) into a browser-safe `examples/course-enrolment-app/src/CourseApi.ts`, re-exported from `CourseApp.ts`; the OpenAPI test and the generated documents must be unchanged. Then:
 `examples/course-enrolment-ui`: `package.json` (foldkit, effect 4.0.0, `@effect/platform-browser` 4.0.0, vite), `vite.config.ts` with the proxy, `index.html`, `src/main.ts` (Model, Message, update, init, view), `src/entry.ts`. The course lookup: Message `SubmittedCourseLookup` -> Command `FetchCourse` -> `SucceededFetchCourse` / `FailedFetchCourse` (a `CourseNotFound` problem). `update` unit tests.
-### 2. Writes with typed problems (0.5 day)
+### 2. Writes with typed problems (0.5 day) - DONE
 Define-course and subscribe forms, `foldkit/fieldValidation` on the inputs, Commands for the two POSTs, the `Problem` schema and its mapping to messages. Tests: success, `CourseFull`, `CourseNotFound`, a 400, an idempotent repeat ("already subscribed").
 ### 3. Read your own writes (0.5 day)
 First the demo knob in the course app: `COURSES_VIEW_DELAY_MS` (see decision 3) with a test that a slowed view makes a read-without-wait stale and a `waitFor` read correct. Then the page:
@@ -53,6 +53,13 @@ Subscribe with `?waitFor=course-seats-view`: on `view.caughtUp` follow with exac
 A node:test integration test (`examples/course-enrolment-ui/test/integration/`) that starts the real course app on Postgres (the way `course-http.test.ts` does) and runs the UI's own Commands (the same Effects the page runs, with the Fetch client) against it: define, subscribe with `waitFor`, one read shows the new count; a refusal arrives with the fields the page needs. This proves the page's contract against the real server without a browser. Per spike answer (c) the test imports the program's `main.ts`, sets `globalThis.location = new URL(baseUrl)` so the relative URLs resolve, and runs each Command's Effect. (A browser smoke through the Chrome tooling is a manual step, listed under Verification.)
 ### 5. Docs (0.25 day)
 Tutorial step 5 (tested blocks), README pointer, ADR note only if the spike changed the API-definition layout. Record the findings below in NOTES.md.
+
+## Phase 1-2 results (what building it showed)
+- **Refusals arrive as the API's own problems, and a domain error's class is enough to decode its body.** `Schema.Struct({ errorType: Literal(Error.tag), fields: Struct(Error.fields) })`, built from the domain error class's `tag` and `fields` statics, narrows the real response (`CourseFull` -> `{ courseId, capacity }`); no field is written twice. Verified against the real server on Postgres for: define (created), define again (the framework's `Conflict`, detail "Duplicate operation: \"define_course\" was already done"), subscribe (CREATED), subscribe again (IDEMPOTENT, reason ALREADY_SUBSCRIBED), `CourseFull`, `CourseNotFound`, `StudentAtLimit`, lookup, and lookup of a missing course.
+- **The derived client validates requests with the server's own Schema before sending.** A capacity of 0 never reaches the network: the client fails with a `SchemaError` whose message names the field (`Expected a value greater than or equal to 1 at ["capacity"]`). The server's own 400 for the same payload says only `Invalid payload for command: define_course`. So the client side of the "no per-field errors" gap is already closed by the shared Schema; the server side is not. The page maps it to a `Mismatch` problem.
+- **The command routes are typed `any`.** `client.commands.execute_<name>` accepts `{ params, query, headers, payload }` all as `any` (so even a correct call fails to typecheck without a cast). The page confines the single cast to `runCommand` in `src/api.ts`, narrowed to the call's shape, and decodes the response with the API's own `CommandCreatedResponse | CommandIdempotentResponse`. Leaving the `any` in place made the Command's Effect requirement `unknown`, which Foldkit rejects: the cast must not leak into the Effect type.
+- **Foldkit pieces that worked as documented:** `Command.define` with `args` and `Http.layer`, `AsyncData.Schema`, `FieldValidation.Field/makeRules/validate/isValid`, Story and Scene tests under bun (24 tests in the package).
+- **Process:** the local Postgres container stopped twice between sessions (the server then answers 500 with a `SchemaError: Missing key at ["type"]` in its log: the problem-building code expects a Postgres error shape it did not get). A page that talks to a server whose database is down shows "The server could not be reached", which is the right message for a 500 it cannot classify.
 
 ## Findings the example should surface (and the tutorial should say plainly)
 - Command routes are generated per command, so the derived client needs `any` (or hand-written Schemas); a typed client would need the command route names in the API type.
@@ -66,7 +73,8 @@ Each finding above is a product question, not a UI fix; the example should end w
 1. **A typed client for commands** (the derived client is `any` today): expose the command route names/types in the API type. Highest value for any consumer.
 2. **Optional CORS in `commands-http`** (an allow-list option on the group layer), so a browser app on another origin needs no proxy.
 3. **A built-in list/search read pattern** (or at least a documented one) so UIs are not given ids by hand.
-4. **Per-field validation problems from the server** (the 400 problem could carry the failing paths from the input Schema) so clients do not duplicate validation.
+4. **Per-field validation problems from the server**: the derived client already reports the failing path (`SchemaError`); the server's 400 should carry the same paths (`Invalid payload for command: define_course` today), so non-TypeScript clients get them too.
+   (Related: a server whose database is down answers a 500 whose log line is a `SchemaError` from building the problem body, not the Postgres error: worth a look.)
 5. **Live updates** (SSE or a "view changed" notification) - a larger design question; record, do not build.
 None of these is in scope here; each becomes its own plan if chosen.
 
