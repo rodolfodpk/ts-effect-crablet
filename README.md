@@ -3,7 +3,7 @@
 ![CI](https://github.com/rodolfodpk/ts-effect-crablet/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/rodolfodpk/ts-effect-crablet/branch/main/graph/badge.svg)](https://codecov.io/gh/rodolfodpk/ts-effect-crablet)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)
-![Effect](https://img.shields.io/badge/Effect-4.0%20RC-DE3163)
+![Effect](https://img.shields.io/badge/Effect-4.0-DE3163)
 ![Bun](https://img.shields.io/badge/Bun-1.4-000000?logo=bun&logoColor=white)
 
 An event-sourcing framework for TypeScript, built on [Effect](https://effect.website) and PostgreSQL.
@@ -16,6 +16,14 @@ atomic command, not a saga, and unrelated commands never contend.
 
 It is written for teams already using Effect: commands run as `Effect`s with typed errors, and
 everything is wired with layers.
+
+> **Status: experimental, pre-release.** The API changes often and makes no stability promise: a breaking change lands
+> in one commit that updates every example, test and document ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md)).
+> The packages are not published to npm.
+
+**A good fit** when one business rule spans several things (a transfer between two wallets, a course with a seat limit *and* a per-student limit) and you
+want it atomic without a saga. **Not a fit** if you are not on PostgreSQL, or want a stable, published library today. Unlike aggregate-based event sourcing, you
+do not pick the one stream a command may decide on; the [DCB guide](./docs/dcb-guide.md) shows the difference with a runnable race test.
 
 ## Quick start
 
@@ -79,39 +87,8 @@ The model's boundary is derived from the events it handles, so `BookSeat` is con
 cannot both succeed; the loser is retried and gets `SeatTaken`. Bookings of different seats never
 contend.
 
-**As an [Event Model](https://eventmodeling.org/)** - time runs left to right; the same declarations, seen as the blueprint:
-
-```text
- Screen     ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐        ┌─────────┐
-            │ Add seat│ │Book seat│ │Book seat│ │Book seat│ │  Seat   │        │  Seat   │
-            │  (12A)  │ │(12A,Ann)│ │(12A,Bob)│ │(99Z,Bob)│ │   map   │        │   map   │
-            └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └─────────┘        └─────────┘
-                 │           │           │           │           ▲                  ▲
- ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─
-                 ▼           ▼           ▼           ▼           │                  │
- Command    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐      │                  │
-            │ AddSeat │ │BookSeat │ │BookSeat │ │BookSeat │      │                  │
-            └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘      │                  │
-   SeatModel    exists:no   exists:yes  exists:yes  exists:no     │                  │
-   at decide    taken:no    taken:no    taken:yes   taken:no      │                  │
- ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─
-                 ▼           ▼           ▼           ▼           │                  │
- Event log  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐      │                  │
-            │SeatAdded│▶│SeatBook-│ │SeatTaken│ │SeatNot- │      │                  │
-            │seat=12A │ │ed 12A   │ │ rejected│ │Found    │      │                  │
-            └────┬────┘ └────┬────┘ │  (409)  │ │rejected │      │                  │
-                 │           │      └─────────┘ │  (404)  │      │                  │
-                 │           │       (errors write no event)     │                  │
- ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─
-                 ▼           ▼                                   │                  │
- Read model ┌──────────────────────────────────────────────────────────────────────────┐
-            │ AvailableSeats:   12A listed  ──────▶  12A removed      (updated async) │
-            └──────────────────────────────────────────────────────────────────────────┘
-```
-
-The read model is not part of this quick start (it needs the poller; the [tutorial](./docs/tutorial/course-enrolment.md)
-builds one). The Given/When/Then of a scenario is the same picture: *given* `SeatAdded(12A)` and `SeatBooked(12A)`,
-*when* `BookSeat(12A, Cy)`, *then* `SeatTaken`.
+The same declarations, drawn as an [Event Model](./docs/event-model-seat-booking.md) (commands, events and the read model on one timeline).
+A scenario is Given/When/Then: *given* `SeatAdded(12A)` and `SeatBooked(12A)`, *when* `BookSeat(12A, Cy)`, *then* `SeatTaken`.
 
 **Test it without a database** - the real pipeline (validation, idempotency, load, decide, conditional
 append) against an in-memory store that enforces the same rules as Postgres:
@@ -196,8 +173,8 @@ They are fed by pollers with these guarantees:
 
 ## Reading your own writes
 
-Views are updated asynchronously, a moment after the command that caused the change. When a caller needs to see its
-own write (an HTTP response that shows the new balance), wait for the view to catch up to the command's position:
+Views are updated asynchronously, a moment after the command that caused the change. When a caller needs to see its own write,
+wait for the view to catch up to the command's position:
 
 ```ts
 const result = yield* executor.run(Deposit, input);            // result.lastPosition / lastTransactionId: where its events ended
@@ -205,39 +182,17 @@ yield* waitUntilProcessed(walletBalanceViewSubscription, { transactionId: result
 // ... one read of the view now includes the deposit
 ```
 
-`lastPosition` (and `lastTransactionId`) is `null` for an idempotent repeat (nothing was appended), which returns at once. The wait fails with
-`WaitTimeout` if the view does not catch up in time and with `ViewFailed` if the view is marked FAILED.
-
-Over HTTP it is a query parameter: `POST /api/commands/deposit?waitFor=wallet-balance-view` answers once that view has
-the write, so the caller's next read is not stale. The app lists which views can be waited for (`viewWaiters` in
-`CommandApiConfig`, an entry per view; `commands-http` does not depend on the views package) and those names appear in
-the API description. The response always carries `lastPosition` and `lastTransactionId` (strings; together the write's cursor) and, when asked, `view: { name, caughtUp }`.
-A view that did not catch up in time (`timeout`), is `view_failed`, or could not be read (`unavailable`) is reported there
-- never as an error status, because the command itself succeeded and retrying it would be wrong. An unknown `waitFor`
-or a bad `waitTimeout` (1-30000 ms, default 5000) is a 400 before the command runs.
-
-A client that did *not* write learns of a change by a ping: when a view's progress commits it sends `pg_notify('crablet_view_progress')`, and the course
-app serves it as server-sent events (`GET /api/views/changes?views=course-seats-view`, each connection opening with where the view is now). The ping carries
-no data - the client reads again - and a missed one costs nothing. Why: [ADR-0014](./docs/adr/0014-live-updates-by-ping.md); the page side is in tutorial step 5.
+Over HTTP it is a query parameter, `POST /api/commands/deposit?waitFor=wallet-balance-view`. A client that did not write learns of a change by a
+ping over server-sent events ([ADR-0014](./docs/adr/0014-live-updates-by-ping.md)). Details, timeouts and failure cases: [tutorial step 4](./docs/tutorial/course-enrolment.md).
 
 ## HTTP API and OpenAPI
 
-Declare the API from the commands' **contracts** (a command's public part: `commandContract({ name, input, errors })`; the behavior is added by spreading it into `defineCommand`) and the API gets a route for each, `POST /api/commands/<name>`, with no HTTP code:
-
-- the request body is the command's own `input` schema, validated before the command runs;
-- every failure it can have is documented and presented: the framework's own (bad payload 400, stale decision 409) and the domain
-  errors it declares in `errors: [...]` (status from the error's `kind`, body typed with the error's own fields,
-  `application/problem+json`);
-- `GET /openapi.json` serves the generated OpenAPI 3.1 description (an optional Scalar or Swagger page with `docs: { ui }`); the
-  wallet's is checked in at [`docs/api/wallet-openapi.json`](./docs/api/wallet-openapi.json), regenerated by `bun run docs:api`, and
-  a unit test fails when it is stale - so an API change is a visible diff in review;
-- `?waitFor=<view>` waits for a view before responding (see above).
-
-Write inputs with `Schema.Finite` / `Schema.Int` and `Schema.optionalKey` so their constraints reach the description (a lint reports
-`Schema.Number` and `Schema.optional`). Clients: run any OpenAPI generator on `/openapi.json`, or derive one from the API itself with
-`HttpApiClient.make(makeWalletApi(), { baseUrl })` (no codegen; typed per command: the payload is checked at compile time and each
-command fails with exactly the problems it declares). Because the API is declared from contracts only, a browser can import the API definition
-without receiving `decide`, the models or the events. Why it is shaped this way: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
+Declare the API from the commands' **contracts** (`commandContract({ name, input, errors })`, spread into `defineCommand` to add behavior) and you get a
+route per command, `POST /api/commands/<name>`, with no HTTP code. The request body is the command's `input` schema; every failure it can have is
+documented and presented (status from the error's `kind`, `application/problem+json`); `GET /openapi.json` serves the generated OpenAPI 3.1 description,
+checked in at [`docs/api/wallet-openapi.json`](./docs/api/wallet-openapi.json) so an API change is a visible diff in review. A typed client is derived from
+the API itself with `HttpApiClient.make(makeWalletApi(), { baseUrl })`, and a browser can import the API definition without receiving `decide`, the models
+or the events. Walkthrough: [tutorial step 3](./docs/tutorial/course-enrolment.md). Why it is shaped this way: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
 
 ## Packages
 
@@ -277,7 +232,7 @@ The coverage badge only covers the fast Bun unit suite, not the Postgres-backed 
 
 ## Learn more
 
-- [`docs/tutorial/course-enrolment.md`](./docs/tutorial/course-enrolment.md) - a 30-minute tutorial with a runnable example (`examples/course-enrolment-app`).
+- [`docs/tutorial/course-enrolment.md`](./docs/tutorial/course-enrolment.md) - a tutorial with a runnable example (`examples/course-enrolment-app`).
 - [`examples/wallet-example-app`](./examples/wallet-example-app) - a complete application at full size: commands, views, an automation, an outbox and HTTP.
 - [`docs/dcb-guide.md`](./docs/dcb-guide.md) - what a dynamic consistency boundary is, through two runnable examples (a transfer between two accounts; course enrolment), with their tests.
 - [`docs/adr/`](./docs/adr/README.md) - the lasting design decisions and why they were made. Start with [ADR-0010](./docs/adr/0010-declarative-command-api.md).
