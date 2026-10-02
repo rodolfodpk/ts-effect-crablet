@@ -399,14 +399,54 @@ export const CourseResponse = Schema.Struct({
   seatsLeft: Schema.Int
 });
 
-export const courseQueryGroup = HttpApiGroup.make("courseQueries").add(
-  HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
-    params: { courseId: Schema.String },
-    success: CourseResponse,
-    error: problemSchemaOf(CourseNotFound)
-  })
-);
+// One page of courses, in course id order. `next` is the cursor of the following page, or null on the last one; pass it back as `after`.
+export const CoursePage = Schema.Struct({
+  items: Schema.Array(CourseResponse),
+  next: Schema.NullOr(Schema.String)
+});
+
+export const defaultPageSize = 20;
+export const maxPageSize = 100;
+
+// Query values arrive as strings. They are plain strings here on purpose and validated by the handler (like `?waitFor`), so a bad
+// value answers with the same problem body as every other 400 instead of the HTTP framework's empty-bodied default.
+export const listCoursesQuery = {
+  limit: Schema.optionalKey(
+    Schema.String.annotate({ description: `How many courses to return: a whole number from 1 to ${maxPageSize} (default ${defaultPageSize}).` } as never)
+  ),
+  after: Schema.optionalKey(
+    Schema.String.annotate({ description: "Return the courses after this cursor: the `next` of the previous page. Opaque to clients." } as never)
+  ),
+  q: Schema.optionalKey(
+    Schema.String.annotate({ description: "Only courses whose id starts with this text (case-sensitive)." } as never)
+  )
+};
+
+export const courseQueryGroup = HttpApiGroup.make("courseQueries")
+  .add(
+    HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
+      params: { courseId: Schema.String },
+      success: CourseResponse,
+      error: problemSchemaOf(CourseNotFound)
+    })
+  )
+  .add(
+    HttpApiEndpoint.get("listCourses", "/api/courses", {
+      query: listCoursesQuery,
+      success: CoursePage,
+      error: BadRequestProblem
+    })
+  );
 ```
+
+There are two reads. `GET /api/courses/{courseId}` is one course. `GET /api/courses` is a **page** of courses in id order: `?limit=` (1 to 100, default 20), `?after=` (the `next` of the previous page; an opaque cursor) and `?q=` (ids that start with the text). It is paginated by cursor, not by offset: a page costs the same however deep it is, and a course added meanwhile cannot shift the pages. A bad value is the same 400 problem as everywhere else.
+
+```bash
+curl -s 'localhost:8080/api/courses?limit=2'
+curl -s 'localhost:8080/api/courses?q=phys'
+```
+
+The answer is `{ "items": [ ...the same shape as one course... ], "next": "<cursor>" | null }`; `next` is `null` on the last page. Both read the view, so they are as fresh as the view is (next section).
 
 Then tell the API which views a write request may wait for. This map is the whole connection (the HTTP package never imports the views package):
 
@@ -553,6 +593,15 @@ export const subscribeCall = (studentId: string, courseId: string, options: { re
     return outcomeOf(answer);
   });
 
+// One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it.
+export const listCourses = (options: { readonly q: string; readonly after: string | null }) =>
+  Effect.gen(function* () {
+    const client = yield* makeClient();
+    return yield* client.courseQueries.listCourses({
+      query: { ...(options.q === "" ? {} : { q: options.q }), ...(options.after === null ? {} : { after: options.after }) }
+    });
+  });
+
 export const getCourse = (courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
@@ -593,7 +642,8 @@ export type Problem = typeof Problem.Type
 export type CallError =
   | Effect.Error<ReturnType<typeof defineCourseCall>>
   | Effect.Error<ReturnType<typeof subscribeCall>>
-  | Effect.Error<ReturnType<typeof getCourse>>;
+  | Effect.Error<ReturnType<typeof getCourse>>
+  | Effect.Error<ReturnType<typeof listCourses>>;
 
 export const problemFromError = (error: CallError): Problem => {
   if ("errorType" in error) {
@@ -700,7 +750,7 @@ Building a client is the quickest way to find what an API is missing. Each of th
 - **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`), so this page never sees the server's 400 for a bad payload. A client that does
   not validate first (curl, another language, a generated client) gets the same information from the server: the 400 problem lists every failing field in `errors`, with a path and the check's message.
 - **CORS is opt-in.** `commands-http` sends no CORS header unless the app adds `corsLayer({ allowedOrigins })`; it refuses an empty list (Effect's own middleware reads that as "every origin") and credentials with `"*"`. A page behind a proxy or served by the API needs none.
-- **No list or search endpoint**, so the page asks for a course id.
+- **A list is just another read of the view**: `GET /api/courses` is a keyset-paginated page with an id-prefix filter, hand-written like the single read (no query engine; two apps do not justify one). The page loads it at startup, reloads it after every write (under the same wait setting as the read-back), filters by prefix, pages with "More" and opens a course with a click.
 - **No live updates**: a second tab does not see a subscription until it reads. Views are asynchronous and there is no push channel.
 
 ---

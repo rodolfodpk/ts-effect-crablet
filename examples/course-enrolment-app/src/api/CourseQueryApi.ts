@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
+import { BadRequestProblem } from "@crablet/commands-http";
 import { problemSchemaOf } from "@crablet/commands-http/ProblemDetail";
 import { CourseNotFound } from "../domain/Enrolment.ts";
 
@@ -13,11 +14,42 @@ export const CourseResponse = Schema.Struct({
   seatsLeft: Schema.Int
 });
 
-export const courseQueryGroup = HttpApiGroup.make("courseQueries").add(
-  HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
-    params: { courseId: Schema.String },
-    success: CourseResponse,
-    error: problemSchemaOf(CourseNotFound)
-  })
-);
+// One page of courses, in course id order. `next` is the cursor of the following page, or null on the last one; pass it back as `after`.
+export const CoursePage = Schema.Struct({
+  items: Schema.Array(CourseResponse),
+  next: Schema.NullOr(Schema.String)
+});
+
+export const defaultPageSize = 20;
+export const maxPageSize = 100;
+
+// Query values arrive as strings. They are plain strings here on purpose and validated by the handler (like `?waitFor`), so a bad
+// value answers with the same problem body as every other 400 instead of the HTTP framework's empty-bodied default.
+export const listCoursesQuery = {
+  limit: Schema.optionalKey(
+    Schema.String.annotate({ description: `How many courses to return: a whole number from 1 to ${maxPageSize} (default ${defaultPageSize}).` } as never)
+  ),
+  after: Schema.optionalKey(
+    Schema.String.annotate({ description: "Return the courses after this cursor: the `next` of the previous page. Opaque to clients." } as never)
+  ),
+  q: Schema.optionalKey(
+    Schema.String.annotate({ description: "Only courses whose id starts with this text (case-sensitive)." } as never)
+  )
+};
+
+export const courseQueryGroup = HttpApiGroup.make("courseQueries")
+  .add(
+    HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
+      params: { courseId: Schema.String },
+      success: CourseResponse,
+      error: problemSchemaOf(CourseNotFound)
+    })
+  )
+  .add(
+    HttpApiEndpoint.get("listCourses", "/api/courses", {
+      query: listCoursesQuery,
+      success: CoursePage,
+      error: BadRequestProblem
+    })
+  );
 // #endregion query-api

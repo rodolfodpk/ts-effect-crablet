@@ -46,6 +46,15 @@ export const subscribeCall = (studentId: string, courseId: string, options: { re
     return outcomeOf(answer);
   });
 
+// One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it.
+export const listCourses = (options: { readonly q: string; readonly after: string | null }) =>
+  Effect.gen(function* () {
+    const client = yield* makeClient();
+    return yield* client.courseQueries.listCourses({
+      query: { ...(options.q === "" ? {} : { q: options.q }), ...(options.after === null ? {} : { after: options.after }) }
+    });
+  });
+
 export const getCourse = (courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
@@ -84,7 +93,8 @@ export type Problem = typeof Problem.Type
 export type CallError =
   | Effect.Error<ReturnType<typeof defineCourseCall>>
   | Effect.Error<ReturnType<typeof subscribeCall>>
-  | Effect.Error<ReturnType<typeof getCourse>>;
+  | Effect.Error<ReturnType<typeof getCourse>>
+  | Effect.Error<ReturnType<typeof listCourses>>;
 
 export const problemFromError = (error: CallError): Problem => {
   if ("errorType" in error) {

@@ -341,10 +341,180 @@
           }
         }
       }
+    },
+    "/api/courses": {
+      "get": {
+        "tags": [
+          "courseQueries"
+        ],
+        "operationId": "courseQueries.listCourses",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "How many courses to return: a whole number from 1 to 100 (default 20)."
+            },
+            "required": false
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Return the courses after this cursor: the `next` of the previous page. Opaque to clients."
+            },
+            "required": false
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Only courses whose id starts with this text (case-sensitive)."
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "courseId": {
+                            "type": "string"
+                          },
+                          "capacity": {
+                            "type": "integer"
+                          },
+                          "subscribers": {
+                            "type": "integer"
+                          },
+                          "seatsLeft": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "courseId",
+                          "capacity",
+                          "subscribers",
+                          "seatsLeft"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "next": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "CommandApiBadRequest",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiBadRequestEncoded"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "CommandApiBadRequestEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:command-api:bad-request"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Bad Request"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              400
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputIssue"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "InputIssue": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "description": "Where in the request body: property names and array indexes, outermost first."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "additionalProperties": false
+      },
       "CourseNotFoundProblem": {
         "type": "object",
         "properties": {
@@ -580,72 +750,6 @@
           "detail",
           "violationCode",
           "hint"
-        ],
-        "additionalProperties": false
-      },
-      "CommandApiBadRequestEncoded": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "urn:crablet:problem:command-api:bad-request"
-            ]
-          },
-          "title": {
-            "type": "string",
-            "enum": [
-              "Bad Request"
-            ]
-          },
-          "status": {
-            "type": "number",
-            "enum": [
-              400
-            ]
-          },
-          "detail": {
-            "type": "string"
-          },
-          "errors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InputIssue"
-            }
-          }
-        },
-        "required": [
-          "type",
-          "title",
-          "status",
-          "detail"
-        ],
-        "additionalProperties": false
-      },
-      "InputIssue": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "description": "Where in the request body: property names and array indexes, outermost first."
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "message"
         ],
         "additionalProperties": false
       },

@@ -181,6 +181,46 @@ describe("the page, driven against the real course app", () => {
     assert.match(answer.problem?.detail ?? "", /capacity/);
   });
 
+  it("the course list: loaded at startup, reloaded after a write, filtered, paged with More, and a click opens a course", { timeout: 90_000 }, async () => {
+    const tag = uid();
+    const shown = (model: Model) =>
+      AsyncData.match(model.courses.result, {
+        onIdle: () => [] as ReadonlyArray<string>,
+        onLoading: () => [] as ReadonlyArray<string>,
+        onRefreshing: () => [] as ReadonlyArray<string>,
+        onFailure: () => [] as ReadonlyArray<string>,
+        onStale: ({ data }) => data.items.map((c) => c.courseId),
+        onSuccess: (data) => data.items.map((c) => c.courseId)
+      });
+    const next = (model: Model) => (AsyncData.isSuccess(model.courses.result) ? model.courses.result.data.next : "not loaded");
+
+    // 22 courses (more than one page of 20), the first 21 defined without waiting for the view, the last with it
+    let model = await drive(init().model, Message.ToggledWaitForView());
+    for (let n = 1; n <= 21; n++) model = await defineCourse(model, `list-${tag}-${String(n).padStart(2, "0")}`, 2);
+    model = await drive(model, Message.ToggledWaitForView());
+    model = await defineCourse(model, `list-${tag}-22`, 2);
+
+    // after the waited write the list was reloaded: page one (20 courses of this test's, in id order) and a cursor
+    model = await drive(model, Message.ChangedCourseFilter({ value: `list-${tag}` }), Message.SubmittedCourseFilter());
+    assert.strictEqual(shown(model).length, 20);
+    assert.ok(next(model) !== null && next(model) !== "not loaded", "there is a second page");
+    assert.deepStrictEqual(shown(model), [...shown(model)].sort());
+
+    // More appends the rest, and the whole list is every course exactly once
+    model = await drive(model, Message.ClickedMoreCourses());
+    assert.strictEqual(shown(model).length, 22);
+    assert.strictEqual(new Set(shown(model)).size, 22);
+    assert.strictEqual(next(model), null);
+
+    // a narrower filter starts again from the first page
+    model = await drive(model, Message.ChangedCourseFilter({ value: `list-${tag}-2` }), Message.SubmittedCourseFilter());
+    assert.deepStrictEqual(shown(model), [`list-${tag}-20`, `list-${tag}-21`, `list-${tag}-22`]);
+
+    // a click opens the course in the lookup
+    model = await drive(model, Message.ClickedCourse({ courseId: `list-${tag}-22` }));
+    assert.strictEqual(lookupState(model), "2/2 (0)");
+  });
+
   it("when the server cannot be reached the page says so", { timeout: 30_000 }, async () => {
     setBaseUrl("http://localhost:1/");
     try {

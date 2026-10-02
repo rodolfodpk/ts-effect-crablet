@@ -8,6 +8,7 @@ import {
   DefineCourse,
   DefineResult,
   FetchCourse,
+  FetchCourses,
   Lookup,
   Message,
   SubscribeResult,
@@ -25,6 +26,8 @@ expect.extend(Scene.sceneMatchers as never);
 const start: Model = init().model;
 const math = { courseId: "math", capacity: 3, subscribers: 1, seatsLeft: 2 };
 const typed = (value: string) => FieldValidation.Valid({ value });
+const reloadList = { q: "", after: null, append: false } as const;
+const noCourses = Message.SucceededFetchCourses({ items: [], next: null, append: false });
 const created = { status: "CREATED", reason: null } as const;
 const caughtUp = { ...created, view: { name: "course-seats-view", caughtUp: true } } as const;
 
@@ -96,8 +99,9 @@ describe("defining a course", () => {
       Story.Command.resolve(DefineCourse, Message.SucceededDefineCourse({ courseId: "math", capacity: 3, outcome: caughtUp })),
       Story.model((m: Model) => expect(m.define.result).toEqual(DefineResult.Success({ data: { courseId: "math", capacity: 3, outcome: caughtUp } }))),
       // read your own write: the page looks the new course up
-      Story.Command.expectExact(FetchCourse({ courseId: "math" })),
-      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } }))
+      Story.Command.expectExact(FetchCourse({ courseId: "math" }), FetchCourses(reloadList)),
+      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
+      Story.Command.resolve(FetchCourses, noCourses)
     );
   });
 
@@ -127,8 +131,9 @@ describe("subscribing a student", () => {
       Story.model((m: Model) =>
         expect(m.subscribe.result).toEqual(SubscribeResult.Success({ data: { studentId: "ann", courseId: "math", outcome: caughtUp } }))
       ),
-      Story.Command.expectExact(FetchCourse({ courseId: "math" })),
-      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math }))
+      Story.Command.expectExact(FetchCourse({ courseId: "math" }), FetchCourses(reloadList)),
+      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math })),
+      Story.Command.resolve(FetchCourses, noCourses)
     );
   });
 
@@ -174,6 +179,7 @@ describe("reading your own writes", () => {
       Story.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math", waitForView: false })),
       Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
       Story.model((m: Model) => expect(m.lookupCourseId).toBe("math")),
+      Story.Command.resolve(FetchCourses, noCourses),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: stale })),
       Story.model((m: Model) => expect(m.lookup).toEqual(Lookup.Success({ data: stale })))
     );
@@ -186,6 +192,7 @@ describe("reading your own writes", () => {
       Story.given<Model>({ ...filledSubscribe, waitForView: false }),
       Story.message(Message.SubmittedSubscribe()),
       Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
+      Story.Command.resolve(FetchCourses, noCourses),
       Story.Command.resolve(FetchCourse, Message.FailedFetchCourse({ problem: missing })),
       Story.model((m: Model) => expect(m.lookup).toEqual(Lookup.Failure({ error: { _tag: "NotInSeatMapYet", courseId: "math" } }))),
       // the user looks something up themselves: now a missing course really is missing
@@ -227,6 +234,7 @@ describe("reading your own writes", () => {
         })
       ),
       Scene.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
+      Scene.Command.resolve(FetchCourses, noCourses),
       (Scene.expect(Scene.text("ann is now subscribed to math. The seat map had not caught up in time, so the numbers below may be stale.")) as any).toExist()
     );
   });
@@ -285,6 +293,7 @@ describe("the page", () => {
       ),
       Scene.Command.resolve(DefineCourse, Message.SucceededDefineCourse({ courseId: "math", capacity: 3, outcome: caughtUp })),
       Scene.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
+      Scene.Command.resolve(FetchCourses, noCourses),
       (Scene.expect(Scene.text("Defined course math with 3 seats. The seat map had caught up when this answered.")) as any).toExist(),
       (Scene.expect(Scene.text("math: 3 of 3 seats left (0 subscribed)")) as any).toExist()
     );

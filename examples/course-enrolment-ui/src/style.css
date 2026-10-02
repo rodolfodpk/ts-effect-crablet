@@ -6,5 +6,7 @@ button { padding: 0.4rem 0.9rem; cursor: pointer; }
 .result { padding: 0.75rem 1rem; border-radius: 6px; background: #eef6ee; }
 .error { background: #fbeaea; }
 .muted { color: #666; }
+ul.courses { list-style: none; padding: 0; margin: 0.5rem 0; }
+button.link { background: none; border: none; padding: 0.2rem 0; color: #1a56c4; text-align: left; text-decoration: underline; }
 .wait-toggle { display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; }
 .field-error { display: block; color: #a02020; font-size: 0.85rem; }

@@ -11,7 +11,7 @@ import * as Command from "foldkit/command";
 import * as FieldValidation from "foldkit/fieldValidation";
 import type { Document, HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
-import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, problemFromError, subscribeCall } from "./api.ts";
+import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, listCourses, problemFromError, subscribeCall } from "./api.ts";
 
 // MODEL
 
@@ -20,12 +20,17 @@ const Defined = Schema.Struct({ courseId: Schema.String, capacity: Schema.Int, o
 const Subscribed = Schema.Struct({ studentId: Schema.String, courseId: Schema.String, outcome: CommandOutcome });
 
 export const Lookup = AsyncData.Schema(CourseResponse, Problem);
+// The course list as shown: every page loaded so far, and the cursor of the next one (null on the last page).
+const CoursesShown = Schema.Struct({ items: Schema.Array(CourseResponse), next: Schema.NullOr(Schema.String) });
+export const CourseList = AsyncData.Schema(CoursesShown, Problem);
 export const DefineResult = AsyncData.Schema(Defined, Problem);
 export const SubscribeResult = AsyncData.Schema(Subscribed, Problem);
 
 export const Model = Schema.Struct({
   // Ask the server to answer a write only once the seat map (the view the lookup reads) has caught up with it.
   waitForView: Schema.Boolean,
+  // The course list: what the user typed into the filter, the filter in effect, and the pages loaded.
+  courses: Schema.Struct({ filter: Schema.String, applied: Schema.String, result: CourseList.schema }),
   // The course the last write was about, until the user looks something up themselves: a "no such course" for it means
   // "not in the seat map yet", not "does not exist".
   justWrote: Schema.NullOr(Schema.String),
@@ -52,6 +57,13 @@ export const capacityRules = FieldValidation.makeRules({
 export const Message = defineMessageUnion({
   ToggledWaitForView: {},
 
+  ChangedCourseFilter: { value: Schema.String },
+  SubmittedCourseFilter: {},
+  ClickedMoreCourses: {},
+  ClickedCourse: { courseId: Schema.String },
+  SucceededFetchCourses: { items: Schema.Array(CourseResponse), next: Schema.NullOr(Schema.String), append: Schema.Boolean },
+  FailedFetchCourses: { problem: Problem },
+
   ChangedLookupCourseId: { value: Schema.String },
   SubmittedLookup: {},
   SucceededFetchCourse: { course: CourseResponse },
@@ -73,6 +85,17 @@ export type Message = typeof Message.Type
 
 // COMMANDS: each runs one call and ends in a Succeeded or a Failed Message. A refusal is not an exception: it is a
 // `Problem` the update function matches on.
+
+export const FetchCourses = Command.define("FetchCourses", {
+  args: { q: Schema.String, after: Schema.NullOr(Schema.String), append: Schema.Boolean },
+  messages: [Message.SucceededFetchCourses, Message.FailedFetchCourses],
+  execute: ({ q, after, append }) =>
+    listCourses({ q, after }).pipe(
+      Effect.map((page) => Message.SucceededFetchCourses({ items: page.items, next: page.next, append })),
+      Effect.catch((error) => Effect.succeed(Message.FailedFetchCourses({ problem: problemFromError(error) }))),
+      Effect.provide(Http.layer)
+    )
+});
 
 export const FetchCourse = Command.define("FetchCourse", {
   args: { courseId: Schema.String },
@@ -113,16 +136,47 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
 
 // After a write, read the course the write was about: this is "read your own writes". Whether that read is right depends
 // on whether the write waited for the seat map (see `waitForView`).
-const readBack = (courseId: string) => ({
+const readBack = (model: Model, courseId: string) => ({
   lookupCourseId: courseId,
   justWrote: courseId,
   lookup: AsyncData.Loading(),
-  command: FetchCourse({ courseId })
+  // the list is read back too, from its first page, under the filter in effect
+  commands: [FetchCourse({ courseId }), FetchCourses({ q: model.courses.applied, after: null, append: false })]
 });
 
 export const update = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
     ToggledWaitForView: () => ({ model: { ...model, waitForView: !model.waitForView } }),
+
+    ChangedCourseFilter: ({ value }) => ({ model: { ...model, courses: { ...model.courses, filter: value } } }),
+    // Applying a filter starts again from the first page.
+    SubmittedCourseFilter: () => ({
+      model: { ...model, courses: { ...model.courses, applied: model.courses.filter.trim(), result: AsyncData.Loading() } },
+      commands: [FetchCourses({ q: model.courses.filter.trim(), after: null, append: false })]
+    }),
+    ClickedMoreCourses: () =>
+      AsyncData.isSuccess(model.courses.result) && model.courses.result.data.next !== null
+        ? { model, commands: [FetchCourses({ q: model.courses.applied, after: model.courses.result.data.next, append: true })] }
+        : { model },
+    ClickedCourse: ({ courseId }) => ({
+      model: { ...model, lookupCourseId: courseId, justWrote: null, lookup: AsyncData.Loading() },
+      commands: [FetchCourse({ courseId })]
+    }),
+    SucceededFetchCourses: ({ items, next, append }) => ({
+      model: {
+        ...model,
+        courses: {
+          ...model.courses,
+          result: CourseList.Success({
+            data: {
+              items: append && AsyncData.isSuccess(model.courses.result) ? [...model.courses.result.data.items, ...items] : items,
+              next
+            }
+          })
+        }
+      }
+    }),
+    FailedFetchCourses: ({ problem }) => ({ model: { ...model, courses: { ...model.courses, result: CourseList.Failure({ error: problem }) } } }),
 
     ChangedLookupCourseId: ({ value }) => ({ model: { ...model, lookupCourseId: value } }),
     SubmittedLookup: () =>
@@ -159,7 +213,7 @@ export const update = (model: Model, message: Message) =>
         : { model: { ...model, define: { ...model.define, courseId, capacity } } };
     },
     SucceededDefineCourse: ({ courseId, capacity, outcome }) => {
-      const read = readBack(courseId);
+      const read = readBack(model, courseId);
       return {
         model: {
           ...model,
@@ -168,7 +222,7 @@ export const update = (model: Model, message: Message) =>
           lookup: read.lookup,
           define: { ...model.define, result: DefineResult.Success({ data: { courseId, capacity, outcome } }) }
         },
-        commands: [read.command]
+        commands: read.commands
       };
     },
     FailedDefineCourse: ({ problem }) => ({
@@ -192,7 +246,7 @@ export const update = (model: Model, message: Message) =>
         : { model: { ...model, subscribe: { ...model.subscribe, studentId, courseId } } };
     },
     SucceededSubscribe: ({ studentId, courseId, outcome }) => {
-      const read = readBack(courseId);
+      const read = readBack(model, courseId);
       return {
         model: {
           ...model,
@@ -201,7 +255,7 @@ export const update = (model: Model, message: Message) =>
           lookup: read.lookup,
           subscribe: { ...model.subscribe, result: SubscribeResult.Success({ data: { studentId, courseId, outcome } }) }
         },
-        commands: [read.command]
+        commands: read.commands
       };
     },
     FailedSubscribe: ({ problem }) => ({
@@ -214,8 +268,10 @@ export const update = (model: Model, message: Message) =>
 const emptyField = FieldValidation.NotValidated({ value: "" });
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
+  commands: [FetchCourses({ q: "", after: null, append: false })],
   model: {
     waitForView: true,
+    courses: { filter: "", applied: "", result: AsyncData.Loading() },
     justWrote: null,
     lookupCourseId: "",
     lookup: AsyncData.Idle(),
@@ -296,6 +352,36 @@ const textField = (
     ]
   );
 
+// The course list: a button per course (it opens the course in the lookup below), and "More" while there is another page.
+const coursesView = (model: Model, h: HtmlBuilder<Message>) =>
+  AsyncData.match(model.courses.result, {
+    onIdle: () => h.p([h.Class("muted")], [""]),
+    onLoading: () => h.p([h.Class("muted")], ["Loading courses..."]),
+    onRefreshing: () => h.p([h.Class("muted")], ["Loading courses..."]),
+    onFailure: (problem) => h.p([h.Class("result error"), h.Role("alert")], [describeProblem(problem)]),
+    onStale: ({ data }) => courseItems(data, h),
+    onSuccess: (data) => courseItems(data, h)
+  });
+
+const courseItems = (shown: typeof CoursesShown.Type, h: HtmlBuilder<Message>) =>
+  shown.items.length === 0
+    ? h.p([h.Class("muted")], ["No courses."])
+    : h.div(
+        [],
+        [
+          h.ul(
+            [h.Class("courses")],
+            shown.items.map((course) =>
+              h.li(
+                [],
+                [h.button([h.Class("link"), h.OnClick(Message.ClickedCourse({ courseId: course.courseId }))], [`${course.courseId}: ${course.seatsLeft} of ${course.capacity} seats left`])]
+              )
+            )
+          ),
+          ...(shown.next === null ? [] : [h.button([h.OnClick(Message.ClickedMoreCourses())], ["More"])])
+        ]
+      );
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   title: "Course enrolment",
   body: h.main(
@@ -308,6 +394,26 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
         [
           h.input([h.Type("checkbox"), h.AriaLabel("Wait for the seat map"), h.Checked(model.waitForView), h.OnClick(Message.ToggledWaitForView())]),
           "Wait for the seat map before a write answers (?waitFor=course-seats-view)"
+        ]
+      ),
+
+      h.section(
+        [h.AriaLabel("Courses")],
+        [
+          h.h2([], ["Courses"]),
+          h.form(
+            [h.OnSubmit(Message.SubmittedCourseFilter()), h.AriaLabel("Course filter form")],
+            [
+              h.input([
+                h.AriaLabel("Filter courses"),
+                h.Placeholder("Id starts with..."),
+                h.Value(model.courses.filter),
+                h.OnInput((value) => Message.ChangedCourseFilter({ value }))
+              ]),
+              h.button([h.Type("submit")], ["Filter"])
+            ]
+          ),
+          coursesView(model, h)
         ]
       ),
 

@@ -74,7 +74,7 @@ export const ExposedCommandsResponse = Schema.Struct({
 });
 
 const asProblem = <S extends Schema.Top>(schema: S) => schema.pipe(HttpApiSchema.asJson({ contentType: "application/problem+json" }));
-const BadRequestProblem = asProblem(CommandApiBadRequest);
+export const BadRequestProblem = asProblem(CommandApiBadRequest);
 const ConflictProblem = asProblem(CommandConflict);
 const UnexpectedProblem = asProblem(CommandApiUnexpectedError);
 

@@ -9,7 +9,7 @@ import { courseQueryGroup } from "./api/CourseQueryApi.ts";
 
 // What a client decodes itself: the read endpoint's response, the command responses, and the domain errors a command can
 // answer with (a domain error's `tag` and `fields` are exactly what its problem body carries).
-export { CourseResponse } from "./api/CourseQueryApi.ts";
+export { CoursePage, CourseResponse } from "./api/CourseQueryApi.ts";
 export { CommandCreatedResponse, CommandIdempotentResponse, ViewWaitResult } from "@crablet/commands-http";
 export { CourseFull, CourseNotFound, StudentAtLimit } from "./domain/Enrolment.ts";
 
