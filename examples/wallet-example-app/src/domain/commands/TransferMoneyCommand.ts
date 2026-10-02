@@ -4,27 +4,18 @@ import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { all } from "@crablet/commands/Model";
 import * as Tag from "@crablet/eventstore/Tag";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
+import { TransferMoneyContract } from "../WalletContracts.ts";
 import { resolveActivePeriod } from "../period/WalletStatementPeriodResolver.ts";
-import { Positive } from "../WalletInputs.ts";
 import { MoneyTransferred, WalletModel } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
-const input = Schema.Struct({
-  transferId: Schema.String,
-  fromWalletId: Schema.String,
-  toWalletId: Schema.String,
-  amount: Positive,
-  description: Schema.String
-}).pipe(Schema.check(Schema.makeFilter((c) => c.fromWalletId !== c.toWalletId || "fromWalletId and toWalletId must differ")));
-export type TransferMoneyCommand = Schema.Schema.Type<typeof input>;
+export type TransferMoneyCommand = Schema.Schema.Type<(typeof TransferMoneyContract)["input"]>;
 
 // Affects two wallets' balances at once, so strict over BOTH wallets' combined boundary: a change to
 // either refuses a stale decision. Each wallet resolves its own statement period first (either may
 // lazily open one), sequentially because both may append.
 export const TransferMoney = defineCommand({
-  name: "transfer_money",
-  errors: [WalletNotFound, InsufficientFunds],
-  input,
+  ...TransferMoneyContract,
   prepare: (c, es) =>
     Effect.gen(function* () {
       const from = yield* resolveActivePeriod(es, c.fromWalletId);

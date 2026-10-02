@@ -18,10 +18,9 @@ import { makeOutboxProcessor } from "@crablet/outbox";
 import type { OutboxConfig } from "@crablet/outbox/OutboxConfig";
 import { topicConfigOf } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
-import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
+import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
-import { exposedCommandOf } from "@crablet/commands-http/ExposedCommand";
 import type { ViewWaiter, WriteMarker } from "@crablet/commands-http/ViewWaiter";
 import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
 import { makeWalletTransactionViewProjector } from "./views/WalletTransactionViewProjector.ts";
@@ -32,6 +31,7 @@ import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts"
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
 import { OpenWallet } from "./domain/commands/OpenWalletCommand.ts";
+import { walletContracts } from "./domain/WalletContracts.ts";
 import { Deposit } from "./domain/commands/DepositCommand.ts";
 import { Withdraw } from "./domain/commands/WithdrawCommand.ts";
 import { TransferMoney } from "./domain/commands/TransferMoneyCommand.ts";
@@ -153,17 +153,16 @@ export const startBackgroundProcessors = (
     return { viewsHandle, automationsHandle, outboxHandle };
   });
 
-// The wallet's public write API: the 5 wallet commands, deliberately NOT SendWelcomeNotification (an
-// automation-triggered internal command, not a public write API). Each command declares its domain errors
-// (`errors: [...]`), which the API presents by their kind (404 / 400 / ...) with their own fields and documents
-// in the API description. Deliberately NOT annotated as a `Record<string, ExposedCommand<...>>`: the registry keeps its
-// literal keys, so the API's static type has one typed endpoint per command (see CommandApi.ts).
-const walletCommands = {
-  open_wallet: exposedCommandOf(OpenWallet),
-  deposit: exposedCommandOf(Deposit),
-  withdraw: exposedCommandOf(Withdraw),
-  transfer_money: exposedCommandOf(TransferMoney),
-  close_wallet: exposedCommandOf(CloseWallet)
+// The wallet's public write API is declared from the five CONTRACTS (domain/WalletContracts.ts), deliberately NOT SendWelcomeNotification (an
+// automation-triggered internal command, not a public write API). Each contract declares its domain errors, which the API presents by their
+// kind (404 / 400 / ...) with their own fields and documents in the API description. The server's side: the command built from each contract;
+// a missing or extra command does not compile, and one not built from its contract is refused when the layer is built.
+const walletImplementations: Implementations<typeof walletContracts> = {
+  open_wallet: OpenWallet,
+  deposit: Deposit,
+  withdraw: Withdraw,
+  transfer_money: TransferMoney,
+  close_wallet: CloseWallet
 };
 
 // The views a write request may wait for (`?waitFor=wallet-balance-view`): the response is then sent only once that
@@ -191,7 +190,7 @@ export const walletApiInfo = {
 export const makeWalletApi = (basePath: `/${string}` = "/api/commands") =>
   withApiInfo(
     HttpApi.make("walletApp")
-      .add(makeCommandApiGroup(basePath, walletCommands, { waitableViews: Object.keys(walletViewWaiters) }))
+      .add(makeCommandApiGroup(basePath, walletContracts, { waitableViews: Object.keys(walletViewWaiters) }))
       .add(walletQueryGroup),
     walletApiInfo
   );
@@ -202,7 +201,7 @@ export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = makeWalletApi(basePath);
 
-  const commandsLive = makeCommandApiGroupLive(api, walletCommands, {
+  const commandsLive = makeCommandApiGroupLive(api, walletContracts, walletImplementations, {
     basePath,
     correlationHeaderEnabled: true,
     viewWaiters: walletViewWaiters

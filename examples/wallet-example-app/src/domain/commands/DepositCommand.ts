@@ -1,20 +1,17 @@
 import * as Schema from "effect/Schema";
 import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Command";
 import { WalletNotFound } from "../errors/WalletErrors.ts";
+import { DepositContract } from "../WalletContracts.ts";
 import { resolveActivePeriod, periodTags } from "../period/WalletStatementPeriodResolver.ts";
-import { Positive } from "../WalletInputs.ts";
 import { DepositMade, WalletModel } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
-const input = Schema.Struct({ depositId: Schema.String, walletId: Schema.String, amount: Positive, description: Schema.String });
-export type DepositCommand = Schema.Schema.Type<typeof input>;
+export type DepositCommand = Schema.Schema.Type<(typeof DepositContract)["input"]>;
 
 // Deposits commute with each other - two concurrent deposits do not conflict - but a concurrent wallet
 // close still does (the lifecycle guard), and a repeated deposit id is an idempotent success.
 export const Deposit = defineCommand({
-  name: "deposit",
-  errors: [WalletNotFound],
-  input,
+  ...DepositContract,
   prepare: (c, es) => resolveActivePeriod(es, c.walletId),
   model: (c, period) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
   consistency: (c) => concurrent({ guard: WalletModel.lifecycleQuery(c.walletId) }),

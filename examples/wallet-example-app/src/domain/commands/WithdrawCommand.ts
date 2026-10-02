@@ -1,22 +1,19 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
+import { WithdrawContract } from "../WalletContracts.ts";
 import { resolveActivePeriod, periodTags } from "../period/WalletStatementPeriodResolver.ts";
-import { Positive } from "../WalletInputs.ts";
 import { WalletModel, WithdrawalMade } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
-const input = Schema.Struct({ withdrawalId: Schema.String, walletId: Schema.String, amount: Positive, description: Schema.String });
-export type WithdrawCommand = Schema.Schema.Type<typeof input>;
+export type WithdrawCommand = Schema.Schema.Type<(typeof WithdrawContract)["input"]>;
 
 // Order-sensitive (a real balance check), so strict: it fails if anything in the wallet's period changed
 // since it was read. And idempotent on the withdrawal id: on a retry the balance has already been
 // reduced, so re-running the balance check would wrongly say "insufficient funds" - the idempotency check
 // runs first and reports "already done".
 export const Withdraw = defineCommand({
-  name: "withdraw",
-  errors: [WalletNotFound, InsufficientFunds],
-  input,
+  ...WithdrawContract,
   prepare: (c, es) => resolveActivePeriod(es, c.walletId),
   model: (c, period) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
   idempotentBy: (c) => WithdrawalMade.where({ [WalletTags.WITHDRAWAL_ID]: c.withdrawalId }),
