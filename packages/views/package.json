@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./ViewProgress": "./src/ViewProgress.ts",
+    "./ViewProgressFeed": "./src/ViewProgressFeed.ts",
     ".": "./src/ViewsModule.ts",
     "./ViewProjector": "./src/ViewProjector.ts",
     "./ViewSubscription": "./src/ViewSubscription.ts",

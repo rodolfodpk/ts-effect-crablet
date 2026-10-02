@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, type Duration } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { HttpApiBuilder } from "effect/http-api";
@@ -16,6 +16,7 @@ import type { ViewWaiter } from "@crablet/commands-http/ViewWaiter";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
+import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
 import { courseSeatsViewSubscription, makeCourseSeatsViewProjector } from "./views/CourseSeatsViewProjector.ts";
 
@@ -36,6 +37,8 @@ export interface CourseAppConfig {
   // CORS for a page served from ANOTHER origin (a different host or port). Off unless set: a page behind a dev proxy, or served by
   // this server, needs none. See @crablet/commands-http/Cors.
   readonly cors?: CorsConfig;
+  // How long a live-update connection (GET /api/views/changes) lives before the server ends it and the page reconnects (default 5 minutes).
+  readonly maxFeedLifetime?: Duration.Input;
 }
 
 // #region wait-for
@@ -53,8 +56,9 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const api = makeCourseApi(basePath);
   const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath, viewWaiters: courseViewWaiters });
   const queryLive = makeCourseQueryApiLive(api);
+  const feedLive = makeCourseFeedApiLive(api, { views: [COURSE_SEATS_VIEW], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
   const served = Layer.merge(
-    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive)),
+    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive), Layer.provide(feedLive)),
     apiDocsLayer(api, config)
   );
   return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));

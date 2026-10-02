@@ -20,7 +20,8 @@ describe("course API OpenAPI document", () => {
       "/api/commands/define_course",
       "/api/commands/subscribe",
       "/api/courses",
-      "/api/courses/{courseId}"
+      "/api/courses/{courseId}",
+      "/api/views/changes"
     ]);
   });
 

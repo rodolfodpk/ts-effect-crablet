@@ -26,12 +26,13 @@ const appLayer = Crablet.layer({
   password: Redacted.make(conn.password)
 });
 
+// gracefulShutdownTimeout: a live-update connection stays open, and shutting down waits for open responses up to this long (default 20 s).
 const server = HttpRouter.serve(
   makeCourseApiLayer({
     ...(docsUi === "scalar" || docsUi === "swagger" ? { docs: { ui: docsUi } } : {}),
     ...(corsOrigins.length > 0 ? { cors: { allowedOrigins: corsOrigins as [string, ...Array<string>] } } : {})
   })
-).pipe(Layer.provide(NodeHttpServer.layer(createServer, { port })));
+).pipe(Layer.provide(NodeHttpServer.layer(createServer, { port, gracefulShutdownTimeout: "2 seconds" })));
 
 const program = Effect.gen(function* () {
   yield* startCourseViews(undefined, { viewDelayMs });

@@ -5,11 +5,13 @@ import { HttpApi } from "effect/http-api";
 import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
 import { DefineCourseContract, SubscribeContract } from "./domain/enrolment.contract.ts";
 import { courseQueryGroup } from "./api/CourseQueryApi.ts";
+import { courseFeedGroup } from "./api/CourseFeedApi.ts";
 
 // What a client decodes itself: the read endpoint's response, the command responses, and the domain errors a command can
 // answer with (a domain error's `tag` and `fields` are exactly what its problem body carries).
 export { CoursePage, CourseResponse } from "./api/CourseQueryApi.ts";
 export { CommandCreatedResponse, CommandIdempotentResponse, ViewWaitResult } from "@crablet/commands-http";
+export { ViewAdvanced } from "./api/CourseFeedApi.ts";
 export { CourseFull, CourseNotFound, StudentAtLimit } from "./domain/enrolment.contract.ts";
 
 // The one view a write request may wait for (`?waitFor=course-seats-view`). Its projector and subscription are in
@@ -36,6 +38,7 @@ export const makeCourseApi = (basePath: `/${string}` = "/api/commands") =>
   withApiInfo(
     HttpApi.make("courseApp")
       .add(makeCommandApiGroup(basePath, courseContracts, { waitableViews: [COURSE_SEATS_VIEW] }))
-      .add(courseQueryGroup),
+      .add(courseQueryGroup)
+      .add(courseFeedGroup),
     courseApiInfo
   );
