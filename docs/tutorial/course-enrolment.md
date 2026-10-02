@@ -4,12 +4,13 @@ You will build a small service where **a course holds at most N students** and *
 rules concern two different kinds of thing, yet they are decided together, atomically, without a saga and without picking an
 "aggregate" first. That is what *dynamic consistency boundaries* (DCB) are for.
 
-In four steps (about 30 minutes) you will:
+In five steps (about 40 minutes) you will:
 
 1. write and test the rule **in memory** - no database, no Docker;
 2. run it against **Postgres**, add the second rule, and watch two races resolve;
 3. expose it as an **HTTP API** whose **OpenAPI** description is generated from your code;
-4. add a **read model** and use `?waitFor=` so a client reads its own write.
+4. add a **read model** and use `?waitFor=` so a client reads its own write;
+5. put a small **web page** (Foldkit) in front of it and see what a real client has to handle.
 
 Every code block below is a real file in this repository; a test fails if a block drifts from its file
 (`examples/course-enrolment-app/test/tutorial-sync.test.ts`). Reference material, if you want it: the
@@ -453,9 +454,207 @@ The `waitFor` and `waitTimeout` parameters are in the OpenAPI description too (r
 
 ---
 
+## Step 5 - a page that uses it
+
+So far the only client was `curl`. A real client has to do three things the tutorial has only described: **send commands**, **understand refusals**, and
+**read its own writes**. This step is a small web page for the same API, written with [Foldkit](https://foldkit.dev) (an Elm-style framework on Effect: a
+Model, Messages, one `update` function, and Commands for side effects). It is not a Foldkit tutorial; it is what a client of this API sees, and it is one more
+tested example (`examples/course-enrolment-ui`): the course app, unchanged, plus a page.
+
+Restart the server with the seat map held back 400 ms. That is a demo knob (`COURSES_VIEW_DELAY_MS`, off by default): without it the view catches up in
+milliseconds and you could not *see* what waiting is for.
+
+```bash
+COURSES_VIEW_DELAY_MS=400 node src/index.ts
+```
+
+In another terminal start the page, then open <http://localhost:5173>:
+
+```bash
+cd ../course-enrolment-ui
+bun run dev
+```
+
+Things to try:
+
+1. **Define** a course `math` with capacity `1`, and **subscribe** `ann` to it. Each answer says whether the seat map had caught up, and the page reads the course back for you.
+2. **Subscribe** `bob` to `math`: "Course math is full (1 seats, all taken)". That is `CourseFull` arriving with its `capacity`; the page did not parse a message.
+3. Untick **Wait for the seat map**, define `physics` and subscribe `cy` to it. The answer is instant, and the read-back is *stale*: the seats have not moved,
+   or the course is "just written, but the seat map has not caught up". Tick the box again and the same actions give the right numbers a moment later.
+4. Define `math` a second time, or a capacity of `0`, or subscribe a student to four courses. Every refusal is a different problem, shown in its own words.
+
+### How it is built
+
+**One origin.** The page and the API are separate servers, and the API has no CORS handling (see "What this showed"), so the dev server proxies the API:
+
+<!-- file: examples/course-enrolment-ui/vite.config.ts#proxy -->
+```ts
+// The course API (examples/course-enrolment-app) listens on :8080. Proxying it makes the page and the API ONE origin in
+// the browser, so the server needs no CORS handling.
+const api = `http://localhost:${process.env["PORT"] ?? 8080}`;
+
+export default defineConfig({
+  // one copy of effect: the page and the course app's API definition (imported below) must share its Schema classes
+  resolve: { dedupe: ["effect"] },
+  server: { proxy: { "/api": api, "/openapi.json": api } }
+});
+```
+
+**The client is derived from the API definition**, not re-declared. `course-enrolment-app/CourseApi` is the module the server serves (routes, response Schemas,
+the domain errors); the page builds its client from it with `HttpApiClient.make(makeCourseApi())`. The command routes are generated per command from the commands
+the server registered, so the derived client types them as `any`; the one cast is narrowed to the call's shape and the answer is decoded with the API's own Schema straight away:
+
+<!-- file: examples/course-enrolment-ui/src/api.ts#call -->
+```ts
+// The command routes are generated per command from the commands the server registers, so the derived client types
+// `client.commands.<anything>` as a function over `any` (the known gap: a typed command client would need the route names
+// in the API type). The one cast lives here and is narrowed to the call's shape, so everything else stays typed; the
+// response is decoded with the API's own Schema straight away.
+type CommandCall = (request: { readonly payload: object; readonly query: object }) => Effect.Effect<unknown, unknown>;
+
+export const runCommand = (name: "define_course" | "subscribe", payload: object, options: { readonly waitForView: boolean }) =>
+  Effect.gen(function* () {
+    const client = yield* HttpApiClient.make(makeCourseApi());
+    const call = (client.commands as unknown as Record<string, CommandCall>)[`execute_${name}`]!;
+    // `?waitFor=course-seats-view`: the answer is sent once that view has processed the write, so the read that follows is not stale
+    const response = yield* call({ payload, query: options.waitForView ? { waitFor: COURSE_SEATS_VIEW } : {} });
+    const decoded = yield* decodeCommandResponse(response);
+    return {
+      status: decoded.status,
+      reason: decoded.reason,
+      ...(decoded.view === undefined ? {} : { view: decoded.view })
+    } satisfies CommandOutcome;
+  });
+```
+
+**A refusal is data.** A domain error's problem body carries its `errorType` and its declared `fields`; the page builds the matching Schema *from the error class
+itself* (its `tag` and `fields`), so nothing is written twice:
+
+<!-- file: examples/course-enrolment-ui/src/api.ts#problems -->
+```ts
+export const Problem = Schema.Union([
+  Schema.TaggedStruct("CourseNotFound", { courseId: Schema.String }),
+  Schema.TaggedStruct("CourseFull", { courseId: Schema.String, capacity: Schema.Int }),
+  Schema.TaggedStruct("StudentAtLimit", { studentId: Schema.String, limit: Schema.Int }),
+  // The framework's own refusals: a 400 (the input did not parse) and a 409 (for example, a course that already exists).
+  Schema.TaggedStruct("Rejected", { title: Schema.String, detail: Schema.String }),
+  // The derived client checks a request against the API's own Schema BEFORE sending it, and checks the answer against the
+  // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). The server's own 400
+  // only says "Invalid payload for command", so this is the more precise of the two.
+  Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
+  // Not from the server: the page's reading of a "no such course" it just wrote itself (the seat map lags behind writes).
+  Schema.TaggedStruct("NotInSeatMapYet", { courseId: Schema.String }),
+  Schema.TaggedStruct("Unreachable", {})
+]);
+export type Problem = typeof Problem.Type
+
+// The body of a domain error's problem, built from the error class itself (its `tag` and `fields` statics): no field is
+// written twice. Extra members of the body (`type`, `title`, `status`, `detail`) are ignored.
+const problemBodyOf = <Tag extends string, F extends Record<string, Schema.Top>>(error: { readonly tag: Tag; readonly fields: F }) =>
+  Schema.Struct({ errorType: Schema.Literal(error.tag), fields: Schema.Struct(error.fields) });
+
+const isCourseNotFound = Schema.is(problemBodyOf(CourseNotFound));
+const isCourseFull = Schema.is(problemBodyOf(CourseFull));
+const isStudentAtLimit = Schema.is(problemBodyOf(StudentAtLimit));
+const isFrameworkProblem = Schema.is(Schema.Struct({ title: Schema.String, detail: Schema.String }));
+
+export const problemFromError = (error: unknown): Problem => {
+  if (isCourseNotFound(error)) return { _tag: "CourseNotFound", courseId: error.fields.courseId };
+  if (isCourseFull(error)) return { _tag: "CourseFull", courseId: error.fields.courseId, capacity: error.fields.capacity };
+  if (isStudentAtLimit(error)) return { _tag: "StudentAtLimit", studentId: error.fields.studentId, limit: error.fields.limit };
+  if (isFrameworkProblem(error)) return { _tag: "Rejected", title: error.title, detail: error.detail };
+  if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
+  return { _tag: "Unreachable" };
+};
+```
+
+**A Command ends in a Message, never an exception.** It runs one call and turns the answer, success or any refusal, into a Message that `update` matches on:
+
+<!-- file: examples/course-enrolment-ui/src/main.ts#command -->
+```ts
+export const SubscribeStudent = Command.define("SubscribeStudent", {
+  args: { studentId: Schema.String, courseId: Schema.String, waitForView: Schema.Boolean },
+  messages: [Message.SucceededSubscribe, Message.FailedSubscribe],
+  execute: ({ studentId, courseId, waitForView }) =>
+    runCommand("subscribe", { studentId, courseId }, { waitForView }).pipe(
+      Effect.map((outcome) => Message.SucceededSubscribe({ studentId, courseId, outcome })),
+      Effect.catch((error) => Effect.succeed(Message.FailedSubscribe({ problem: problemFromError(error) }))),
+      Effect.provide(Http.layer)
+    )
+});
+```
+
+**Reading your own write.** The request asks to wait (`?waitFor=course-seats-view`) unless you untick the box; the response says whether the view caught up; and the
+page says so in words, for every answer the server can give:
+
+<!-- file: examples/course-enrolment-ui/src/main.ts#view-note -->
+```ts
+// Whether the seat map (the view the lookup reads) had caught up with the write when the server answered. Without
+// `?waitFor` the server does not know or say; with it, it says, and a miss is reported in the body, never as an error.
+export const viewNote = (outcome: CommandOutcome): string => {
+  const view = outcome.view;
+  if (view === undefined) return "Not waiting for the seat map, so the numbers below may be stale.";
+  if (view.caughtUp) return "The seat map had caught up when this answered.";
+  switch (view.reason) {
+    case "nothing_appended":
+      return "";
+    case "timeout":
+      return "The seat map had not caught up in time, so the numbers below may be stale.";
+    case "view_failed":
+      return "The seat map is not updating, so the numbers below are out of date.";
+    default:
+      return "Could not tell whether the seat map caught up, so the numbers below may be stale.";
+  }
+};
+```
+
+### Testing it
+
+`update` is a pure function, so a *story* (Messages in, Model and Commands out, Commands resolved inline) tests it without a browser or a server, and a *scene* drives the real view like
+a user would. Both run under `bun test`:
+
+```bash
+bun test examples/course-enrolment-ui/test/page.test.ts
+```
+
+The integration test goes further. A ten-line driver plays Foldkit's runtime against the **real course app on Postgres**: it feeds a Message to the page's own `update`, runs every
+Command it returns (the real derived client, a real `fetch`), feeds the results back, and stops when nothing is left. What it ends with is the Model the page would be showing.
+
+<!-- file: examples/course-enrolment-ui/test/integration/page-against-server.test.ts#driver -->
+```ts
+// Feed `messages` through the page one after another, running every Command to completion in between.
+const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<Model> => {
+  let model = from;
+  const queue: Array<Message> = [...messages];
+  while (queue.length > 0) {
+    const result = update(model, queue.shift()!);
+    model = result.model;
+    for (const command of result.commands ?? []) queue.unshift((await Effect.runPromise(command.effect as Effect.Effect<Message>)) as Message);
+  }
+  return model;
+};
+```
+
+It asserts the interesting cases: waiting off is stale, waiting on is right (and really waits), every refusal arrives as the problem the page expects, and an unreachable server is reported as such
+(`node --test examples/course-enrolment-ui/test/integration/page-against-server.test.ts`, needs Docker).
+
+### What this showed
+
+Building a client is the quickest way to find what an API is missing. Each of these is a real finding, not a to-do for this page:
+
+- **A view is not the truth.** "There is no course called X" right after "Defined course X" is true of the seat map and false of the course. The page treats an error from a view as being about the view.
+- **The command routes are typed `any`.** A typed command client would need the route names in the API's type.
+- **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`). The server's own 400 only says `Invalid payload for command`,
+  so the client is more precise than the server; non-TypeScript clients get nothing.
+- **No CORS** in `commands-http`: a browser app on another origin needs a proxy or its own handling.
+- **No list or search endpoint**, so the page asks for a course id.
+- **No live updates**: a second tab does not see a subscription until it reads. Views are asynchronous and there is no push channel.
+
+---
+
 ## Clean up, and where next
 
-Stop the server (Ctrl-C) and remove the database:
+Stop the server and the page (Ctrl-C) and remove the database:
 
 ```bash
 docker compose down -v

@@ -19,6 +19,7 @@ import {
 
 // PROBLEMS: what a call can fail with, as the page understands it.
 
+// #region problems
 export const Problem = Schema.Union([
   Schema.TaggedStruct("CourseNotFound", { courseId: Schema.String }),
   Schema.TaggedStruct("CourseFull", { courseId: Schema.String, capacity: Schema.Int }),
@@ -53,6 +54,7 @@ export const problemFromError = (error: unknown): Problem => {
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
   return { _tag: "Unreachable" };
 };
+// #endregion problems
 
 // CALLS
 
@@ -72,6 +74,7 @@ export const getCourse = (courseId: string) =>
     return yield* client.courseQueries.getCourse({ params: { courseId } });
   });
 
+// #region call
 // The command routes are generated per command from the commands the server registers, so the derived client types
 // `client.commands.<anything>` as a function over `any` (the known gap: a typed command client would need the route names
 // in the API type). The one cast lives here and is narrowed to the call's shape, so everything else stays typed; the
@@ -91,5 +94,6 @@ export const runCommand = (name: "define_course" | "subscribe", payload: object,
       ...(decoded.view === undefined ? {} : { view: decoded.view })
     } satisfies CommandOutcome;
   });
+// #endregion call
 
 export { CourseResponse };

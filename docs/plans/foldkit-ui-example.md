@@ -51,7 +51,7 @@ First the demo knob in the course app: `COURSES_VIEW_DELAY_MS` (see decision 3) 
 Subscribe with `?waitFor=course-seats-view`: on `view.caughtUp` follow with exactly one read; with the toggle off, follow immediately and let the page show the stale `seatsLeft` with a note; when `view.reason` is `timeout` / `view_failed`, say so instead of showing a possibly stale number. Tests for each branch of the response.
 ### 4. An end-to-end check (0.5 day) - DONE
 A node:test integration test (`examples/course-enrolment-ui/test/integration/`) that starts the real course app on Postgres (the way `course-http.test.ts` does) and runs the UI's own Commands (the same Effects the page runs, with the Fetch client) against it: define, subscribe with `waitFor`, one read shows the new count; a refusal arrives with the fields the page needs. This proves the page's contract against the real server without a browser. Per spike answer (c) the test imports the program's `main.ts`, sets `globalThis.location = new URL(baseUrl)` so the relative URLs resolve, and runs each Command's Effect. (A browser smoke through the Chrome tooling is a manual step, listed under Verification.)
-### 5. Docs (0.25 day)
+### 5. Docs (0.25 day) - DONE (tutorial step 5 with tested blocks, README pointer, NOTES entry; a manual browser pass is the last item)
 Tutorial step 5 (tested blocks), README pointer, ADR note only if the spike changed the API-definition layout. Record the findings below in NOTES.md.
 
 ## Phase 1-2 results (what building it showed)

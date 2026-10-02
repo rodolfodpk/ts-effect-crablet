@@ -96,6 +96,7 @@ export const DefineCourse = Command.define("DefineCourse", {
     )
 });
 
+// #region command
 export const SubscribeStudent = Command.define("SubscribeStudent", {
   args: { studentId: Schema.String, courseId: Schema.String, waitForView: Schema.Boolean },
   messages: [Message.SucceededSubscribe, Message.FailedSubscribe],
@@ -106,6 +107,7 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
       Effect.provide(Http.layer)
     )
 });
+// #endregion command
 
 // UPDATE
 
@@ -244,6 +246,7 @@ export const describeProblem = (problem: Problem): string => {
   }
 };
 
+// #region view-note
 // Whether the seat map (the view the lookup reads) had caught up with the write when the server answered. Without
 // `?waitFor` the server does not know or say; with it, it says, and a miss is reported in the body, never as an error.
 export const viewNote = (outcome: CommandOutcome): string => {
@@ -261,6 +264,7 @@ export const viewNote = (outcome: CommandOutcome): string => {
       return "Could not tell whether the seat map caught up, so the numbers below may be stale.";
   }
 };
+// #endregion view-note
 
 const resultOf = <A>(result: AsyncData.AsyncData<A, Problem>, h: HtmlBuilder<Message>, success: (data: A) => string) =>
   AsyncData.match(result, {

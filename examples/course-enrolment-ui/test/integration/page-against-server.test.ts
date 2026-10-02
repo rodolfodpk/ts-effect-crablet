@@ -36,6 +36,7 @@ after(async () => {
   await db.stop();
 });
 
+// #region driver
 // Feed `messages` through the page one after another, running every Command to completion in between.
 const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<Model> => {
   let model = from;
@@ -47,6 +48,7 @@ const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<
   }
   return model;
 };
+// #endregion driver
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 const typeInto = (...pairs: ReadonlyArray<Message>) => pairs;

@@ -19,8 +19,8 @@ everything is wired with layers.
 
 ## Quick start
 
-> New here? [**The tutorial**](./docs/tutorial/course-enrolment.md) builds a small course-enrolment service in four steps - in memory, then Postgres,
-> then an HTTP API with a generated OpenAPI description, then read-your-writes - and every block in it is a tested file.
+> New here? [**The tutorial**](./docs/tutorial/course-enrolment.md) builds a small course-enrolment service in five steps - in memory, then Postgres,
+> then an HTTP API with a generated OpenAPI description, then read-your-writes, then a Foldkit page that uses it - and every block in it is a tested file.
 
 A command is a pure decision over state derived from events. A seat must be added before it can be booked
 (the packages are not published to npm yet; imports come from the workspace, e.g. `@crablet/commands/Command`):
