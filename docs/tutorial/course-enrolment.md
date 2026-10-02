@@ -403,7 +403,7 @@ export const courseQueryGroup = HttpApiGroup.make("courseQueries").add(
   HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
     params: { courseId: Schema.String },
     success: CourseResponse,
-    error: problemSchemaOf(CourseNotFound) as never
+    error: problemSchemaOf(CourseNotFound)
   })
 );
 ```
@@ -506,35 +506,47 @@ export default defineConfig({
 });
 ```
 
-**The client is derived from the API definition**, not re-declared. `course-enrolment-app/CourseApi` is the module the server serves (routes, response Schemas,
-the domain errors); the page builds its client from it with `HttpApiClient.make(makeCourseApi())`. The command routes are generated per command from the commands
-the server registered, so the derived client types them as `any`; the one cast is narrowed to the call's shape and the answer is decoded with the API's own Schema straight away:
+**The client is derived from the API definition**, not re-declared. `course-enrolment-app/CourseApi` is the module the server serves (routes, request and response Schemas,
+the domain errors); the page builds its client from it with `HttpApiClient.make(makeCourseApi())`. Because the registry in step 3 kept its command names, the client is typed
+*per command*: `execute_subscribe` takes exactly `{ studentId, courseId }` (a misspelled field does not compile), and fails with exactly the problems `subscribe` declares, plus
+the transport's error and a Schema error. No cast, no copy of the wire format:
 
 <!-- file: examples/course-enrolment-ui/src/api.ts#call -->
 ```ts
-// The command routes are generated per command from the commands the server registers, so the derived client types
-// `client.commands.<anything>` as a function over `any` (the known gap: a typed command client would need the route names
-// in the API type). The one cast lives here and is narrowed to the call's shape, so everything else stays typed; the
-// response is decoded with the API's own Schema straight away.
-type CommandCall = (request: { readonly payload: object; readonly query: object }) => Effect.Effect<unknown, unknown>;
+// `?waitFor=course-seats-view`: the answer is sent once that view has processed the write, so the read that follows is not stale.
+const queryOf = (waitForView: boolean) => (waitForView ? { waitFor: COURSE_SEATS_VIEW } : {});
 
-export const runCommand = (name: "define_course" | "subscribe", payload: object, options: { readonly waitForView: boolean }) =>
+// The calls are plain methods of the derived client: `execute_<command>` takes that command's own payload (a misspelled
+// field does not compile) and fails with exactly the problems that command declares, plus the transport's and the Schema's.
+export const defineCourseCall = (courseId: string, capacity: number, options: { readonly waitForView: boolean }) =>
   Effect.gen(function* () {
     const client = yield* HttpApiClient.make(makeCourseApi());
-    const call = (client.commands as unknown as Record<string, CommandCall>)[`execute_${name}`]!;
-    // `?waitFor=course-seats-view`: the answer is sent once that view has processed the write, so the read that follows is not stale
-    const response = yield* call({ payload, query: options.waitForView ? { waitFor: COURSE_SEATS_VIEW } : {} });
-    const decoded = yield* decodeCommandResponse(response);
-    return {
-      status: decoded.status,
-      reason: decoded.reason,
-      ...(decoded.view === undefined ? {} : { view: decoded.view })
-    } satisfies CommandOutcome;
+    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: queryOf(options.waitForView) });
+    return outcomeOf(answer);
   });
+
+export const subscribeCall = (studentId: string, courseId: string, options: { readonly waitForView: boolean }) =>
+  Effect.gen(function* () {
+    const client = yield* HttpApiClient.make(makeCourseApi());
+    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: queryOf(options.waitForView) });
+    return outcomeOf(answer);
+  });
+
+export const getCourse = (courseId: string) =>
+  Effect.gen(function* () {
+    const client = yield* HttpApiClient.make(makeCourseApi());
+    return yield* client.courseQueries.getCourse({ params: { courseId } });
+  });
+
+const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly view?: CommandOutcome["view"] }): CommandOutcome => ({
+  status: answer.status,
+  reason: answer.reason,
+  ...(answer.view === undefined ? {} : { view: answer.view })
+});
 ```
 
-**A refusal is data.** A domain error's problem body carries its `errorType` and its declared `fields`; the page builds the matching Schema *from the error class
-itself* (its `tag` and `fields`), so nothing is written twice:
+**A refusal is data, and the compiler checks you handled it.** A domain error's problem body carries its `errorType` and its declared `fields`, typed exactly. `problemFromError`
+matches on them; the `never` in the last case means that if the server's command gains a new declared error and the page has no case for it, the page stops compiling:
 
 <!-- file: examples/course-enrolment-ui/src/api.ts#problems -->
 ```ts
@@ -554,22 +566,32 @@ export const Problem = Schema.Union([
 ]);
 export type Problem = typeof Problem.Type
 
-// The body of a domain error's problem, built from the error class itself (its `tag` and `fields` statics): no field is
-// written twice. Extra members of the body (`type`, `title`, `status`, `detail`) are ignored.
-const problemBodyOf = <Tag extends string, F extends Record<string, Schema.Top>>(error: { readonly tag: Tag; readonly fields: F }) =>
-  Schema.Struct({ errorType: Schema.Literal(error.tag), fields: Schema.Struct(error.fields) });
+// Everything a call above can fail with. These are the TYPES the derived client reports, not guesses: a domain error's problem
+// body (told apart by `errorType`, with exactly the `fields` that error declares), the framework's 400/409/500 problems, the
+// transport's error and a SchemaError.
+export type CallError =
+  | Effect.Error<ReturnType<typeof defineCourseCall>>
+  | Effect.Error<ReturnType<typeof subscribeCall>>
+  | Effect.Error<ReturnType<typeof getCourse>>;
 
-const isCourseNotFound = Schema.is(problemBodyOf(CourseNotFound));
-const isCourseFull = Schema.is(problemBodyOf(CourseFull));
-const isStudentAtLimit = Schema.is(problemBodyOf(StudentAtLimit));
-const isFrameworkProblem = Schema.is(Schema.Struct({ title: Schema.String, detail: Schema.String }));
-
-export const problemFromError = (error: unknown): Problem => {
-  if (isCourseNotFound(error)) return { _tag: "CourseNotFound", courseId: error.fields.courseId };
-  if (isCourseFull(error)) return { _tag: "CourseFull", courseId: error.fields.courseId, capacity: error.fields.capacity };
-  if (isStudentAtLimit(error)) return { _tag: "StudentAtLimit", studentId: error.fields.studentId, limit: error.fields.limit };
-  if (isFrameworkProblem(error)) return { _tag: "Rejected", title: error.title, detail: error.detail };
+export const problemFromError = (error: CallError): Problem => {
+  if ("errorType" in error) {
+    switch (error.errorType) {
+      case "CourseNotFound":
+        return { _tag: "CourseNotFound", courseId: error.fields.courseId };
+      case "CourseFull":
+        return { _tag: "CourseFull", courseId: error.fields.courseId, capacity: error.fields.capacity };
+      case "StudentAtLimit":
+        return { _tag: "StudentAtLimit", studentId: error.fields.studentId, limit: error.fields.limit };
+      default: {
+        // a new declared error with no case above does not compile: `error` would not be `never`
+        const unhandled: never = error;
+        return unhandled;
+      }
+    }
+  }
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
+  if ("title" in error) return { _tag: "Rejected", title: error.title, detail: error.detail };
   return { _tag: "Unreachable" };
 };
 ```
@@ -582,7 +604,7 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
   args: { studentId: Schema.String, courseId: Schema.String, waitForView: Schema.Boolean },
   messages: [Message.SucceededSubscribe, Message.FailedSubscribe],
   execute: ({ studentId, courseId, waitForView }) =>
-    runCommand("subscribe", { studentId, courseId }, { waitForView }).pipe(
+    subscribeCall(studentId, courseId, { waitForView }).pipe(
       Effect.map((outcome) => Message.SucceededSubscribe({ studentId, courseId, outcome })),
       Effect.catch((error) => Effect.succeed(Message.FailedSubscribe({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -649,7 +671,7 @@ It asserts the interesting cases: waiting off is stale, waiting on is right (and
 Building a client is the quickest way to find what an API is missing. Each of these is a real finding, not a to-do for this page:
 
 - **A view is not the truth.** "There is no course called X" right after "Defined course X" is true of the seat map and false of the course. The page treats an error from a view as being about the view.
-- **The command routes are typed `any`.** A typed command client would need the route names in the API's type.
+- **The command client is typed per command** only while the registry keeps its literal keys (step 3): annotate it as a `Record<string, ...>` and the client falls back to one loosely typed endpoint.
 - **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`). The server's own 400 only says `Invalid payload for command`,
   so the client is more precise than the server; non-TypeScript clients get nothing.
 - **No CORS** in `commands-http`: a browser app on another origin needs a proxy or its own handling.

@@ -49,6 +49,13 @@ Decision 2 holds; the facade fallback (decision 5) is NOT needed.
 - One honest wrinkle recorded in `CommandApi.ts`: the query is part of the static type even when `waitableViews` is empty (the runtime then declares no query, and the server answers any `waitFor` with a 400).
 - Verified: typecheck clean, 336 unit tests, and the integration suites for commands, commands-http, the wallet app, the course app and the course UI (58 + 35 + 24, run in three batches because launching them all together triggers the container-start timeout flake).
 
+## Phase 3 results
+- The page calls `client.commands.execute_define_course` / `execute_subscribe` directly (`defineCourseCall`, `subscribeCall` in `src/api.ts`): the `CommandCall` cast, `decodeCommandResponse` and the `problemBodyOf` / `Schema.is*` probing are gone. `problemFromError` is a typed function over `CallError` (the union of what the three calls can fail with): `"errorType" in error` then a `switch` with a `never` default, then `Schema.isSchemaError`, then `"title" in error` for the framework's problems, else `Unreachable`.
+- **Decision 7's separate "declared tags are a subset of the page's Problem tags" check was not needed**: the exhaustive `never` default in `problemFromError` is that check, and it is stronger (it is over exactly the errors the page's calls can produce). Verified by removing the `StudentAtLimit` case: the page stops compiling with an error naming it.
+- One more `any` removed: the read endpoint's error was cast `as never` in `CourseQueryApi.ts`, which hid `CourseNotFound` from the typed client. `problemSchemaOf` now returns its precise `ProblemBody<E>` type (moved to `ProblemDetail.ts`), the cast is gone, and the client sees the read's `CourseNotFound` too.
+- The page's tests build their inputs with the real types: the framework's problems are the real `CommandConflict` / `CommandApiBadRequest` classes (`@crablet/commands-http` is now a devDependency of the UI package). The old "a body that names a known error with the wrong fields is not trusted" test is gone: the shape is guaranteed by the type and by the client's own decoding.
+- Tutorial step 5 text and its `call` / `problems` / `command` / `query-api` blocks follow the code; ADR-0011 has an addendum; NOTES records the typed client and the batch-the-integration-tests lesson.
+
 ## Phases (each ends green: `bun run typecheck`, `bun run test:unit`, `bun run test:integration`; commit per phase; push only on request)
 ### 0. Spike (0.25 day) - DONE, see "Spike results"
 In a scratch directory (not committed), against the real packages: (a) give `Command`/`ExposedCommand` the two extra type parameters and check `defineCommand`/`exposedCommandOf` infer the precise `I` and `Es`; (b) write `CommandEndpoints<C>` and a generic `makeCommandApiGroup` signature and check that `HttpApiClient.make(HttpApi.make("x").add(group))` gives `client.commands.execute_subscribe` the expected parameter and error types, with `const` inference of the keys; (c) check the compile time of `tsc` on the wallet app (5 commands) before and after; (d) check that the places that consume the API TYPE accept the typed group: `HttpApiBuilder.layer(api, ...)`, `OpenApi.fromApi(api)` (the docs generation and its test) and `HttpApiClient.make(api)`. (`makeCommandApiGroupLive` is already cast with `as any` and cannot break.) Record the answers here; if (b) fails, take the fallback in decision 5.
@@ -56,7 +63,7 @@ In a scratch directory (not committed), against the real packages: (a) give `Com
 Decision 1 in `packages/commands` and `packages/commands-http`; defaults keep everything compiling; no runtime change. Type tests for `defineCommand`'s result (input Schema type and error tuple preserved).
 ### 2. The typed group (0.75 day) - DONE
 Decisions 2 and 3 in `makeCommandApiGroup`/`makeCommandApi`; the registry annotations in the wallet app, the course app, the tutorial block and the tests (decision 4); the type-level test file (decision 6). The OpenAPI unit test and both generated documents must be unchanged; all integration suites stay green.
-### 3. The consumers (0.5 day)
+### 3. The consumers (0.5 day) - DONE
 The course UI (decision 7): delete the cast, type the error channel, make the problem match exhaustive, adjust its tests; the `course-http` integration test's `client: any` becomes the typed client with its assertions on typed errors. README and tutorial step 3/5 text and blocks follow the code; ADR-0011 gets a short addendum (the group's type is no longer erased); NOTES entry.
 
 ## Risks

@@ -91,10 +91,22 @@ export interface DeclaredDomainError {
   readonly tag: string;
   readonly fields: Record<string, Schema.Top>;
 }
+// A domain error's problem body, typed from the error class itself (its `tag` and `fields` statics). `title` and `status` are
+// wider than the runtime literals because a class carries its `kind` as a union; `errorType` and `fields` are exact.
+export type ProblemBody<E> = E extends { readonly tag: infer Tag extends string; readonly fields: infer F extends Record<string, Schema.Top> }
+  ? Schema.Codec<{
+      readonly type: string;
+      readonly title: string;
+      readonly status: number;
+      readonly detail: string;
+      readonly errorType: Tag;
+      readonly fields: Schema.Schema.Type<Schema.Struct<F>>;
+    }>
+  : never;
 const problemSchemaCache = new WeakMap<object, Schema.Top>();
-export const problemSchemaOf = (error: DeclaredDomainError): Schema.Top => {
+export const problemSchemaOf = <E extends DeclaredDomainError>(error: E): ProblemBody<E> => {
   const cached = problemSchemaCache.get(error);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return cached as unknown as ProblemBody<E>;
   const schema = Schema.Struct({
     type: Schema.String,
     title: Schema.Literal(problemTitleOf[error.kind]),
@@ -106,7 +118,7 @@ export const problemSchemaOf = (error: DeclaredDomainError): Schema.Top => {
     .annotate({ httpApiStatus: problemStatusOf[error.kind], identifier: `${error.tag}Problem` } as never)
     .pipe(HttpApiSchema.asJson({ contentType: "application/problem+json" }));
   problemSchemaCache.set(error, schema);
-  return schema;
+  return schema as unknown as ProblemBody<E>;
 };
 
 export class CommandApiUnexpectedError extends Schema.Class<CommandApiUnexpectedError>(

@@ -17,7 +17,7 @@ export const courseQueryGroup = HttpApiGroup.make("courseQueries").add(
   HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
     params: { courseId: Schema.String },
     success: CourseResponse,
-    error: problemSchemaOf(CourseNotFound) as never
+    error: problemSchemaOf(CourseNotFound)
   })
 );
 // #endregion query-api

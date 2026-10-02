@@ -11,7 +11,7 @@ import * as Command from "foldkit/command";
 import * as FieldValidation from "foldkit/fieldValidation";
 import type { Document, HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
-import { CommandOutcome, CourseResponse, Problem, getCourse, problemFromError, runCommand } from "./api.ts";
+import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, problemFromError, subscribeCall } from "./api.ts";
 
 // MODEL
 
@@ -89,7 +89,7 @@ export const DefineCourse = Command.define("DefineCourse", {
   args: { courseId: Schema.String, capacity: Schema.Int, waitForView: Schema.Boolean },
   messages: [Message.SucceededDefineCourse, Message.FailedDefineCourse],
   execute: ({ courseId, capacity, waitForView }) =>
-    runCommand("define_course", { courseId, capacity }, { waitForView }).pipe(
+    defineCourseCall(courseId, capacity, { waitForView }).pipe(
       Effect.map((outcome) => Message.SucceededDefineCourse({ courseId, capacity, outcome })),
       Effect.catch((error) => Effect.succeed(Message.FailedDefineCourse({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -101,7 +101,7 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
   args: { studentId: Schema.String, courseId: Schema.String, waitForView: Schema.Boolean },
   messages: [Message.SucceededSubscribe, Message.FailedSubscribe],
   execute: ({ studentId, courseId, waitForView }) =>
-    runCommand("subscribe", { studentId, courseId }, { waitForView }).pipe(
+    subscribeCall(studentId, courseId, { waitForView }).pipe(
       Effect.map((outcome) => Message.SucceededSubscribe({ studentId, courseId, outcome })),
       Effect.catch((error) => Effect.succeed(Message.FailedSubscribe({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)

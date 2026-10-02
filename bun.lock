@@ -41,6 +41,7 @@
         "foldkit": "0.165.0",
       },
       "devDependencies": {
+        "@crablet/commands-http": "workspace:*",
         "@crablet/test-support": "workspace:*",
         "vite": "7.3.6",
       },

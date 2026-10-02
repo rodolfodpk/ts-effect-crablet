@@ -3,7 +3,7 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "
 import { inputJsonSchema } from "./InputJsonSchema.ts";
 import { defaultWaitTimeoutMs, maxWaitTimeoutMs } from "./ViewWaiter.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError } from "./ProblemDetail.ts";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
 // body is the command's own input schema, plus `GET {basePath}` listing the exposed commands with their
@@ -93,18 +93,6 @@ type Registry = Readonly<Record<string, ExposedCommand<any, any, any, any>>>;
 // `Record<string, ExposedCommand<...>>` (that annotation forgets the command names; the group is then typed by a
 // `string` key, which is correct but no longer per command).
 
-// A domain error's problem body, typed from the error class itself (its `tag` and `fields` statics). `title` and `status` are
-// wider than the runtime literals because a class carries its `kind` as a union; `errorType` and `fields` are exact.
-type ProblemBody<E> = E extends { readonly tag: infer Tag extends string; readonly fields: infer F extends Record<string, Schema.Top> }
-  ? Schema.Codec<{
-      readonly type: string;
-      readonly title: string;
-      readonly status: number;
-      readonly detail: string;
-      readonly errorType: Tag;
-      readonly fields: Schema.Schema.Type<Schema.Struct<F>>;
-    }>
-  : never;
 type ProblemsOf<Es> = Es extends ReadonlyArray<infer E> ? ProblemBody<E> : never;
 type CommandErrorSchemas<X> = X extends { readonly command: { readonly errors: infer Es } }
   ? typeof BadRequestProblem | typeof ConflictProblem | typeof UnexpectedProblem | ProblemsOf<Es>

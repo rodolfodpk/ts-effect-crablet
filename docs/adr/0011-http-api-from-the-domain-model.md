@@ -58,3 +58,17 @@ proper 404 or 409. Meanwhile everything needed to describe the API already exist
   rather than as an enum.
 - `Schema.optional` / `Schema.Number` in an exposed input are reported by `inputJsonSchemaProblems`; the wallet's read
   responses and error fields use `Schema.Finite` and the test asserts the whole document is free of the Infinity enum.
+
+## Addendum (2026-10-02): the command group is typed per command
+
+`makeCommandApiGroup` used to return `HttpApiGroup<"commands", any>` (the group is built in a loop over the registry), so a client derived from the API
+had `any` for every command route. It is now generic over the registry and returns a precise type: one endpoint `execute_<name>` per command, whose payload is the
+command's own input Schema and whose failures are the framework's three problems plus one problem per declared domain error (exact `errorType` and `fields`),
+alongside the client's own `HttpClientError` and `SchemaError`. To make that possible a defined command now keeps its input Schema and declared error classes in its
+type (`Command<In, Err, I, Es>`, the new parameters defaulting to the erased types). The runtime and the generated OpenAPI document are unchanged.
+
+Consequences: a registry must be an object literal WITHOUT a `Record<string, ...>` annotation (that forgets the command names; the client then falls back to a single
+loosely typed endpoint); callers still pass `query: {}` (the endpoint's request type requires the key); `title` and `status` of a domain problem are typed as
+`string` and `number` (a class carries its `kind` as a union), while `errorType` and `fields` are exact. The Foldkit page (tutorial step 5) calls the typed methods with no cast and
+matches exhaustively on the declared errors. Types are pinned by `packages/commands-http/test/typed-client.types.ts` and `packages/commands/test/command-types.types.ts`.
+
