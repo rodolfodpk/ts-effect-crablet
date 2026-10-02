@@ -2,11 +2,9 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { OpenApi } from "effect/http-api";
-import { defineCommand, emit, fail } from "@crablet/commands/Command";
+import { commandContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
-import { defineEvent } from "@crablet/commands/Event";
 import { makeCommandApi } from "../src/CommandApi.ts";
-import { exposedCommandOf } from "../src/ExposedCommand.ts";
 import { inputJsonSchemaProblems } from "../src/InputJsonSchema.ts";
 
 class WalletNotFound extends DomainError("WalletNotFound", { fields: { walletId: Schema.String }, kind: "not_found" }) {}
@@ -14,30 +12,23 @@ class InsufficientFunds extends DomainError("InsufficientFunds", {
   fields: { walletId: Schema.String, balance: Schema.Number },
   kind: "invalid"
 }) {}
-const Done = defineEvent("Done", { schema: Schema.Struct({ walletId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
 
-const Deposit = defineCommand({
+// The API is declared from CONTRACTS: a name, an input Schema and the domain errors. That is all the description needs.
+const DepositContract = commandContract({
   name: "deposit",
   errors: [WalletNotFound],
-  input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite.check(Schema.isGreaterThan(0)) }),
-  decide: (_, c) => (c.walletId === "x" ? fail(new WalletNotFound({ walletId: c.walletId })) : emit(Done({ walletId: c.walletId })))
+  input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite.check(Schema.isGreaterThan(0)) })
 });
-const Withdraw = defineCommand({
+const WithdrawContract = commandContract({
   name: "withdraw",
   errors: [WalletNotFound, InsufficientFunds],
-  input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite }),
-  decide: (_, c) =>
-    c.amount > 1 ? fail(new InsufficientFunds({ walletId: c.walletId, balance: 0 })) : fail(new WalletNotFound({ walletId: c.walletId }))
+  input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite })
 });
-const Open = defineCommand({ name: "open", input: Schema.Struct({ walletId: Schema.String }), decide: (_, c) => emit(Done(c)) });
+const OpenContract = commandContract({ name: "open", input: Schema.Struct({ walletId: Schema.String }) });
 
-const registry = {
-  deposit: exposedCommandOf(Deposit),
-  withdraw: exposedCommandOf(Withdraw),
-  open: exposedCommandOf(Open)
-};
+const contracts = [DepositContract, WithdrawContract, OpenContract];
 
-const spec = OpenApi.fromApi(makeCommandApi("/api/commands", registry)) as any;
+const spec = OpenApi.fromApi(makeCommandApi("/api/commands", contracts)) as any;
 const post = (name: string) => spec.paths[`/api/commands/${name}`].post;
 
 describe("the API description of the command routes", () => {
@@ -86,8 +77,7 @@ describe("the API description of the command routes", () => {
 
 describe("how optional fields are described", () => {
   const specOf = (input: Schema.Constraint) => {
-    const command = defineCommand({ name: "probe", input, decide: (_: unknown, c: any) => emit(Done({ walletId: String(c.id) })) });
-    const api = OpenApi.fromApi(makeCommandApi("/api/commands", { probe: exposedCommandOf(command as never) })) as any;
+    const api = OpenApi.fromApi(makeCommandApi("/api/commands", [commandContract({ name: "probe", input: input as never })])) as any;
     return api.paths["/api/commands/probe"].post.requestBody.content["application/json"].schema;
   };
 
@@ -102,15 +92,14 @@ describe("how optional fields are described", () => {
     const input = Schema.Struct({ id: Schema.String, note: Schema.optional(Schema.String), nested: Schema.Struct({ deep: Schema.optional(Schema.Int) }) });
     expect(specOf(input).properties.note).toEqual({ anyOf: [{ type: "string" }, { type: "null" }] });
 
-    const command = defineCommand({ name: "probe", input, decide: (_, c) => emit(Done({ walletId: c.id })) });
-    const problems = inputJsonSchemaProblems(command);
+    const problems = inputJsonSchemaProblems(commandContract({ name: "probe", input }));
     expect(problems).toHaveLength(2);
     expect(problems.join("\n")).toContain('field "note"');
     expect(problems.join("\n")).toContain('field "nested.deep"');
   });
 
   test("a legitimate NullOr is not flagged", () => {
-    const command = defineCommand({ name: "probe", input: Schema.Struct({ id: Schema.String, memo: Schema.NullOr(Schema.String) }), decide: (_, c) => emit(Done({ walletId: c.id })) });
+    const command = commandContract({ name: "probe", input: Schema.Struct({ id: Schema.String, memo: Schema.NullOr(Schema.String) }) });
     expect(inputJsonSchemaProblems(command)).toEqual([]);
   });
 
@@ -120,7 +109,7 @@ describe("how optional fields are described", () => {
 });
 
 describe("waiting for a view (read your own writes)", () => {
-  const withViews = OpenApi.fromApi(makeCommandApi("/api/commands", registry, undefined, { waitableViews: ["wallet-balance-view", "wallet-summary-view"] })) as any;
+  const withViews = OpenApi.fromApi(makeCommandApi("/api/commands", contracts, undefined, { waitableViews: ["wallet-balance-view", "wallet-summary-view"] })) as any;
   const parameters = (name: string) => withViews.paths[`/api/commands/${name}`].post.parameters as Array<any>;
 
   test("each command route accepts optional waitFor and waitTimeout query parameters, naming the views it can wait for", () => {

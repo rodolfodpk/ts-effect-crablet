@@ -1098,3 +1098,8 @@ asserts the model directly (queries, fold, both regressions).
 - `domain/enrolment.contract.ts` (errors + `DefineCourseContract` + `SubscribeContract`, no behavior) and `domain/Enrolment.ts` (events, models, `defineCommand({ ...Contract, ... })`). The API definition (`CourseApi.ts`, `CourseQueryApi.ts`) imports only the contract module; the page's bundle no longer contains `Enrolment.ts` or the command pipeline, and the browser-safety guard enforces it (it fails on the previous layout).
 - The server registers `courseImplementations: Implementations<typeof courseContracts>`; a missing, extra or cross-assigned command is a compile error, and a command not built from its contract is refused at startup.
 
+## Contracts, phase 3: the wallet app and the cleanup (docs/plans/api-follow-ups.md item F, done)
+- The wallet declares its API from `domain/WalletContracts.ts` (five contracts); the registry form is removed everywhere (`exposedCommandOf`, `ExposedCommand`, the registry overloads). The API is declared from `[...contracts]`; the server registers `(contracts, implementations)` and `checkImplementations` refuses a missing, extra or look-alike command at startup.
+- `@crablet/test-support/BrowserSafety` (Bun-only, `Bun.build`) is the shared in-process browser-bundling check; each app's `test/browser-safe.test.ts` forbids server-only modules, its behavior modules and the command pipeline in the bundle of its contracts / API definition, with the server entry as the negative control.
+- Net effect for a new exposed command: write its contract in the contract module, build the command with `defineCommand({ ...Contract, ... })`, add the contract to the list and the command to the implementations (a compile error says if either is forgotten).
+

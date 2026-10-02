@@ -218,7 +218,7 @@ or a bad `waitTimeout` (1-30000 ms, default 5000) is a 400 before the command ru
 
 ## HTTP API and OpenAPI
 
-Expose a command with `exposedCommandOf(command)` and the API gets a route for it, `POST /api/commands/<name>`, with no HTTP code:
+Declare the API from the commands' **contracts** (a command's public part: `commandContract({ name, input, errors })`; the behavior is added by spreading it into `defineCommand`) and the API gets a route for each, `POST /api/commands/<name>`, with no HTTP code:
 
 - the request body is the command's own `input` schema, validated before the command runs;
 - every failure it can have is documented and presented: the framework's own (bad payload 400, stale decision 409) and the domain
@@ -231,8 +231,9 @@ Expose a command with `exposedCommandOf(command)` and the API gets a route for i
 
 Write inputs with `Schema.Finite` / `Schema.Int` and `Schema.optionalKey` so their constraints reach the description (a lint reports
 `Schema.Number` and `Schema.optional`). Clients: run any OpenAPI generator on `/openapi.json`, or derive one from the API itself with
-`HttpApiClient.make(makeWalletApi(), { baseUrl })` (no codegen; typed domain errors and `waitFor` included, but the command routes are
-untyped because they are built at run time). Why it is shaped this way: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
+`HttpApiClient.make(makeWalletApi(), { baseUrl })` (no codegen; typed per command: the payload is checked at compile time and each
+command fails with exactly the problems it declares). Because the API is declared from contracts only, a browser can import the API definition
+without receiving `decide`, the models or the events. Why it is shaped this way: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
 
 ## Packages
 

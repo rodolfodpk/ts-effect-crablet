@@ -8,7 +8,6 @@ import { commandContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import { ContractMismatch, checkImplementations, makeCommandApi } from "../src/CommandApi.ts";
-import { exposedCommandOf } from "../src/ExposedCommand.ts";
 
 class Taken extends DomainError("Taken", { fields: { id: Schema.String }, kind: "conflict" }) {}
 const Done = defineEvent("ContractApiDone", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ id: d.id }) });
@@ -19,11 +18,9 @@ const Claim = defineCommand({ ...ClaimContract, decide: (_s, c) => emit(Done(c))
 const Log = defineCommand({ ...LogContract, decide: (_s, c) => emit(Done({ id: c.note })) });
 
 describe("makeCommandApi from contracts", () => {
-  test("describes exactly what the registry form describes", () => {
-    const fromContracts = OpenApi.fromApi(makeCommandApi("/api/commands", contracts));
-    const fromRegistry = OpenApi.fromApi(makeCommandApi("/api/commands", { claim: exposedCommandOf(Claim), log: exposedCommandOf(Log) }));
-    expect(JSON.stringify(fromContracts)).toBe(JSON.stringify(fromRegistry));
-    expect(Object.keys(fromContracts.paths).sort()).toEqual(["/api/commands", "/api/commands/claim", "/api/commands/log"]);
+  test("describes one POST route per contract, named by the contract, plus the listing", () => {
+    const description = OpenApi.fromApi(makeCommandApi("/api/commands", contracts));
+    expect(Object.keys(description.paths).sort()).toEqual(["/api/commands", "/api/commands/claim", "/api/commands/log"]);
   });
 });
 

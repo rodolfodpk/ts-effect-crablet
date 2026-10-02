@@ -18,7 +18,6 @@ import { DomainError } from "@crablet/commands/Errors";
 import { commandContract } from "@crablet/commands/Contract";
 import * as Query from "@crablet/eventstore/Query";
 import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
-import { exposedCommandOf, type ExposedCommand } from "../../src/ExposedCommand.ts";
 import type { CommandApiConfig } from "../../src/CommandApiConfig.ts";
 import type { ViewWaiter } from "../../src/ViewWaiter.ts";
 
@@ -62,9 +61,9 @@ const OpenWallet = defineCommand({
 });
 
 // default onDuplicate: a repeat is an idempotent success (200).
+const SendConfirmationContract = commandContract({ name: "send_confirmation", input: Schema.Struct({ orderId: Schema.String }) });
 const SendConfirmation = defineCommand({
-  name: "send_confirmation",
-  input: Schema.Struct({ orderId: Schema.String }),
+  ...SendConfirmationContract,
   idempotentBy: (c) => Query.forEventAndTag("ConfirmationSent", "order_id", c.orderId),
   decide: (_, c) => emit(AppendEvent.of("ConfirmationSent", "order_id", c.orderId, {}))
 });
@@ -89,29 +88,20 @@ const Refuse = defineCommand({
     : fail(new AlreadyDone({ id: c.id }))
 });
 
-const testCommands = {
-  refuse: exposedCommandOf(Refuse),
-  open_wallet: exposedCommandOf(OpenWallet),
-  send_confirmation: exposedCommandOf(SendConfirmation)
-};
-
-// The same two commands declared from their CONTRACTS: the API's routes and problems come from the contracts alone, and the server is
-// handed the implementations (checked against the contracts when the layer is built).
-const contracts = [OpenWalletContract, RefuseContract];
-const implementations = { open_wallet: OpenWallet, refuse: Refuse };
+// The API is declared from the commands' CONTRACTS (routes, request bodies and problems come from them alone); the server is handed the
+// implementations, checked against the contracts when the layer is built.
+const contracts = [RefuseContract, OpenWalletContract, SendConfirmationContract];
+const implementations = { refuse: Refuse, open_wallet: OpenWallet, send_confirmation: SendConfirmation };
 
 // Builds a fresh ephemeral-port HTTP server for the duration of one test (Effect.scoped tears it
 // down when `body` finishes), sharing the Postgres-backed ManagedRuntime built once in before().
 // Different tests need different CommandApiConfig (basePath/correlationHeaderEnabled), so the
 // server itself can't be shared across the whole file the way views/outbox/automations share one
 // EventProcessor - only the underlying connection pool is shared.
-const withServer = <A>(
-  commands: Readonly<Record<string, ExposedCommand<any, any>>>,
-  config: CommandApiConfig,
-  body: (baseUrl: string) => Promise<A>
-): Promise<A> => serve(makeCommandApiLive(commands, config), body);
+const withServer = <A>(config: CommandApiConfig, body: (baseUrl: string) => Promise<A>): Promise<A> =>
+  serve(makeCommandApiLive(contracts, implementations, config), body);
 
-const serve = <A>(live: ReturnType<typeof makeCommandApiLive>, body: (baseUrl: string) => Promise<A>): Promise<A> =>
+const serve = <A>(live: ReturnType<typeof makeCommandApiLive<typeof contracts>>, body: (baseUrl: string) => Promise<A>): Promise<A> =>
   runtime.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -147,7 +137,7 @@ describe("commands-http integration (real Postgres)", () => {
   it("happy path: 201 CREATED, event persisted", { timeout: 20_000 }, async () => {
     const runId = crypto.randomUUID();
     const walletId = `wallet-${runId}`;
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,7 +157,7 @@ describe("commands-http integration (real Postgres)", () => {
   it("idempotent duplicate: second call returns 200 IDEMPOTENT with reason", { timeout: 20_000 }, async () => {
     const runId = crypto.randomUUID();
     const orderId = `order-${runId}`;
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const post = () =>
         fetch(`${baseUrl}/api/commands/send_confirmation`, {
           method: "POST",
@@ -190,7 +180,7 @@ describe("commands-http integration (real Postgres)", () => {
   it("DCB conflict: duplicate open_wallet returns 409 with violationCode/hint", { timeout: 20_000 }, async () => {
     const runId = crypto.randomUUID();
     const walletId = `wallet-conflict-${runId}`;
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const post = () =>
         fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
@@ -212,7 +202,7 @@ describe("commands-http integration (real Postgres)", () => {
   });
 
   it("an unknown command has no route: 404", { timeout: 20_000 }, async () => {
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/commands/does_not_exist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -223,7 +213,7 @@ describe("commands-http integration (real Postgres)", () => {
   });
 
   it("a payload that does not match the command's input is a 400 problem naming the command", { timeout: 20_000 }, async () => {
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -240,7 +230,7 @@ describe("commands-http integration (real Postgres)", () => {
   });
 
   it("a malformed JSON body gets the same 400 problem (not an empty-bodied default)", { timeout: 20_000 }, async () => {
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -254,7 +244,7 @@ describe("commands-http integration (real Postgres)", () => {
   });
 
   it("GET lists the exposed commands, each with its input as JSON Schema", { timeout: 20_000 }, async () => {
-    await withServer(testCommands, {}, async (baseUrl) => {
+    await withServer({}, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/commands`);
       assert.strictEqual(res.status, 200);
       const body = (await jsonBody(res)) as { exposedCommands: Array<{ commandType: string; inputSchema: any }> };
@@ -266,7 +256,7 @@ describe("commands-http integration (real Postgres)", () => {
   });
 
   it("custom basePath relocates both routes", { timeout: 20_000 }, async () => {
-    await withServer(testCommands, { basePath: "/api/custom-commands" }, async (baseUrl) => {
+    await withServer({ basePath: "/api/custom-commands" }, async (baseUrl) => {
       const res = await fetch(`${baseUrl}/api/custom-commands`);
       assert.strictEqual(res.status, 200);
     });
@@ -274,7 +264,7 @@ describe("commands-http integration (real Postgres)", () => {
 
   describe("the API description", () => {
     it("OpenAPI document is served at /openapi.json by default, describing every command route", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, {}, async (baseUrl) => {
+      await withServer({}, async (baseUrl) => {
         const res = await fetch(`${baseUrl}/openapi.json`);
         assert.strictEqual(res.status, 200);
         assert.match(res.headers.get("content-type") ?? "", /application\/json/);
@@ -296,27 +286,27 @@ describe("commands-http integration (real Postgres)", () => {
     });
 
     it("the document can be moved or turned off", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { openApiPath: "/api/spec.json" }, async (baseUrl) => {
+      await withServer({ openApiPath: "/api/spec.json" }, async (baseUrl) => {
         assert.strictEqual((await fetch(`${baseUrl}/api/spec.json`)).status, 200);
         assert.strictEqual((await fetch(`${baseUrl}/openapi.json`)).status, 404);
       });
-      await withServer(testCommands, { openApiPath: false }, async (baseUrl) => {
+      await withServer({ openApiPath: false }, async (baseUrl) => {
         assert.strictEqual((await fetch(`${baseUrl}/openapi.json`)).status, 404);
       });
     });
 
     it("no documentation page unless asked for; Scalar and Swagger UI when configured", { timeout: 30_000 }, async () => {
-      await withServer(testCommands, {}, async (baseUrl) => {
+      await withServer({}, async (baseUrl) => {
         assert.strictEqual((await fetch(`${baseUrl}/docs`)).status, 404);
       });
       for (const ui of ["scalar", "swagger"] as const) {
-        await withServer(testCommands, { docs: { ui } }, async (baseUrl) => {
+        await withServer({ docs: { ui } }, async (baseUrl) => {
           const res = await fetch(`${baseUrl}/docs`);
           assert.strictEqual(res.status, 200, `${ui} page`);
           assert.match(res.headers.get("content-type") ?? "", /text\/html/);
         });
       }
-      await withServer(testCommands, { docs: { ui: "scalar", path: "/reference" } }, async (baseUrl) => {
+      await withServer({ docs: { ui: "scalar", path: "/reference" } }, async (baseUrl) => {
         assert.strictEqual((await fetch(`${baseUrl}/reference`)).status, 200);
       });
     });
@@ -348,7 +338,7 @@ describe("commands-http integration (real Postgres)", () => {
 
     it("waits for the view after the command is committed, and reports that it caught up", { timeout: 20_000 }, async () => {
       waits.length = 0;
-      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+      await withServer({ viewWaiters }, async (baseUrl) => {
         const res = await open(baseUrl, "?waitFor=ok");
         assert.strictEqual(res.status, 201);
         const body = await jsonBody(res);
@@ -362,14 +352,14 @@ describe("commands-http integration (real Postgres)", () => {
 
     it("waitTimeout is passed on", { timeout: 20_000 }, async () => {
       waits.length = 0;
-      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+      await withServer({ viewWaiters }, async (baseUrl) => {
         assert.strictEqual((await open(baseUrl, "?waitFor=ok&waitTimeout=1234")).status, 201);
         assert.strictEqual(waits[0]!.timeoutMs, 1234);
       });
     });
 
     it("a view that did not catch up is reported in the body; the write is still a success (never an error status)", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+      await withServer({ viewWaiters }, async (baseUrl) => {
         for (const [view, reason] of [["slow", "timeout"], ["failed", "view_failed"], ["broken", "unavailable"]] as const) {
           const res = await open(baseUrl, `?waitFor=${view}`);
           assert.strictEqual(res.status, 201, view);
@@ -381,7 +371,7 @@ describe("commands-http integration (real Postgres)", () => {
     it("an idempotent repeat appended nothing: there is nothing to wait for, and the waiter is not called", { timeout: 20_000 }, async () => {
       waits.length = 0;
       const orderId = `order-${crypto.randomUUID()}`;
-      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+      await withServer({ viewWaiters }, async (baseUrl) => {
         const confirm = () =>
           fetch(`${baseUrl}/api/commands/send_confirmation?waitFor=ok`, {
             method: "POST",
@@ -398,13 +388,13 @@ describe("commands-http integration (real Postgres)", () => {
     });
 
     it("without the parameters the response has no `view`", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+      await withServer({ viewWaiters }, async (baseUrl) => {
         assert.strictEqual("view" in (await jsonBody(await open(baseUrl, ""))), false);
       });
     });
 
     it("bad parameters are a 400 BEFORE the command runs: nothing is written", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { viewWaiters }, async (baseUrl) => {
+      await withServer({ viewWaiters }, async (baseUrl) => {
         for (const query of ["?waitFor=nope", "?waitTimeout=500", "?waitFor=ok&waitTimeout=0", "?waitFor=ok&waitTimeout=99999", "?waitFor=ok&waitTimeout=abc"]) {
           const walletId = `wallet-${crypto.randomUUID()}`;
           const res = await open(baseUrl, query, walletId);
@@ -424,7 +414,7 @@ describe("commands-http integration (real Postgres)", () => {
     });
 
     it("with no views configured, waitFor is refused and says so", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, {}, async (baseUrl) => {
+      await withServer({}, async (baseUrl) => {
         const res = await open(baseUrl, "?waitFor=ok");
         assert.strictEqual(res.status, 400);
         assert.match(String((await jsonBody(res)).detail), /no views can be waited for/);
@@ -435,7 +425,7 @@ describe("commands-http integration (real Postgres)", () => {
   describe("correlation header (correlationHeaderEnabled: true)", () => {
     it("a supplied correlation id is echoed back", { timeout: 20_000 }, async () => {
       const correlationId = crypto.randomUUID();
-      await withServer(testCommands, { correlationHeaderEnabled: true }, async (baseUrl) => {
+      await withServer({ correlationHeaderEnabled: true }, async (baseUrl) => {
         const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Correlation-Id": correlationId },
@@ -447,7 +437,7 @@ describe("commands-http integration (real Postgres)", () => {
     });
 
     it("a missing correlation id is generated and echoed", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { correlationHeaderEnabled: true }, async (baseUrl) => {
+      await withServer({ correlationHeaderEnabled: true }, async (baseUrl) => {
         const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -459,7 +449,7 @@ describe("commands-http integration (real Postgres)", () => {
     });
 
     it("a malformed correlation id is rejected with 400", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { correlationHeaderEnabled: true }, async (baseUrl) => {
+      await withServer({ correlationHeaderEnabled: true }, async (baseUrl) => {
         const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Correlation-Id": "not-a-uuid" },
@@ -470,7 +460,7 @@ describe("commands-http integration (real Postgres)", () => {
     });
 
     it("when disabled, an inbound correlation id is ignored (not echoed)", { timeout: 20_000 }, async () => {
-      await withServer(testCommands, { correlationHeaderEnabled: false }, async (baseUrl) => {
+      await withServer({ correlationHeaderEnabled: false }, async (baseUrl) => {
         const res = await fetch(`${baseUrl}/api/commands/open_wallet`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-Correlation-Id": crypto.randomUUID() },
@@ -498,7 +488,7 @@ describe("a domain error's kind decides the HTTP status (no per-command hook)", 
     ["conflict", 409, "Conflict", "AlreadyDone", { id: "x1" }]
   ] as const) {
     it(`${kind} -> ${status}, with the error's tag and fields as RFC 7807 extension members`, async () => {
-      await withServer(testCommands, {}, async (baseUrl) => {
+      await withServer({}, async (baseUrl) => {
         const res = await post(baseUrl, kind);
         assert.strictEqual(res.status, status);
         const body = await jsonBody(res);
@@ -514,7 +504,7 @@ describe("a domain error's kind decides the HTTP status (no per-command hook)", 
   }
 });
 
-// The same API declared from contracts: routes, request bodies and problems come from the contracts alone.
+// Cases that are specifically about the contract form: what the contracts alone give, and what registering the wrong commands does.
 describe("commands-http from contracts (real Postgres)", () => {
   const post = (baseUrl: string, name: string, body: unknown) =>
     fetch(`${baseUrl}/api/commands/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -551,7 +541,7 @@ describe("commands-http from contracts (real Postgres)", () => {
   it("GET lists exactly the contracts", { timeout: 20_000 }, async () => {
     await serve(makeCommandApiLive(contracts, implementations, {}), async (baseUrl) => {
       const body = (await (await fetch(`${baseUrl}/api/commands`)).json()) as { exposedCommands: Array<{ commandType: string }> };
-      assert.deepStrictEqual(body.exposedCommands.map((c) => c.commandType), ["open_wallet", "refuse"]);
+      assert.deepStrictEqual(body.exposedCommands.map((c) => c.commandType), ["open_wallet", "refuse", "send_confirmation"]);
     });
   });
 

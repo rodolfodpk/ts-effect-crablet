@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/CommandApi.ts",
-    "./ExposedCommand": "./src/ExposedCommand.ts",
     "./CommandApiConfig": "./src/CommandApiConfig.ts",
     "./ProblemDetail": "./src/ProblemDetail.ts",
     "./InputJsonSchema": "./src/InputJsonSchema.ts",

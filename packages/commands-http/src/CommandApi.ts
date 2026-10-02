@@ -2,9 +2,11 @@ import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { inputJsonSchema } from "./InputJsonSchema.ts";
 import { defaultWaitTimeoutMs, maxWaitTimeoutMs } from "./ViewWaiter.ts";
-import type { ExposedCommand, Presentable } from "./ExposedCommand.ts";
-import type { AnyCommandContract } from "@crablet/commands/Contract";
+import type { SqlError } from "effect/sql/SqlError";
 import type { Command } from "@crablet/commands/Command";
+import type { AnyCommandContract } from "@crablet/commands/Contract";
+import type { InvalidInput, KindedError } from "@crablet/commands/Errors";
+import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
@@ -82,93 +84,71 @@ const UnexpectedProblem = asProblem(CommandApiUnexpectedError);
 
 export const executeEndpointName = (commandType: string) => `execute_${commandType}`;
 
-type Registry = Readonly<Record<string, ExposedCommand<any, any, any, any>>>;
-// What the GROUP needs from each entry: only the public part (input Schema and declared errors).
-type GroupSource = Readonly<Record<string, { readonly command: { readonly input: Schema.Constraint; readonly errors: ReadonlyArray<any> } }>>;
+// Every error a command can fail with must be something the API knows how to present: a declared domain error (its KIND picks the HTTP
+// status; `defineCommand` already requires it to be declared), or one of the framework's own errors (input validation, a stale decision, a
+// repeated operation, a database failure). Anything else - a plain string, say, or an untagged class - is a compile error where the server
+// registers its commands (`Implementations` below): it could only ever surface as a generic 500.
+export type Presentable = KindedError | Conflict | Duplicate | SqlError | InvalidInput;
 
 // ---- the group's STATIC type (the loop in `makeCommandApiGroup` builds exactly this) ----
 //
-// Each command becomes one endpoint, `execute_<name>`, whose payload is the command's own input Schema and whose failures are
-// the framework's three problems plus one problem per domain error the command declared. A client derived from the API
-// (`HttpApiClient.make`) is therefore typed per command: a misspelled payload field or an unknown command name does not
-// compile, and the error channel names what that command can answer with.
-//
-// This needs the registry's KEYS to be literal, so write it as an object literal WITHOUT an annotation such as
-// `Record<string, ExposedCommand<...>>` (that annotation forgets the command names; the group is then typed by a
-// `string` key, which is correct but no longer per command).
+// Each contract becomes one endpoint, `execute_<name>`, whose payload is the contract's input Schema and whose failures are the framework's
+// three problems plus one problem per domain error the contract declared. A client derived from the API (`HttpApiClient.make`) is therefore
+// typed per command: a misspelled payload field or an unknown command name does not compile, and the error channel names what that command
+// can answer with. This needs the contracts' NAMES to be literal, so pass the list as written (`[A, B]`), not annotated as
+// `ReadonlyArray<CommandContract>` (that forgets the names; the group is then typed by a `string` name, which is correct but no longer
+// per command).
 
 type ProblemsOf<Es> = Es extends ReadonlyArray<infer E> ? ProblemBody<E> : never;
-type CommandErrorSchemas<X> = X extends { readonly command: { readonly errors: infer Es } }
-  ? typeof BadRequestProblem | typeof ConflictProblem | typeof UnexpectedProblem | ProblemsOf<Es>
-  : never;
-type CommandEndpoint<K extends string, BasePath extends string, X> = HttpApiEndpoint.HttpApiEndpoint<
-  `execute_${K}`,
+type CommandErrorSchemas<Es> = typeof BadRequestProblem | typeof ConflictProblem | typeof UnexpectedProblem | ProblemsOf<Es>;
+type CommandEndpoint<BasePath extends string, K extends AnyCommandContract> = HttpApiEndpoint.HttpApiEndpoint<
+  `execute_${K["name"]}`,
   "POST",
-  `${BasePath}/${K}`,
+  `${BasePath}/${K["name"]}`,
   never,
   ReturnType<typeof waitQuery>,
-  X extends { readonly command: { readonly input: infer I extends Schema.Top } } ? I : never,
+  K["input"] extends infer I extends Schema.Top ? I : never,
   never,
   typeof CommandCreatedResponse | typeof CommandIdempotentResponse,
-  CommandErrorSchemas<X>
+  CommandErrorSchemas<K["errors"]>
 >;
-export type CommandGroup<BasePath extends string, C extends GroupSource> = HttpApiGroup.HttpApiGroup<
+export type CommandGroup<BasePath extends string, C extends ReadonlyArray<AnyCommandContract>> = HttpApiGroup.HttpApiGroup<
   "commands",
   | HttpApiEndpoint.HttpApiEndpoint<"listExposedCommands", "GET", BasePath, never, never, never, never, typeof ExposedCommandsResponse>
-  | { [K in keyof C & string]: CommandEndpoint<K, BasePath, C[K]> }[keyof C & string]
+  | { [N in C[number]["name"]]: CommandEndpoint<BasePath, Extract<C[number], { readonly name: N }>> }[C[number]["name"]]
 >;
 
-// Exported separately from `makeCommandApi` (which builds a *complete*, standalone `HttpApi`) so a
-// bigger app-owned `HttpApi` can `.add()` this group alongside its own groups (e.g. a read-only
-// query API) and serve them all from one router.
+// Exported separately from `makeCommandApi` (which builds a *complete*, standalone `HttpApi`) so a bigger app-owned `HttpApi` can `.add()`
+// this group alongside its own groups (e.g. a read-only query API) and serve them all from one router.
 //
-// The group is built in a loop over the registry; the loop body is untyped (`any`) because TypeScript cannot follow
-// a runtime-variable set of endpoint names through `group.add(...)`. The RETURN type is the precise `CommandGroup`
-// above - the one place that asserts "the loop builds exactly this" (the OpenAPI description and the integration tests
-// check the runtime, the type tests in test/typed-client.types.ts check the type).
-// `waitableViews`: names of the views a request may wait for (`?waitFor=`, `?waitTimeout=`); none by default. (The
-// query is part of the static type either way; with no waitable view the server answers any `waitFor` with a 400.)
-// The command API can be declared from CONTRACTS (the public part of each command, see @crablet/commands/Contract) or, as before,
-// from a registry of exposed commands. From contracts, the route name is the contract's own `name`, and the module that declares the API
-// imports nothing of the commands' behavior.
-type AsRegistry<C extends ReadonlyArray<AnyCommandContract>> = { readonly [K in C[number] as K["name"]]: { readonly command: K } };
-type Entry = { readonly name: string; readonly input: Schema.Constraint; readonly errors: ReadonlyArray<DeclaredDomainError> };
-const entriesOf = (source: ReadonlyArray<AnyCommandContract> | Registry): ReadonlyArray<Entry> =>
-  Array.isArray(source)
-    ? source.map((contract: AnyCommandContract) => ({ name: contract.name, input: contract.input, errors: contract.errors as ReadonlyArray<DeclaredDomainError> }))
-    : Object.entries(source as Registry).map(([name, entry]) => ({ name, input: entry.command.input, errors: entry.command.errors as ReadonlyArray<DeclaredDomainError> }));
-
-export function makeCommandApiGroup<const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
+// The API is declared from CONTRACTS (the public part of each command, see @crablet/commands/Contract): the route is `POST {basePath}/{name}`
+// with the contract's own `name`, and the module that declares the API imports nothing of the commands' behavior (decide, models, events), so
+// it can be bundled for a browser. The group is built in a loop; the loop body is untyped (`any`) because TypeScript cannot follow a
+// runtime-variable set of endpoint names through `group.add(...)`. The RETURN type is the precise `CommandGroup` above - the one place that
+// asserts "the loop builds exactly this" (the OpenAPI description and the integration tests check the runtime, test/contract-api.types.ts the type).
+// `waitableViews`: names of the views a request may wait for (`?waitFor=`, `?waitTimeout=`); none by default. (The query is part of the static
+// type either way; with no waitable view the server answers any `waitFor` with a 400.)
+export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
   basePath: BasePath,
   contracts: C,
-  options?: { readonly waitableViews?: ReadonlyArray<string> }
-): CommandGroup<BasePath, AsRegistry<C>>;
-export function makeCommandApiGroup<const BasePath extends `/${string}`, const C extends Registry>(
-  basePath: BasePath,
-  commands: C,
-  options?: { readonly waitableViews?: ReadonlyArray<string> }
-): CommandGroup<BasePath, C>;
-export function makeCommandApiGroup(
-  basePath: `/${string}`,
-  source: ReadonlyArray<AnyCommandContract> | Registry,
   options: { readonly waitableViews?: ReadonlyArray<string> } = {}
-): unknown {
+): CommandGroup<BasePath, C> => {
   const waitableViews = options.waitableViews ?? [];
   let group: any = HttpApiGroup.make("commands").add(
     HttpApiEndpoint.get("listExposedCommands", basePath, { success: ExposedCommandsResponse })
   );
-  for (const entry of entriesOf(source)) {
+  for (const contract of contracts) {
     group = group.add(
-      HttpApiEndpoint.post(executeEndpointName(entry.name), `${basePath}/${entry.name}` as `/${string}`, {
-        payload: entry.input as unknown as Schema.Top,
+      HttpApiEndpoint.post(executeEndpointName(contract.name), `${basePath}/${contract.name}` as `/${string}`, {
+        payload: contract.input as unknown as Schema.Top,
         ...(waitableViews.length > 0 ? { query: waitQuery(waitableViews) } : {}),
         success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
-        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
+        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...contract.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
       })
     );
   }
-  return group;
-}
+  return group as CommandGroup<BasePath, C>;
+};
 
 // The server's side of a list of contracts: for each contract, the implemented command, built from THAT contract with
 // `defineCommand({ ...Contract, ... })`. A missing command, an extra one, or one built from a different contract does not compile; a
@@ -209,10 +189,6 @@ export const checkImplementations = (
   if (problems.length > 0) throw new ContractMismatch(problems);
 };
 
-// The registry form the server side takes, from implementations that passed `checkImplementations`.
-export const registryOf = (implementations: Readonly<Record<string, Command<any, any, any, any>>>): Registry =>
-  Object.fromEntries(Object.entries(implementations).map(([name, command]) => [name, { command }]));
-
 // What the API description says about the API as a whole.
 export interface ApiInfo {
   readonly title: string;
@@ -231,28 +207,14 @@ export const withApiInfo = <Id extends string, Groups extends HttpApiGroup.Const
     OpenApi.annotations({ title: info.title, version: info.version, ...(info.description !== undefined ? { description: info.description } : {}) })
   );
 
-export function makeCommandApi<const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
+export const makeCommandApi = <const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
   basePath: BasePath,
   contracts: C,
-  info?: ApiInfo,
-  options?: { readonly waitableViews?: ReadonlyArray<string> }
-): HttpApi.HttpApi<"commandApi", CommandGroup<BasePath, AsRegistry<C>>>;
-export function makeCommandApi<const BasePath extends `/${string}`, const C extends Registry>(
-  basePath: BasePath,
-  commands: C,
-  info?: ApiInfo,
-  options?: { readonly waitableViews?: ReadonlyArray<string> }
-): HttpApi.HttpApi<"commandApi", CommandGroup<BasePath, C>>;
-export function makeCommandApi(
-  basePath: `/${string}`,
-  source: ReadonlyArray<AnyCommandContract> | Registry,
   info: ApiInfo = defaultApiInfo,
   options: { readonly waitableViews?: ReadonlyArray<string> } = {}
-): unknown {
-  return withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, source as never, options) as never), info);
-}
+) => withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, contracts, options)), info);
 
-export const listedCommands = (commands: Registry) =>
-  Object.keys(commands)
-    .sort()
-    .map((commandType) => ({ commandType, inputSchema: inputJsonSchema(commands[commandType]!.command) }));
+export const listedCommands = (contracts: ReadonlyArray<Pick<AnyCommandContract, "name" | "input">>) =>
+  [...contracts]
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((contract) => ({ commandType: contract.name, inputSchema: inputJsonSchema(contract) }));

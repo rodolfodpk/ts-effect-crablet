@@ -80,3 +80,10 @@ Keep ONE write primitive and build a declarative layer on top of it.
   `kind` lets each transport decide.
 - **A single shared Postgres for tests.** Rejected during the work: the poller's visibility rule is
   cluster-wide, so open transactions in other databases hid events from unrelated tests.
+
+## Addendum (2026-10-02): a command has a contract and a behavior
+
+A command splits into two parts that were always separable. Its **contract** is `{ name, input, errors }` (`commandContract` in `@crablet/commands/Contract`): the public part, which a transport needs to declare routes, request bodies, problems and the OpenAPI description. Its **behavior** is `model`, `decide`, `prepare`, `idempotentBy`, `consistency`, `retries`: the private part. `defineCommand` did not change: the server spreads the contract into it, `defineCommand({ ...SubscribeContract, model, decide })`, and the result is exactly the command type a direct declaration produces (pinned by a type test), with the same check that `decide` can only fail with the contract's declared errors. Declare a contract as its own const: written inline inside the spread, the inferred error list is silently loosened.
+
+Commands that are not exposed over HTTP (an automation's internal command) need no contract and stay single-file. In the examples the contracts live in their own module (`enrolment.contract.ts`, `WalletContracts.ts`) which imports nothing that decides; a unit test per app bundles it for a browser and fails if it reaches a server-only module, the models, or the command pipeline. See ADR-0011's second addendum for what the HTTP side does with contracts.
+

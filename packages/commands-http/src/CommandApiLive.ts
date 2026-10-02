@@ -8,12 +8,11 @@ import type { SqlClient } from "effect/sql";
 import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import { checkImplementations, executeEndpointName, listedCommands, makeCommandApi, registryOf } from "./CommandApi.ts";
+import { checkImplementations, executeEndpointName, listedCommands, makeCommandApi } from "./CommandApi.ts";
 import type { Implementations } from "./CommandApi.ts";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
 import type { Command } from "@crablet/commands/Command";
 import { apiDocsLayer, apiLayerOptions } from "./ApiDescription.ts";
-import type { ExposedCommand } from "./ExposedCommand.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
 import { defaultWaitTimeoutMs, maxWaitTimeoutMs, type ViewWaiter } from "./ViewWaiter.ts";
@@ -42,20 +41,21 @@ const CORRELATION_HEADER = "x-correlation-id";
 
 const uuid = Schema.String.check(Schema.isUUID());
 
-// `commands` is the app-supplied flat map (name -> command + declared errors); each entry keeps its own
-// concrete T/E, so the map itself is type-erased at this boundary (see ExposedCommand.ts).
+// The group's implementation, from the API's contracts and the command implemented for each (`implementations`, keyed by the contract's name,
+// each built with `defineCommand({ ...Contract, ... })`). The pairing is checked by the types (`Implementations`) and again here, once, when the layer
+// is built (`checkImplementations`: a missing, extra or look-alike command throws a `ContractMismatch` naming every problem).
 //
-// Takes the full composed `api` as a parameter (generic over whatever bigger `HttpApi` the caller
-// built, as long as it contains a `"commands"` group made by `makeCommandApiGroup` from the SAME registry)
-// rather than building it internally, so a consuming app can compose this group alongside its own
-// groups under one router. Returns just the group's implementation Layer, like
-// `HttpApiBuilder.group` itself - wrapping it in `HttpApiBuilder.layer(...)` is the caller's job
-// (see `makeCommandApiLive` below for the standalone case).
-const registryGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
+// Takes the full composed `api` as a parameter (generic over whatever bigger `HttpApi` the caller built, as long as it contains a `"commands"` group made
+// by `makeCommandApiGroup` from the SAME contracts) rather than building it internally, so a consuming app can compose this group alongside its own
+// groups under one router. Returns just the group's implementation Layer, like `HttpApiBuilder.group` itself - wrapping it in `HttpApiBuilder.layer(...)`
+// is the caller's job (see `makeCommandApiLive` below for the standalone case).
+export const makeCommandApiGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint, const C extends ReadonlyArray<AnyCommandContract>>(
   api: HttpApi.HttpApi<ApiId, Groups>,
-  commands: Readonly<Record<string, ExposedCommand<any, any>>>,
-  config: CommandApiConfig
+  contracts: C,
+  implementations: Implementations<C>,
+  config: CommandApiConfig = {}
 ): Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> => {
+  checkImplementations(contracts, implementations);
   const correlationHeaderEnabled = config.correlationHeaderEnabled ?? false;
 
   const viewWaiters = config.viewWaiters ?? {};
@@ -84,7 +84,7 @@ const registryGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Con
     return Effect.succeed({ name, waiter, timeoutMs });
   };
 
-  const listExposedCommands = Effect.sync(() => ({ exposedCommands: listedCommands(commands) }));
+  const listExposedCommands = Effect.sync(() => ({ exposedCommands: listedCommands(contracts) }));
 
   // Resolves the optional correlation id: disabled -> ignore any inbound header entirely; enabled +
   // present -> validate as a UUID (fail 400 if malformed) and echo it back; enabled + absent ->
@@ -108,13 +108,13 @@ const registryGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Con
 
   // One handler per exposed command. The body is decoded here, with the command's own `decodeInput`, rather
   // than by the HTTP framework (`handleRaw`), so a malformed or invalid body answers with a problem body.
-  const handleCommand = (commandType: string, entry: ExposedCommand<any, any>) =>
+  const handleCommand = (commandType: string, command: Command<any, any, any, any>) =>
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const invalidPayload = (issues?: ReadonlyArray<InputIssue>) => CommandApiBadRequest.of(`Invalid payload for command: ${commandType}`, issues);
       const raw = yield* request.json.pipe(Effect.mapError(() => invalidPayload()));
       // Validation belongs to the command itself: its input schema. Every failed field is reported, by path.
-      const input = yield* entry.command.decodeInput(raw).pipe(Effect.mapError((error) => invalidPayload(error.issues)));
+      const input = yield* command.decodeInput(raw).pipe(Effect.mapError((error) => invalidPayload(error.issues)));
 
       const wait = yield* parseWait(request);
       const correlationId = yield* resolveCorrelationId;
@@ -126,7 +126,7 @@ const registryGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Con
       // ProblemDetail.ts). Anything still unrecognized falls through, unchanged, to the terminal
       // `toProblemDetail` catch-all below (a generic 500).
       const executor = yield* CommandExecutor;
-      const runExecute = executor.runDecoded(entry.command, input).pipe(
+      const runExecute = executor.runDecoded(command, input).pipe(
         Effect.catchTag("Conflict", (e) =>
           Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION"))
         ),
@@ -178,13 +178,13 @@ const registryGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Con
     );
 
   // `HttpApiBuilder.group as any`: its signature requires "commands" to be statically known as a
-  // member of `Groups`, and the endpoint names are only known at run time (one per registry entry), so
+  // member of `Groups`, and the endpoint names are only known at run time (one per contract), so
   // the whole call is cast. Narrow, deliberate type-erasure at this one dynamic-composition boundary.
   const groupBuilder = HttpApiBuilder.group as any;
   const CommandsLive: Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> = groupBuilder(api, "commands", (handlers: any) =>
     Effect.succeed(
-      Object.entries(commands).reduce(
-        (h: any, [commandType, entry]) => h.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, entry)),
+      Object.entries(implementations as Readonly<Record<string, Command<any, any, any, any>>>).reduce(
+        (h: any, [commandType, command]) => h.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, command)),
         handlers.handle("listExposedCommands", () => listExposedCommands)
       )
     )
@@ -193,43 +193,14 @@ const registryGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Con
   return CommandsLive;
 };
 
-// The group's implementation. Two forms, matching `makeCommandApiGroup`:
-//   - from contracts: `makeCommandApiGroupLive(api, contracts, implementations, config)`, where `implementations` maps each contract's name to the
-//     command built from it. The pairing is checked here, once, at construction (`checkImplementations`) as well as by the types.
-//   - from a registry of exposed commands: `makeCommandApiGroupLive(api, commands, config)` (the older form).
-export function makeCommandApiGroupLive<ApiId extends string, Groups extends HttpApiGroup.Constraint, const C extends ReadonlyArray<AnyCommandContract>>(
-  api: HttpApi.HttpApi<ApiId, Groups>,
-  contracts: C,
-  implementations: Implementations<C>,
-  config?: CommandApiConfig
-): Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements>;
-export function makeCommandApiGroupLive<ApiId extends string, Groups extends HttpApiGroup.Constraint>(
-  api: HttpApi.HttpApi<ApiId, Groups>,
-  commands: Readonly<Record<string, ExposedCommand<any, any>>>,
-  config?: CommandApiConfig
-): Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements>;
-export function makeCommandApiGroupLive(api: HttpApi.HttpApi<string, any>, second: unknown, third?: unknown, fourth?: unknown): unknown {
-  if (Array.isArray(second)) {
-    const implementations = third as Readonly<Record<string, Command<any, any, any, any>>>;
-    checkImplementations(second as ReadonlyArray<AnyCommandContract>, implementations);
-    return registryGroupLive(api, registryOf(implementations), (fourth as CommandApiConfig | undefined) ?? {});
-  }
-  return registryGroupLive(api, second as Readonly<Record<string, ExposedCommand<any, any>>>, (third as CommandApiConfig | undefined) ?? {});
-}
-
 // Standalone convenience wrapper: builds its own complete `HttpApi` and returns the ready-to-serve
 // route Layer (serve it with `HttpRouter.serve(...)`), for callers that don't compose anything else
 // alongside it.
-const registryStandalone = (commands: Readonly<Record<string, ExposedCommand<any, any>>>, config: CommandApiConfig) => {
-  const basePath = (config.basePath ?? defaultBasePath) as `/${string}`;
-  const api = makeCommandApi(basePath, commands, undefined, { waitableViews: Object.keys(config.viewWaiters ?? {}) });
-  return Layer.merge(
-    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(makeCommandApiGroupLive(api, commands, config))),
-    apiDocsLayer(api, config)
-  );
-};
-
-const contractStandalone = <const C extends ReadonlyArray<AnyCommandContract>>(contracts: C, implementations: Implementations<C>, config: CommandApiConfig) => {
+export const makeCommandApiLive = <const C extends ReadonlyArray<AnyCommandContract>>(
+  contracts: C,
+  implementations: Implementations<C>,
+  config: CommandApiConfig = {}
+) => {
   const basePath = (config.basePath ?? defaultBasePath) as `/${string}`;
   const api = makeCommandApi(basePath, contracts, undefined, { waitableViews: Object.keys(config.viewWaiters ?? {}) });
   return Layer.merge(
@@ -237,15 +208,3 @@ const contractStandalone = <const C extends ReadonlyArray<AnyCommandContract>>(c
     apiDocsLayer(api, config)
   );
 };
-
-export function makeCommandApiLive<const C extends ReadonlyArray<AnyCommandContract>>(
-  contracts: C,
-  implementations: Implementations<C>,
-  config?: CommandApiConfig
-): ReturnType<typeof contractStandalone<C>>;
-export function makeCommandApiLive(commands: Readonly<Record<string, ExposedCommand<any, any>>>, config?: CommandApiConfig): ReturnType<typeof registryStandalone>;
-export function makeCommandApiLive(first: unknown, second?: unknown, third?: unknown): unknown {
-  return Array.isArray(first)
-    ? contractStandalone(first as ReadonlyArray<AnyCommandContract>, second as never, (third as CommandApiConfig | undefined) ?? {})
-    : registryStandalone(first as Readonly<Record<string, ExposedCommand<any, any>>>, (second as CommandApiConfig | undefined) ?? {});
-}

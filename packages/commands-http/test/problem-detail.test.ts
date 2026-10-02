@@ -1,59 +1,33 @@
+// What a declared domain error looks like on the wire: its status and title from the kind, its own fields, and one response schema per error class.
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
-import {
-  CommandApiBadRequest,
-  CommandConflict,
-  CommandApiUnexpectedError,
-  CommandApiBadRequestType,
-  CommandApiDcbConcurrencyType,
-  CommandApiUnexpectedErrorType
-} from "../src/ProblemDetail.ts";
+import { DomainError } from "@crablet/commands/Errors";
+import { domainProblemOf, problemSchemaOf } from "../src/ProblemDetail.ts";
 
-// Each variant is a plain Schema.Class (NOT Schema.TaggedError/TaggedClass) - confirmed against a
-// real running @effect/platform server (see NOTES.md's Phase 7 write-up) that TaggedError leaks
-// an unwanted `_tag` field into the encoded JSON body with no automatic type/title fields, so
-// these tests assert the encoded shape is exactly the declared RFC 7807 fields, nothing more.
-// The HTTP status a problem class carries, read from its `httpApiStatus` schema annotation.
-const statusOf = (schema: Schema.Top): unknown => (schema.ast.annotations as Record<string, unknown> | undefined)?.["httpApiStatus"];
+class NoSuchThing extends DomainError("NoSuchThing", { fields: { id: Schema.String }, kind: "not_found" }) {}
+class NotYours extends DomainError("NotYours", { fields: {}, kind: "forbidden" }) {}
 
-describe("ProblemDetail variants", () => {
-  test("CommandApiBadRequest.of() produces the RFC 7807 shape with no extra fields", () => {
-    const problem = CommandApiBadRequest.of("Unknown command type: bogus");
-    expect(Schema.encodeSync(CommandApiBadRequest)(problem)).toEqual({
-      type: CommandApiBadRequestType,
-      title: "Bad Request",
-      status: 400,
-      detail: "Unknown command type: bogus"
+describe("what a declared error looks like on the wire", () => {
+  test("domainProblemOf: status and title come from the kind; the error's declared fields ride along", () => {
+    expect(domainProblemOf("not_found", new NoSuchThing({ id: "t1" }))).toEqual({
+      type: "urn:crablet:problem:command-api:not-found",
+      title: "Not Found",
+      status: 404,
+      detail: "NoSuchThing",
+      errorType: "NoSuchThing",
+      fields: { id: "t1" }
     });
-    expect(statusOf(CommandApiBadRequest)).toBe(400);
   });
 
-  test("CommandConflict.of() carries violationCode and hint", () => {
-    const problem = CommandConflict.of("Concurrent lifecycle event detected", "GUARD_VIOLATION");
-    expect(Schema.encodeSync(CommandConflict)(problem)).toEqual({
-      type: CommandApiDcbConcurrencyType,
-      title: "Conflict",
-      status: 409,
-      detail: "Concurrent lifecycle event detected",
-      violationCode: "GUARD_VIOLATION",
-      hint: "Refresh state and retry the command if it is still valid."
-    });
-    expect(statusOf(CommandConflict)).toBe(409);
-  });
+  test("problemSchemaOf: one schema per class, the same instance every time, accepting exactly that problem", () => {
+    const schema = problemSchemaOf(NoSuchThing);
+    expect(problemSchemaOf(NoSuchThing)).toBe(schema);
+    expect(problemSchemaOf(NotYours)).not.toBe(schema);
 
-  test("CommandApiUnexpectedError never echoes the real internal error message", () => {
-    const problem = CommandApiUnexpectedError.instance;
-    expect(Schema.encodeSync(CommandApiUnexpectedError)(problem)).toEqual({
-      type: CommandApiUnexpectedErrorType,
-      title: "Internal Server Error",
-      status: 500,
-      detail: "Unexpected command API error"
-    });
-    expect(statusOf(CommandApiUnexpectedError)).toBe(500);
-  });
-
-  test("no variant's encoded JSON carries a _tag field", () => {
-    const problem = CommandApiBadRequest.of("x");
-    expect(Object.keys(Schema.encodeSync(CommandApiBadRequest)(problem))).not.toContain("_tag");
+    const decode = Schema.decodeUnknownExit(schema as never);
+    expect(decode(domainProblemOf("not_found", new NoSuchThing({ id: "t1" })))._tag).toBe("Success");
+    // another error's problem, or the right problem with the wrong fields, is not this schema
+    expect(decode(domainProblemOf("forbidden", new NotYours()))._tag).toBe("Failure");
+    expect(decode({ ...(domainProblemOf("not_found", new NoSuchThing({ id: "t1" })) as object), fields: { id: 5 } })._tag).toBe("Failure");
   });
 });

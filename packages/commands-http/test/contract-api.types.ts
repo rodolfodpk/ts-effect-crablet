@@ -7,7 +7,8 @@ import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { commandContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
-import { makeCommandApiGroup, withApiInfo } from "../src/CommandApi.ts";
+import type { HttpClientError } from "effect/http/HttpClientError";
+import { makeCommandApi, makeCommandApiGroup, withApiInfo } from "../src/CommandApi.ts";
 import type { Implementations } from "../src/CommandApi.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -26,6 +27,7 @@ const group = makeCommandApiGroup("/api/commands", contracts, { waitableViews: [
 export const api = withApiInfo(HttpApi.make("x").add(group), { title: "t", version: "1" });
 export const description = OpenApi.fromApi(api);
 export const serving = HttpApiBuilder.layer(api);
+export const standalone = makeCommandApi("/api/commands", contracts);
 
 export const program = Effect.gen(function* () {
   const client = yield* HttpApiClient.make(api);
@@ -70,3 +72,34 @@ export const swapped: Implementations<typeof contracts> = { book: Log, log: Log 
 const Plain = defineCommand({ ...LogContract, decide: () => fail("nope") });
 // @ts-expect-error a command that fails with a plain string is not presentable
 export const notPresentable: Implementations<typeof contracts> = { book: Book, log: Plain };
+
+// ---- the answers a client sees ----
+type BookSuccess = Effect.Success<ReturnType<Client["commands"]["execute_book"]>>;
+export type SuccessIsCreatedOrIdempotent = Expect<Equal<BookSuccess["status"], "CREATED" | "IDEMPOTENT">>;
+export type TransportErrorsAreInTheChannel = Expect<Equal<HttpClientError extends BookError ? true : false, true>>;
+export type SchemaErrorsAreInTheChannel = Expect<Equal<Schema.SchemaError extends BookError ? true : false, true>>;
+
+// a `switch` over `errorType` is exhaustive: handling every declared error leaves nothing, leaving one out does not compile
+export const describe = (e: DomainProblems<BookError>): string => {
+  switch (e.errorType) {
+    case "SeatTaken":
+      return `${e.fields.seatId} row ${e.fields.row}`;
+    case "NoSuchSeat":
+      return e.fields.seatId;
+    default: {
+      const _exhaustive: never = e;
+      return _exhaustive;
+    }
+  }
+};
+export const describeIncomplete = (e: DomainProblems<BookError>): string => {
+  switch (e.errorType) {
+    case "SeatTaken":
+      return e.fields.seatId;
+    default: {
+      // @ts-expect-error NoSuchSeat is not handled
+      const _exhaustive: never = e;
+      return String(_exhaustive);
+    }
+  }
+};

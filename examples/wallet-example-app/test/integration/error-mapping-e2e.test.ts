@@ -1,6 +1,5 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Exercises the ExposedCommand.mapError hooks +
-// makeCommandApiGroup's extraErrors wiring end-to-end via real HTTP - not just unit-testing the
-// mapping function in isolation, but confirming the RFC 7807 bodies actually round-trip through
+// Runs under Node (Testcontainers) - see NOTES.md. Exercises how the wallet's declared domain errors are presented end-to-end via real
+// HTTP - not just unit-testing the mapping function in isolation, but confirming the RFC 7807 bodies actually round-trip through
 // HttpApiBuilder's own encoding.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
