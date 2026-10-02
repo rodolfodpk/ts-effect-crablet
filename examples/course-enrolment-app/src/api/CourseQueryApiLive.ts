@@ -3,7 +3,7 @@ import { HttpApiBuilder } from "effect/http-api";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { SqlClient } from "effect/sql";
 import { CommandApiBadRequest, domainProblemOf } from "@crablet/commands-http/ProblemDetail";
-import { CourseNotFound } from "../domain/Enrolment.ts";
+import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
 
 interface SeatsRow {

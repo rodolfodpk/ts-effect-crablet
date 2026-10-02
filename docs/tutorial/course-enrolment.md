@@ -171,14 +171,31 @@ export const StudentModel = defineModel({ by: "student_id", initial: () => ({ co
   .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }));
 ```
 
-And the command decides on **both** at once:
+A command has two parts. Its **contract** - its name, its input Schema and the domain errors it can fail with - is the public part. It lives in
+`src/domain/enrolment.contract.ts` (the error classes too), and that file imports nothing that decides anything:
+
+<!-- file: examples/course-enrolment-app/src/domain/enrolment.contract.ts#contracts -->
+```ts
+export const DefineCourseContract = commandContract({
+  name: "define_course",
+  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) })
+});
+
+export const SubscribeContract = commandContract({
+  name: "subscribe",
+  input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
+  errors: [CourseNotFound, CourseFull, StudentAtLimit]
+});
+```
+
+Its **behavior** - the model and `decide` - is the private part. You add it by spreading the contract into `defineCommand`, the same function as in step 1; the contract
+is only where the name, the input and the errors now come from. From step 3 the HTTP API is declared from contracts alone, and so is the page in step 5, so a
+browser can import them without receiving the rules (a test fails if the contract module ever reaches a server-only module). The command decides on **both** the course and the student at once:
 
 <!-- file: examples/course-enrolment-app/src/domain/Enrolment.ts#subscribe -->
 ```ts
 export const Subscribe = defineCommand({
-  name: "subscribe",
-  errors: [CourseNotFound, CourseFull, StudentAtLimit],
-  input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
+  ...SubscribeContract,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
   decide: ({ course, student }, c) =>
@@ -230,23 +247,30 @@ loads its state before any appends) for this same domain: see
 
 ## Step 3 - an HTTP API, and its OpenAPI description
 
-Exposing a command is one line each. Nothing else about HTTP is written:
+Exposing a command is one line each: you list its **contract**. Nothing else about HTTP is written:
 
 <!-- file: examples/course-enrolment-app/src/CourseApi.ts#expose -->
 ```ts
-// The write API: one route per command, POST /api/commands/<name>. A command's declared `errors` are what the API
-// presents (status from each error's kind) and documents; there is no HTTP code to write per command.
-// Do not annotate this object as a `Record<string, ...>`: that forgets the command names, and the API's type (and so a
-// client derived from it) is typed per command only while the keys stay literal.
-export const courseCommands = {
-  define_course: exposedCommandOf(DefineCourse),
-  subscribe: exposedCommandOf(Subscribe)
-};
+// The write API: one route per contract, POST /api/commands/<name>. A contract's declared `errors` are what the API presents
+// (status from each error's kind) and documents; there is no HTTP code to write per command. This module imports only the
+// CONTRACTS, never how a decision is made, so a browser can import it.
+// Do not annotate this list (`ReadonlyArray<...>`): that forgets the contract names, and the API's type (and so a client derived
+// from it) is typed per command only while the names stay literal.
+export const courseContracts = [DefineCourseContract, SubscribeContract];
 ```
 
-The registry is a plain object literal on purpose. Because its keys stay literal, the API's *type* has one endpoint per command: a client derived from it knows that
-`subscribe` takes `{ studentId, courseId }` and can fail with `CourseNotFound`, `CourseFull` or `StudentAtLimit`. Annotating the object
-as a `Record<string, ...>` still works, but it forgets the command names and the client falls back to a single, loosely typed endpoint.
+The route is the contract's `name`. Because the list keeps its contracts' literal names, the API's *type* has one endpoint per command: a client derived from it knows that
+`subscribe` takes `{ studentId, courseId }` and can fail with `CourseNotFound`, `CourseFull` or `StudentAtLimit`. Annotating the list as `ReadonlyArray<...>` still works, but it forgets the names and the
+client falls back to a single, loosely typed endpoint. The server hands the matching *commands* to the same API, one per contract:
+
+<!-- file: examples/course-enrolment-app/src/CourseApp.ts#implementations -->
+```ts
+// The server's side of the contracts: the command built from each one. A missing or extra command does not compile, and one that was not
+// built from its contract is refused when the layer is built.
+const courseImplementations: Implementations<typeof courseContracts> = { define_course: DefineCourse, subscribe: Subscribe };
+```
+
+A missing command, an extra one, or one that was not built from its contract (not by spreading it) does not compile; the last is also checked when the server starts.
 
 Start the server (add `COURSES_DOCS=scalar` to also serve a documentation page at `/docs`):
 
@@ -568,7 +592,7 @@ COURSES_CORS_ORIGINS=http://localhost:5173 node src/index.ts
 VITE_API_URL=http://localhost:8080 bun run dev
 ```
 
-Because the registry in step 3 kept its command names, the client is typed
+Because the list of contracts in step 3 kept its names, the client is typed
 *per command*: `execute_subscribe` takes exactly `{ studentId, courseId }` (a misspelled field does not compile), and fails with exactly the problems `subscribe` declares, plus
 the transport's error and a Schema error. No cast, no copy of the wire format:
 
@@ -746,7 +770,7 @@ It asserts the interesting cases: waiting off is stale, waiting on is right (and
 Building a client is the quickest way to find what an API is missing. Each of these is a real finding, not a to-do for this page:
 
 - **A view is not the truth.** "There is no course called X" right after "Defined course X" is true of the seat map and false of the course. The page treats an error from a view as being about the view.
-- **The command client is typed per command** only while the registry keeps its literal keys (step 3): annotate it as a `Record<string, ...>` and the client falls back to one loosely typed endpoint.
+- **The command client is typed per command** only while the list of contracts keeps its literal names (step 3): annotate the list as `ReadonlyArray<...>` and the client falls back to one loosely typed endpoint.
 - **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`), so this page never sees the server's 400 for a bad payload. A client that does
   not validate first (curl, another language, a generated client) gets the same information from the server: the 400 problem lists every failing field in `errors`, with a path and the check's message.
 - **CORS is opt-in.** `commands-http` sends no CORS header unless the app adds `corsLayer({ allowedOrigins })`; it refuses an empty list (Effect's own middleware reads that as "every origin") and credentials with `"*"`. A page behind a proxy or served by the API needs none.

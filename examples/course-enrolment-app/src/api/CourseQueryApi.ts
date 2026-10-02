@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 import { BadRequestProblem } from "@crablet/commands-http";
 import { problemSchemaOf } from "@crablet/commands-http/ProblemDetail";
-import { CourseNotFound } from "../domain/Enrolment.ts";
+import { CourseNotFound } from "../domain/enrolment.contract.ts";
 
 // #region query-api
 // A read endpoint, hand-written: the response schema is declared here (reads are not derived from the domain model).

@@ -5,7 +5,7 @@
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail, noop } from "@crablet/commands/Command";
-import { DomainError } from "@crablet/commands/Errors";
+import { CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
 import { defineEvent } from "@crablet/commands/Event";
 import { all, defineModel } from "@crablet/commands/Model";
 
@@ -37,25 +37,13 @@ export const StudentModel = defineModel({ by: "student_id", initial: () => ({ co
   .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }));
 // #endregion models
 
-// #region errors
-export class CourseNotFound extends DomainError("CourseNotFound", {
-  fields: { courseId: Schema.String },
-  kind: "not_found"
-}) {}
-export class CourseFull extends DomainError("CourseFull", {
-  fields: { courseId: Schema.String, capacity: Schema.Int },
-  kind: "conflict"
-}) {}
-export class StudentAtLimit extends DomainError("StudentAtLimit", {
-  fields: { studentId: Schema.String, limit: Schema.Int },
-  kind: "conflict"
-}) {}
-// #endregion errors
+// The errors and the public contracts are in enrolment.contract.ts (so a browser can import them without the rules below); re-exported for the server code.
+export { CourseFull, CourseNotFound, StudentAtLimit } from "./enrolment.contract.ts";
+export { DefineCourseContract, SubscribeContract } from "./enrolment.contract.ts";
 
 // #region define-course
 export const DefineCourse = defineCommand({
-  name: "define_course",
-  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
+  ...DefineCourseContract,
   // defining the same course twice is a conflict, not a silent no-op
   idempotentBy: (c) => CourseDefined.where({ course_id: c.courseId }),
   onDuplicate: "fail",
@@ -65,9 +53,7 @@ export const DefineCourse = defineCommand({
 
 // #region subscribe
 export const Subscribe = defineCommand({
-  name: "subscribe",
-  errors: [CourseNotFound, CourseFull, StudentAtLimit],
-  input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
+  ...SubscribeContract,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
   decide: ({ course, student }, c) =>

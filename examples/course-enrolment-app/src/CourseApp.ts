@@ -13,12 +13,20 @@ import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import type { ViewWaiter } from "@crablet/commands-http/ViewWaiter";
-import { COURSE_SEATS_VIEW, courseCommands, makeCourseApi } from "./CourseApi.ts";
+import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
+import type { Implementations } from "@crablet/commands-http";
+import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
 import { courseSeatsViewSubscription, makeCourseSeatsViewProjector } from "./views/CourseSeatsViewProjector.ts";
 
 // The API definition lives in CourseApi.ts (browser-safe); re-exported so existing imports keep working.
 export { courseApiInfo, makeCourseApi } from "./CourseApi.ts";
+
+// #region implementations
+// The server's side of the contracts: the command built from each one. A missing or extra command does not compile, and one that was not
+// built from its contract is refused when the layer is built.
+const courseImplementations: Implementations<typeof courseContracts> = { define_course: DefineCourse, subscribe: Subscribe };
+// #endregion implementations
 
 export interface CourseAppConfig {
   readonly basePath?: string;
@@ -43,7 +51,7 @@ const courseViewWaiters: Readonly<Record<string, ViewWaiter>> = {
 export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = makeCourseApi(basePath);
-  const commandsLive = makeCommandApiGroupLive(api, courseCommands, { basePath, viewWaiters: courseViewWaiters });
+  const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath, viewWaiters: courseViewWaiters });
   const queryLive = makeCourseQueryApiLive(api);
   const served = Layer.merge(
     HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive)),

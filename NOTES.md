@@ -1094,3 +1094,7 @@ asserts the model directly (queries, fold, both regressions).
 - `commandContract({ name, input, errors })` (`@crablet/commands/Contract`) is the PUBLIC part of a command; the server spreads it into the unchanged `defineCommand({ ...Contract, model, decide })` (declare the contract as its own const - inline in the spread the error list is silently loosened). `makeCommandApiGroup`/`makeCommandApi` accept a list of contracts; the Live functions take `(contracts, implementations)` and check at construction that each command was built from its contract (`ContractMismatch`). The registry form stays until phase 3.
 - Node strip-only mode rejects constructor parameter properties (`constructor(readonly x: T)`); Bun does not, so unit tests cannot catch it. Only `node --test` imports reveal it.
 
+## Contracts, phase 2: the course app (docs/plans/api-follow-ups.md item F)
+- `domain/enrolment.contract.ts` (errors + `DefineCourseContract` + `SubscribeContract`, no behavior) and `domain/Enrolment.ts` (events, models, `defineCommand({ ...Contract, ... })`). The API definition (`CourseApi.ts`, `CourseQueryApi.ts`) imports only the contract module; the page's bundle no longer contains `Enrolment.ts` or the command pipeline, and the browser-safety guard enforces it (it fails on the previous layout).
+- The server registers `courseImplementations: Implementations<typeof courseContracts>`; a missing, extra or cross-assigned command is a compile error, and a command not built from its contract is refused at startup.
+

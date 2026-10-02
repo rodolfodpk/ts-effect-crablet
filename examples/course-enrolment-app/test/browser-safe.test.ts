@@ -16,7 +16,10 @@ const SERVER_ONLY = [
   /sql-pg/,
   /[\\/]node_modules[\\/](\.bun[\\/])?pg[@\\/]/,
   /platform-node/,
-  /packages[\\/](event-poller|views|outbox|automations|db-migrations|test-support)[\\/]/
+  /packages[\\/](event-poller|views|outbox|automations|db-migrations|test-support)[\\/]/,
+  // the BEHAVIOR of the commands: the domain module that decides, and the pipeline that runs a decision
+  /[\\/]domain[\\/]Enrolment\.ts$/,
+  /packages[\\/]commands[\\/]src[\\/](Command|CommandExecutor|CommandDecision|Model|Event|Crablet)\.ts$/
 ];
 
 interface Bundled {
