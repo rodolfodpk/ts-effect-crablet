@@ -21,3 +21,4 @@ records that this repo is now its own product and no code or API follows that pr
 - [ADR-0010: A declarative command API (events, models, commands) over the append primitive](0010-declarative-command-api.md)
 - [ADR-0011: The HTTP API and its OpenAPI description are derived from the domain model](0011-http-api-from-the-domain-model.md)
 - [ADR-0012: Cursors are (transaction_id, position) pairs, not bare positions](0012-transaction-position-cursors.md)
+- [ADR-0013: How the public API evolves - additive versus breaking](0013-api-evolution-additive-vs-breaking.md)
