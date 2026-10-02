@@ -9,12 +9,12 @@
 // give different answers, as they do in real life when the view lags.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 import * as AsyncData from "foldkit/asyncData";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../../../course-enrolment-app/test/support/startCourseAppForTest.ts";
 import { applyAppMigrations } from "../../../course-enrolment-app/test/support/applyAppMigrations.ts";
-import { DefineCourse, Message, init, update, viewNote, type Model } from "../../src/main.ts";
+import { DefineCourse, Message, init, subscriptions, update, viewNote, type Model } from "../../src/main.ts";
 
 const DELAY_MS = 300;
 let db: TestDb;
@@ -228,6 +228,30 @@ describe("the page, driven against the real course app", () => {
       assert.strictEqual(lookupState(model), "problem:Unreachable");
     } finally {
       setBaseUrl(app.baseUrl);
+    }
+  });
+
+  // The two-tab demonstration: tab B has only the page's own live-update subscription (the real stream, the real server). Tab A writes; B is
+  // never asked to reload, and its list gets the course because the feed pinged it and its `update` read the list again.
+  it("a write in one tab shows up in another through the live feed", { timeout: 40_000 }, async () => {
+    const course = `0-${uid()}`; // sorts first, so it is on the list's first page
+    let tabB = await drive(init().model);
+    const listed = (m: Model) => AsyncData.isSuccess(m.courses.result) && m.courses.result.data.items.some((c) => c.courseId === course);
+    assert.ok(!listed(tabB));
+
+    const fiber = Effect.runFork(
+      subscriptions.seatMapFeed.dependenciesToStream({ enabled: true }).pipe(
+        Stream.runForEach((message) => Effect.promise(async () => { tabB = await drive(tabB, message as Message); }))
+      ) as Effect.Effect<void>
+    );
+    try {
+      await defineCourse(init().model, course, 4); // tab A
+      const start = Date.now();
+      while (!listed(tabB) && Date.now() - start < 15_000) await new Promise((r) => setTimeout(r, 100));
+      assert.ok(listed(tabB), "tab B's list has the course without B doing anything");
+      assert.strictEqual(tabB.feed, "live");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
     }
   });
 });

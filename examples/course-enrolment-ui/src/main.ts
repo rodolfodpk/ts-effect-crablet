@@ -3,15 +3,15 @@
 // The wire format (routes, response Schemas, the domain errors a refusal carries) comes from the API definition the server
 // serves, through ./api.ts. `import type` for types: Node strips types but does not drop imports, and the tests and the
 // end-to-end check import this file without a DOM.
-import { Effect, Schema } from "effect";
-import { Http } from "foldkit";
+import { Effect, Schema, Stream } from "effect";
+import { Http, Subscription } from "foldkit";
 import type { Runtime, Update } from "foldkit";
 import * as AsyncData from "foldkit/asyncData";
 import * as Command from "foldkit/command";
 import * as FieldValidation from "foldkit/fieldValidation";
 import type { Document, HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
-import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, listCourses, problemFromError, subscribeCall } from "./api.ts";
+import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, listCourses, problemFromError, reconnecting, seatMapChanges, subscribeCall } from "./api.ts";
 
 // MODEL
 
@@ -26,7 +26,11 @@ export const CourseList = AsyncData.Schema(CoursesShown, Problem);
 export const DefineResult = AsyncData.Schema(Defined, Problem);
 export const SubscribeResult = AsyncData.Schema(Subscribed, Problem);
 
+// The live-update feed: not connected yet, connected, or dropped and waiting to reconnect.
+export const FeedState = Schema.Literals(["connecting", "live", "reconnecting"]);
+
 export const Model = Schema.Struct({
+  feed: FeedState,
   // Ask the server to answer a write only once the seat map (the view the lookup reads) has caught up with it.
   waitForView: Schema.Boolean,
   // The course list: what the user typed into the filter, the filter in effect, and the pages loaded.
@@ -55,6 +59,10 @@ export const capacityRules = FieldValidation.makeRules({
 // MESSAGE
 
 export const Message = defineMessageUnion({
+  // From the live-update feed (see `subscriptions`): the seat map moved (also the first thing every connection says), or the connection dropped.
+  ReceivedSeatMapPing: {},
+  LostSeatMapFeed: {},
+
   ToggledWaitForView: {},
 
   ChangedCourseFilter: { value: Schema.String },
@@ -146,6 +154,17 @@ const readBack = (model: Model, courseId: string) => ({
 
 export const update = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
+    // The seat map moved: read again what the page shows from it - the list (its first page, under the filter in effect) and the course
+    // being looked at. A write made in another tab shows up here without a reload. It is a hint, not data, so the page asks the API.
+    ReceivedSeatMapPing: () => ({
+      model: { ...model, feed: "live" as const },
+      commands: [
+        FetchCourses({ q: model.courses.applied, after: null, append: false }),
+        ...(AsyncData.isSuccess(model.lookup) ? [FetchCourse({ courseId: model.lookup.data.courseId })] : [])
+      ]
+    }),
+    LostSeatMapFeed: () => ({ model: { ...model, feed: "reconnecting" as const } }),
+
     ToggledWaitForView: () => ({ model: { ...model, waitForView: !model.waitForView } }),
 
     ChangedCourseFilter: ({ value }) => ({ model: { ...model, courses: { ...model.courses, filter: value } } }),
@@ -270,6 +289,7 @@ const emptyField = FieldValidation.NotValidated({ value: "" });
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
   commands: [FetchCourses({ q: "", after: null, append: false })],
   model: {
+    feed: "connecting",
     waitForView: true,
     courses: { filter: "", applied: "", result: AsyncData.Loading() },
     justWrote: null,
@@ -279,6 +299,27 @@ export const init: Runtime.ApplicationInit<Model, Message> = () => ({
     subscribe: { studentId: emptyField, courseId: emptyField, result: AsyncData.Idle() }
   }
 });
+
+// SUBSCRIPTIONS
+
+// #region subscription
+// One connection for the page's life, kept open by `reconnecting` (backoff after a drop). Pings arriving close together (a burst of writes) are
+// merged into one read.
+export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+  seatMapFeed: entry(
+    { enabled: Schema.Boolean },
+    {
+      modelToDependencies: () => ({ enabled: true }),
+      dependenciesToStream: ({ enabled }) =>
+        enabled
+          ? reconnecting(seatMapChanges().pipe(Stream.debounce("150 millis")), (): Message => Message.ReceivedSeatMapPing(), (): Message => Message.LostSeatMapFeed()).pipe(
+              Stream.provide(Http.layer)
+            )
+          : Stream.empty
+    }
+  )
+}));
+// #endregion subscription
 
 // VIEW
 
@@ -321,6 +362,17 @@ export const viewNote = (outcome: CommandOutcome): string => {
   }
 };
 // #endregion view-note
+
+export const feedNote = (feed: Model["feed"]): string => {
+  switch (feed) {
+    case "live":
+      return "Live: the list updates when anyone's write reaches the seat map.";
+    case "reconnecting":
+      return "Live updates lost; reconnecting...";
+    case "connecting":
+      return "Connecting for live updates...";
+  }
+};
 
 const resultOf = <A>(result: AsyncData.AsyncData<A, Problem>, h: HtmlBuilder<Message>, success: (data: A) => string) =>
   AsyncData.match(result, {
@@ -388,6 +440,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
     [],
     [
       h.h1([], ["Course enrolment"]),
+      h.p([h.Class("muted"), h.AriaLabel("Live updates")], [feedNote(model.feed)]),
 
       h.label(
         [h.Class("wait-toggle")],

@@ -4,7 +4,7 @@
 // the routes, the request and response Schemas, and for every command the exact set of problems it can answer with. The
 // derived client is typed per command from that definition, so this file keeps no copy of any of it and needs no cast.
 // It imports no foldkit, so tests and the end-to-end check can use it.
-import { Effect, Schema } from "effect";
+import { Duration, Effect, Ref, Schema, Stream } from "effect";
 import { HttpApiClient } from "effect/http-api";
 import { COURSE_SEATS_VIEW, CourseResponse, ViewWaitResult, makeCourseApi } from "course-enrolment-app/CourseApi";
 
@@ -16,6 +16,50 @@ import { COURSE_SEATS_VIEW, CourseResponse, ViewWaitResult, makeCourseApi } from
 export const apiBaseUrl: string | undefined = (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || undefined;
 const makeClient = () => HttpApiClient.make(makeCourseApi(), apiBaseUrl === undefined ? {} : { baseUrl: apiBaseUrl });
 // #endregion client
+
+// #region feed
+// The live-update feed: a stream of "the seat map moved" pings (`GET /api/views/changes`, server-sent events), typed by the same API
+// definition. It ends when the connection does (the server closes each after a maximum lifetime, or the network drops); `reconnecting` below
+// opens it again.
+export const seatMapChanges = () =>
+  Stream.unwrap(Effect.flatMap(makeClient(), (client) => client.courseFeed.viewChanges({ query: { views: COURSE_SEATS_VIEW } })));
+
+// How long to wait before reconnecting after `failures` connections in a row that ended without delivering anything: 0.5 s, doubling, at most 30 s.
+export const reconnectDelay = (failures: number): Duration.Duration =>
+  Duration.millis(Math.min(30_000, 500 * 2 ** Math.max(0, failures - 1)));
+
+// Keeps a feed open for ever. Each ping becomes `onPing()`. When the connection ends, `onLost()` is sent, then it waits (`reconnectDelay`, reset by the
+// next ping) and connects again. The opening ping of every connection is what makes the page read again after a gap.
+export const reconnecting = <A, E, R, M>(
+  open: Stream.Stream<A, E, R>,
+  onPing: () => M,
+  onLost: () => M,
+  delay: (failures: number) => Duration.Duration = reconnectDelay
+): Stream.Stream<M, never, R> =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const failures = yield* Ref.make(0);
+      const delivered = yield* Ref.make(false);
+      // A connection that delivered something and then ended (the server's lifetime limit) is not a failure: it reconnects after the base delay.
+      const next = Ref.get(delivered).pipe(
+        Effect.flatMap((ok) => (ok ? Ref.set(failures, 0).pipe(Effect.as(1)) : Ref.updateAndGet(failures, (n) => n + 1)))
+      );
+      const once = Stream.fromEffect(Ref.set(delivered, false)).pipe(
+        Stream.drain,
+        Stream.concat(open),
+        Stream.tap(() => Ref.set(delivered, true)),
+        Stream.map(onPing),
+        Stream.catch(() => Stream.empty),
+        Stream.concat(
+          Stream.fromEffect(next).pipe(
+            Stream.flatMap((n) => Stream.make(onLost()).pipe(Stream.concat(Stream.fromEffect(Effect.sleep(delay(n))).pipe(Stream.drain))))
+          )
+        )
+      );
+      return Stream.forever(once);
+    })
+  );
+// #endregion feed
 
 // What a command answered: created, or "already done" (an idempotent repeat) with the reason; and, when the request
 // asked to wait for a view (`?waitFor=`), whether that view had caught up with the write when the answer was sent.

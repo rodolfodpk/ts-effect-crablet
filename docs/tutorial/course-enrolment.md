@@ -779,6 +779,15 @@ Building a client is the quickest way to find what an API is missing. Each of th
 
 ---
 
+### Live updates (a second tab)
+
+Open the page in two browser tabs. Define a course in one: the other's list gets it without a reload. Waiting (`?waitFor`) is for *the tab that wrote*; the
+other tab learns by a **ping**. Each progress step of a view sends a Postgres `NOTIFY` after it commits, the server turns it into a server-sent event on
+`GET /api/views/changes?views=course-seats-view`, and the page's Foldkit *Subscription* turns each event into a Message (`ReceivedSeatMapPing`) that makes
+`update` read the list again. The ping carries no data, only "the seat map moved", so the page always asks the API and a missed ping costs nothing: every
+(re)connection starts with one. If the connection drops, the page says so and reconnects with a growing delay (0.5 s, doubling, at most 30 s). The code is the
+`subscriptions` in `main.ts` and `reconnecting` in `api.ts`; `test/integration/page-against-server.test.ts` runs the two-tab case against the real server.
+
 ## Clean up, and where next
 
 Stop the server and the page (Ctrl-C) and remove the database:
