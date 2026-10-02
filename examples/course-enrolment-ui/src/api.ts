@@ -60,8 +60,8 @@ export const Problem = Schema.Union([
   // The framework's own refusals: a 400 (the input did not parse) and a 409 (for example, a course that already exists).
   Schema.TaggedStruct("Rejected", { title: Schema.String, detail: Schema.String }),
   // The derived client checks a request against the API's own Schema BEFORE sending it, and checks the answer against the
-  // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). The server's own 400
-  // only says "Invalid payload for command", so this is the more precise of the two.
+  // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). (The server's own 400
+  // names the failing fields too, in its `errors` member, for clients that do not validate first.)
   Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
   // Not from the server: the page's reading of a "no such course" it just wrote itself (the seat map lags behind writes).
   Schema.TaggedStruct("NotInSeatMapYet", { courseId: Schema.String }),
@@ -94,7 +94,11 @@ export const problemFromError = (error: CallError): Problem => {
     }
   }
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
-  if ("title" in error) return { _tag: "Rejected", title: error.title, detail: error.detail };
+  if ("title" in error) {
+    // a 400 for a body that did not match the input says which fields (`errors`), by path
+    const fields = "errors" in error && error.errors !== undefined ? error.errors.map((issue) => `${issue.path.join(".") || "(body)"}: ${issue.message}`).join("; ") : "";
+    return { _tag: "Rejected", title: error.title, detail: fields === "" ? error.detail : `${error.detail} (${fields})` };
+  }
   return { _tag: "Unreachable" };
 };
 // #endregion problems

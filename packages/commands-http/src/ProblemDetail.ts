@@ -19,17 +19,35 @@ export const CommandApiBadRequestType = "urn:crablet:problem:command-api:bad-req
 export const CommandApiDcbConcurrencyType = "urn:crablet:problem:command-api:dcb-concurrency";
 export const CommandApiUnexpectedErrorType = "urn:crablet:problem:command-api:unexpected-error";
 
+// One thing wrong with the request body: where (a path into it: property names and array indexes) and what, in the
+// schema check's own words. Never the received value.
+export const InputIssueProblem = Schema.Struct({
+  path: Schema.Array(Schema.Union([Schema.String, Schema.Int])).annotate({
+    description: "Where in the request body: property names and array indexes, outermost first."
+  } as never),
+  message: Schema.String
+}).annotate({ identifier: "InputIssue" } as never);
+
 export class CommandApiBadRequest extends Schema.Class<CommandApiBadRequest>("CommandApiBadRequest")(
   {
     type: Schema.Literal(CommandApiBadRequestType),
     title: Schema.Literal("Bad Request"),
     status: Schema.Literal(400),
-    detail: Schema.String
+    detail: Schema.String,
+    // Present when the body parsed but did not match the command's input: one entry per failed field (RFC 7807 allows
+    // extension members). Absent for a body that is not valid JSON, and for the other 400s (an unknown view, a bad header).
+    errors: Schema.optionalKey(Schema.Array(InputIssueProblem))
   },
   { httpApiStatus: 400 }
 ) {
-  static of(detail: string): CommandApiBadRequest {
-    return new CommandApiBadRequest({ type: CommandApiBadRequestType, title: "Bad Request", status: 400, detail });
+  static of(detail: string, errors?: ReadonlyArray<{ readonly path: ReadonlyArray<string | number>; readonly message: string }>): CommandApiBadRequest {
+    return new CommandApiBadRequest({
+      type: CommandApiBadRequestType,
+      title: "Bad Request",
+      status: 400,
+      detail,
+      ...(errors !== undefined && errors.length > 0 ? { errors } : {})
+    });
   }
 }
 

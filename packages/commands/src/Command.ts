@@ -9,7 +9,7 @@ import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
 import * as CD from "./CommandDecision.ts";
 import type { CommandHandler } from "./CommandExecutor.ts";
-import { InvalidInput, type AnyDomainErrorClass, type KindedError } from "./Errors.ts";
+import { InvalidInput, inputIssuesOf, type AnyDomainErrorClass, type KindedError } from "./Errors.ts";
 import type { ModelInstance } from "./Model.ts";
 
 // A command is one declaration of "what happens when this request arrives":
@@ -153,10 +153,12 @@ export const defineCommand = <
   const duplicates: "return" | "fail" = def.onDuplicate ?? "return";
 
   const decode = Schema.decodeUnknownEffect(def.input as unknown as Schema.Decoder<unknown>) as (
-    raw: unknown
+    raw: unknown,
+    options?: { readonly errors?: "first" | "all" }
   ) => Effect.Effect<In, Schema.SchemaError>;
+  // `errors: "all"`: report EVERY failed field, not just the first, so a client can fix them in one go.
   const decodeInput = (raw: unknown) =>
-    Effect.mapError(decode(raw), (e) => new InvalidInput({ message: e.message }));
+    Effect.mapError(decode(raw, { errors: "all" }), (e) => new InvalidInput({ message: e.message, issues: inputIssuesOf(e) }));
 
   const handler = ((input: In) =>
     Effect.gen(function* () {

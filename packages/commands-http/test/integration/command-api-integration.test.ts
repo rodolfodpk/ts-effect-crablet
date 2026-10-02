@@ -223,6 +223,8 @@ describe("commands-http integration (real Postgres)", () => {
       const body = await jsonBody(res);
       assert.strictEqual(body.status, 400);
       assert.strictEqual(body.detail, "Invalid payload for command: open_wallet");
+      // and says WHICH field, by path, without echoing the value that was sent
+      assert.deepStrictEqual(body["errors"], [{ path: ["walletId"], message: "Expected string" }]);
     });
   });
 
@@ -236,6 +238,7 @@ describe("commands-http integration (real Postgres)", () => {
       assert.strictEqual(res.status, 400);
       const body = await jsonBody(res);
       assert.strictEqual(body.detail, "Invalid payload for command: open_wallet");
+      assert.ok(!("errors" in body), "a body that is not JSON has no fields to blame");
     });
   });
 

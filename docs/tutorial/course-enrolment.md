@@ -299,7 +299,7 @@ content-type: application/problem+json
 
 The refusal is an RFC 7807 problem. You wrote no code for it: the status comes from the error's `kind` (`conflict` -> 409,
 `not_found` -> 404), the body carries the error's own fields, and the response is `application/problem+json`. A payload that does not
-match the command's input is a 400 problem, and defining a course twice is the framework's 409:
+match the command's input is a 400 problem that names every failing field by path (`errors`, never the value you sent), and defining a course twice is the framework's 409:
 
 ```bash
 curl -s -X POST localhost:8080/api/commands/define_course \
@@ -309,7 +309,7 @@ curl -s -X POST localhost:8080/api/commands/subscribe \
 ```
 
 ```
-{"type":"urn:crablet:problem:command-api:bad-request","title":"Bad Request","status":400,"detail":"Invalid payload for command: define_course"}
+{"type":"urn:crablet:problem:command-api:bad-request","title":"Bad Request","status":400,"detail":"Invalid payload for command: define_course","errors":[{"path":["capacity"],"message":"Expected a value greater than or equal to 1"}]}
 {"type":"urn:crablet:problem:command-api:not-found","title":"Not Found","status":404,"detail":"CourseNotFound","errorType":"CourseNotFound","fields":{"courseId":"ghost"}}
 ```
 
@@ -557,8 +557,8 @@ export const Problem = Schema.Union([
   // The framework's own refusals: a 400 (the input did not parse) and a 409 (for example, a course that already exists).
   Schema.TaggedStruct("Rejected", { title: Schema.String, detail: Schema.String }),
   // The derived client checks a request against the API's own Schema BEFORE sending it, and checks the answer against the
-  // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). The server's own 400
-  // only says "Invalid payload for command", so this is the more precise of the two.
+  // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). (The server's own 400
+  // names the failing fields too, in its `errors` member, for clients that do not validate first.)
   Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
   // Not from the server: the page's reading of a "no such course" it just wrote itself (the seat map lags behind writes).
   Schema.TaggedStruct("NotInSeatMapYet", { courseId: Schema.String }),
@@ -591,7 +591,11 @@ export const problemFromError = (error: CallError): Problem => {
     }
   }
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
-  if ("title" in error) return { _tag: "Rejected", title: error.title, detail: error.detail };
+  if ("title" in error) {
+    // a 400 for a body that did not match the input says which fields (`errors`), by path
+    const fields = "errors" in error && error.errors !== undefined ? error.errors.map((issue) => `${issue.path.join(".") || "(body)"}: ${issue.message}`).join("; ") : "";
+    return { _tag: "Rejected", title: error.title, detail: fields === "" ? error.detail : `${error.detail} (${fields})` };
+  }
   return { _tag: "Unreachable" };
 };
 ```
@@ -672,8 +676,8 @@ Building a client is the quickest way to find what an API is missing. Each of th
 
 - **A view is not the truth.** "There is no course called X" right after "Defined course X" is true of the seat map and false of the course. The page treats an error from a view as being about the view.
 - **The command client is typed per command** only while the registry keeps its literal keys (step 3): annotate it as a `Record<string, ...>` and the client falls back to one loosely typed endpoint.
-- **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`). The server's own 400 only says `Invalid payload for command`,
-  so the client is more precise than the server; non-TypeScript clients get nothing.
+- **The derived client validates requests with the server's own Schema** before sending, and its error names the field (`capacity`), so this page never sees the server's 400 for a bad payload. A client that does
+  not validate first (curl, another language, a generated client) gets the same information from the server: the 400 problem lists every failing field in `errors`, with a path and the check's message.
 - **No CORS** in `commands-http`: a browser app on another origin needs a proxy or its own handling.
 - **No list or search endpoint**, so the page asks for a course id.
 - **No live updates**: a second tab does not see a subscription until it reads. Views are asynchronous and there is no push channel.

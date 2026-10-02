@@ -606,6 +606,12 @@
           },
           "detail": {
             "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputIssue"
+            }
           }
         },
         "required": [
@@ -613,6 +619,33 @@
           "title",
           "status",
           "detail"
+        ],
+        "additionalProperties": false
+      },
+      "InputIssue": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "description": "Where in the request body: property names and array indexes, outermost first."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
         ],
         "additionalProperties": false
       },

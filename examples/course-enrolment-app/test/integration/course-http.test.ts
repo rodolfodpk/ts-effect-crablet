@@ -82,7 +82,21 @@ describe("tutorial step 3: the HTTP API", () => {
 
     const bad = await post("define_course", { courseId: "x", capacity: 0 });
     assert.strictEqual(bad.status, 400);
-    assert.strictEqual((await json(bad))["detail"], "Invalid payload for command: define_course");
+    const badBody = await json(bad);
+    assert.strictEqual(badBody["detail"], "Invalid payload for command: define_course");
+    assert.deepStrictEqual(badBody["errors"], [{ path: ["capacity"], message: "Expected a value greater than or equal to 1" }]);
+  });
+
+  it("a payload with several wrong fields reports all of them at once, and never the values sent", async () => {
+    const res = await post("define_course", { courseId: 5, capacity: "SECRET-VALUE" });
+    assert.strictEqual(res.status, 400);
+    const text = await res.text();
+    const body = JSON.parse(text) as Record<string, unknown>;
+    assert.deepStrictEqual(body["errors"], [
+      { path: ["courseId"], message: "Expected string" },
+      { path: ["capacity"], message: "Expected number" }
+    ]);
+    assert.ok(!text.includes("SECRET-VALUE"), "the value that was sent is not echoed");
   });
 
   it("serves its own OpenAPI document - the one checked in at docs/api - and no docs page unless asked for", async () => {

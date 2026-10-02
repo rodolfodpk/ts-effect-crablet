@@ -1,11 +1,35 @@
-import { Data } from "effect";
+import { Data, SchemaIssue } from "effect";
 import type * as Cause from "effect/Cause";
 import type * as Schema from "effect/Schema";
 import type { VoidIfEmpty } from "effect/Types";
 
+// One thing wrong with a command's input: WHERE (a path into the input: property names and array indexes) and WHAT, in the
+// schema check's own words. Built-in checks never include the received value ("Expected string", "Expected a value greater
+// than or equal to 1"); a custom message on a check is the one way a value could end up here, so transports that show
+// issues to clients must not add the value themselves.
+export interface InputIssue {
+  readonly path: ReadonlyArray<string | number>;
+  readonly message: string;
+}
+
 // Command input failed its schema (wrong shape, out-of-range value, ...). Distinct from a domain
-// error: it says the request was malformed, not that a business rule refused it.
-export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly message: string }> {}
+// error: it says the request was malformed, not that a business rule refused it. `message` is the schema's whole
+// report (several lines); `issues` is the same thing as data, one entry per failed check, for a transport to present.
+export class InvalidInput extends Data.TaggedError("InvalidInput")<{
+  readonly message: string;
+  readonly issues?: ReadonlyArray<InputIssue>;
+}> {}
+
+// The issues of a failed decode, as data. (The Standard Schema formatter is what Effect itself uses for tools that expect
+// `{ path, message }`; a path segment is a key or an object wrapping one.)
+export const inputIssuesOf = (error: Schema.SchemaError): ReadonlyArray<InputIssue> =>
+  SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map((issue) => ({
+    path: (issue.path ?? []).map((segment) => {
+      const key = typeof segment === "object" && segment !== null ? segment.key : segment;
+      return typeof key === "number" ? key : String(key);
+    }),
+    message: issue.message
+  }));
 
 // A neutral category for a domain error. Deliberately NOT an HTTP status: the domain says what
 // KIND of refusal this is; a transport layer (commands-http) decides how to present each kind.

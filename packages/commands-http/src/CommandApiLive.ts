@@ -14,7 +14,7 @@ import type { ExposedCommand } from "./ExposedCommand.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
 import { defaultWaitTimeoutMs, maxWaitTimeoutMs, type ViewWaiter } from "./ViewWaiter.ts";
-import { kindOf } from "@crablet/commands/Errors";
+import { kindOf, type InputIssue } from "@crablet/commands/Errors";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, domainProblemOf } from "./ProblemDetail.ts";
 
 // What running a command needs from the environment: the executor plus what `execute` itself uses.
@@ -108,10 +108,10 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
   const handleCommand = (commandType: string, entry: ExposedCommand<any, any>) =>
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const invalidPayload = () => CommandApiBadRequest.of(`Invalid payload for command: ${commandType}`);
-      const raw = yield* request.json.pipe(Effect.mapError(invalidPayload));
-      // Validation belongs to the command itself: its input schema.
-      const input = yield* entry.command.decodeInput(raw).pipe(Effect.mapError(invalidPayload));
+      const invalidPayload = (issues?: ReadonlyArray<InputIssue>) => CommandApiBadRequest.of(`Invalid payload for command: ${commandType}`, issues);
+      const raw = yield* request.json.pipe(Effect.mapError(() => invalidPayload()));
+      // Validation belongs to the command itself: its input schema. Every failed field is reported, by path.
+      const input = yield* entry.command.decodeInput(raw).pipe(Effect.mapError((error) => invalidPayload(error.issues)));
 
       const wait = yield* parseWait(request);
       const correlationId = yield* resolveCorrelationId;

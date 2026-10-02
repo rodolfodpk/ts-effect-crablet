@@ -44,6 +44,21 @@ describe("problemFromError", () => {
     });
   });
 
+  test("a 400 that names the failing fields shows them, by path", () => {
+    expect(
+      problemFromError(
+        CommandApiBadRequest.of("Invalid payload for command: define_course", [
+          { path: ["capacity"], message: "Expected a value greater than or equal to 1" },
+          { path: ["user", "tags", 1], message: "Expected string" }
+        ])
+      )
+    ).toEqual({
+      _tag: "Rejected",
+      title: "Bad Request",
+      detail: "Invalid payload for command: define_course (capacity: Expected a value greater than or equal to 1; user.tags.1: Expected string)"
+    });
+  });
+
   test("a request the derived client refuses to send (its Schema is the server's) names the field", () => {
     let error: unknown;
     try {
