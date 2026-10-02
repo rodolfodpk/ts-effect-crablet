@@ -278,7 +278,7 @@ Start the server (add `COURSES_DOCS=scalar` to also serve a documentation page a
 COURSES_DOCS=scalar node src/index.ts
 ```
 
-In another terminal. Define a course and subscribe a student (the `lastPosition` numbers will differ on your machine):
+In another terminal. Define a course and subscribe a student (the `lastPosition` and `lastTransactionId` numbers will differ on your machine):
 
 ```bash
 curl -si -X POST localhost:8080/api/commands/define_course \
@@ -289,7 +289,7 @@ curl -si -X POST localhost:8080/api/commands/define_course \
 HTTP/1.1 201 Created
 content-type: application/json
 
-{"status":"CREATED","reason":null,"lastPosition":"10"}
+{"status":"CREATED","reason":null,"lastPosition":"10","lastTransactionId":"10"}
 ```
 
 ```bash
@@ -300,8 +300,8 @@ curl -s -X POST localhost:8080/api/commands/subscribe \
 ```
 
 ```
-{"status":"CREATED","reason":null,"lastPosition":"11"}
-{"status":"IDEMPOTENT","reason":"ALREADY_SUBSCRIBED","lastPosition":null}
+{"status":"CREATED","reason":null,"lastPosition":"11","lastTransactionId":"11"}
+{"status":"IDEMPOTENT","reason":"ALREADY_SUBSCRIBED","lastPosition":null,"lastTransactionId":null}
 ```
 
 The second call is a repeat: `200` and "already done", with nothing written. Now fill the course and ask for a third seat:
@@ -314,7 +314,7 @@ curl -si -X POST localhost:8080/api/commands/subscribe \
 ```
 
 ```
-{"status":"CREATED","reason":null,"lastPosition":"12"}
+{"status":"CREATED","reason":null,"lastPosition":"12","lastTransactionId":"12"}
 HTTP/1.1 409 Conflict
 content-type: application/problem+json
 
@@ -498,9 +498,9 @@ curl -s localhost:8080/api/courses/physics-201
 ```
 
 ```
-{"status":"CREATED","reason":null,"lastPosition":"13","view":{"name":"course-seats-view","caughtUp":true}}
+{"status":"CREATED","reason":null,"lastPosition":"13","lastTransactionId":"13","view":{"name":"course-seats-view","caughtUp":true}}
 {"courseId":"physics-201","capacity":3,"subscribers":0,"seatsLeft":3}
-{"status":"CREATED","reason":null,"lastPosition":"14","view":{"name":"course-seats-view","caughtUp":true}}
+{"status":"CREATED","reason":null,"lastPosition":"14","lastTransactionId":"14","view":{"name":"course-seats-view","caughtUp":true}}
 {"courseId":"physics-201","capacity":3,"subscribers":1,"seatsLeft":2}
 ```
 

@@ -165,8 +165,8 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       // chosen here, after the command ran.
       return HttpServerResponse.jsonUnsafe(
         result.wasIdempotent
-          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, ...(view !== undefined ? { view } : {}) }
-          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), ...(view !== undefined ? { view } : {}) },
+          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, lastTransactionId: null, ...(view !== undefined ? { view } : {}) }
+          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, ...(view !== undefined ? { view } : {}) },
         {
           status: result.wasIdempotent ? 200 : 201,
           ...(correlationId !== null ? { headers: { [CORRELATION_HEADER]: correlationId } } : {})

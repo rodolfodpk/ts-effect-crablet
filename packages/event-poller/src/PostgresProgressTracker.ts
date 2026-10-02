@@ -15,6 +15,12 @@ import { assertSafeIdentifier } from "./internal/identifiers.ts";
 export interface ProgressTableSpec {
   readonly tableName: string;
   readonly idColumn: string;
+  // Opt-in: when set, every `updateCursor` also sends a `pg_notify` on this channel, in the SAME statement as the update, so the ping is
+  // delivered only once the new cursor has committed (a listener that reads the table after a ping sees it). The payload is JSON,
+  // `{ "id": "<the processor id>", "transactionId": "<xid>", "position": "<position>" }` (see ProgressPing.ts). Views turn it on
+  // (their feed pings clients); automations and the outbox do not. Best effort: a notification is not stored, so a listener must re-read
+  // on reconnect rather than rely on having seen every ping.
+  readonly notifyChannel?: string;
 }
 
 // The Postgres error (with its SQLSTATE `code`) is the `cause` of the SqlError's `reason`.
@@ -76,13 +82,25 @@ export const makePostgresProgressTracker = <I extends string>(
       );
 
     const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void, SqlError> =>
-      Effect.asVoid(
-        sql.unsafe(
-          `UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
-           WHERE ${idCol} = $1`,
-          [id, cursor.position.toString(), cursor.transactionId]
-        )
-      );
+      spec.notifyChannel === undefined
+        ? Effect.asVoid(
+            sql.unsafe(
+              `UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
+               WHERE ${idCol} = $1`,
+              [id, cursor.position.toString(), cursor.transactionId]
+            )
+          )
+        : // One statement: the update and the notify commit together, and no row means no notify.
+          Effect.asVoid(
+            sql.unsafe(
+              `WITH updated AS (
+                 UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
+                 WHERE ${idCol} = $1
+                 RETURNING ${idCol} AS id, last_transaction_id::text AS transaction_id, last_position::text AS position)
+               SELECT pg_notify($4, json_build_object('id', id, 'transactionId', transaction_id, 'position', position)::text) FROM updated`,
+              [id, cursor.position.toString(), cursor.transactionId, spec.notifyChannel]
+            )
+          );
 
     const recordError = (id: I, error: string, maxErrors: number): Effect.Effect<void, SqlError> =>
       Effect.asVoid(

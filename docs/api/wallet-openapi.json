@@ -1171,6 +1171,9 @@
           "lastPosition": {
             "type": "null"
           },
+          "lastTransactionId": {
+            "type": "null"
+          },
           "view": {
             "$ref": "#/components/schemas/ViewWaitResult"
           }
@@ -1178,7 +1181,8 @@
         "required": [
           "status",
           "reason",
-          "lastPosition"
+          "lastPosition",
+          "lastTransactionId"
         ],
         "additionalProperties": false
       },
@@ -1222,6 +1226,9 @@
           "lastPosition": {
             "type": "string"
           },
+          "lastTransactionId": {
+            "type": "string"
+          },
           "view": {
             "$ref": "#/components/schemas/ViewWaitResult"
           }
@@ -1229,7 +1236,8 @@
         "required": [
           "status",
           "reason",
-          "lastPosition"
+          "lastPosition",
+          "lastTransactionId"
         ],
         "additionalProperties": false
       },

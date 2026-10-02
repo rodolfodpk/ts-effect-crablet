@@ -7,6 +7,7 @@ import { wakeupStream } from "@crablet/eventstore/Listen";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
+import { VIEW_PROGRESS_CHANNEL } from "./ViewProgress.ts";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ViewProjector } from "./ViewProjector.ts";
 import type { ViewSubscription } from "./ViewSubscription.ts";
@@ -39,7 +40,8 @@ export const makeViewsProcessor = (
 
     const progressTracker = yield* makePostgresProgressTracker<string>({
       tableName: "crablet_view_progress",
-      idColumn: "view_name"
+      idColumn: "view_name",
+      notifyChannel: VIEW_PROGRESS_CHANNEL
     });
     const fetcher = yield* makeViewEventFetcher(deps.subscriptions);
     const handler = makeViewEventHandler(deps.projectors);

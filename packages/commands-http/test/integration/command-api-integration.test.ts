@@ -148,6 +148,7 @@ describe("commands-http integration (real Postgres)", () => {
       assert.strictEqual(body.status, "CREATED");
       assert.strictEqual(body.reason, null);
       assert.match(String(body.lastPosition), /^\d+$/, "the position of the last appended event, as a string");
+      assert.match(String(body.lastTransactionId), /^\d+$/, "the transaction that wrote it, as a string");
     });
 
     const row = await getEventRow(`WalletOpened`);
@@ -174,6 +175,7 @@ describe("commands-http integration (real Postgres)", () => {
       assert.strictEqual(body.status, "IDEMPOTENT");
       assert.ok(body.reason, "expected a non-empty idempotency reason");
       assert.strictEqual(body.lastPosition, null, "a repeat appended nothing");
+      assert.strictEqual(body.lastTransactionId, null);
     });
   });
 

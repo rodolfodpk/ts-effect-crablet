@@ -211,7 +211,7 @@ yield* waitUntilProcessed(walletBalanceViewSubscription, { transactionId: result
 Over HTTP it is a query parameter: `POST /api/commands/deposit?waitFor=wallet-balance-view` answers once that view has
 the write, so the caller's next read is not stale. The app lists which views can be waited for (`viewWaiters` in
 `CommandApiConfig`, an entry per view; `commands-http` does not depend on the views package) and those names appear in
-the API description. The response always carries `lastPosition` (a string) and, when asked, `view: { name, caughtUp }`.
+the API description. The response always carries `lastPosition` and `lastTransactionId` (strings; together the write's cursor) and, when asked, `view: { name, caughtUp }`.
 A view that did not catch up in time (`timeout`), is `view_failed`, or could not be read (`unavailable`) is reported there
 - never as an error status, because the command itself succeeded and retrying it would be wrong. An unknown `waitFor`
 or a bad `waitTimeout` (1-30000 ms, default 5000) is a 400 before the command runs.

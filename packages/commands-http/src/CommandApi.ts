@@ -22,7 +22,8 @@ import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, probl
 
 // What running a command reports. `lastPosition` is the log position of the last event it appended (as a
 // string: the position is a bigint and JSON cannot carry one); an idempotent repeat appended nothing, so
-// it has none. Created is 201, an idempotent repeat 200.
+// it has none. `lastTransactionId` is the transaction that wrote it (also a string): with the position it is the write's
+// cursor, which a client compares with a view's progress to know the view has caught up. Created is 201, an idempotent repeat 200.
 //
 // `view` is present only when the request asked to wait for a view (`?waitFor=`): whether that view had caught up
 // to this write when the response was sent. The write itself has succeeded either way - a view that did not catch
@@ -39,6 +40,7 @@ export const CommandCreatedResponse = Schema.Struct({
   status: Schema.Literal("CREATED"),
   reason: Schema.Null,
   lastPosition: Schema.String,
+  lastTransactionId: Schema.String,
   view: Schema.optionalKey(ViewWaitResult)
 }).annotate({ httpApiStatus: 201, identifier: "CommandCreated" } as never);
 
@@ -46,6 +48,7 @@ export const CommandIdempotentResponse = Schema.Struct({
   status: Schema.Literal("IDEMPOTENT"),
   reason: Schema.NullOr(Schema.String),
   lastPosition: Schema.Null,
+  lastTransactionId: Schema.Null,
   view: Schema.optionalKey(ViewWaitResult)
 }).annotate({ httpApiStatus: 200, identifier: "CommandIdempotent" } as never);
 

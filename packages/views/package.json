@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./ViewProgress": "./src/ViewProgress.ts",
     ".": "./src/ViewsModule.ts",
     "./ViewProjector": "./src/ViewProjector.ts",
     "./ViewSubscription": "./src/ViewSubscription.ts",

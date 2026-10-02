@@ -125,7 +125,7 @@ describe("waiting for a view (read your own writes)", () => {
 
   test("the response says whether the view caught up (view is present only when asked for)", () => {
     const created = withViews.components.schemas.CommandCreated;
-    expect(created.required).toEqual(["status", "reason", "lastPosition"]);
+    expect(created.required).toEqual(["status", "reason", "lastPosition", "lastTransactionId"]);
     expect(Object.keys(created.properties)).toContain("view");
     const view = withViews.components.schemas.ViewWaitResult;
     expect(view.required).toEqual(["name", "caughtUp"]);

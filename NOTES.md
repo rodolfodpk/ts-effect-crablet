@@ -1103,3 +1103,8 @@ asserts the model directly (queries, fold, both regressions).
 - `@crablet/test-support/BrowserSafety` (Bun-only, `Bun.build`) is the shared in-process browser-bundling check; each app's `test/browser-safe.test.ts` forbids server-only modules, its behavior modules and the command pipeline in the bundle of its contracts / API definition, with the server entry as the negative control.
 - Net effect for a new exposed command: write its contract in the contract module, build the command with `defineCommand({ ...Contract, ... })`, add the contract to the list and the command to the implementations (a compile error says if either is forgotten).
 
+
+## Live updates, phase 1: the progress ping (docs/plans/api-follow-ups.md item E)
+- `ProgressTableSpec.notifyChannel` (opt-in per tracker): `updateCursor` becomes ONE statement - the UPDATE plus `pg_notify(channel, {id, transactionId, position})` - so the ping is delivered only when the advance commits, never on a failed batch. Views set it (`VIEW_PROGRESS_CHANNEL = "crablet_view_progress"`, `@crablet/views/ViewProgress`); automations and outbox do not. `@crablet/event-poller/ProgressPing` is the shared payload schema/decoder.
+- Tests: `event-poller/test/integration/progress-notify.test.ts` (a ping per advance, none on rollback, none without the channel) and `views/test/integration/view-progress-ping.test.ts` (a running view's ping covers the write's cursor; an idle view is silent).
+- The command response now carries `lastTransactionId` (string; `null` for an idempotent repeat) beside `lastPosition` - together the write's cursor, which a client compares with the ping. Additive; OpenAPI documents and tutorial outputs regenerated.
