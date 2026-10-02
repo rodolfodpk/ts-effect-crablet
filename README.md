@@ -216,6 +216,10 @@ A view that did not catch up in time (`timeout`), is `view_failed`, or could not
 - never as an error status, because the command itself succeeded and retrying it would be wrong. An unknown `waitFor`
 or a bad `waitTimeout` (1-30000 ms, default 5000) is a 400 before the command runs.
 
+A client that did *not* write learns of a change by a ping: when a view's progress commits it sends `pg_notify('crablet_view_progress')`, and the course
+app serves it as server-sent events (`GET /api/views/changes?views=course-seats-view`, each connection opening with where the view is now). The ping carries
+no data - the client reads again - and a missed one costs nothing. Why: [ADR-0014](./docs/adr/0014-live-updates-by-ping.md); the page side is in tutorial step 5.
+
 ## HTTP API and OpenAPI
 
 Declare the API from the commands' **contracts** (a command's public part: `commandContract({ name, input, errors })`; the behavior is added by spreading it into `defineCommand`) and the API gets a route for each, `POST /api/commands/<name>`, with no HTTP code:
