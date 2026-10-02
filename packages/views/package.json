@@ -21,6 +21,7 @@
     "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {
-    "@crablet/test-support": "workspace:*"
+    "@crablet/test-support": "workspace:*",
+    "pg": "8.23.0"
   }
 }
