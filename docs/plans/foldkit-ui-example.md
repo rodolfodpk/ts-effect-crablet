@@ -49,7 +49,7 @@ Define-course and subscribe forms, `foldkit/fieldValidation` on the inputs, Comm
 ### 3. Read your own writes (0.5 day) - DONE
 First the demo knob in the course app: `COURSES_VIEW_DELAY_MS` (see decision 3) with a test that a slowed view makes a read-without-wait stale and a `waitFor` read correct. Then the page:
 Subscribe with `?waitFor=course-seats-view`: on `view.caughtUp` follow with exactly one read; with the toggle off, follow immediately and let the page show the stale `seatsLeft` with a note; when `view.reason` is `timeout` / `view_failed`, say so instead of showing a possibly stale number. Tests for each branch of the response.
-### 4. An end-to-end check (0.5 day)
+### 4. An end-to-end check (0.5 day) - DONE
 A node:test integration test (`examples/course-enrolment-ui/test/integration/`) that starts the real course app on Postgres (the way `course-http.test.ts` does) and runs the UI's own Commands (the same Effects the page runs, with the Fetch client) against it: define, subscribe with `waitFor`, one read shows the new count; a refusal arrives with the fields the page needs. This proves the page's contract against the real server without a browser. Per spike answer (c) the test imports the program's `main.ts`, sets `globalThis.location = new URL(baseUrl)` so the relative URLs resolve, and runs each Command's Effect. (A browser smoke through the Chrome tooling is a manual step, listed under Verification.)
 ### 5. Docs (0.25 day)
 Tutorial step 5 (tested blocks), README pointer, ADR note only if the spike changed the API-definition layout. Record the findings below in NOTES.md.
@@ -67,6 +67,11 @@ Tutorial step 5 (tested blocks), README pointer, ADR note only if the spike chan
 - **A stale 404 reads as a lie.** "There is no course called X" right after "Defined course X" is true of the seat map and false of the course. The page remembers the course it just wrote (`justWrote`) and turns that one 404 into "was just written, but the seat map has not caught up yet"; a lookup the user types themselves keeps the plain message. Worth a sentence in the tutorial: a view is a different thing from the truth, and an error from it is about the view.
 - **`view` in the response is a first-class outcome, not an error.** `caughtUp: true`, or `false` with `timeout` / `view_failed` / `unavailable` / `nothing_appended` (an idempotent repeat), each with its own sentence on the page.
 - 30 UI tests (Story, Scene, pure) under bun.
+
+## Phase 4 results (the page against the real server, in the suite)
+- `examples/course-enrolment-ui/test/integration/page-against-server.test.ts` (node:test, Testcontainers) starts the real course app with the seats view held back 300 ms and drives the page's OWN `update` with the page's OWN Commands (real derived client, real `fetch`) through a ten-line driver that plays Foldkit's runtime: feed a Message to `update`, run each Command it returns, feed the result Messages back, stop when nothing is left. What it ends with is the Model the page would show. Seven cases: define then read back; waiting off is stale / waiting on is right (and really waits); an idempotent repeat; every refusal (`CourseFull` with its capacity, `CourseNotFound`, `StudentAtLimit` with its limit, the framework's duplicate-course conflict); a lookup of a never-defined course vs. a just-written one; the page's validation and the derived client's `Mismatch` naming the field; an unreachable server.
+- **No browser, no DOM, no mocks** - and no `contract.ts` fallback was needed: per the spike, `globalThis.location` supplies the base URL a browser would, and the test restores it afterwards.
+- The test is cheap (about 7 s after the container starts) and is picked up by the existing `test:integration` glob; the UI's pure tests are picked up by `test:unit`.
 
 ## Findings the example should surface (and the tutorial should say plainly)
 - Command routes are generated per command, so the derived client needs `any` (or hand-written Schemas); a typed client would need the command route names in the API type.
