@@ -5,7 +5,7 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import type { ConnInfo } from "@crablet/test-support";
-import { makeCourseApiLayer, startCourseViews, type CourseAppConfig } from "../../src/CourseApp.ts";
+import { makeCourseApiLayer, startCourseViews, type CourseAppConfig, type CourseViewsOptions } from "../../src/CourseApp.ts";
 
 export interface RunningCourseApp {
   readonly baseUrl: string;
@@ -13,7 +13,11 @@ export interface RunningCourseApp {
 }
 
 // Starts the API on an ephemeral port against the given test database, for one test file's lifetime.
-export const startCourseAppForTest = async (conn: ConnInfo, config: CourseAppConfig = {}): Promise<RunningCourseApp> => {
+export const startCourseAppForTest = async (
+  conn: ConnInfo,
+  config: CourseAppConfig = {},
+  viewsOptions: CourseViewsOptions = {}
+): Promise<RunningCourseApp> => {
   const runtime = ManagedRuntime.make(
     Crablet.layer({
       host: conn.host,
@@ -23,7 +27,7 @@ export const startCourseAppForTest = async (conn: ConnInfo, config: CourseAppCon
       password: Redacted.make(conn.password)
     })
   );
-  const views = await runtime.runPromise(startCourseViews());
+  const views = await runtime.runPromise(startCourseViews(undefined, viewsOptions));
   const scope = await runtime.runPromise(Scope.make());
   const context = await runtime.runPromise(
     Scope.provide(

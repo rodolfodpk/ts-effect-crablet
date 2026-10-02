@@ -8,9 +8,12 @@ import { makeCourseApiLayer, startCourseViews } from "./CourseApp.ts";
 
 // Serves the API on :8080 (PORT). The database must exist and be migrated (docker compose up -d; node src/migrate.ts).
 // COURSES_DOCS=scalar|swagger also mounts a documentation page at /docs.
+// COURSES_VIEW_DELAY_MS=400 (a demo knob, default 0) makes the seats view lag that long behind a write, so a read right after
+// a write is stale and ?waitFor=course-seats-view shows what it is for.
 const conn = dbConnInfoFromEnv();
 const port = Number(process.env["PORT"] ?? 8080);
 const docsUi = process.env["COURSES_DOCS"];
+const viewDelayMs = Number(process.env["COURSES_VIEW_DELAY_MS"] ?? 0);
 
 const appLayer = Crablet.layer({
   host: conn.host,
@@ -25,7 +28,7 @@ const server = HttpRouter.serve(
 ).pipe(Layer.provide(NodeHttpServer.layer(createServer, { port })));
 
 const program = Effect.gen(function* () {
-  yield* startCourseViews();
+  yield* startCourseViews(undefined, { viewDelayMs });
   yield* Effect.log(`course-enrolment-app listening on :${port}`);
   yield* Layer.launch(server);
 });

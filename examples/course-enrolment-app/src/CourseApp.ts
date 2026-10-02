@@ -62,13 +62,24 @@ const viewsConfig: ViewsConfig = {
 // Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback).
 // Building its Layer alone would NOT process anything: `.service.start` forks the long-lived fibers that do the work, and
 // they are only stopped by `.service.stop` - call it before closing the database pool.
+//
+// `viewDelayMs` is a DEMO knob (default 0, off): it holds every batch back that long before the view applies it, so a read
+// made right after a write is visibly stale and `?waitFor=course-seats-view` has something to show. The delay is spent
+// BEFORE the projector's transaction opens, so no database transaction sits open while it waits.
+export interface CourseViewsOptions {
+  readonly viewDelayMs?: number;
+}
+
 export const startCourseViews = (
-  instanceId: string = defaultInstanceId()
+  instanceId: string = defaultInstanceId(),
+  options: CourseViewsOptions = {}
 ): Effect.Effect<EventProcessorHandle<ProcessorConfig<string>, string>, never, SqlClient.SqlClient | PgClient.PgClient | EventStore> =>
   Effect.gen(function* () {
+    const projector = yield* makeCourseSeatsViewProjector();
+    const delayMs = options.viewDelayMs ?? 0;
     const handle = yield* makeViewsProcessor({
       config: viewsConfig,
-      projectors: [yield* makeCourseSeatsViewProjector()],
+      projectors: [delayMs > 0 ? { ...projector, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), projector.handle(events)) } : projector],
       subscriptions: [courseSeatsViewSubscription],
       instanceId
     });

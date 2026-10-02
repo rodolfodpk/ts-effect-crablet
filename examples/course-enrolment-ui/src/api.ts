@@ -10,8 +10,10 @@ import {
   CommandIdempotentResponse,
   CourseFull,
   CourseNotFound,
+  COURSE_SEATS_VIEW,
   CourseResponse,
   StudentAtLimit,
+  ViewWaitResult,
   makeCourseApi
 } from "course-enrolment-app/CourseApi";
 
@@ -27,6 +29,8 @@ export const Problem = Schema.Union([
   // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). The server's own 400
   // only says "Invalid payload for command", so this is the more precise of the two.
   Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
+  // Not from the server: the page's reading of a "no such course" it just wrote itself (the seat map lags behind writes).
+  Schema.TaggedStruct("NotInSeatMapYet", { courseId: Schema.String }),
   Schema.TaggedStruct("Unreachable", {})
 ]);
 export type Problem = typeof Problem.Type
@@ -52,10 +56,12 @@ export const problemFromError = (error: unknown): Problem => {
 
 // CALLS
 
-// What a command answered: created, or "already done" (an idempotent repeat) with the reason.
+// What a command answered: created, or "already done" (an idempotent repeat) with the reason; and, when the request
+// asked to wait for a view (`?waitFor=`), whether that view had caught up with the write when the answer was sent.
 export const CommandOutcome = Schema.Struct({
   status: Schema.Literals(["CREATED", "IDEMPOTENT"]),
-  reason: Schema.NullOr(Schema.String)
+  reason: Schema.NullOr(Schema.String),
+  view: Schema.optionalKey(ViewWaitResult)
 });
 export type CommandOutcome = typeof CommandOutcome.Type
 const decodeCommandResponse = Schema.decodeUnknownEffect(Schema.Union([CommandCreatedResponse, CommandIdempotentResponse]));
@@ -72,13 +78,18 @@ export const getCourse = (courseId: string) =>
 // response is decoded with the API's own Schema straight away.
 type CommandCall = (request: { readonly payload: object; readonly query: object }) => Effect.Effect<unknown, unknown>;
 
-export const runCommand = (name: "define_course" | "subscribe", payload: object) =>
+export const runCommand = (name: "define_course" | "subscribe", payload: object, options: { readonly waitForView: boolean }) =>
   Effect.gen(function* () {
     const client = yield* HttpApiClient.make(makeCourseApi());
     const call = (client.commands as unknown as Record<string, CommandCall>)[`execute_${name}`]!;
-    const response = yield* call({ payload, query: {} });
+    // `?waitFor=course-seats-view`: the answer is sent once that view has processed the write, so the read that follows is not stale
+    const response = yield* call({ payload, query: options.waitForView ? { waitFor: COURSE_SEATS_VIEW } : {} });
     const decoded = yield* decodeCommandResponse(response);
-    return { status: decoded.status, reason: decoded.reason } satisfies CommandOutcome;
+    return {
+      status: decoded.status,
+      reason: decoded.reason,
+      ...(decoded.view === undefined ? {} : { view: decoded.view })
+    } satisfies CommandOutcome;
   });
 
 export { CourseResponse };
