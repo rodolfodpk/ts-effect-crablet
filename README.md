@@ -82,16 +82,11 @@ const BookSeat = defineCommand({
 });
 ```
 
-The model's boundary is derived from the events it handles, so `BookSeat` is consistent with respect to
-"anything that could change this seat" without you writing a query. Two concurrent bookings of one seat
-cannot both succeed; the loser is retried and gets `SeatTaken`. Bookings of different seats never
-contend.
+The boundary is derived from the events the model handles, so `BookSeat` is consistent with "anything that could change this seat" without you
+writing a query. Two concurrent bookings of one seat cannot both succeed: the loser is retried and gets `SeatTaken`. Bookings of different seats never
+contend. ([The same thing as an Event Model](./docs/event-model-seat-booking.md).)
 
-The same declarations, drawn as an [Event Model](./docs/event-model-seat-booking.md) (commands, events and the read model on one timeline).
-A scenario is Given/When/Then: *given* `SeatAdded(12A)` and `SeatBooked(12A)`, *when* `BookSeat(12A, Cy)`, *then* `SeatTaken`.
-
-**Test it without a database** - the real pipeline (validation, idempotency, load, decide, conditional
-append) against an in-memory store that enforces the same rules as Postgres:
+**Test it without a database** - the real pipeline against an in-memory store that enforces the same rules as Postgres. A scenario is Given/When/Then:
 
 ```ts
 const scenario = given();                                                       // an empty history
@@ -118,11 +113,8 @@ book 99Z for Bob   -> failed: SeatNotFound
 book 12A for Cy, history: SeatAdded + SeatBooked -> failed: SeatTaken
 ```
 
-You never load events yourself: when a command runs, the executor queries the events in the model's boundary
-(`SeatAdded` and `SeatBooked` tagged `seat_id=12A`), folds them through the model's `.on` handlers into the state
-`decide` receives, and makes the append conditional on nothing newer having arrived in that boundary. The last line
-seeds the history with `given(SeatAdded(...), SeatBooked(...))` to show it. `AddSeat` is idempotent: adding a seat
-that exists is a `noop`, so nothing is appended.
+You never load events yourself: the executor queries the events in the model's boundary, folds them into the state `decide` receives, and makes the
+append conditional on nothing newer having arrived there. The last line seeds the history with `given(...)` to show it.
 
 **Run it** against Postgres with one layer:
 
@@ -136,63 +128,35 @@ const program = Effect.gen(function* () {
 Effect.runPromise(Effect.provide(program, AppLive));
 ```
 
-(The code above is tested: see [`packages/commands/test/quickstart.test.ts`](./packages/commands/test/quickstart.test.ts), and the script's output by [`examples/quickstart/test/quickstart.test.ts`](./examples/quickstart/test/quickstart.test.ts).)
+(Tested: [`packages/commands/test/quickstart.test.ts`](./packages/commands/test/quickstart.test.ts) and [`examples/quickstart/test/quickstart.test.ts`](./examples/quickstart/test/quickstart.test.ts).)
 
 ## What a command can say
 
-| You write | You get |
-|---|---|
-| `model: (c) => SeatModel.of({ id: c.seatId })` | State for `decide`, and the boundary the append is protected by |
-| *(nothing)* | `strict()`: the append fails with `Conflict` if anything in the boundary changed since it was loaded |
-| `consistency: () => concurrent({ guard })` | Safe to run in parallel with itself (e.g. deposits); only the `guard` events (e.g. "is the wallet closed?") can conflict |
-| `idempotentBy: (c) => Event.where({ op_id: c.opId })` | A repeat of the same operation is "already done", checked before anything else - so a retry never re-decides against state the first attempt already changed |
-| `onDuplicate: "fail"` | ...or a repeat fails with `Duplicate` (e.g. "open a wallet that already exists") |
-| `prepare: (c, eventStore) => ...` | An effectful pre-step (look something up, open a statement); its result feeds `model` and `decide`; rolled back with the command |
-| `retries: 3` (default) | A `Conflict` re-runs the whole command with fresh state; `0` turns it off |
-| `fail(new MyDomainError(...))` | A typed failure. The command's error type is inferred from every `fail(...)` in `decide` |
-| `errors: [MyDomainError]` | The domain errors the command can fail with, declared once. `decide` (and `prepare`) cannot fail with a domain error that is not listed: the compile error names the missing class |
+Beyond `model` and `decide`, a command can declare (full list: [ADR-0010](./docs/adr/0010-declarative-command-api.md)):
 
-Errors declared with `DomainError(tag, { fields, kind })` carry a neutral `kind` (`not_found`,
-`invalid`, `conflict`, `forbidden`). The REST API (`packages/commands-http`) reads a command's `errors`: it maps each
-kind to 404/400/409/403, presents the error's own fields in the response, and documents them in the generated OpenAPI
-description - with no per-command HTTP code. It will not let you expose a command whose errors it cannot present.
+- `idempotentBy` - a repeat of the same operation is "already done", checked before anything else;
+- `consistency: () => concurrent({ guard })` - safe to run in parallel with itself (e.g. deposits); only the `guard` events can conflict;
+- `errors: [...]` - the domain errors it can fail with, checked against `decide`. Each carries a `kind` (`not_found`, `invalid`, `conflict`, `forbidden`)
+  that the REST API maps to 404/400/409/403 and documents in the generated OpenAPI description, with no per-command HTTP code;
+- `retries` (default 3) - a `Conflict` re-runs the command with fresh state.
 
-## What views, the outbox and automations can rely on
+## Views, the outbox and automations
 
-They are fed by pollers with these guarantees:
+They are fed by pollers. Guarantees: **no event is skipped** (cursor is a `(transaction_id, position)` pair,
+[ADR-0012](./docs/adr/0012-transaction-position-cursors.md)); **at-least-once**, so handlers must be idempotent; delivery is ordered by transaction,
+then position, so do not use "position is bigger than the last one I saw" as a general idempotency check; and a long-running transaction anywhere in
+the database delays delivery until it ends.
 
-- **No event is skipped.** A poller's cursor is a `(transaction_id, position)` pair, so an event that commits late with a lower
-  position than one already delivered is still delivered ([ADR-0012](./docs/adr/0012-transaction-position-cursors.md)).
-- **At-least-once.** A handler can see an event again (after a crash, or a reset), so it must be idempotent.
-- **Delivery order is by transaction, then position.** Events of unrelated transactions are not necessarily delivered in position
-  order, so do not use "position is bigger than the last one I saw" as a general idempotency check. It is safe only where the events
-  that touch one row are written one after another, as in the tutorial's seats view (commands that share a boundary are serialized).
-  Use the event's identity (as the wallet views do) when in doubt.
-- **A long-running transaction anywhere in the database delays delivery** until it ends (events are only read once their transaction
-  has finished), so alert on idle-in-transaction sessions.
-
-## Reading your own writes
-
-Views are updated asynchronously, a moment after the command that caused the change. When a caller needs to see its own write,
-wait for the view to catch up to the command's position:
-
-```ts
-const result = yield* executor.run(Deposit, input);            // result.lastPosition / lastTransactionId: where its events ended
-yield* waitUntilProcessed(walletBalanceViewSubscription, { transactionId: result.lastTransactionId!, position: result.lastPosition! });   // @crablet/views/WaitUntilProcessed
-// ... one read of the view now includes the deposit
-```
-
-Over HTTP it is a query parameter, `POST /api/commands/deposit?waitFor=wallet-balance-view`. A client that did not write learns of a change by a
-ping over server-sent events ([ADR-0014](./docs/adr/0014-live-updates-by-ping.md)). Details, timeouts and failure cases: [tutorial step 4](./docs/tutorial/course-enrolment.md).
+Views update asynchronously. To read your own write, wait for the view to reach the command's position (`waitUntilProcessed`), or over HTTP add
+`?waitFor=<view>`; a client that did not write learns of changes by a ping over server-sent events ([ADR-0014](./docs/adr/0014-live-updates-by-ping.md)).
+Walkthrough: [tutorial step 4](./docs/tutorial/course-enrolment.md).
 
 ## HTTP API and OpenAPI
 
-Declare the API from the commands' **contracts** (`commandContract({ name, input, errors })`, spread into `defineCommand` to add behavior) and you get a
-route per command, `POST /api/commands/<name>`, with no HTTP code. The request body is the command's `input` schema; every failure it can have is
-documented and presented (status from the error's `kind`, `application/problem+json`); `GET /openapi.json` serves the generated OpenAPI 3.1 description,
-checked in at [`docs/api/wallet-openapi.json`](./docs/api/wallet-openapi.json) so an API change is a visible diff in review. A typed client is derived from
-the API itself with `HttpApiClient.make(makeWalletApi(), { baseUrl })`, and a browser can import the API definition without receiving `decide`, the models
-or the events. Walkthrough: [tutorial step 3](./docs/tutorial/course-enrolment.md). Why it is shaped this way: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
+List the commands' **contracts** (`commandContract({ name, input, errors })`) and you get `POST /api/commands/<name>` for each, validated against the
+`input` schema, with every failure documented as `application/problem+json`. `GET /openapi.json` serves the generated OpenAPI 3.1 description, checked in at
+[`docs/api/wallet-openapi.json`](./docs/api/wallet-openapi.json) so an API change is a visible diff. A browser can import the contracts without receiving
+`decide` or the models. Walkthrough: [tutorial step 3](./docs/tutorial/course-enrolment.md); why: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
 
 ## Packages
 
@@ -223,12 +187,8 @@ bun run test:unit:coverage # same suite, with an lcov report at coverage/lcov.in
 bun run test:integration   # real Postgres via Testcontainers (needs Docker) - runs under Node
 ```
 
-A conformance suite runs the same cases against the in-memory store (unit tests) and against Postgres
-(integration tests), and a differential test feeds both stores identical random histories and requires
-identical results - so the in-memory store is a faithful stand-in for testing decision logic.
-Concurrency (races, conflict retry) is tested against Postgres only.
-
-The coverage badge only covers the fast Bun unit suite, not the Postgres-backed integration tests.
+The in-memory store and Postgres pass the same conformance suite plus a differential test on random histories, so scenarios are a faithful stand-in;
+concurrency (races, conflict retry) is tested against Postgres only.
 
 ## Learn more
 
