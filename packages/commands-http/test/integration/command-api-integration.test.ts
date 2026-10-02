@@ -85,7 +85,7 @@ const Refuse = defineCommand({
     : fail(new AlreadyDone({ id: c.id }))
 });
 
-const testCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
+const testCommands = {
   refuse: exposedCommandOf(Refuse),
   open_wallet: exposedCommandOf(OpenWallet),
   send_confirmation: exposedCommandOf(SendConfirmation)

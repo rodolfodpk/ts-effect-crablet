@@ -21,7 +21,7 @@ import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPu
 import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
-import { exposedCommandOf, type ExposedCommand } from "@crablet/commands-http/ExposedCommand";
+import { exposedCommandOf } from "@crablet/commands-http/ExposedCommand";
 import type { ViewWaiter, WriteMarker } from "@crablet/commands-http/ViewWaiter";
 import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
 import { makeWalletTransactionViewProjector } from "./views/WalletTransactionViewProjector.ts";
@@ -156,9 +156,9 @@ export const startBackgroundProcessors = (
 // The wallet's public write API: the 5 wallet commands, deliberately NOT SendWelcomeNotification (an
 // automation-triggered internal command, not a public write API). Each command declares its domain errors
 // (`errors: [...]`), which the API presents by their kind (404 / 400 / ...) with their own fields and documents
-// in the API description. `ExposedCommand<any, any>` - see ExposedCommand.ts's own primer on this registry's
-// type erasure.
-const walletCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
+// in the API description. Deliberately NOT annotated as a `Record<string, ExposedCommand<...>>`: the registry keeps its
+// literal keys, so the API's static type has one typed endpoint per command (see CommandApi.ts).
+const walletCommands = {
   open_wallet: exposedCommandOf(OpenWallet),
   deposit: exposedCommandOf(Deposit),
   withdraw: exposedCommandOf(Withdraw),

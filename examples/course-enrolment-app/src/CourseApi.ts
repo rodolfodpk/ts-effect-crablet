@@ -3,7 +3,7 @@
 // code that builds the OpenAPI description. Serving it is CourseApp.ts.
 import { HttpApi } from "effect/http-api";
 import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
-import { exposedCommandOf, type ExposedCommand } from "@crablet/commands-http/ExposedCommand";
+import { exposedCommandOf } from "@crablet/commands-http/ExposedCommand";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
 import { courseQueryGroup } from "./api/CourseQueryApi.ts";
 
@@ -20,7 +20,9 @@ export const COURSE_SEATS_VIEW = "course-seats-view";
 // #region expose
 // The write API: one route per command, POST /api/commands/<name>. A command's declared `errors` are what the API
 // presents (status from each error's kind) and documents; there is no HTTP code to write per command.
-export const courseCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
+// Do not annotate this object as a `Record<string, ...>`: that forgets the command names, and the API's type (and so a
+// client derived from it) is typed per command only while the keys stay literal.
+export const courseCommands = {
   define_course: exposedCommandOf(DefineCourse),
   subscribe: exposedCommandOf(Subscribe)
 };

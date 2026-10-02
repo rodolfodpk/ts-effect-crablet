@@ -236,11 +236,17 @@ Exposing a command is one line each. Nothing else about HTTP is written:
 ```ts
 // The write API: one route per command, POST /api/commands/<name>. A command's declared `errors` are what the API
 // presents (status from each error's kind) and documents; there is no HTTP code to write per command.
-export const courseCommands: Readonly<Record<string, ExposedCommand<any, any>>> = {
+// Do not annotate this object as a `Record<string, ...>`: that forgets the command names, and the API's type (and so a
+// client derived from it) is typed per command only while the keys stay literal.
+export const courseCommands = {
   define_course: exposedCommandOf(DefineCourse),
   subscribe: exposedCommandOf(Subscribe)
 };
 ```
+
+The registry is a plain object literal on purpose. Because its keys stay literal, the API's *type* has one endpoint per command: a client derived from it knows that
+`subscribe` takes `{ studentId, courseId }` and can fail with `CourseNotFound`, `CourseFull` or `StudentAtLimit`. Annotating the object
+as a `Record<string, ...>` still works, but it forgets the command names and the client falls back to a single, loosely typed endpoint.
 
 Start the server (add `COURSES_DOCS=scalar` to also serve a documentation page at `/docs`):
 

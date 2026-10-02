@@ -6,7 +6,7 @@ import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import { makeCommandApi } from "../src/CommandApi.ts";
-import { exposedCommandOf, type ExposedCommand } from "../src/ExposedCommand.ts";
+import { exposedCommandOf } from "../src/ExposedCommand.ts";
 import { inputJsonSchemaProblems } from "../src/InputJsonSchema.ts";
 
 class WalletNotFound extends DomainError("WalletNotFound", { fields: { walletId: Schema.String }, kind: "not_found" }) {}
@@ -31,7 +31,7 @@ const Withdraw = defineCommand({
 });
 const Open = defineCommand({ name: "open", input: Schema.Struct({ walletId: Schema.String }), decide: (_, c) => emit(Done(c)) });
 
-const registry: Readonly<Record<string, ExposedCommand<any, any>>> = {
+const registry = {
   deposit: exposedCommandOf(Deposit),
   withdraw: exposedCommandOf(Withdraw),
   open: exposedCommandOf(Open)

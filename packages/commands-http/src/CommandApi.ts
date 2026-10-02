@@ -3,7 +3,7 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "
 import { inputJsonSchema } from "./InputJsonSchema.ts";
 import { defaultWaitTimeoutMs, maxWaitTimeoutMs } from "./ViewWaiter.ts";
 import type { ExposedCommand } from "./ExposedCommand.ts";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf } from "./ProblemDetail.ts";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
 // body is the command's own input schema, plus `GET {basePath}` listing the exposed commands with their
@@ -80,35 +80,82 @@ const UnexpectedProblem = asProblem(CommandApiUnexpectedError);
 
 export const executeEndpointName = (commandType: string) => `execute_${commandType}`;
 
-type Registry = Readonly<Record<string, ExposedCommand<any, any>>>;
+type Registry = Readonly<Record<string, ExposedCommand<any, any, any, any>>>;
+
+// ---- the group's STATIC type (the loop in `makeCommandApiGroup` builds exactly this) ----
+//
+// Each command becomes one endpoint, `execute_<name>`, whose payload is the command's own input Schema and whose failures are
+// the framework's three problems plus one problem per domain error the command declared. A client derived from the API
+// (`HttpApiClient.make`) is therefore typed per command: a misspelled payload field or an unknown command name does not
+// compile, and the error channel names what that command can answer with.
+//
+// This needs the registry's KEYS to be literal, so write it as an object literal WITHOUT an annotation such as
+// `Record<string, ExposedCommand<...>>` (that annotation forgets the command names; the group is then typed by a
+// `string` key, which is correct but no longer per command).
+
+// A domain error's problem body, typed from the error class itself (its `tag` and `fields` statics). `title` and `status` are
+// wider than the runtime literals because a class carries its `kind` as a union; `errorType` and `fields` are exact.
+type ProblemBody<E> = E extends { readonly tag: infer Tag extends string; readonly fields: infer F extends Record<string, Schema.Top> }
+  ? Schema.Codec<{
+      readonly type: string;
+      readonly title: string;
+      readonly status: number;
+      readonly detail: string;
+      readonly errorType: Tag;
+      readonly fields: Schema.Schema.Type<Schema.Struct<F>>;
+    }>
+  : never;
+type ProblemsOf<Es> = Es extends ReadonlyArray<infer E> ? ProblemBody<E> : never;
+type CommandErrorSchemas<X> = X extends { readonly command: { readonly errors: infer Es } }
+  ? typeof BadRequestProblem | typeof ConflictProblem | typeof UnexpectedProblem | ProblemsOf<Es>
+  : never;
+type CommandEndpoint<K extends string, BasePath extends string, X> = HttpApiEndpoint.HttpApiEndpoint<
+  `execute_${K}`,
+  "POST",
+  `${BasePath}/${K}`,
+  never,
+  ReturnType<typeof waitQuery>,
+  X extends { readonly command: { readonly input: infer I extends Schema.Top } } ? I : never,
+  never,
+  typeof CommandCreatedResponse | typeof CommandIdempotentResponse,
+  CommandErrorSchemas<X>
+>;
+export type CommandGroup<BasePath extends string, C extends Registry> = HttpApiGroup.HttpApiGroup<
+  "commands",
+  | HttpApiEndpoint.HttpApiEndpoint<"listExposedCommands", "GET", BasePath, never, never, never, never, typeof ExposedCommandsResponse>
+  | { [K in keyof C & string]: CommandEndpoint<K, BasePath, C[K]> }[keyof C & string]
+>;
 
 // Exported separately from `makeCommandApi` (which builds a *complete*, standalone `HttpApi`) so a
 // bigger app-owned `HttpApi` can `.add()` this group alongside its own groups (e.g. a read-only
 // query API) and serve them all from one router.
 //
-// The group is built in a loop from the registry, so its static type is erased (`any`): TypeScript cannot
-// track a runtime-variable set of endpoint names. That is the one deliberate type-erasure here.
-// `waitableViews`: names of the views a request may wait for (`?waitFor=`, `?waitTimeout=`); none by default.
-export const makeCommandApiGroup = (
-  basePath: `/${string}`,
-  commands: Registry,
+// The group is built in a loop over the registry; the loop body is untyped (`any`) because TypeScript cannot follow
+// a runtime-variable set of endpoint names through `group.add(...)`. The RETURN type is the precise `CommandGroup`
+// above - the one place that asserts "the loop builds exactly this" (the OpenAPI description and the integration tests
+// check the runtime, the type tests in test/typed-client.types.ts check the type).
+// `waitableViews`: names of the views a request may wait for (`?waitFor=`, `?waitTimeout=`); none by default. (The
+// query is part of the static type either way; with no waitable view the server answers any `waitFor` with a 400.)
+export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C extends Registry>(
+  basePath: BasePath,
+  commands: C,
   options: { readonly waitableViews?: ReadonlyArray<string> } = {}
-): HttpApiGroup.HttpApiGroup<"commands", any> => {
+): CommandGroup<BasePath, C> => {
   const waitableViews = options.waitableViews ?? [];
   let group: any = HttpApiGroup.make("commands").add(
     HttpApiEndpoint.get("listExposedCommands", basePath, { success: ExposedCommandsResponse })
   );
-  for (const [commandType, entry] of Object.entries(commands)) {
+  for (const [commandType, entry] of Object.entries(commands as Registry)) {
     group = group.add(
       HttpApiEndpoint.post(executeEndpointName(commandType), `${basePath}/${commandType}` as `/${string}`, {
         payload: entry.command.input as unknown as Schema.Top,
         ...(waitableViews.length > 0 ? { query: waitQuery(waitableViews) } : {}),
         success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
-        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.command.errors.map((e) => problemSchemaOf(e))] as never
+        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...entry.command.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
       })
     );
   }
-  return group;
+  return group as CommandGroup<BasePath, C>;
 };
 
 // What the API description says about the API as a whole.
@@ -129,9 +176,9 @@ export const withApiInfo = <Id extends string, Groups extends HttpApiGroup.Const
     OpenApi.annotations({ title: info.title, version: info.version, ...(info.description !== undefined ? { description: info.description } : {}) })
   );
 
-export const makeCommandApi = (
-  basePath: `/${string}`,
-  commands: Registry,
+export const makeCommandApi = <const BasePath extends `/${string}`, const C extends Registry>(
+  basePath: BasePath,
+  commands: C,
   info: ApiInfo = defaultApiInfo,
   options: { readonly waitableViews?: ReadonlyArray<string> } = {}
 ) => withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, commands, options)), info);
