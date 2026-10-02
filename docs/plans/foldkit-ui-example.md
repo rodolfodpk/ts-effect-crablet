@@ -1,5 +1,7 @@
 # Plan: a Foldkit UI for the course-enrolment app (tutorial step 5)
 
+**Status:** done (phases 0-5; the typed command client it called for is `typed-command-client.md`). Kept as the record of what was built and what building it showed; the follow-ups it surfaced are planned in `api-follow-ups.md`.
+
 ## Context
 Effect 4.0.0 is out and the repo is on it (commit 2a6e86a); Foldkit 0.165.0 peer-requires exactly `effect@4.0.0` and `@effect/platform-browser@4.0.0`, so the two now line up. The earlier decision (see the project memory note) was to build a UI example only once both aligned. This plan adds `examples/course-enrolment-ui`: one page that drives the existing course-enrolment API, as a fifth and last step of the tutorial.
 
@@ -81,8 +83,8 @@ Tutorial step 5 (tested blocks), README pointer, ADR note only if the spike chan
 - No `GET /courses` list endpoint, so the page needs the id up front.
 
 ## Follow-ups this should drive
-Each finding above is a product question, not a UI fix; the example should end with them ranked, so it leads to work instead of staying a demo:
-1. **A typed client for commands** (the derived client is `any` today): expose the command route names/types in the API type. Highest value for any consumer.
+Each finding above is a product question, not a UI fix; the example should end with them ranked, so it leads to work instead of staying a demo. (Superseded by `api-follow-ups.md`, which re-ranks them, adds evolution rules, the contract/behavior split and a server-rendering spike, and records that item 1 is done.)
+1. **A typed client for commands** (DONE: `typed-command-client.md`; the derived client was `any`): expose the command route names/types in the API type. Highest value for any consumer.
 2. **Optional CORS in `commands-http`** (an allow-list option on the group layer), so a browser app on another origin needs no proxy.
 3. **A built-in list/search read pattern** (or at least a documented one) so UIs are not given ids by hand.
 4. **Per-field validation problems from the server**: the derived client already reports the failing path (`SchemaError`); the server's 400 should carry the same paths (`Invalid payload for command: define_course` today), so non-TypeScript clients get them too.

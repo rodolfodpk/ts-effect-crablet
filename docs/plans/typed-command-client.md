@@ -1,5 +1,7 @@
 # Plan: a typed command client - put the commands in the API's type
 
+**Status:** done (phases 0-3, ADR-0011 addendum). Kept as the record; its "What exists" section describes the code BEFORE the change.
+
 ## Context
 The Foldkit page (examples/course-enrolment-ui, tutorial step 5) is the first real client of the HTTP API, and its biggest friction is one cast. The client is derived from the API definition (`HttpApiClient.make(makeCourseApi())`), and the read endpoint comes out fully typed (`client.courseQueries.getCourse({ params })` returns a `CourseResponse`, fails with a typed problem), but the command routes come out as `any`:
 
