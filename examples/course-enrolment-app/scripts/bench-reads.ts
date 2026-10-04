@@ -3,7 +3,7 @@
 //
 //   1. reads on an idle log:        eventual (no wait) / latest (the server default) / a write's marker, at several concurrencies;
 //   2. reads under a steady write load: latest against eventual;
-//   3. waiters: N readers that all wait for one write while the seats view lags, and what that does to an unrelated read;
+//   3. waiters: N readers that all wait for one write while the seats view lags, and what that does to an unrelated read (connections warmed first);
 //   4. the head-of-log query on a large log;
 //   5. open live feeds: how many database sessions N open feeds hold;
 //   6. read your own write: a write, then a read carrying its marker, one after the other: how long the read takes.
@@ -238,6 +238,10 @@ const main = async () => {
         for (const n of [1, 10, 50, 200]) {
           const before = await xacts(); // BEFORE the write: reading the counter takes seconds, and the view would catch up meanwhile
           const t0 = performance.now();
+          // WARM the N connections first. Opening N fresh TCP connections costs real CPU in this single process (the app, the view's own batch and the
+          // load generator share one event loop): with 200 cold connections a burst took twice as long and the view's batch was delayed with it, which
+          // an earlier version of this benchmark mistook for the cost of waiting. The N warm-up reads are one query each and are subtracted below.
+          await Promise.all(Array.from({ length: n }, async () => (await fetch(`${slow.baseUrl}/api/courses/probe?consistency=eventual`)).arrayBuffer()));
           const { marker } = await post(slow.baseUrl, "define_course", { courseId: `wait-${wait}-${n}-${crypto.randomUUID().slice(0, 6)}`, capacity: 5 });
           const writtenAt = performance.now();
           let peak = 0;
@@ -262,7 +266,7 @@ const main = async () => {
           const after = await xacts();
           const sorted = results.map((r) => r.ms).sort((a, b) => a - b);
           console.log(
-            row([wait, n, fmt(percentile(sorted, 50), 0), fmt(percentile(sorted, 95), 0), fmt(sorted[sorted.length - 1]!, 0), results.filter((r) => r.status !== 200).length, peak, fmt((after - before - idleRate * (seconds + 2.5)) / seconds, 0), fmt(probed.p95, 1)], w3)
+            row([wait, n, fmt(percentile(sorted, 50), 0), fmt(percentile(sorted, 95), 0), fmt(sorted[sorted.length - 1]!, 0), results.filter((r) => r.status !== 200).length, peak, fmt((after - before - idleRate * (seconds + 2.5) - n) / seconds, 0), fmt(probed.p95, 1)], w3)
           );
         }
         await slow.stop();

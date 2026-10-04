@@ -46,7 +46,18 @@ Both are waiting for the same event, "a view's progress moved", which the databa
 
 - **Read your own write** (a write, then at once a read carrying its marker; 300 rounds, three runs): p50 **30.6 / 30.8 / 30.7 ms polling against 14.7 / 14.9 / 14.6 ms with the hub**, p95 38.6-51.6 against 23.2-24.6, mean 32.5 against 15.1. The ~15 ms that remains is the view applying the write (the poller wakes on a notification and applies a batch). A polling wait adds, on average, about half a poll interval plus a query.
 - **Reads under about 25 writes/s** (16 readers, three runs): `latest` throughput **+36 % to +96 %** with the hub (polling 953 / 689 / 920 reads/s, hub 1,864 / 1,022 / 1,251), p50 7.9 / 29.6 / 7.7 ms to 4.8 / 9.1 / 5.8, p95 37.0 / 50.0 / 38.5 to 27.2 / 42.2 / 31.8. **The tail did not improve**: p99 was 43 / 79 / 47 ms polling and 38 / 95 / 135 with the hub, worse in two runs (the runs were noisy; not understood).
-- **Waiting readers** (the view lags 400 ms; N ask for one write's marker at once; two to three runs): the database's transaction rate during the round, with the unrelated probe paced so it does not swamp it, was about **2.2-3.6 times lower with the hub at 10 and 50 waiters** (10 waiters: polling 238 / 253 / 248 per second, hub 90 / 91; 50: 139 / 142 / 150 against 64 / 42). The waiters' latency did **not** change within noise at any N (50 waiters: p50 polling 632-720 ms, hub 616-749; 200 waiters: 947-1,239 against 1,006-1,563), and a burst of 200 waiters at once still takes about a second and delays an unrelated read by about a second. The hub removes the polling; it does not remove the stampede.
+- **Waiting readers** (the view lags 400 ms; N ask for one write's marker at once; connections warmed first, one run; the unrelated probe is paced):
+
+  | wait | N | waiters p50 ms | transactions/s | unrelated read p95 ms |
+  |---|---|---|---|---|
+  | polling | 10 | 493 | 199 | 11.3 |
+  | hub | 10 | 449 | 82 | 8.4 |
+  | polling | 50 | 471 | 162 | 8.8 |
+  | hub | 50 | 463 | 18 | 11.7 |
+  | polling | 200 | 474 | 304 | **49.3** |
+  | hub | 200 | 505 | **33** | **7.3** |
+
+  The waiters finish at the view's own time (about 450-500 ms for a 400 ms lag) with either wait, even at 200 at once, so waiting readers do not delay each other. What the hub changes is the load they put on the database: **2.4 times fewer queries at 10 waiters and about 9 times fewer at 50 and 200** (a ping that covers the write ends the wait with no query), and at 200 waiters an unrelated read keeps its normal ~7 ms p95 instead of ~49 ms. (An earlier version of this benchmark opened the N connections cold, in the one process that also runs the app and the view's batch; that cost CPU, delayed the view's own batch by about half a second, and showed up as "a burst of waiters stalls everything for a second". With warm connections it does not.)
 - **Open live feeds** (one run): database sessions held, 0 feeds 4; 50 feeds 4; 200 feeds 5; **1,000 feeds 5** (the extra one is the hub's LISTEN). One write reached all of them in 75 ms (50), 55 ms (200) and 207 ms (1,000); opening 1,000 feeds from the one client process took 6.4 s. Before the hub the 11th open feed on a pool of 10 could not start.
 - **An idle log** (scenario 1): no difference, as expected (the view is caught up, so a wait returns after its first look): `latest` 855 against 879 reads/s on one connection, 3,079 against 3,041 on eight.
-- **What this leaves open:** a burst of many simultaneous waiters (the stampede) is not reduced by the hub. Bounding the number of reads waiting at once per instance, or a pool for waits separate from the one the view's batch needs, would be the next thing to try; neither is built.
+- **What this leaves open:** the p99 of `latest` under writes is inconclusive (the baseline's own p99 varied 3 times between runs on a loaded machine, and the hub's was better once and worse twice). Nothing else from these runs is known to be wrong with the hub.
