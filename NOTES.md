@@ -1168,3 +1168,31 @@ asserts the model directly (queries, fold, both regressions).
 - Tutorial: step 4 rewritten around write, marker, read (the `wait-for` block is replaced by the `read-consistency` region of `CourseQueryApiLive.ts`; the curl outputs have no `view` member; the cases to know are the marker, `eventual`/`bounded`, the strict 503, a repeat's null marker and a bad marker's 400). The literal outputs were checked against a running server (same bodies, key order and 400 detail; only the ids differ). Intro bullet 4 and step 5's wording for the unticked checkbox follow. Embedded blocks regenerated.
 - Docs: README (two lines), ADR-0011 (the read-your-writes bullet and the `waitFor` aside), ADR-0012 and ADR-0014 (one-line notes), a one-line pointer at the top of the four older plans that mention `waitFor`, both OpenAPI documents regenerated (the command routes lose `waitFor` / `waitTimeout` and `view`), ADR-0015 is **Accepted**.
 - Not done (own pieces of work): phase 1b (a marker on idempotent repeats), phase 7 (measure `latest` at read rates and the poll cost), the shared per-instance listener for the wait, and the leader-fencing and event-versioning items from the architecture review.
+
+## Read consistency, phase 7: what a consistent read costs (docs/plans/read-consistency.md)
+- `examples/course-enrolment-app/scripts/bench-reads.ts` (`bun run bench:reads`, or `node scripts/bench-reads.ts [--seconds 4] [--pool 10] [--events 2000000] [--only 1,2,3,4]`, needs Docker) starts the real course app on a throwaway Postgres and measures four things. Everything ran on one laptop (8 cores, arm64, Docker Postgres 18, Node 25) with the load generator, the app and the database sharing it, a pool of 10 connections and ONE view per read: the numbers compare modes with each other, they are not capacity figures. Scenario 1 was run twice and agreed within about 10 %.
+- **1. An idle log** (the view is caught up, so a wait returns at once; `eventual` = no wait, `latest` = the server default, `marker` = a write's marker):
+
+  | conc | eventual reads/s | latest reads/s | marker reads/s | eventual p50/p95 ms | latest p50/p95 ms |
+  |---|---|---|---|---|---|
+  | 1 | 1,799-1,840 | 852-920 | 860-957 | 0.48 / 0.93 | 1.02 / 1.88 |
+  | 8 | 5,102-5,825 | 3,103-3,280 | 3,137-3,269 | 1.17 / 2.85 | 2.11 / 4.82 |
+  | 32 | 5,863-5,940 | 3,208-3,419 | 3,289-3,491 | 2.17 / 22.3 | 6.47 / 28.4 |
+
+  A `latest` or marker read costs about two more queries than an `eventual` one (the head of the log, or the marker check, plus one progress query per view; about 3 database transactions per read against about 1), which is roughly half the throughput on one connection pool and about half a millisecond at p50 when the database is on localhost. Each extra query is a round trip, so on a real network the overhead is about two round trips; folding the head query and the progress queries into one statement would cut it to one (not built). `latest` and a marker cost the same.
+- **2. Under writes** (one writer, about 25 subscriptions/s to one course, 16 readers of it): `eventual` 4,520-5,608 reads/s, p50 2.2-2.7 ms, p95 6.3-7.5, p99 12-14; `latest` 1,010-1,022 reads/s, p50 6.4, **p95 36.5-37.0, p99 42-44**. The p95 sits about one poll interval (25 ms) above the p50: a read that arrives while the view is even slightly behind sleeps one `waitUntilProcessed` interval before it looks again, so 25 ms is a latency floor for that read however fast the view catches up.
+- **3. Waiters** (the seats view lags 400 ms; one write, then N readers ask for its marker at once; an unrelated `eventual` reader runs alongside):
+
+  | pool | N | p50 ms | p95 ms | peak connections | unrelated reader p95 ms |
+  |---|---|---|---|---|---|
+  | 10 | 1 | 431 | 431 | 5 | 0.8 |
+  | 10 | 10 | 510 | 513 | 11 | 1.2 |
+  | 10 | 50 | 616 | 628 | 10 | 1.1 |
+  | 10 | 200 | 1,108 | 1,133 | 10 | 3.5 |
+  | 30 | 50 | 603 | 615 | 30 | 1.0 |
+  | 30 | 200 | 1,005 | 1,048 | 30 | 1.2 |
+
+  A waiting reader polls every 25 ms with up to two queries (its view's progress, and while behind a check for pending events), so it costs up to about 80 queries/s while it waits: the database counter showed about 800 transactions/s for 10 waiters and about 2,300/s for 50 (the N = 200 counter is not reliable: the pool is the limit there). Nothing failed. Past about 50 waiting readers on a pool of 10 the pool is full and the wait stretches (about +200 ms at 50, about +700 ms at 200 over the 400 ms the view lags); a pool of 30 did not help at 200 (the database is the limit), and an unrelated read stayed fast (p95 at most 3.5 ms against 0.9 idle). So the wait scales with the number of waiting readers times the poll rate, not with the pool.
+- **4. The head-of-log query on 2,000,000 events:** an index-only backward scan of `(transaction_id, position)`, 4 buffers, 0.02-0.03 ms of execution (p50 0.27-0.29 ms including the round trip, p99 1.3-1.7 ms). It does not show up.
+- Decisions the numbers support (ADR-0015, "Measured costs"): no cache of the head of the log (not built); the polling wait is fine for dozens of concurrent waiting readers per instance and is the next thing to replace beyond that, by waiting on the progress ping that views already send after each commit (ADR-0014) through one LISTEN per instance - the same shared listener that would remove the one-connection-per-open-page limit of the live feed. Not built; it is its own piece of work.
+- Method notes: the first run of scenario 3 was discarded because the script read the database counter (which sleeps) AFTER the write, so the view had caught up before the readers started (the median was below the view's delay, which gave it away); the counter is now read before the write. Scenario 2's first run showed 46 non-200 responses on the `eventual` reads (404s before the view had the course); the script now waits until the view has it, and the statuses are printed.

@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node src/index.ts",
     "migrate": "node src/migrate.ts",
-    "docs:api": "node scripts/generate-openapi.ts"
+    "docs:api": "node scripts/generate-openapi.ts",
+    "bench:reads": "node scripts/bench-reads.ts"
   },
   "dependencies": {
     "effect": "4.0.0",

@@ -26,7 +26,7 @@ Day estimates are mine, not measured.
 | 4 | Wrap the example apps' reads; regenerate OpenAPI | proves it on two real apps | 1 day | 3 | additive |
 | 5 | Course UI sends the marker on its next read (done) | the first real client | 1 day | 4 | additive |
 | 6 | Remove `?waitFor` everywhere; amend ADR-0011; rewrite tutorial step 4; ADR-0015 to Accepted (done; the course app moved to the server default `latest`) | closes the migration | 1.5 days | 5 | one breaking commit |
-| 7 | Measure `latest` at read rates and the poll cost; add to the scale envelope | confirms the cost claims | 0.5 day | 4 | none or a small tweak |
+| 7 | Measure `latest` at read rates and the poll cost (done: `bench-reads.ts`; no head cache needed; the shared listener is the follow-up) | confirms the cost claims | 0.5 day | 4 | the benchmark script and docs |
 
 About 8.5 days. Phases 3 and 6 are the ones most likely to run over: 3 is six modules with unit and integration tests, and 6 touches about 25 files of code, tests and docs, plus a tested tutorial. Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites **run in batches of a few files**, see NOTES.md) and is committed on its own; push only on request.
 
@@ -98,7 +98,7 @@ Remove, in one commit, with "breaking" in the message (ADR-0013):
 - Docs: tutorial step 4 rewritten around write, marker, read, with the tested blocks kept in sync (`tutorial-sync.test.ts`); README lines on `?waitFor`; ADR-0011 amended; ADR-0012 and ADR-0014 references updated; a NOTES entry; the plans that mention `waitFor` get a one-line pointer here, not a rewrite.
 - Regenerate `docs/api/*.json`. ADR-0015 status becomes **Accepted**; the README index is already updated.
 
-## Phase 7. Measure
+## Phase 7. Measure - DONE (see NOTES "Read consistency, phase 7" and ADR-0015 "Measured costs")
 A small load run against the course app: reads per second with `latest` against a baseline with no wait, at the scale envelope's read rates; the pool cost of N concurrent waiters polling every 25 ms; behavior while a long transaction is open. If the head query shows up, add the short in-process cache of the head the ADR mentions; if the poll cost shows up, that is the cue to move the wait onto the shared per-instance listener (a separate piece of work).
 
 ## Risks
