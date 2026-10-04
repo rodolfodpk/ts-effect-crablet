@@ -16,7 +16,7 @@ describe("the course list: update", () => {
   test("the page starts by loading the first page", () => {
     const start = init();
     // a Command holds an Effect, so compare what identifies it: its name and arguments
-    expect(start.commands?.map((c) => ({ name: c.name, args: c.args }))).toEqual([{ name: "FetchCourses", args: { q: "", after: null, append: false } }]);
+    expect(start.commands?.map((c) => ({ name: c.name, args: c.args }))).toEqual([{ name: "FetchCourses", args: { q: "", after: null, append: false, consistentWith: null } }]);
     expect(AsyncData.isLoading(start.model.courses.result)).toBe(true);
   });
 
@@ -34,7 +34,7 @@ describe("the course list: update", () => {
       update,
       Story.given<Model>(loaded(["algebra", "biology"], "biology")),
       Story.message(Message.ClickedMoreCourses()),
-      Story.Command.expectExact(FetchCourses({ q: "", after: "biology", append: true })),
+      Story.Command.expectExact(FetchCourses({ q: "", after: "biology", append: true, consistentWith: null })),
       Story.Command.resolve(FetchCourses, Message.SucceededFetchCourses({ items: [course("calculus")], next: null, append: true })),
       Story.model((m: Model) =>
         expect(m.courses.result).toEqual(CourseList.Success({ data: { items: [course("algebra"), course("biology"), course("calculus")], next: null } }))
@@ -52,11 +52,11 @@ describe("the course list: update", () => {
       Story.given<Model>(loaded(["algebra", "biology"], "biology")),
       Story.message(Message.ChangedCourseFilter({ value: "  phys " })),
       Story.message(Message.SubmittedCourseFilter()),
-      Story.Command.expectExact(FetchCourses({ q: "phys", after: null, append: false })),
+      Story.Command.expectExact(FetchCourses({ q: "phys", after: null, append: false, consistentWith: null })),
       Story.Command.resolve(FetchCourses, Message.SucceededFetchCourses({ items: [course("physics-101")], next: "physics-101", append: false })),
       Story.model((m: Model) => expect(m.courses.applied).toBe("phys")),
       Story.message(Message.ClickedMoreCourses()),
-      Story.Command.expectExact(FetchCourses({ q: "phys", after: "physics-101", append: true })),
+      Story.Command.expectExact(FetchCourses({ q: "phys", after: "physics-101", append: true, consistentWith: null })),
       Story.Command.resolve(FetchCourses, Message.SucceededFetchCourses({ items: [], next: null, append: true }))
     );
   });
@@ -67,7 +67,7 @@ describe("the course list: update", () => {
       Story.given<Model>(loaded(["algebra"], null)),
       Story.message(Message.ClickedCourse({ courseId: "algebra" })),
       Story.model((m: Model) => expect(m.lookupCourseId).toBe("algebra")),
-      Story.Command.expectExact(FetchCourse({ courseId: "algebra" })),
+      Story.Command.expectExact(FetchCourse({ courseId: "algebra", consistentWith: null })),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: course("algebra") }))
     );
   });
@@ -120,7 +120,7 @@ describe("the course list: the page", () => {
       Scene.given<Model>(loaded(["algebra"], null)),
       Scene.type(Scene.role("textbox", { name: "Filter courses" }), "al"),
       Scene.submit(Scene.role("form", { name: "Course filter form" })),
-      Scene.Command.expectExact(FetchCourses({ q: "al", after: null, append: false })),
+      Scene.Command.expectExact(FetchCourses({ q: "al", after: null, append: false, consistentWith: null })),
       Scene.Command.resolve(FetchCourses, Message.SucceededFetchCourses({ items: [course("algebra")], next: null, append: false }))
     );
   });

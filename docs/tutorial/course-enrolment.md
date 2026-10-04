@@ -535,7 +535,7 @@ Model, Messages, one `update` function, and Commands for side effects). It is no
 tested example (`examples/course-enrolment-ui`): the course app, unchanged, plus a page.
 
 Restart the server with the seat map held back 400 ms. That is a demo knob (`COURSES_VIEW_DELAY_MS`, off by default): without it the view catches up in
-milliseconds and you could not *see* what waiting is for.
+milliseconds and you could not *see* what a read that carries a write's marker is for.
 
 ```bash
 COURSES_VIEW_DELAY_MS=400 node src/index.ts
@@ -550,10 +550,11 @@ bun run dev
 
 Things to try:
 
-1. **Define** a course `math` with capacity `1`, and **subscribe** `ann` to it. Each answer says whether the seat map had caught up, and the page reads the course back for you.
+1. **Define** a course `math` with capacity `1`, and **subscribe** `ann` to it. Each answer carries the write's `marker`, and the page reads the course back for you with it.
 2. **Subscribe** `bob` to `math`: "Course math is full (1 seats, all taken)". That is `CourseFull` arriving with its `capacity`; the page did not parse a message.
-3. Untick **Wait for the seat map**, define `physics` and subscribe `cy` to it. The answer is instant, and the read-back is *stale*: the seats have not moved,
-   or the course is "just written, but the seat map has not caught up". Tick the box again and the same actions give the right numbers a moment later.
+3. Untick **Read back with my write's marker**, define `physics` and subscribe `cy` to it. The answer is instant, and the read-back is *stale*: the seats have not moved,
+   or the course is "just written, but the seat map has not caught up". Tick the box again and the same actions give the right numbers: the page sends the marker with the
+   read (`?consistentWith=<marker>`) and the server answers it once the seat map has that write.
 4. Define `math` a second time, or a capacity of `0`, or subscribe a student to four courses. Every refusal is a different problem, shown in its own words.
 
 ### How it is built
@@ -601,47 +602,53 @@ the transport's error and a Schema error. No cast, no copy of the wire format:
 
 <!-- file: examples/course-enrolment-ui/src/api.ts#call -->
 ```ts
-// `?waitFor=course-seats-view`: the answer is sent once that view has processed the write, so the read that follows is not stale.
-const queryOf = (waitForView: boolean) => (waitForView ? { waitFor: COURSE_SEATS_VIEW } : {});
-
 // The calls are plain methods of the derived client: `execute_<command>` takes that command's own payload (a misspelled
 // field does not compile) and fails with exactly the problems that command declares, plus the transport's and the Schema's.
-export const defineCourseCall = (courseId: string, capacity: number, options: { readonly waitForView: boolean }) =>
+// A write does not wait for anything: it answers once it has committed, with the marker of what it wrote.
+export const defineCourseCall = (courseId: string, capacity: number) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: queryOf(options.waitForView) });
+    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: {} });
     return outcomeOf(answer);
   });
 
-export const subscribeCall = (studentId: string, courseId: string, options: { readonly waitForView: boolean }) =>
+export const subscribeCall = (studentId: string, courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: queryOf(options.waitForView) });
+    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: {} });
     return outcomeOf(answer);
   });
 
-// One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it.
-export const listCourses = (options: { readonly q: string; readonly after: string | null }) =>
+// A read can carry a write's marker: `consistentWith` makes the server answer only once the seat map has that write (a 503 if it cannot in
+// time). Without one the read answers at once with whatever the seat map has.
+const consistentWithOf = (marker: string | null) => (marker === null ? {} : { consistentWith: marker });
+
+// One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it. A read resolves to
+// `{ body, headers }` (the header marks a stale answer, which this page never asks for): the page wants the body.
+export const listCourses = (options: { readonly q: string; readonly after: string | null; readonly consistentWith: string | null }) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    // A read resolves to `{ body, headers }` (the header marks a stale answer, which this page does not ask for yet): the page wants the body.
     const answer = yield* client.courseQueries.listCourses({
-      query: { ...(options.q === "" ? {} : { q: options.q }), ...(options.after === null ? {} : { after: options.after }) }
+      query: {
+        ...(options.q === "" ? {} : { q: options.q }),
+        ...(options.after === null ? {} : { after: options.after }),
+        ...consistentWithOf(options.consistentWith)
+      }
     });
     return answer.body;
   });
 
-export const getCourse = (courseId: string) =>
+export const getCourse = (courseId: string, consistentWith: string | null) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: {} });
+    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: consistentWithOf(consistentWith) });
     return answer.body;
   });
 
-const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly view?: CommandOutcome["view"] }): CommandOutcome => ({
+const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly marker: string | null }): CommandOutcome => ({
   status: answer.status,
   reason: answer.reason,
-  ...(answer.view === undefined ? {} : { view: answer.view })
+  marker: answer.marker
 });
 ```
 
@@ -662,6 +669,8 @@ export const Problem = Schema.Union([
   Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
   // Not from the server: the page's reading of a "no such course" it just wrote itself (the seat map lags behind writes).
   Schema.TaggedStruct("NotInSeatMapYet", { courseId: Schema.String }),
+  // A read that asked to include a write was refused (503): the seat map had not caught up in time (try again), or is not updating at all.
+  Schema.TaggedStruct("SeatMapBehind", { failed: Schema.Boolean }),
   Schema.TaggedStruct("Unreachable", {})
 ]);
 export type Problem = typeof Problem.Type
@@ -692,6 +701,8 @@ export const problemFromError = (error: CallError): Problem => {
     }
   }
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
+  // the 503 a read answers when the seat map cannot catch up to the write it was asked to include (told apart by its `reason`)
+  if ("reason" in error && "views" in error) return { _tag: "SeatMapBehind", failed: error.reason === "view_failed" };
   if ("title" in error) {
     // a 400 for a body that did not match the input says which fields (`errors`), by path
     const fields = "errors" in error && error.errors !== undefined ? error.errors.map((issue) => `${issue.path.join(".") || "(body)"}: ${issue.message}`).join("; ") : "";
@@ -706,10 +717,10 @@ export const problemFromError = (error: CallError): Problem => {
 <!-- file: examples/course-enrolment-ui/src/main.ts#command -->
 ```ts
 export const SubscribeStudent = Command.define("SubscribeStudent", {
-  args: { studentId: Schema.String, courseId: Schema.String, waitForView: Schema.Boolean },
+  args: { studentId: Schema.String, courseId: Schema.String },
   messages: [Message.SucceededSubscribe, Message.FailedSubscribe],
-  execute: ({ studentId, courseId, waitForView }) =>
-    subscribeCall(studentId, courseId, { waitForView }).pipe(
+  execute: ({ studentId, courseId }) =>
+    subscribeCall(studentId, courseId).pipe(
       Effect.map((outcome) => Message.SucceededSubscribe({ studentId, courseId, outcome })),
       Effect.catch((error) => Effect.succeed(Message.FailedSubscribe({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -717,26 +728,23 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
 });
 ```
 
-**Reading your own write.** The request asks to wait (`?waitFor=course-seats-view`) unless you untick the box; the response says whether the view caught up; and the
-page says so in words, for every answer the server can give:
+**Reading your own write.** A write does not wait for anything: it answers once it has committed, with a `marker`. The page's read-back carries that marker
+(`?consistentWith=<marker>`) unless you untick the box; the server answers a read that has a marker only once the seat map has the write, or refuses it with a `503` if it
+cannot in time (the page shows that as "the seat map has not caught up with your write yet"); and the page says which read it made:
 
-<!-- file: examples/course-enrolment-ui/src/main.ts#view-note -->
+<!-- file: examples/course-enrolment-ui/src/main.ts#read-back-note -->
 ```ts
-// Whether the seat map (the view the lookup reads) had caught up with the write when the server answered. Without
-// `?waitFor` the server does not know or say; with it, it says, and a miss is reported in the body, never as an error.
-export const viewNote = (outcome: CommandOutcome): string => {
-  const view = outcome.view;
-  if (view === undefined) return "Not waiting for the seat map, so the numbers below may be stale.";
-  if (view.caughtUp) return "The seat map had caught up when this answered.";
-  switch (view.reason) {
-    case "nothing_appended":
-      return "";
-    case "timeout":
-      return "The seat map had not caught up in time, so the numbers below may be stale.";
-    case "view_failed":
-      return "The seat map is not updating, so the numbers below are out of date.";
-    default:
-      return "Could not tell whether the seat map caught up, so the numbers below may be stale.";
+// What the page says about the read it made after a write. With the write's marker the server answered only once the seat map had the write
+// (or refused: see `SeatMapBehind`), so the numbers include it; without one the read answered at once and may be stale; a write that
+// appended nothing (an idempotent repeat) has no marker to send.
+export const readBackNote = (readBack: ReadBack): string => {
+  switch (readBack) {
+    case "with_marker":
+      return "Read back with this write's marker, so the numbers below include it.";
+    case "without_marker":
+      return "Read back without the write's marker, so the numbers below may be stale.";
+    case "no_marker":
+      return "Nothing was written, so there is no marker to read back with; the numbers below may not show the earlier write yet.";
   }
 };
 ```
@@ -768,7 +776,7 @@ const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<
 };
 ```
 
-It asserts the interesting cases: waiting off is stale, waiting on is right (and really waits), every refusal arrives as the problem the page expects, and an unreachable server is reported as such
+It asserts the interesting cases: a read-back without the marker is stale, one with it is right (and really waits), a read the seat map cannot serve in time is the `503` the page understands, every refusal arrives as the problem the page expects, and an unreachable server is reported as such
 (`node --test examples/course-enrolment-ui/test/integration/page-against-server.test.ts`, needs Docker).
 
 ### What this showed
@@ -787,7 +795,7 @@ Building a client is the quickest way to find what an API is missing. Each of th
 
 ### Live updates (a second tab)
 
-Open the page in two browser tabs. Define a course in one: the other's list gets it without a reload. Waiting (`?waitFor`) is for *the tab that wrote*; the
+Open the page in two browser tabs. Define a course in one: the other's list gets it without a reload. The write's marker (`?consistentWith`) is for *the tab that wrote*; the
 other tab learns by a **ping**. Each progress step of a view sends a Postgres `NOTIFY` after it commits, the server turns it into a server-sent event on
 `GET /api/views/changes?views=course-seats-view`, and the page's Foldkit *Subscription* turns each event into a Message (`ReceivedSeatMapPing`) that makes
 `update` read the list again. The ping carries no data, only "the seat map moved", so the page always asks the API and a missed ping costs nothing: every

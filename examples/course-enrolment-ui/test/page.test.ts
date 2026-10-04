@@ -15,7 +15,7 @@ import {
   SubscribeStudent,
   describeProblem,
   init,
-  viewNote,
+  readBackNote,
   update,
   view,
   type Model
@@ -26,10 +26,14 @@ expect.extend(Scene.sceneMatchers as never);
 const start: Model = init().model;
 const math = { courseId: "math", capacity: 3, subscribers: 1, seatsLeft: 2 };
 const typed = (value: string) => FieldValidation.Valid({ value });
-const reloadList = { q: "", after: null, append: false } as const;
+// What a write answers with: the marker of what it wrote (null when it wrote nothing: an idempotent repeat).
+const marker = "7421:98213";
+const created = { status: "CREATED", reason: null, marker } as const;
+const repeat = { status: "IDEMPOTENT", reason: "ALREADY_SUBSCRIBED", marker: null } as const;
+// The read-back after a write: with the write's marker, or with nothing.
+const reloadList = { q: "", after: null, append: false, consistentWith: null } as const;
+const reloadListMarked = { ...reloadList, consistentWith: marker } as const;
 const noCourses = Message.SucceededFetchCourses({ items: [], next: null, append: false });
-const created = { status: "CREATED", reason: null } as const;
-const caughtUp = { ...created, view: { name: "course-seats-view", caughtUp: true } } as const;
 
 describe("looking a course up", () => {
   test("submitting asks the server, shows Working, and a found course is shown", () => {
@@ -38,7 +42,7 @@ describe("looking a course up", () => {
       Story.given<Model>({ ...start, lookupCourseId: "math" }),
       Story.message(Message.SubmittedLookup()),
       Story.model((m: Model) => expect(AsyncData.isLoading(m.lookup)).toBe(true)),
-      Story.Command.expectExact(FetchCourse({ courseId: "math" })),
+      Story.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: null })),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math })),
       Story.model((m: Model) => expect(m.lookup).toEqual(Lookup.Success({ data: math })))
     );
@@ -95,11 +99,13 @@ describe("defining a course", () => {
       update,
       Story.given<Model>(filled),
       Story.message(Message.SubmittedDefineCourse()),
-      Story.Command.expectExact(DefineCourse({ courseId: "math", capacity: 3, waitForView: true })),
-      Story.Command.resolve(DefineCourse, Message.SucceededDefineCourse({ courseId: "math", capacity: 3, outcome: caughtUp })),
-      Story.model((m: Model) => expect(m.define.result).toEqual(DefineResult.Success({ data: { courseId: "math", capacity: 3, outcome: caughtUp } }))),
-      // read your own write: the page looks the new course up
-      Story.Command.expectExact(FetchCourse({ courseId: "math" }), FetchCourses(reloadList)),
+      Story.Command.expectExact(DefineCourse({ courseId: "math", capacity: 3 })),
+      Story.Command.resolve(DefineCourse, Message.SucceededDefineCourse({ courseId: "math", capacity: 3, outcome: created })),
+      Story.model((m: Model) =>
+        expect(m.define.result).toEqual(DefineResult.Success({ data: { courseId: "math", capacity: 3, outcome: created, readBack: "with_marker" } }))
+      ),
+      // read your own write: the page looks the new course up, and reads the list, both with the write's marker
+      Story.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: marker }), FetchCourses(reloadListMarked)),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
       Story.Command.resolve(FetchCourses, noCourses)
     );
@@ -126,12 +132,12 @@ describe("subscribing a student", () => {
       update,
       Story.given<Model>(filled),
       Story.message(Message.SubmittedSubscribe()),
-      Story.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math", waitForView: true })),
-      Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: caughtUp })),
+      Story.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math" })),
+      Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
       Story.model((m: Model) =>
-        expect(m.subscribe.result).toEqual(SubscribeResult.Success({ data: { studentId: "ann", courseId: "math", outcome: caughtUp } }))
+        expect(m.subscribe.result).toEqual(SubscribeResult.Success({ data: { studentId: "ann", courseId: "math", outcome: created, readBack: "with_marker" } }))
       ),
-      Story.Command.expectExact(FetchCourse({ courseId: "math" }), FetchCourses(reloadList)),
+      Story.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: marker }), FetchCourses(reloadListMarked)),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math })),
       Story.Command.resolve(FetchCourses, noCourses)
     );
@@ -158,30 +164,84 @@ describe("subscribing a student", () => {
 describe("reading your own writes", () => {
   const filledSubscribe: Model = { ...start, subscribe: { ...start.subscribe, studentId: typed("ann"), courseId: typed("math") } };
 
-  test("the toggle is on at the start and flips", () => {
-    expect(start.waitForView).toBe(true);
+  test("reading back with the marker is on at the start and the toggle flips it", () => {
+    expect(start.readWithMarker).toBe(true);
     Story.story(
       update,
       Story.given<Model>(start),
-      Story.message(Message.ToggledWaitForView()),
-      Story.model((m: Model) => expect(m.waitForView).toBe(false)),
-      Story.message(Message.ToggledWaitForView()),
-      Story.model((m: Model) => expect(m.waitForView).toBe(true))
+      Story.message(Message.ToggledReadWithMarker()),
+      Story.model((m: Model) => expect(m.readWithMarker).toBe(false)),
+      Story.message(Message.ToggledReadWithMarker()),
+      Story.model((m: Model) => expect(m.readWithMarker).toBe(true))
     );
   });
 
-  test("with the toggle off, the write does not ask to wait, and the read back still happens (and may be stale)", () => {
+  test("a write never asks the server to wait: the same command goes out with the toggle on or off", () => {
+    for (const readWithMarker of [true, false]) {
+      Story.story(
+        update,
+        Story.given<Model>({ ...filledSubscribe, readWithMarker }),
+        Story.message(Message.SubmittedSubscribe()),
+        Story.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math" })),
+        Story.Command.resolve(SubscribeStudent, Message.FailedSubscribe({ problem: { _tag: "Unreachable" } }))
+      );
+    }
+  });
+
+  test("with the toggle on, the course and the list are read back with the write's marker", () => {
+    Story.story(
+      update,
+      Story.given<Model>(filledSubscribe),
+      Story.message(Message.SubmittedSubscribe()),
+      Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
+      Story.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: marker }), FetchCourses(reloadListMarked)),
+      Story.Command.resolve(FetchCourses, noCourses),
+      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math })),
+      Story.model((m: Model) => expect(m.lookup).toEqual(Lookup.Success({ data: math })))
+    );
+  });
+
+  test("with the toggle off, the read back carries no marker (and may be stale)", () => {
     const stale = { ...math, subscribers: 0, seatsLeft: 3 }; // the view has not applied the subscription yet
     Story.story(
       update,
-      Story.given<Model>({ ...filledSubscribe, waitForView: false }),
+      Story.given<Model>({ ...filledSubscribe, readWithMarker: false }),
       Story.message(Message.SubmittedSubscribe()),
-      Story.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math", waitForView: false })),
       Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
-      Story.model((m: Model) => expect(m.lookupCourseId).toBe("math")),
+      Story.model((m: Model) => {
+        expect(m.lookupCourseId).toBe("math");
+        expect(m.subscribe.result).toEqual(SubscribeResult.Success({ data: { studentId: "ann", courseId: "math", outcome: created, readBack: "without_marker" } }));
+      }),
+      Story.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: null }), FetchCourses(reloadList)),
       Story.Command.resolve(FetchCourses, noCourses),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: stale })),
       Story.model((m: Model) => expect(m.lookup).toEqual(Lookup.Success({ data: stale })))
+    );
+  });
+
+  test("a repeat that wrote nothing has no marker: the read back carries none, and the page says why", () => {
+    Story.story(
+      update,
+      Story.given<Model>(filledSubscribe),
+      Story.message(Message.SubmittedSubscribe()),
+      Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: repeat })),
+      Story.model((m: Model) =>
+        expect(m.subscribe.result).toEqual(SubscribeResult.Success({ data: { studentId: "ann", courseId: "math", outcome: repeat, readBack: "no_marker" } }))
+      ),
+      Story.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: null }), FetchCourses(reloadList)),
+      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math })),
+      Story.Command.resolve(FetchCourses, noCourses)
+    );
+  });
+
+  test("a seat-map ping reads again without a marker: it is a hint that the view moved, not a write of this page's", () => {
+    Story.story(
+      update,
+      Story.given<Model>({ ...start, lookup: Lookup.Success({ data: math }) }),
+      Story.message(Message.ReceivedSeatMapPing()),
+      Story.Command.expectExact(FetchCourses(reloadList), FetchCourse({ courseId: "math", consistentWith: null })),
+      Story.Command.resolve(FetchCourses, noCourses),
+      Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math }))
     );
   });
 
@@ -189,7 +249,7 @@ describe("reading your own writes", () => {
     const missing = { _tag: "CourseNotFound", courseId: "math" } as const;
     Story.story(
       update,
-      Story.given<Model>({ ...filledSubscribe, waitForView: false }),
+      Story.given<Model>({ ...filledSubscribe, readWithMarker: false }),
       Story.message(Message.SubmittedSubscribe()),
       Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
       Story.Command.resolve(FetchCourses, noCourses),
@@ -204,18 +264,27 @@ describe("reading your own writes", () => {
     expect(describeProblem({ _tag: "NotInSeatMapYet", courseId: "math" })).toContain("has not caught up");
   });
 
-  test("what the page says about the seat map, for every answer the server can give", () => {
-    expect(viewNote(created)).toContain("Not waiting");
-    expect(viewNote(caughtUp)).toBe("The seat map had caught up when this answered.");
-    const miss = (reason: "timeout" | "view_failed" | "unavailable" | "nothing_appended") =>
-      viewNote({ ...created, view: { name: "course-seats-view", caughtUp: false, reason } });
-    expect(miss("timeout")).toContain("had not caught up in time");
-    expect(miss("view_failed")).toContain("not updating");
-    expect(miss("unavailable")).toContain("Could not tell");
-    expect(miss("nothing_appended")).toBe("");
+  test("what the page says about the read back, for each way it can be made", () => {
+    expect(readBackNote("with_marker")).toBe("Read back with this write's marker, so the numbers below include it.");
+    expect(readBackNote("without_marker")).toContain("may be stale");
+    expect(readBackNote("no_marker")).toContain("no marker to read back with");
   });
 
-  test("a write that waited but timed out is reported, not hidden", () => {
+  test("a read the server refused because the seat map could not catch up is reported, not hidden", () => {
+    Story.story(
+      update,
+      Story.given<Model>(filledSubscribe),
+      Story.message(Message.SubmittedSubscribe()),
+      Story.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
+      Story.Command.resolve(FetchCourses, Message.FailedFetchCourses({ problem: { _tag: "SeatMapBehind", failed: false } })),
+      Story.Command.resolve(FetchCourse, Message.FailedFetchCourse({ problem: { _tag: "SeatMapBehind", failed: false } })),
+      Story.model((m: Model) => expect(m.lookup).toEqual(Lookup.Failure({ error: { _tag: "SeatMapBehind", failed: false } })))
+    );
+    expect(describeProblem({ _tag: "SeatMapBehind", failed: false })).toBe("The seat map has not caught up with your write yet. Try again in a moment.");
+    expect(describeProblem({ _tag: "SeatMapBehind", failed: true })).toContain("not updating");
+  });
+
+  test("the page tells the user which read it made, and a refused read-back is announced", () => {
     Scene.scene(
       { update, view },
       Scene.given<Model>(start),
@@ -225,33 +294,31 @@ describe("reading your own writes", () => {
         Scene.type(Scene.role("textbox", { name: "Course" }), "math"),
         Scene.submit(Scene.role("form", { name: "Subscribe form" }))
       ),
-      Scene.Command.resolve(
-        SubscribeStudent,
-        Message.SucceededSubscribe({
-          studentId: "ann",
-          courseId: "math",
-          outcome: { ...created, view: { name: "course-seats-view", caughtUp: false, reason: "timeout" } }
-        })
-      ),
-      Scene.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
+      Scene.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
+      Scene.Command.resolve(FetchCourse, Message.FailedFetchCourse({ problem: { _tag: "SeatMapBehind", failed: false } })),
       Scene.Command.resolve(FetchCourses, noCourses),
-      (Scene.expect(Scene.text("ann is now subscribed to math. The seat map had not caught up in time, so the numbers below may be stale.")) as any).toExist()
+      (Scene.expect(Scene.text("ann is now subscribed to math. Read back with this write's marker, so the numbers below include it.")) as any).toExist(),
+      (Scene.expect(Scene.text("The seat map has not caught up with your write yet. Try again in a moment.")) as any).toExist()
     );
   });
 
-  test("the checkbox turns the waiting off", () => {
+  test("the checkbox turns the marker off: the write is the same, the read back carries none", () => {
     Scene.scene(
       { update, view },
       Scene.given<Model>(start),
-      Scene.click(Scene.role("checkbox", { name: "Wait for the seat map" })),
+      Scene.click(Scene.role("checkbox", { name: "Read back with the write's marker" })),
       Scene.inside(
         Scene.role("form", { name: "Subscribe form" }),
         Scene.type(Scene.role("textbox", { name: "Student id" }), "ann"),
         Scene.type(Scene.role("textbox", { name: "Course" }), "math"),
         Scene.submit(Scene.role("form", { name: "Subscribe form" }))
       ),
-      Scene.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math", waitForView: false })),
-      Scene.Command.resolve(SubscribeStudent, Message.FailedSubscribe({ problem: { _tag: "Unreachable" } }))
+      Scene.Command.expectExact(SubscribeStudent({ studentId: "ann", courseId: "math" })),
+      Scene.Command.resolve(SubscribeStudent, Message.SucceededSubscribe({ studentId: "ann", courseId: "math", outcome: created })),
+      Scene.Command.expectExact(FetchCourse({ courseId: "math", consistentWith: null }), FetchCourses(reloadList)),
+      Scene.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
+      Scene.Command.resolve(FetchCourses, noCourses),
+      (Scene.expect(Scene.text("ann is now subscribed to math. Read back without the write's marker, so the numbers below may be stale.")) as any).toExist()
     );
   });
 });
@@ -291,10 +358,10 @@ describe("the page", () => {
         Scene.type(Scene.role("textbox", { name: "Capacity" }), "3"),
         Scene.submit(Scene.role("form", { name: "Define a course form" }))
       ),
-      Scene.Command.resolve(DefineCourse, Message.SucceededDefineCourse({ courseId: "math", capacity: 3, outcome: caughtUp })),
+      Scene.Command.resolve(DefineCourse, Message.SucceededDefineCourse({ courseId: "math", capacity: 3, outcome: created })),
       Scene.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: { ...math, subscribers: 0, seatsLeft: 3 } })),
       Scene.Command.resolve(FetchCourses, noCourses),
-      (Scene.expect(Scene.text("Defined course math with 3 seats. The seat map had caught up when this answered.")) as any).toExist(),
+      (Scene.expect(Scene.text("Defined course math with 3 seats. Read back with this write's marker, so the numbers below include it.")) as any).toExist(),
       (Scene.expect(Scene.text("math: 3 of 3 seats left (0 subscribed)")) as any).toExist()
     );
   });

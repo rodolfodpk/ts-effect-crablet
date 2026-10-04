@@ -24,7 +24,7 @@ Day estimates are mine, not measured.
 | 2 | Spike: response header and `503` + `Retry-After` through `HttpApi` (done) | decides how `bounded` and `strict` are expressed | 0.25 day | - | docs only (the ADR, the plan, NOTES) |
 | 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper (done) | the feature | 2.5 days | 1, 2 | additive |
 | 4 | Wrap the example apps' reads; regenerate OpenAPI | proves it on two real apps | 1 day | 3 | additive |
-| 5 | Course UI sends the marker on its next read | the first real client | 1 day | 4 | additive |
+| 5 | Course UI sends the marker on its next read (done) | the first real client | 1 day | 4 | additive |
 | 6 | Remove `?waitFor` everywhere; amend ADR-0011; rewrite tutorial step 4; ADR-0015 to Accepted | closes the migration | 1.5 days | 5 | one breaking commit |
 | 7 | Measure `latest` at read rates and the poll cost; add to the scale envelope | confirms the cost claims | 0.5 day | 4 | none or a small tweak |
 
@@ -86,7 +86,7 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 - Regenerate both OpenAPI documents (additive: new query parameters and a new 503). They have separate generators: `bun run docs:api` at the repo root writes the wallet document, and `bun run docs:api` inside `examples/course-enrolment-app` (it runs under Node) writes the course one. Update the OpenAPI tests.
 - The old `?waitFor` still works in this phase.
 
-## Phase 5. The Foldkit page
+## Phase 5. The Foldkit page - DONE (see NOTES "Read consistency, phase 5")
 **Spike consequence.** A wrapped read's derived client resolves to `{ body, headers }` (phase 2), so `getCourse` and `listCourses` in `api.ts` and the page tests read `.body`.
 `defineCourseCall` currently passes `waitForView`; the derived client already types the API definition, so the new query parameters appear in it. Change the page so a write keeps the returned `marker` and the page's next `getCourse` or `listCourses` sends `consistentWith=<marker>`; the "wait for the seat map" toggle becomes "read with my marker" (default on), so the demo still shows the stale read and the fix. The live feed and its debounce are untouched. Update `page.test.ts`, `api-base-url.test.ts` if affected, and `page-against-server.test.ts`.
 
@@ -94,7 +94,7 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 Remove, in one commit, with "breaking" in the message (ADR-0013):
 - `commands-http`: `ViewWaiter.ts` (and its entry in `package.json`, which also matched), `viewWaiters` in `CommandApiConfig`, `waitableViews`, `waitQuery`, `ViewWaitResult` and the `view` member in `CommandApi.ts`, the wait branch in `CommandApiLive.ts`, and the tests that mention them (`command-api-description.test.ts`, `contract-api.types.ts`, `command-api-integration.test.ts`).
 - Course app: `courseViewWaiters` in `CourseApp.ts`, `ViewWaitResult` and the waiter comment in `CourseApi.ts`, the `waitFor` comment in `CourseQueryApi.ts`, `index.ts`, and the tests (`course-http`, `course-list`, `course-feed`, `course-view-delay`, `course-openapi`). Wallet app: `walletViewWaiters` in `WalletApp.ts` and `lifecycle-e2e`.
-- Course UI: `api.ts` (it imports `ViewWaitResult` from the course app and builds `queryOf(waitForView)`), `main.ts`, and both page tests.
+- Course UI: nothing left (phase 5 removed its use of `?waitFor`, `view` and `ViewWaitResult`).
 - Docs: tutorial step 4 rewritten around write, marker, read, with the tested blocks kept in sync (`tutorial-sync.test.ts`); README lines on `?waitFor`; ADR-0011 amended; ADR-0012 and ADR-0014 references updated; a NOTES entry; the plans that mention `waitFor` get a one-line pointer here, not a rewrite.
 - Regenerate `docs/api/*.json`. ADR-0015 status becomes **Accepted**; the README index is already updated.
 

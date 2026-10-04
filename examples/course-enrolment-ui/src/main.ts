@@ -16,8 +16,12 @@ import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, l
 // MODEL
 
 const Text = FieldValidation.Field(Schema.String);
-const Defined = Schema.Struct({ courseId: Schema.String, capacity: Schema.Int, outcome: CommandOutcome });
-const Subscribed = Schema.Struct({ studentId: Schema.String, courseId: Schema.String, outcome: CommandOutcome });
+// How the page read the data back after a write: with the write's marker (so the read includes it), without it (the toggle is off, so the read
+// may be stale), or with nothing to send (the write appended nothing, so it has no marker).
+export const ReadBack = Schema.Literals(["with_marker", "without_marker", "no_marker"]);
+export type ReadBack = typeof ReadBack.Type
+const Defined = Schema.Struct({ courseId: Schema.String, capacity: Schema.Int, outcome: CommandOutcome, readBack: ReadBack });
+const Subscribed = Schema.Struct({ studentId: Schema.String, courseId: Schema.String, outcome: CommandOutcome, readBack: ReadBack });
 
 export const Lookup = AsyncData.Schema(CourseResponse, Problem);
 // The course list as shown: every page loaded so far, and the cursor of the next one (null on the last page).
@@ -31,8 +35,9 @@ export const FeedState = Schema.Literals(["connecting", "live", "reconnecting"])
 
 export const Model = Schema.Struct({
   feed: FeedState,
-  // Ask the server to answer a write only once the seat map (the view the lookup reads) has caught up with it.
-  waitForView: Schema.Boolean,
+  // After a write, read back with its marker (`?consistentWith=<marker>`): the server answers the read only once the seat map (the view the
+  // lookup and the list read) has that write. Off: the read-back carries nothing, and may be stale.
+  readWithMarker: Schema.Boolean,
   // The course list: what the user typed into the filter, the filter in effect, and the pages loaded.
   courses: Schema.Struct({ filter: Schema.String, applied: Schema.String, result: CourseList.schema }),
   // The course the last write was about, until the user looks something up themselves: a "no such course" for it means
@@ -63,7 +68,7 @@ export const Message = defineMessageUnion({
   ReceivedSeatMapPing: {},
   LostSeatMapFeed: {},
 
-  ToggledWaitForView: {},
+  ToggledReadWithMarker: {},
 
   ChangedCourseFilter: { value: Schema.String },
   SubmittedCourseFilter: {},
@@ -94,11 +99,12 @@ export type Message = typeof Message.Type
 // COMMANDS: each runs one call and ends in a Succeeded or a Failed Message. A refusal is not an exception: it is a
 // `Problem` the update function matches on.
 
+// `consistentWith` is a write's marker, or null for a read that carries none.
 export const FetchCourses = Command.define("FetchCourses", {
-  args: { q: Schema.String, after: Schema.NullOr(Schema.String), append: Schema.Boolean },
+  args: { q: Schema.String, after: Schema.NullOr(Schema.String), append: Schema.Boolean, consistentWith: Schema.NullOr(Schema.String) },
   messages: [Message.SucceededFetchCourses, Message.FailedFetchCourses],
-  execute: ({ q, after, append }) =>
-    listCourses({ q, after }).pipe(
+  execute: ({ q, after, append, consistentWith }) =>
+    listCourses({ q, after, consistentWith }).pipe(
       Effect.map((page) => Message.SucceededFetchCourses({ items: page.items, next: page.next, append })),
       Effect.catch((error) => Effect.succeed(Message.FailedFetchCourses({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -106,10 +112,10 @@ export const FetchCourses = Command.define("FetchCourses", {
 });
 
 export const FetchCourse = Command.define("FetchCourse", {
-  args: { courseId: Schema.String },
+  args: { courseId: Schema.String, consistentWith: Schema.NullOr(Schema.String) },
   messages: [Message.SucceededFetchCourse, Message.FailedFetchCourse],
-  execute: ({ courseId }) =>
-    getCourse(courseId).pipe(
+  execute: ({ courseId, consistentWith }) =>
+    getCourse(courseId, consistentWith).pipe(
       Effect.map((course) => Message.SucceededFetchCourse({ course })),
       Effect.catch((error) => Effect.succeed(Message.FailedFetchCourse({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -117,10 +123,10 @@ export const FetchCourse = Command.define("FetchCourse", {
 });
 
 export const DefineCourse = Command.define("DefineCourse", {
-  args: { courseId: Schema.String, capacity: Schema.Int, waitForView: Schema.Boolean },
+  args: { courseId: Schema.String, capacity: Schema.Int },
   messages: [Message.SucceededDefineCourse, Message.FailedDefineCourse],
-  execute: ({ courseId, capacity, waitForView }) =>
-    defineCourseCall(courseId, capacity, { waitForView }).pipe(
+  execute: ({ courseId, capacity }) =>
+    defineCourseCall(courseId, capacity).pipe(
       Effect.map((outcome) => Message.SucceededDefineCourse({ courseId, capacity, outcome })),
       Effect.catch((error) => Effect.succeed(Message.FailedDefineCourse({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -129,10 +135,10 @@ export const DefineCourse = Command.define("DefineCourse", {
 
 // #region command
 export const SubscribeStudent = Command.define("SubscribeStudent", {
-  args: { studentId: Schema.String, courseId: Schema.String, waitForView: Schema.Boolean },
+  args: { studentId: Schema.String, courseId: Schema.String },
   messages: [Message.SucceededSubscribe, Message.FailedSubscribe],
-  execute: ({ studentId, courseId, waitForView }) =>
-    subscribeCall(studentId, courseId, { waitForView }).pipe(
+  execute: ({ studentId, courseId }) =>
+    subscribeCall(studentId, courseId).pipe(
       Effect.map((outcome) => Message.SucceededSubscribe({ studentId, courseId, outcome })),
       Effect.catch((error) => Effect.succeed(Message.FailedSubscribe({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -142,15 +148,20 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
 
 // UPDATE
 
-// After a write, read the course the write was about: this is "read your own writes". Whether that read is right depends
-// on whether the write waited for the seat map (see `waitForView`).
-const readBack = (model: Model, courseId: string) => ({
-  lookupCourseId: courseId,
-  justWrote: courseId,
-  lookup: AsyncData.Loading(),
-  // the list is read back too, from its first page, under the filter in effect
-  commands: [FetchCourse({ courseId }), FetchCourses({ q: model.courses.applied, after: null, append: false })]
-});
+// After a write, read the course the write was about: this is "read your own writes". Whether that read includes the write depends on
+// whether it carries the write's marker (see `readWithMarker`): with it the server waits for the seat map, without it the read may be stale.
+const readBack = (model: Model, courseId: string, outcome: CommandOutcome) => {
+  const consistentWith = model.readWithMarker ? outcome.marker : null;
+  const kind: ReadBack = !model.readWithMarker ? "without_marker" : outcome.marker === null ? "no_marker" : "with_marker";
+  return {
+    kind,
+    lookupCourseId: courseId,
+    justWrote: courseId,
+    lookup: AsyncData.Loading(),
+    // the list is read back too, from its first page, under the filter in effect
+    commands: [FetchCourse({ courseId, consistentWith }), FetchCourses({ q: model.courses.applied, after: null, append: false, consistentWith })]
+  };
+};
 
 export const update = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
@@ -159,27 +170,27 @@ export const update = (model: Model, message: Message) =>
     ReceivedSeatMapPing: () => ({
       model: { ...model, feed: "live" as const },
       commands: [
-        FetchCourses({ q: model.courses.applied, after: null, append: false }),
-        ...(AsyncData.isSuccess(model.lookup) ? [FetchCourse({ courseId: model.lookup.data.courseId })] : [])
+        FetchCourses({ q: model.courses.applied, after: null, append: false, consistentWith: null }),
+        ...(AsyncData.isSuccess(model.lookup) ? [FetchCourse({ courseId: model.lookup.data.courseId, consistentWith: null })] : [])
       ]
     }),
     LostSeatMapFeed: () => ({ model: { ...model, feed: "reconnecting" as const } }),
 
-    ToggledWaitForView: () => ({ model: { ...model, waitForView: !model.waitForView } }),
+    ToggledReadWithMarker: () => ({ model: { ...model, readWithMarker: !model.readWithMarker } }),
 
     ChangedCourseFilter: ({ value }) => ({ model: { ...model, courses: { ...model.courses, filter: value } } }),
     // Applying a filter starts again from the first page.
     SubmittedCourseFilter: () => ({
       model: { ...model, courses: { ...model.courses, applied: model.courses.filter.trim(), result: AsyncData.Loading() } },
-      commands: [FetchCourses({ q: model.courses.filter.trim(), after: null, append: false })]
+      commands: [FetchCourses({ q: model.courses.filter.trim(), after: null, append: false, consistentWith: null })]
     }),
     ClickedMoreCourses: () =>
       AsyncData.isSuccess(model.courses.result) && model.courses.result.data.next !== null
-        ? { model, commands: [FetchCourses({ q: model.courses.applied, after: model.courses.result.data.next, append: true })] }
+        ? { model, commands: [FetchCourses({ q: model.courses.applied, after: model.courses.result.data.next, append: true, consistentWith: null })] }
         : { model },
     ClickedCourse: ({ courseId }) => ({
       model: { ...model, lookupCourseId: courseId, justWrote: null, lookup: AsyncData.Loading() },
-      commands: [FetchCourse({ courseId })]
+      commands: [FetchCourse({ courseId, consistentWith: null })]
     }),
     SucceededFetchCourses: ({ items, next, append }) => ({
       model: {
@@ -203,7 +214,7 @@ export const update = (model: Model, message: Message) =>
         ? { model }
         : {
             model: { ...model, justWrote: null, lookup: AsyncData.Loading() },
-            commands: [FetchCourse({ courseId: model.lookupCourseId.trim() })]
+            commands: [FetchCourse({ courseId: model.lookupCourseId.trim(), consistentWith: null })]
           },
     SucceededFetchCourse: ({ course }) => ({ model: { ...model, lookup: Lookup.Success({ data: course }) } }),
     FailedFetchCourse: ({ problem }) => ({
@@ -227,19 +238,19 @@ export const update = (model: Model, message: Message) =>
       return FieldValidation.isValid(requiredRules)(courseId) && FieldValidation.isValid(capacityRules)(capacity)
         ? {
             model: { ...model, define: { courseId, capacity, result: AsyncData.Loading() } },
-            commands: [DefineCourse({ courseId: courseId.value.trim(), capacity: Number(capacity.value), waitForView: model.waitForView })]
+            commands: [DefineCourse({ courseId: courseId.value.trim(), capacity: Number(capacity.value) })]
           }
         : { model: { ...model, define: { ...model.define, courseId, capacity } } };
     },
     SucceededDefineCourse: ({ courseId, capacity, outcome }) => {
-      const read = readBack(model, courseId);
+      const read = readBack(model, courseId, outcome);
       return {
         model: {
           ...model,
           lookupCourseId: read.lookupCourseId,
           justWrote: read.justWrote,
           lookup: read.lookup,
-          define: { ...model.define, result: DefineResult.Success({ data: { courseId, capacity, outcome } }) }
+          define: { ...model.define, result: DefineResult.Success({ data: { courseId, capacity, outcome, readBack: read.kind } }) }
         },
         commands: read.commands
       };
@@ -260,19 +271,19 @@ export const update = (model: Model, message: Message) =>
       return FieldValidation.isValid(requiredRules)(studentId) && FieldValidation.isValid(requiredRules)(courseId)
         ? {
             model: { ...model, subscribe: { studentId, courseId, result: AsyncData.Loading() } },
-            commands: [SubscribeStudent({ studentId: studentId.value.trim(), courseId: courseId.value.trim(), waitForView: model.waitForView })]
+            commands: [SubscribeStudent({ studentId: studentId.value.trim(), courseId: courseId.value.trim() })]
           }
         : { model: { ...model, subscribe: { ...model.subscribe, studentId, courseId } } };
     },
     SucceededSubscribe: ({ studentId, courseId, outcome }) => {
-      const read = readBack(model, courseId);
+      const read = readBack(model, courseId, outcome);
       return {
         model: {
           ...model,
           lookupCourseId: read.lookupCourseId,
           justWrote: read.justWrote,
           lookup: read.lookup,
-          subscribe: { ...model.subscribe, result: SubscribeResult.Success({ data: { studentId, courseId, outcome } }) }
+          subscribe: { ...model.subscribe, result: SubscribeResult.Success({ data: { studentId, courseId, outcome, readBack: read.kind } }) }
         },
         commands: read.commands
       };
@@ -287,10 +298,10 @@ export const update = (model: Model, message: Message) =>
 const emptyField = FieldValidation.NotValidated({ value: "" });
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
-  commands: [FetchCourses({ q: "", after: null, append: false })],
+  commands: [FetchCourses({ q: "", after: null, append: false, consistentWith: null })],
   model: {
     feed: "connecting",
-    waitForView: true,
+    readWithMarker: true,
     courses: { filter: "", applied: "", result: AsyncData.Loading() },
     justWrote: null,
     lookupCourseId: "",
@@ -335,7 +346,11 @@ export const describeProblem = (problem: Problem): string => {
     case "Rejected":
       return `${problem.title}: ${problem.detail}`;
     case "NotInSeatMapYet":
-      return `Course "${problem.courseId}" was just written, but the seat map has not caught up with it yet. Look it up again in a moment, or turn waiting on.`;
+      return `Course "${problem.courseId}" was just written, but the seat map has not caught up with it yet. Look it up again in a moment, or turn on reading back with the write's marker.`;
+    case "SeatMapBehind":
+      return problem.failed
+        ? "The seat map is not updating, so a read that includes your write is not possible right now."
+        : "The seat map has not caught up with your write yet. Try again in a moment.";
     case "Mismatch":
       return `That does not match the API definition: ${problem.detail.replaceAll("\n", " ")}`;
     case "Unreachable":
@@ -343,25 +358,21 @@ export const describeProblem = (problem: Problem): string => {
   }
 };
 
-// #region view-note
-// Whether the seat map (the view the lookup reads) had caught up with the write when the server answered. Without
-// `?waitFor` the server does not know or say; with it, it says, and a miss is reported in the body, never as an error.
-export const viewNote = (outcome: CommandOutcome): string => {
-  const view = outcome.view;
-  if (view === undefined) return "Not waiting for the seat map, so the numbers below may be stale.";
-  if (view.caughtUp) return "The seat map had caught up when this answered.";
-  switch (view.reason) {
-    case "nothing_appended":
-      return "";
-    case "timeout":
-      return "The seat map had not caught up in time, so the numbers below may be stale.";
-    case "view_failed":
-      return "The seat map is not updating, so the numbers below are out of date.";
-    default:
-      return "Could not tell whether the seat map caught up, so the numbers below may be stale.";
+// #region read-back-note
+// What the page says about the read it made after a write. With the write's marker the server answered only once the seat map had the write
+// (or refused: see `SeatMapBehind`), so the numbers include it; without one the read answered at once and may be stale; a write that
+// appended nothing (an idempotent repeat) has no marker to send.
+export const readBackNote = (readBack: ReadBack): string => {
+  switch (readBack) {
+    case "with_marker":
+      return "Read back with this write's marker, so the numbers below include it.";
+    case "without_marker":
+      return "Read back without the write's marker, so the numbers below may be stale.";
+    case "no_marker":
+      return "Nothing was written, so there is no marker to read back with; the numbers below may not show the earlier write yet.";
   }
 };
-// #endregion view-note
+// #endregion read-back-note
 
 export const feedNote = (feed: Model["feed"]): string => {
   switch (feed) {
@@ -445,8 +456,8 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
       h.label(
         [h.Class("wait-toggle")],
         [
-          h.input([h.Type("checkbox"), h.AriaLabel("Wait for the seat map"), h.Checked(model.waitForView), h.OnClick(Message.ToggledWaitForView())]),
-          "Wait for the seat map before a write answers (?waitFor=course-seats-view)"
+          h.input([h.Type("checkbox"), h.AriaLabel("Read back with the write's marker"), h.Checked(model.readWithMarker), h.OnClick(Message.ToggledReadWithMarker())]),
+          "Read back with my write's marker (?consistentWith=<marker>)"
         ]
       ),
 
@@ -482,7 +493,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
               h.button([h.Type("submit")], ["Define"])
             ]
           ),
-          resultOf(model.define.result, h, (c) => `Defined course ${c.courseId} with ${c.capacity} seats. ${viewNote(c.outcome)}`.trim())
+          resultOf(model.define.result, h, (c) => `Defined course ${c.courseId} with ${c.capacity} seats. ${readBackNote(c.readBack)}`.trim())
         ]
       ),
 
@@ -503,7 +514,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
               s.outcome.status === "CREATED"
                 ? `${s.studentId} is now subscribed to ${s.courseId}.`
                 : `${s.studentId} was already subscribed to ${s.courseId} (${s.outcome.reason ?? "nothing to do"}).`
-            } ${viewNote(s.outcome)}`.trim()
+            } ${readBackNote(s.readBack)}`.trim()
           )
         ]
       ),

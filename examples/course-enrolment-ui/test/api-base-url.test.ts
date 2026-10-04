@@ -36,7 +36,7 @@ describe("apiBaseUrl", () => {
         headers: { "content-type": "application/json" }
       });
     }) as typeof fetch;
-    await Effect.runPromise(api.getCourse("math").pipe(Effect.provide(FetchHttpClient.layer)));
+    await Effect.runPromise(api.getCourse("math", null).pipe(Effect.provide(FetchHttpClient.layer)));
     expect(urls).toEqual(["http://api.example.test:8080/api/courses/math"]);
   });
 });

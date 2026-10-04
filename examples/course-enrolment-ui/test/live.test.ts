@@ -19,7 +19,7 @@ describe("a ping from the feed", () => {
       Story.given<Model>({ ...start, courses: { ...start.courses, applied: "ma", filter: "mathx" } }),
       Story.message(Message.ReceivedSeatMapPing()),
       Story.model((m: Model) => expect(m.feed).toBe("live")),
-      Story.Command.expectExact(FetchCourses({ q: "ma", after: null, append: false })),
+      Story.Command.expectExact(FetchCourses({ q: "ma", after: null, append: false, consistentWith: null })),
       Story.Command.resolve(FetchCourses, noCourses)
     );
   });
@@ -29,7 +29,7 @@ describe("a ping from the feed", () => {
       update,
       Story.given<Model>({ ...start, lookupCourseId: "math", lookup: Lookup.Success({ data: math }) }),
       Story.message(Message.ReceivedSeatMapPing()),
-      Story.Command.expectExact(FetchCourses({ q: "", after: null, append: false }), FetchCourse({ courseId: "math" })),
+      Story.Command.expectExact(FetchCourses({ q: "", after: null, append: false, consistentWith: null }), FetchCourse({ courseId: "math", consistentWith: null })),
       Story.Command.resolve(FetchCourses, noCourses),
       Story.Command.resolve(FetchCourse, Message.SucceededFetchCourse({ course: math }))
     );
@@ -40,7 +40,7 @@ describe("a ping from the feed", () => {
       update,
       Story.given<Model>({ ...start, lookupCourseId: "typed-but-not-submitted" }),
       Story.message(Message.ReceivedSeatMapPing()),
-      Story.Command.expectExact(FetchCourses({ q: "", after: null, append: false })),
+      Story.Command.expectExact(FetchCourses({ q: "", after: null, append: false, consistentWith: null })),
       Story.Command.resolve(FetchCourses, noCourses)
     );
   });

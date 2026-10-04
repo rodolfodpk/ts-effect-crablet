@@ -6,7 +6,7 @@
 // It imports no foldkit, so tests and the end-to-end check can use it.
 import { Duration, Effect, Ref, Schema, Stream } from "effect";
 import { HttpApiClient } from "effect/http-api";
-import { COURSE_SEATS_VIEW, CourseResponse, ViewWaitResult, makeCourseApi } from "course-enrolment-app/CourseApi";
+import { COURSE_SEATS_VIEW, CourseResponse, makeCourseApi } from "course-enrolment-app/CourseApi";
 
 // #region client
 // Where the API is. Unset: relative URLs, which works when the page and the API share an origin (the Vite dev proxy does that, and so
@@ -61,57 +61,63 @@ export const reconnecting = <A, E, R, M>(
   );
 // #endregion feed
 
-// What a command answered: created, or "already done" (an idempotent repeat) with the reason; and, when the request
-// asked to wait for a view (`?waitFor=`), whether that view had caught up with the write when the answer was sent.
+// What a command answered: created, or "already done" (an idempotent repeat) with the reason, and the write's marker (null when nothing was
+// written): the token that makes the next read include this write (`?consistentWith=<marker>`).
 export const CommandOutcome = Schema.Struct({
   status: Schema.Literals(["CREATED", "IDEMPOTENT"]),
   reason: Schema.NullOr(Schema.String),
-  view: Schema.optionalKey(ViewWaitResult)
+  marker: Schema.NullOr(Schema.String)
 });
 export type CommandOutcome = typeof CommandOutcome.Type
 
 // #region call
-// `?waitFor=course-seats-view`: the answer is sent once that view has processed the write, so the read that follows is not stale.
-const queryOf = (waitForView: boolean) => (waitForView ? { waitFor: COURSE_SEATS_VIEW } : {});
-
 // The calls are plain methods of the derived client: `execute_<command>` takes that command's own payload (a misspelled
 // field does not compile) and fails with exactly the problems that command declares, plus the transport's and the Schema's.
-export const defineCourseCall = (courseId: string, capacity: number, options: { readonly waitForView: boolean }) =>
+// A write does not wait for anything: it answers once it has committed, with the marker of what it wrote.
+export const defineCourseCall = (courseId: string, capacity: number) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: queryOf(options.waitForView) });
+    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: {} });
     return outcomeOf(answer);
   });
 
-export const subscribeCall = (studentId: string, courseId: string, options: { readonly waitForView: boolean }) =>
+export const subscribeCall = (studentId: string, courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: queryOf(options.waitForView) });
+    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: {} });
     return outcomeOf(answer);
   });
 
-// One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it.
-export const listCourses = (options: { readonly q: string; readonly after: string | null }) =>
+// A read can carry a write's marker: `consistentWith` makes the server answer only once the seat map has that write (a 503 if it cannot in
+// time). Without one the read answers at once with whatever the seat map has.
+const consistentWithOf = (marker: string | null) => (marker === null ? {} : { consistentWith: marker });
+
+// One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it. A read resolves to
+// `{ body, headers }` (the header marks a stale answer, which this page never asks for): the page wants the body.
+export const listCourses = (options: { readonly q: string; readonly after: string | null; readonly consistentWith: string | null }) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    // A read resolves to `{ body, headers }` (the header marks a stale answer, which this page does not ask for yet): the page wants the body.
     const answer = yield* client.courseQueries.listCourses({
-      query: { ...(options.q === "" ? {} : { q: options.q }), ...(options.after === null ? {} : { after: options.after }) }
+      query: {
+        ...(options.q === "" ? {} : { q: options.q }),
+        ...(options.after === null ? {} : { after: options.after }),
+        ...consistentWithOf(options.consistentWith)
+      }
     });
     return answer.body;
   });
 
-export const getCourse = (courseId: string) =>
+export const getCourse = (courseId: string, consistentWith: string | null) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: {} });
+    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: consistentWithOf(consistentWith) });
     return answer.body;
   });
 
-const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly view?: CommandOutcome["view"] }): CommandOutcome => ({
+const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly marker: string | null }): CommandOutcome => ({
   status: answer.status,
   reason: answer.reason,
-  ...(answer.view === undefined ? {} : { view: answer.view })
+  marker: answer.marker
 });
 // #endregion call
 
@@ -130,6 +136,8 @@ export const Problem = Schema.Union([
   Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
   // Not from the server: the page's reading of a "no such course" it just wrote itself (the seat map lags behind writes).
   Schema.TaggedStruct("NotInSeatMapYet", { courseId: Schema.String }),
+  // A read that asked to include a write was refused (503): the seat map had not caught up in time (try again), or is not updating at all.
+  Schema.TaggedStruct("SeatMapBehind", { failed: Schema.Boolean }),
   Schema.TaggedStruct("Unreachable", {})
 ]);
 export type Problem = typeof Problem.Type
@@ -160,6 +168,8 @@ export const problemFromError = (error: CallError): Problem => {
     }
   }
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
+  // the 503 a read answers when the seat map cannot catch up to the write it was asked to include (told apart by its `reason`)
+  if ("reason" in error && "views" in error) return { _tag: "SeatMapBehind", failed: error.reason === "view_failed" };
   if ("title" in error) {
     // a 400 for a body that did not match the input says which fields (`errors`), by path
     const fields = "errors" in error && error.errors !== undefined ? error.errors.map((issue) => `${issue.path.join(".") || "(body)"}: ${issue.message}`).join("; ") : "";

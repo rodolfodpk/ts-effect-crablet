@@ -5,8 +5,8 @@
 // until nothing is left to run. What it ends with is the Model the page would be showing. `globalThis.location` is the
 // base URL a browser would supply for the page's relative URLs.
 //
-// The seats view is held back 300 ms (the course app's demo knob) so that "waiting for the seat map" and "not waiting"
-// give different answers, as they do in real life when the view lags.
+// The seats view is held back 300 ms (the course app's demo knob) so that a read-back WITH the write's marker (the server waits for the seat
+// map) and one WITHOUT it give different answers, as they do in real life when the view lags.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Fiber, Stream } from "effect";
@@ -14,7 +14,8 @@ import * as AsyncData from "foldkit/asyncData";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../../../course-enrolment-app/test/support/startCourseAppForTest.ts";
 import { applyAppMigrations } from "../../../course-enrolment-app/test/support/applyAppMigrations.ts";
-import { DefineCourse, Message, init, subscriptions, update, viewNote, type Model } from "../../src/main.ts";
+import { Client } from "pg";
+import { DefineCourse, Message, init, readBackNote, subscriptions, update, type Model } from "../../src/main.ts";
 
 const DELAY_MS = 300;
 let db: TestDb;
@@ -80,34 +81,36 @@ const subscribeFailure = (model: Model) => AsyncData.match(model.subscribe.resul
 });
 
 describe("the page, driven against the real course app", () => {
-  it("define a course and the read-back (after the write waited) shows it", { timeout: 30_000 }, async () => {
+  it("define a course and the read-back (with the write's marker) shows it", { timeout: 30_000 }, async () => {
     const course = `c-${uid()}`;
     const model = await defineCourse(init().model, course, 3);
     assert.strictEqual(lookupState(model), "3/3 (0)");
     assert.ok(AsyncData.isSuccess(model.define.result));
   });
 
-  it("with waiting on, the read after a subscription is right; with it off, it is stale - then right again once the view catches up", { timeout: 30_000 }, async () => {
+  it("with the marker, the read after a subscription is right; without it, it is stale - then right again once the view catches up", { timeout: 30_000 }, async () => {
     const course = `c-${uid()}`;
     let model = await defineCourse(init().model, course, 3);
 
-    // waiting OFF: the answer comes back at once, and the read-back does not include the write
-    model = await drive(model, Message.ToggledWaitForView());
-    assert.strictEqual(model.waitForView, false);
+    // marker OFF: the write answers at once, and the read-back carries nothing, so it does not include the write
+    model = await drive(model, Message.ToggledReadWithMarker());
+    assert.strictEqual(model.readWithMarker, false);
     model = await subscribe(model, `ann-${uid()}`, course);
     assert.strictEqual(lookupState(model), "3/3 (0)", "stale: the view has not applied the subscription yet");
+    assert.ok(AsyncData.isSuccess(model.subscribe.result) && model.subscribe.result.data.readBack === "without_marker");
 
-    // waiting ON: the answer comes back once the view has the write (and everything before it)
-    model = await drive(model, Message.ToggledWaitForView());
+    // marker ON: the read-back carries the write's marker, so the server answers it only once the view has the write (and everything before it)
+    model = await drive(model, Message.ToggledReadWithMarker());
     const started = Date.now();
     model = await subscribe(model, `bob-${uid()}`, course);
     assert.strictEqual(lookupState(model), "1/3 (2)", "right: both subscriptions are in the view");
-    assert.ok(Date.now() - started >= DELAY_MS / 2, "the write really waited for the delayed view");
+    assert.ok(Date.now() - started >= DELAY_MS / 2, "the read really waited for the delayed view");
     const done = model.subscribe.result;
-    assert.ok(AsyncData.isSuccess(done) && viewNote(done.data.outcome) === "The seat map had caught up when this answered.");
+    assert.ok(AsyncData.isSuccess(done) && done.data.readBack === "with_marker");
+    assert.ok(AsyncData.isSuccess(done) && readBackNote(done.data.readBack) === "Read back with this write's marker, so the numbers below include it.");
   });
 
-  it("a repeat is 'already subscribed', and says nothing about the seat map (nothing was appended)", { timeout: 30_000 }, async () => {
+  it("a repeat is 'already subscribed' and has no marker (nothing was appended), so the page says it read back without one", { timeout: 30_000 }, async () => {
     const course = `c-${uid()}`;
     const student = `ann-${uid()}`;
     let model = await defineCourse(init().model, course, 3);
@@ -115,8 +118,8 @@ describe("the page, driven against the real course app", () => {
     model = await subscribe(model, student, course);
     const done = model.subscribe.result;
     assert.ok(AsyncData.isSuccess(done));
-    assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason], ["IDEMPOTENT", "ALREADY_SUBSCRIBED"]);
-    assert.strictEqual(viewNote(done.data.outcome), "");
+    assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason, done.data.outcome.marker], ["IDEMPOTENT", "ALREADY_SUBSCRIBED", null]);
+    assert.strictEqual(done.data.readBack, "no_marker");
   });
 
   it("every refusal arrives as the problem the page understands, with the fields it shows", { timeout: 60_000 }, async () => {
@@ -155,13 +158,13 @@ describe("the page, driven against the real course app", () => {
     assert.strictEqual(failure?._tag, "Rejected");
   });
 
-  it("a lookup of a course that was never defined is 'no such course'; of one just written without waiting, 'not in the seat map yet'", { timeout: 30_000 }, async () => {
+  it("a lookup of a course that was never defined is 'no such course'; of one just written without the marker, 'not in the seat map yet'", { timeout: 30_000 }, async () => {
     const ghost = `ghost-${uid()}`;
     let model = init().model;
     model = await drive(model, Message.ChangedLookupCourseId({ value: ghost }), Message.SubmittedLookup());
     assert.strictEqual(lookupState(model), "problem:CourseNotFound");
 
-    model = await drive(model, Message.ToggledWaitForView());
+    model = await drive(model, Message.ToggledReadWithMarker());
     model = await defineCourse(model, `fresh-${uid()}`, 2);
     assert.strictEqual(lookupState(model), "problem:NotInSeatMapYet");
   });
@@ -172,7 +175,7 @@ describe("the page, driven against the real course app", () => {
     assert.strictEqual(model.define.capacity._tag, "Invalid");
 
     // Bypass the form: the Command itself. The client checks the request against the API's own Schema before sending it.
-    const answer = (await Effect.runPromise(DefineCourse({ courseId: `c-${uid()}`, capacity: 0, waitForView: true }).effect as Effect.Effect<Message>)) as {
+    const answer = (await Effect.runPromise(DefineCourse({ courseId: `c-${uid()}`, capacity: 0 }).effect as Effect.Effect<Message>)) as {
       readonly _tag: string;
       readonly problem?: { readonly _tag: string; readonly detail?: string };
     };
@@ -194,13 +197,13 @@ describe("the page, driven against the real course app", () => {
       });
     const next = (model: Model) => (AsyncData.isSuccess(model.courses.result) ? model.courses.result.data.next : "not loaded");
 
-    // 22 courses (more than one page of 20), the first 21 defined without waiting for the view, the last with it
-    let model = await drive(init().model, Message.ToggledWaitForView());
+    // 22 courses (more than one page of 20), the first 21 read back without the marker, the last with it
+    let model = await drive(init().model, Message.ToggledReadWithMarker());
     for (let n = 1; n <= 21; n++) model = await defineCourse(model, `list-${tag}-${String(n).padStart(2, "0")}`, 2);
-    model = await drive(model, Message.ToggledWaitForView());
+    model = await drive(model, Message.ToggledReadWithMarker());
     model = await defineCourse(model, `list-${tag}-22`, 2);
 
-    // after the waited write the list was reloaded: page one (20 courses of this test's, in id order) and a cursor
+    // after the write read back with its marker the list was reloaded: page one (20 courses of this test's, in id order) and a cursor
     model = await drive(model, Message.ChangedCourseFilter({ value: `list-${tag}` }), Message.SubmittedCourseFilter());
     assert.strictEqual(shown(model).length, 20);
     assert.ok(next(model) !== null && next(model) !== "not loaded", "there is a second page");
@@ -219,6 +222,24 @@ describe("the page, driven against the real course app", () => {
     // a click opens the course in the lookup
     model = await drive(model, Message.ClickedCourse({ courseId: `list-${tag}-22` }));
     assert.strictEqual(lookupState(model), "2/2 (0)");
+  });
+
+  // The seat map cannot move while another transaction is open (the views only read below the oldest one), so a read-back that carries a write's
+  // marker waits for the server's whole default timeout and is refused with a 503. The page must turn that real answer into its own problem.
+  it("a read-back the seat map cannot serve in time is the 503 the page understands, and the write itself still succeeded", { timeout: 40_000 }, async () => {
+    const holder = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
+    await holder.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT pg_current_xact_id()");
+      const model = await defineCourse(init().model, `held-${uid()}`, 3);
+      assert.ok(AsyncData.isSuccess(model.define.result), "the write committed");
+      assert.strictEqual(lookupState(model), "problem:SeatMapBehind");
+      assert.ok(AsyncData.isSuccess(model.define.result) && model.define.result.data.readBack === "with_marker");
+    } finally {
+      await holder.query("COMMIT").catch(() => undefined);
+      await holder.end();
+    }
   });
 
   it("when the server cannot be reached the page says so", { timeout: 30_000 }, async () => {
