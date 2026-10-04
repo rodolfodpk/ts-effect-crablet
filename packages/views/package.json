@@ -6,6 +6,7 @@
   "exports": {
     "./ViewProgress": "./src/ViewProgress.ts",
     "./ViewProgressFeed": "./src/ViewProgressFeed.ts",
+    "./ViewProgressHub": "./src/ViewProgressHub.ts",
     ".": "./src/ViewsModule.ts",
     "./ViewProjector": "./src/ViewProjector.ts",
     "./ViewSubscription": "./src/ViewSubscription.ts",
