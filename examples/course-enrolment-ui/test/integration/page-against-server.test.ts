@@ -97,7 +97,7 @@ describe("the page, driven against the real course app", () => {
     assert.strictEqual(model.readWithMarker, false);
     model = await subscribe(model, `ann-${uid()}`, course);
     assert.strictEqual(lookupState(model), "3/3 (0)", "stale: the view has not applied the subscription yet");
-    assert.ok(AsyncData.isSuccess(model.subscribe.result) && model.subscribe.result.data.readBack === "without_marker");
+    assert.ok(AsyncData.isSuccess(model.subscribe.result) && model.subscribe.result.data.readBack === "eventual");
 
     // marker ON: the read-back carries the write's marker, so the server answers it only once the view has the write (and everything before it)
     model = await drive(model, Message.ToggledReadWithMarker());
@@ -110,7 +110,7 @@ describe("the page, driven against the real course app", () => {
     assert.ok(AsyncData.isSuccess(done) && readBackNote(done.data.readBack) === "Read back with this write's marker, so the numbers below include it.");
   });
 
-  it("a repeat is 'already subscribed' and has no marker (nothing was appended), so the page says it read back without one", { timeout: 30_000 }, async () => {
+  it("a repeat is 'already subscribed' and has no marker (nothing was appended), so the page reads back with `latest`", { timeout: 30_000 }, async () => {
     const course = `c-${uid()}`;
     const student = `ann-${uid()}`;
     let model = await defineCourse(init().model, course, 3);
@@ -119,7 +119,7 @@ describe("the page, driven against the real course app", () => {
     const done = model.subscribe.result;
     assert.ok(AsyncData.isSuccess(done));
     assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason, done.data.outcome.marker], ["IDEMPOTENT", "ALREADY_SUBSCRIBED", null]);
-    assert.strictEqual(done.data.readBack, "no_marker");
+    assert.strictEqual(done.data.readBack, "latest");
   });
 
   it("every refusal arrives as the problem the page understands, with the fields it shows", { timeout: 60_000 }, async () => {

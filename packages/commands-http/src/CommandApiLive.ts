@@ -1,4 +1,4 @@
-import { Duration, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import * as Schema from "effect/Schema";
 import { HttpApiBuilder } from "effect/http-api";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
@@ -16,7 +16,6 @@ import type { Command } from "@crablet/commands/Command";
 import { apiDocsLayer, apiLayerOptions } from "./ApiDescription.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
-import { defaultWaitTimeoutMs, maxWaitTimeoutMs, type ViewWaiter } from "./ViewWaiter.ts";
 import { kindOf, type InputIssue } from "@crablet/commands/Errors";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, domainProblemOf } from "./ProblemDetail.ts";
 
@@ -59,32 +58,6 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
   checkImplementations(contracts, implementations);
   const correlationHeaderEnabled = config.correlationHeaderEnabled ?? false;
 
-  const viewWaiters = config.viewWaiters ?? {};
-  const waitableViews = Object.keys(viewWaiters);
-
-  // `?waitFor=<view>` and `?waitTimeout=<ms>`: validated BEFORE the command runs, so a bad parameter can never
-  // leave an executed command behind an error response.
-  const parseWait = (
-    request: HttpServerRequest.HttpServerRequest
-  ): Effect.Effect<{ readonly name: string; readonly waiter: ViewWaiter; readonly timeoutMs: number } | null, CommandApiBadRequest> => {
-    const params = new URL(request.url, "http://localhost").searchParams;
-    const name = params.get("waitFor");
-    const timeoutRaw = params.get("waitTimeout");
-    if (name === null && timeoutRaw === null) return Effect.succeed(null);
-    if (name === null) return Effect.fail(CommandApiBadRequest.of("waitTimeout needs waitFor"));
-    const waiter = Object.hasOwn(viewWaiters, name) ? viewWaiters[name] : undefined;
-    if (waiter === undefined) {
-      return Effect.fail(
-        CommandApiBadRequest.of(`Unknown view for waitFor: ${name}${waitableViews.length > 0 ? ` (one of: ${waitableViews.join(", ")})` : " (no views can be waited for)"}`)
-      );
-    }
-    const timeoutMs = timeoutRaw === null ? defaultWaitTimeoutMs : /^\d+$/.test(timeoutRaw) ? Number(timeoutRaw) : NaN;
-    if (!(timeoutMs >= 1 && timeoutMs <= maxWaitTimeoutMs)) {
-      return Effect.fail(CommandApiBadRequest.of(`waitTimeout must be a whole number of milliseconds between 1 and ${maxWaitTimeoutMs}`));
-    }
-    return Effect.succeed({ name, waiter, timeoutMs });
-  };
-
   const listExposedCommands = Effect.sync(() => ({ exposedCommands: listedCommands(contracts) }));
 
   // Resolves the optional correlation id: disabled -> ignore any inbound header entirely; enabled +
@@ -117,7 +90,6 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       // Validation belongs to the command itself: its input schema. Every failed field is reported, by path.
       const input = yield* command.decodeInput(raw).pipe(Effect.mapError((error) => invalidPayload(error.issues)));
 
-      const wait = yield* parseWait(request);
       const correlationId = yield* resolveCorrelationId;
 
       // Only the command-execution call itself runs inside CorrelationContext - request parsing and
@@ -143,31 +115,12 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
         ? CorrelationContext.withCorrelationId(correlationId)(runExecute)
         : runExecute;
 
-      // The command is done. If the request asked to wait for a view, wait for it to catch up to this write; the
-      // outcome is reported in the body, never as an error status (retrying a command that succeeded would be
-      // wrong). An idempotent repeat appended nothing, so there is nothing to wait for.
-      const view =
-        wait === null
-          ? undefined
-          : result.lastPosition === null || result.lastTransactionId === null
-            ? { name: wait.name, caughtUp: false, reason: "nothing_appended" as const }
-            : yield* wait.waiter({ transactionId: result.lastTransactionId, position: result.lastPosition }, { timeout: Duration.millis(wait.timeoutMs) }).pipe(
-                Effect.match({
-                  onSuccess: () => ({ name: wait.name, caughtUp: true }),
-                  onFailure: (e) => ({
-                    name: wait.name,
-                    caughtUp: false,
-                    reason: e._tag === "WaitTimeout" ? ("timeout" as const) : e._tag === "ViewFailed" ? ("view_failed" as const) : ("unavailable" as const)
-                  })
-                })
-              );
-
       // Raw response: the status (201 created / 200 idempotent) and optional correlation header are
       // chosen here, after the command ran.
       return HttpServerResponse.jsonUnsafe(
         result.wasIdempotent
-          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, lastTransactionId: null, marker: null, ...(view !== undefined ? { view } : {}) }
-          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, marker: formatMarker({ transactionId: result.lastTransactionId!, position: result.lastPosition! }), ...(view !== undefined ? { view } : {}) },
+          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, lastTransactionId: null, marker: null }
+          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, marker: formatMarker({ transactionId: result.lastTransactionId!, position: result.lastPosition! }) },
         {
           status: result.wasIdempotent ? 200 : 201,
           ...(correlationId !== null ? { headers: { [CORRELATION_HEADER]: correlationId } } : {})
@@ -203,7 +156,7 @@ export const makeCommandApiLive = <const C extends ReadonlyArray<AnyCommandContr
   config: CommandApiConfig = {}
 ) => {
   const basePath = (config.basePath ?? defaultBasePath) as `/${string}`;
-  const api = makeCommandApi(basePath, contracts, undefined, { waitableViews: Object.keys(config.viewWaiters ?? {}) });
+  const api = makeCommandApi(basePath, contracts);
   return Layer.merge(
     HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(makeCommandApiGroupLive(api, contracts, implementations, config))),
     apiDocsLayer(api, config)

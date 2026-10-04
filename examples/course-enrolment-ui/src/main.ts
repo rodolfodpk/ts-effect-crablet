@@ -16,9 +16,10 @@ import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, l
 // MODEL
 
 const Text = FieldValidation.Field(Schema.String);
-// How the page read the data back after a write: with the write's marker (so the read includes it), without it (the toggle is off, so the read
-// may be stale), or with nothing to send (the write appended nothing, so it has no marker).
-export const ReadBack = Schema.Literals(["with_marker", "without_marker", "no_marker"]);
+// How the page read the data back after a write: with the write's marker (the server waits for the seat map to have that write), with `latest`
+// (the write appended nothing, so it has no marker: the read waits for everything committed so far), or `eventual` (the checkbox is off: the
+// read does not wait, so it may be stale).
+export const ReadBack = Schema.Literals(["with_marker", "latest", "eventual"]);
 export type ReadBack = typeof ReadBack.Type
 const Defined = Schema.Struct({ courseId: Schema.String, capacity: Schema.Int, outcome: CommandOutcome, readBack: ReadBack });
 const Subscribed = Schema.Struct({ studentId: Schema.String, courseId: Schema.String, outcome: CommandOutcome, readBack: ReadBack });
@@ -36,7 +37,7 @@ export const FeedState = Schema.Literals(["connecting", "live", "reconnecting"])
 export const Model = Schema.Struct({
   feed: FeedState,
   // After a write, read back with its marker (`?consistentWith=<marker>`): the server answers the read only once the seat map (the view the
-  // lookup and the list read) has that write. Off: the read-back carries nothing, and may be stale.
+  // lookup and the list read) has that write. Off: the read-back asks not to wait (`?consistency=eventual`), and may be stale.
   readWithMarker: Schema.Boolean,
   // The course list: what the user typed into the filter, the filter in effect, and the pages loaded.
   courses: Schema.Struct({ filter: Schema.String, applied: Schema.String, result: CourseList.schema }),
@@ -99,12 +100,12 @@ export type Message = typeof Message.Type
 // COMMANDS: each runs one call and ends in a Succeeded or a Failed Message. A refusal is not an exception: it is a
 // `Problem` the update function matches on.
 
-// `consistentWith` is a write's marker, or null for a read that carries none.
+// `consistentWith` is a write's marker or `latest`, null for a read that asks nothing (the server's default applies); `eventual` asks not to wait.
 export const FetchCourses = Command.define("FetchCourses", {
-  args: { q: Schema.String, after: Schema.NullOr(Schema.String), append: Schema.Boolean, consistentWith: Schema.NullOr(Schema.String) },
+  args: { q: Schema.String, after: Schema.NullOr(Schema.String), append: Schema.Boolean, consistentWith: Schema.NullOr(Schema.String), eventual: Schema.optionalKey(Schema.Boolean) },
   messages: [Message.SucceededFetchCourses, Message.FailedFetchCourses],
-  execute: ({ q, after, append, consistentWith }) =>
-    listCourses({ q, after, consistentWith }).pipe(
+  execute: ({ q, after, append, consistentWith, eventual }) =>
+    listCourses({ q, after, consistentWith, ...(eventual === true ? { eventual } : {}) }).pipe(
       Effect.map((page) => Message.SucceededFetchCourses({ items: page.items, next: page.next, append })),
       Effect.catch((error) => Effect.succeed(Message.FailedFetchCourses({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -112,10 +113,10 @@ export const FetchCourses = Command.define("FetchCourses", {
 });
 
 export const FetchCourse = Command.define("FetchCourse", {
-  args: { courseId: Schema.String, consistentWith: Schema.NullOr(Schema.String) },
+  args: { courseId: Schema.String, consistentWith: Schema.NullOr(Schema.String), eventual: Schema.optionalKey(Schema.Boolean) },
   messages: [Message.SucceededFetchCourse, Message.FailedFetchCourse],
-  execute: ({ courseId, consistentWith }) =>
-    getCourse(courseId, consistentWith).pipe(
+  execute: ({ courseId, consistentWith, eventual }) =>
+    getCourse(courseId, { consistentWith, ...(eventual === true ? { eventual } : {}) }).pipe(
       Effect.map((course) => Message.SucceededFetchCourse({ course })),
       Effect.catch((error) => Effect.succeed(Message.FailedFetchCourse({ problem: problemFromError(error) }))),
       Effect.provide(Http.layer)
@@ -148,18 +149,18 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
 
 // UPDATE
 
-// After a write, read the course the write was about: this is "read your own writes". Whether that read includes the write depends on
-// whether it carries the write's marker (see `readWithMarker`): with it the server waits for the seat map, without it the read may be stale.
+// After a write, read the course the write was about: this is "read your own writes". With the checkbox on, the read carries the write's marker
+// (or `latest` when the write appended nothing, so it has none) and the server waits for the seat map; off, it asks not to wait and may be stale.
 const readBack = (model: Model, courseId: string, outcome: CommandOutcome) => {
-  const consistentWith = model.readWithMarker ? outcome.marker : null;
-  const kind: ReadBack = !model.readWithMarker ? "without_marker" : outcome.marker === null ? "no_marker" : "with_marker";
+  const kind: ReadBack = !model.readWithMarker ? "eventual" : outcome.marker === null ? "latest" : "with_marker";
+  const read = kind === "eventual" ? { consistentWith: null, eventual: true } : { consistentWith: kind === "latest" ? "latest" : outcome.marker };
   return {
     kind,
     lookupCourseId: courseId,
     justWrote: courseId,
     lookup: AsyncData.Loading(),
     // the list is read back too, from its first page, under the filter in effect
-    commands: [FetchCourse({ courseId, consistentWith }), FetchCourses({ q: model.courses.applied, after: null, append: false, consistentWith })]
+    commands: [FetchCourse({ courseId, ...read }), FetchCourses({ q: model.courses.applied, after: null, append: false, ...read })]
   };
 };
 
@@ -360,16 +361,16 @@ export const describeProblem = (problem: Problem): string => {
 
 // #region read-back-note
 // What the page says about the read it made after a write. With the write's marker the server answered only once the seat map had the write
-// (or refused: see `SeatMapBehind`), so the numbers include it; without one the read answered at once and may be stale; a write that
-// appended nothing (an idempotent repeat) has no marker to send.
+// (or refused: see `SeatMapBehind`), so the numbers include it; a write that appended nothing (an idempotent repeat) has no marker, so the read
+// asked for `latest`; with the checkbox off the read asked not to wait and may be stale.
 export const readBackNote = (readBack: ReadBack): string => {
   switch (readBack) {
     case "with_marker":
       return "Read back with this write's marker, so the numbers below include it.";
-    case "without_marker":
-      return "Read back without the write's marker, so the numbers below may be stale.";
-    case "no_marker":
-      return "Nothing was written, so there is no marker to read back with; the numbers below may not show the earlier write yet.";
+    case "latest":
+      return "Nothing was written, so there is no marker; the read waited for everything committed so far, so the numbers below include any earlier write.";
+    case "eventual":
+      return "Read back without waiting for the seat map, so the numbers below may be stale.";
   }
 };
 // #endregion read-back-note
@@ -457,7 +458,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
         [h.Class("wait-toggle")],
         [
           h.input([h.Type("checkbox"), h.AriaLabel("Read back with the write's marker"), h.Checked(model.readWithMarker), h.OnClick(Message.ToggledReadWithMarker())]),
-          "Read back with my write's marker (?consistentWith=<marker>)"
+          "Read back with my write's marker (?consistentWith=<marker>); unticked: do not wait (?consistency=eventual)"
         ]
       ),
 

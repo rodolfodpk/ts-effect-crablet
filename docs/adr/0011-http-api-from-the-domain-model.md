@@ -31,11 +31,11 @@ proper 404 or 409. Meanwhile everything needed to describe the API already exist
 - **The description is a build artifact:** served at `/openapi.json` (movable, can be turned off), with an optional Scalar or
   Swagger page, and checked in for the wallet at `docs/api/wallet-openapi.json` (`bun run docs:api`); a unit test validates it
   (`@readme/openapi-parser`) and fails when the file is stale, so an API change is a visible diff.
-- **Read-your-writes over HTTP:** `?waitFor=<view>&waitTimeout=<ms>`. The response always carries `lastPosition` (a string; the
-  position is a bigint). The app supplies `viewWaiters` (one function per view; `commands-http` does not import the views
-  package). A view that does not catch up is reported in the body (`view: { name, caughtUp, reason? }`), never as an error status:
-  the command has succeeded, and an error status would invite a retry of a finished write. Parameters are validated before the
-  command runs.
+- **Read-your-writes over HTTP:** the response always carries `lastPosition` and `lastTransactionId` (strings; the position is a
+  bigint) and the write's `marker`. Waiting is not part of the command API: a read asks to include a write (`?consistentWith=<marker>`)
+  and the server answers it once its views have it ([ADR-0015](0015-read-consistency-by-marker.md), `@crablet/views-http`).
+  (This ADR first described `?waitFor=<view>&waitTimeout=<ms>` on the command, with `viewWaiters` supplied by the app and a `view`
+  member in the response; ADR-0015 replaced it, and `commands-http` no longer mentions views.)
 - **Rules for exposed schemas**, enforced by a lint and by tests: use `Schema.Finite` / `Schema.Int` (not `Schema.Number`, which
   is described as "a number or the strings Infinity/NaN" and loses its checks) and `Schema.optionalKey` (not `Schema.optional`,
   which is described as nullable although the decoder refuses null).
@@ -48,8 +48,7 @@ proper 404 or 409. Meanwhile everything needed to describe the API already exist
   an entry in the OpenAPI document. A wrong or missing error declaration fails the build.
 - Behaviour changes for HTTP clients (all deliberate): no envelope, `application/problem+json`, domain errors presented as
   `{ errorType, fields }` instead of app-specific problem classes, an unknown command is a 404 (no route).
-- The derived client (`HttpApiClient.make(makeWalletApi())`) works with no codegen, including typed domain errors and
-  `waitFor`, but it is *untyped* for the command routes: the endpoint set is built at run time, so the group's static type is
+- The derived client (`HttpApiClient.make(makeWalletApi())`) works with no codegen, including typed domain errors, but it is *untyped* for the command routes: the endpoint set is built at run time, so the group's static type is
   erased. The read endpoints, declared statically, are typed. Fully typed command clients come from running an OpenAPI
   generator on the document.
 - Read endpoints (views) are still declared by the app with their own response schemas; they appear in the same document but

@@ -27,11 +27,11 @@ export const parseLimit = (raw: string | undefined): number | null => {
 };
 
 // #region read-consistency
-// How consistent the reads are (ADR-0015). A read that carries a marker (`?consistentWith=<marker from a write>`, or `latest`) waits until
-// the seats view has reached it; strict: if the view is not there in time the read is a 503, never a wrong answer. A read with no marker
-// does not wait (`whenNoMarker: "none"`), which is what the tutorial's "a read right after a write can be stale" shows; the server-wide
-// default is `latest` (see @crablet/views-http). A client may loosen a read with `?consistency=bounded|eventual` (`clientMayRelax`).
-export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadConsistency, whenNoMarker: "none", clientMayRelax: true };
+// How consistent the reads are (ADR-0015). The server default: strict, and a read with no marker waits for the head of the log, so a read made
+// after a write includes it. A read that carries a write's marker (`?consistentWith=<marker>`) waits only for that write. If the seats view
+// is not there in time the read is a 503, never a wrong answer. This app lets a client loosen a read (`clientMayRelax`):
+// `?consistency=eventual` answers at once and may be stale, `?consistency=bounded` waits up to the timeout and then answers marked stale.
+export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadConsistency, clientMayRelax: true };
 const consistentRead = makeConsistentRead({ config: courseReadConsistency });
 // #endregion read-consistency
 

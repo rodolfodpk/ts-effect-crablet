@@ -10,11 +10,11 @@ import { courseFeedGroup } from "./api/CourseFeedApi.ts";
 // What a client decodes itself: the read endpoint's response, the command responses, and the domain errors a command can
 // answer with (a domain error's `tag` and `fields` are exactly what its problem body carries).
 export { CoursePage, CourseResponse } from "./api/CourseQueryApi.ts";
-export { CommandCreatedResponse, CommandIdempotentResponse, ViewWaitResult } from "@crablet/commands-http";
+export { CommandCreatedResponse, CommandIdempotentResponse } from "@crablet/commands-http";
 export { ViewAdvanced } from "./api/CourseFeedApi.ts";
 export { CourseFull, CourseNotFound, StudentAtLimit } from "./domain/enrolment.contract.ts";
 
-// The one view a write request may wait for (`?waitFor=course-seats-view`). Its projector and subscription are in
+// The seat map: the one view the course reads use and the live feed watches. Its projector and subscription are in
 // views/CourseSeatsViewProjector.ts, which re-exports this name.
 export const COURSE_SEATS_VIEW = "course-seats-view";
 
@@ -37,7 +37,7 @@ export const courseApiInfo = {
 export const makeCourseApi = (basePath: `/${string}` = "/api/commands") =>
   withApiInfo(
     HttpApi.make("courseApp")
-      .add(makeCommandApiGroup(basePath, courseContracts, { waitableViews: [COURSE_SEATS_VIEW] }))
+      .add(makeCommandApiGroup(basePath, courseContracts))
       .add(courseQueryGroup)
       .add(courseFeedGroup),
     courseApiInfo

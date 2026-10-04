@@ -9,7 +9,7 @@ In five steps (about 40 minutes) you will:
 1. write and test the rule **in memory** - no database, no Docker;
 2. run it against **Postgres**, add the second rule, and watch two races resolve;
 3. expose it as an **HTTP API** whose **OpenAPI** description is generated from your code;
-4. add a **read model** and use `?waitFor=` so a client reads its own write;
+4. add a **read model**, and make a read include a write (a **marker**, or the server's default) so a client reads its own write;
 5. put a small **web page** (Foldkit) in front of it and see what a real client has to handle.
 
 Every code block below is a real file in this repository; a test fails if a block drifts from its file
@@ -434,7 +434,7 @@ export const CoursePage = Schema.Struct({
 export const defaultPageSize = 20;
 export const maxPageSize = 100;
 
-// Query values arrive as strings. They are plain strings here on purpose and validated by the handler (like `?waitFor`), so a bad
+// Query values arrive as strings. They are plain strings here on purpose and validated by the handler (like the consistency parameters), so a bad
 // value answers with the same problem body as every other 400 instead of the HTTP framework's empty-bodied default.
 export const listCoursesQuery = {
   limit: Schema.optionalKey(
@@ -473,57 +473,62 @@ curl -s 'localhost:8080/api/courses?limit=2'
 curl -s 'localhost:8080/api/courses?q=phys'
 ```
 
-The answer is `{ "items": [ ...the same shape as one course... ], "next": "<cursor>" | null }`; `next` is `null` on the last page. Both read the view, so they are as fresh as the view is (next section).
+The answer is `{ "items": [ ...the same shape as one course... ], "next": "<cursor>" | null }`; `next` is `null` on the last page. Both read the view; how fresh they are is the next section.
 
-Then tell the API which views a write request may wait for. This map is the whole connection (the HTTP package never imports the views package):
+A write answers as soon as it has committed, with a **marker**: where in the log it ended (`"<transactionId>:<position>"`). Waiting belongs to the **read**: a
+read can ask to include a write, and the server answers it only once the view has that write. This is the policy of the course reads (the HTTP package that does the
+waiting, `@crablet/views-http`, is the only place that knows about both views and HTTP):
 
-<!-- file: examples/course-enrolment-app/src/CourseApp.ts#wait-for -->
+<!-- file: examples/course-enrolment-app/src/api/CourseQueryApiLive.ts#read-consistency -->
 ```ts
-// The views a write request may wait for (`?waitFor=course-seats-view`): the response is then sent only once that view has
-// processed the write, so the caller's next read is not stale. commands-http never imports the views package; this
-// map is the whole connection.
-const courseViewWaiters: Readonly<Record<string, ViewWaiter>> = {
-  [COURSE_SEATS_VIEW]: (write, { timeout }) => waitUntilProcessed(courseSeatsViewSubscription, write, { timeout })
-};
+// How consistent the reads are (ADR-0015). The server default: strict, and a read with no marker waits for the head of the log, so a read made
+// after a write includes it. A read that carries a write's marker (`?consistentWith=<marker>`) waits only for that write. If the seats view
+// is not there in time the read is a 503, never a wrong answer. This app lets a client loosen a read (`clientMayRelax`):
+// `?consistency=eventual` answers at once and may be stale, `?consistency=bounded` waits up to the timeout and then answers marked stale.
+export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadConsistency, clientMayRelax: true };
+const consistentRead = makeConsistentRead({ config: courseReadConsistency });
 ```
 
 (The server you started already includes all of this: `startCourseViews()` runs the view processor, woken by Postgres `LISTEN/NOTIFY`.)
-Now subscribe with `?waitFor=` and read **once**:
+Define a course, subscribe a student, and read **once** after each - with no waiting code and no marker:
 
 ```bash
-curl -s -X POST 'localhost:8080/api/commands/define_course?waitFor=course-seats-view' \
+curl -s -X POST localhost:8080/api/commands/define_course \
   -H 'Content-Type: application/json' -d '{"courseId":"physics-201","capacity":3}'
 curl -s localhost:8080/api/courses/physics-201
 
-curl -s -X POST 'localhost:8080/api/commands/subscribe?waitFor=course-seats-view' \
+curl -s -X POST localhost:8080/api/commands/subscribe \
   -H 'Content-Type: application/json' -d '{"studentId":"dee","courseId":"physics-201"}'
 curl -s localhost:8080/api/courses/physics-201
 ```
 
 ```
-{"status":"CREATED","reason":null,"lastPosition":"13","lastTransactionId":"13","marker":"13:13","view":{"name":"course-seats-view","caughtUp":true}}
+{"status":"CREATED","reason":null,"lastPosition":"13","lastTransactionId":"13","marker":"13:13"}
 {"courseId":"physics-201","capacity":3,"subscribers":0,"seatsLeft":3}
-{"status":"CREATED","reason":null,"lastPosition":"14","lastTransactionId":"14","marker":"14:14","view":{"name":"course-seats-view","caughtUp":true}}
+{"status":"CREATED","reason":null,"lastPosition":"14","lastTransactionId":"14","marker":"14:14"}
 {"courseId":"physics-201","capacity":3,"subscribers":1,"seatsLeft":2}
 ```
 
-The response is sent only after the view has processed the write, so the read that follows is not stale. `view.caughtUp` says so. Cases to know:
+A read with no parameters waits for **everything committed when it arrived**, so it is never stale. Cases to know:
 
-- **The view did not catch up in time** (default wait 5 s, `?waitTimeout=<ms>` up to 30 s): the write still succeeded, so the response stays `201`
-  and says `"caughtUp":false,"reason":"timeout"` (or `view_failed`, `unavailable`). It is never an error status: retrying a command that succeeded would be wrong.
-- **A repeat** appended nothing, so there is nothing to wait for: `"reason":"nothing_appended"`.
-- **An unknown view name** is a `400` *before* the command runs, so nothing is written. The message lists the views you can wait for.
+- **Carry the marker** to wait for just your write: `?consistentWith=14:14` (or `?consistentWith=latest`, which is what no parameter means here). Same guarantee for your own
+  write, and it does not wait for unrelated writes that came after.
+- **Ask not to wait** (this app lets a client loosen a read): `?consistency=eventual` answers at once with whatever the view has, so right after a write it may be stale.
+  `?consistency=bounded` waits up to the timeout and then answers anyway, marked with the header `Crablet-Consistency: stale`.
+- **The view did not catch up in time** (default 5 s, `?waitTimeout=<ms>` up to 30 s) on a strict read: a `503` problem with `Retry-After`, naming the views that are behind.
+  It is never a stale answer: a strict read is either right or refused. (A view that is `FAILED` is a `503` too, without `Retry-After`: retrying will not help.)
+- **A repeat** appended nothing, so its response has `"marker":null`; read with `latest`.
+- **A bad marker**, or one beyond the end of the log, is a `400` *before* anything waits:
 
 ```bash
-curl -s -X POST 'localhost:8080/api/commands/subscribe?waitFor=nope' \
-  -H 'Content-Type: application/json' -d '{"studentId":"dee","courseId":"physics-201"}'
+curl -s 'localhost:8080/api/courses/physics-201?consistentWith=nope'
 ```
 
 ```
-{"type":"urn:crablet:problem:command-api:bad-request","title":"Bad Request","status":400,"detail":"Unknown view for waitFor: nope (one of: course-seats-view)"}
+{"type":"urn:crablet:problem:command-api:bad-request","title":"Bad Request","status":400,"detail":"consistentWith must be a marker from a command response (\"<transactionId>:<position>\") or \"latest\""}
 ```
 
-The `waitFor` and `waitTimeout` parameters are in the OpenAPI description too (run `node scripts/generate-openapi.ts` if you changed anything).
+The `consistentWith`, `consistency` and `waitTimeout` parameters, the stale header and the `503` are in the OpenAPI description too (run `node scripts/generate-openapi.ts` if you changed anything).
 
 ---
 
@@ -552,9 +557,9 @@ Things to try:
 
 1. **Define** a course `math` with capacity `1`, and **subscribe** `ann` to it. Each answer carries the write's `marker`, and the page reads the course back for you with it.
 2. **Subscribe** `bob` to `math`: "Course math is full (1 seats, all taken)". That is `CourseFull` arriving with its `capacity`; the page did not parse a message.
-3. Untick **Read back with my write's marker**, define `physics` and subscribe `cy` to it. The answer is instant, and the read-back is *stale*: the seats have not moved,
-   or the course is "just written, but the seat map has not caught up". Tick the box again and the same actions give the right numbers: the page sends the marker with the
-   read (`?consistentWith=<marker>`) and the server answers it once the seat map has that write.
+3. Untick **Read back with my write's marker**, define `physics` and subscribe `cy` to it. The page now asks the server not to wait for the seat map (`?consistency=eventual`):
+   the answer is instant, and the read-back is *stale*: the seats have not moved, or the course is "just written, but the seat map has not caught up". Tick the box again and
+   the same actions give the right numbers: the page sends the marker with the read (`?consistentWith=<marker>`) and the server answers it once the seat map has that write.
 4. Define `math` a second time, or a capacity of `0`, or subscribe a student to four courses. Every refusal is a different problem, shown in its own words.
 
 ### How it is built
@@ -608,40 +613,48 @@ the transport's error and a Schema error. No cast, no copy of the wire format:
 export const defineCourseCall = (courseId: string, capacity: number) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: {} });
+    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity } });
     return outcomeOf(answer);
   });
 
 export const subscribeCall = (studentId: string, courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: {} });
+    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId } });
     return outcomeOf(answer);
   });
 
-// A read can carry a write's marker: `consistentWith` makes the server answer only once the seat map has that write (a 503 if it cannot in
-// time). Without one the read answers at once with whatever the seat map has.
-const consistentWithOf = (marker: string | null) => (marker === null ? {} : { consistentWith: marker });
+// How a read asks to be consistent. With nothing, the server's default applies (this app: a read waits for everything committed when it arrived).
+// `consistentWith` is a write's marker (the read waits for that write) or `latest`; either way the server answers only once the seat map has
+// it, or with a 503 if it cannot in time. `eventual` asks for no waiting at all: the answer may be stale, which is what the checkbox below shows.
+export interface ReadConsistency {
+  readonly consistentWith: string | null;
+  readonly eventual?: boolean;
+}
+const consistencyOf = (read: ReadConsistency) => ({
+  ...(read.consistentWith === null ? {} : { consistentWith: read.consistentWith }),
+  ...(read.eventual === true ? { consistency: "eventual" } : {})
+});
 
 // One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it. A read resolves to
 // `{ body, headers }` (the header marks a stale answer, which this page never asks for): the page wants the body.
-export const listCourses = (options: { readonly q: string; readonly after: string | null; readonly consistentWith: string | null }) =>
+export const listCourses = (options: { readonly q: string; readonly after: string | null } & ReadConsistency) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
     const answer = yield* client.courseQueries.listCourses({
       query: {
         ...(options.q === "" ? {} : { q: options.q }),
         ...(options.after === null ? {} : { after: options.after }),
-        ...consistentWithOf(options.consistentWith)
+        ...consistencyOf(options)
       }
     });
     return answer.body;
   });
 
-export const getCourse = (courseId: string, consistentWith: string | null) =>
+export const getCourse = (courseId: string, read: ReadConsistency) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: consistentWithOf(consistentWith) });
+    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: consistencyOf(read) });
     return answer.body;
   });
 
@@ -729,22 +742,22 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
 ```
 
 **Reading your own write.** A write does not wait for anything: it answers once it has committed, with a `marker`. The page's read-back carries that marker
-(`?consistentWith=<marker>`) unless you untick the box; the server answers a read that has a marker only once the seat map has the write, or refuses it with a `503` if it
-cannot in time (the page shows that as "the seat map has not caught up with your write yet"); and the page says which read it made:
+(`?consistentWith=<marker>`) unless you untick the box, in which case it asks not to wait (`?consistency=eventual`); the server answers a read that has a marker only once the seat map
+has the write, or refuses it with a `503` if it cannot in time (the page shows that as "the seat map has not caught up with your write yet"); and the page says which read it made:
 
 <!-- file: examples/course-enrolment-ui/src/main.ts#read-back-note -->
 ```ts
 // What the page says about the read it made after a write. With the write's marker the server answered only once the seat map had the write
-// (or refused: see `SeatMapBehind`), so the numbers include it; without one the read answered at once and may be stale; a write that
-// appended nothing (an idempotent repeat) has no marker to send.
+// (or refused: see `SeatMapBehind`), so the numbers include it; a write that appended nothing (an idempotent repeat) has no marker, so the read
+// asked for `latest`; with the checkbox off the read asked not to wait and may be stale.
 export const readBackNote = (readBack: ReadBack): string => {
   switch (readBack) {
     case "with_marker":
       return "Read back with this write's marker, so the numbers below include it.";
-    case "without_marker":
-      return "Read back without the write's marker, so the numbers below may be stale.";
-    case "no_marker":
-      return "Nothing was written, so there is no marker to read back with; the numbers below may not show the earlier write yet.";
+    case "latest":
+      return "Nothing was written, so there is no marker; the read waited for everything committed so far, so the numbers below include any earlier write.";
+    case "eventual":
+      return "Read back without waiting for the seat map, so the numbers below may be stale.";
   }
 };
 ```

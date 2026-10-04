@@ -1,6 +1,7 @@
-// Runs under Node (Testcontainers). The demo knob: with the seats view held back, a read right after a write is stale,
-// and ?waitFor=course-seats-view is what makes the next read right. (Without the knob the view normally catches up in
-// milliseconds, which is why the difference is hard to see.)
+// Runs under Node (Testcontainers). The demo knob: with the seats view held back by viewDelayMs, a read that asks not to wait
+// (`?consistency=eventual`) is stale right after a write, while the server's default (a read waits for everything committed) and a read
+// that carries the write's marker (`?consistentWith=<marker>`) are right. (Without the knob the view normally catches up in milliseconds,
+// which is why the difference is hard to see.)
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { startTestDb, type TestDb } from "@crablet/test-support";
@@ -21,57 +22,49 @@ after(async () => {
   await db.stop();
 });
 
-const post = (name: string, body: unknown, query = "") =>
-  fetch(`${app.baseUrl}/api/commands/${name}${query}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-const getCourse = async (courseId: string) => {
-  const res = await fetch(`${app.baseUrl}/api/courses/${courseId}`);
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+const post = async (name: string, body: unknown) => {
+  const res = await fetch(`${app.baseUrl}/api/commands/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return { status: res.status, marker: ((await res.json()) as { marker: string | null }).marker };
 };
-
 const getRaw = async (path: string) => {
   const res = await fetch(`${app.baseUrl}${path}`);
-  return { status: res.status, headers: res.headers, body: (await res.json()) as Record<string, any> };
+  return { status: res.status, headers: res.headers, body: (await res.json()) as Record<string, any>, };
 };
 
 describe("the seats view held back by viewDelayMs", () => {
-  it("a read right after a write is stale; after ?waitFor the next read is right", { timeout: 30_000 }, async () => {
+  it("a read right after a write: stale if it asks not to wait, right by default - however far behind the view is", { timeout: 30_000 }, async () => {
     const courseId = `slow-${crypto.randomUUID().slice(0, 8)}`;
 
-    // The course itself is not in the view yet: a read right after defining it finds nothing.
+    // The course itself is not in the view yet: a read that does not wait finds nothing.
     assert.strictEqual((await post("define_course", { courseId, capacity: 3 })).status, 201);
-    assert.strictEqual((await getCourse(courseId)).status, 404, "the view has not seen the definition yet");
+    assert.strictEqual((await getRaw(`/api/courses/${courseId}?consistency=eventual`)).status, 404, "the view has not seen the definition yet");
 
-    // Waiting for the view makes the same read succeed.
-    const waited = await post("define_course", { courseId: `${courseId}-b`, capacity: 3 }, "?waitFor=course-seats-view");
-    assert.strictEqual(waited.status, 201);
-    assert.strictEqual(((await waited.json()) as { view: { caughtUp: boolean } }).view.caughtUp, true);
-    assert.strictEqual((await getCourse(`${courseId}-b`)).status, 200);
+    // The same read with no parameters waits for everything committed, so it finds the course.
+    const started = Date.now();
+    const waited = await getRaw(`/api/courses/${courseId}`);
+    assert.strictEqual(waited.status, 200);
+    assert.ok(Date.now() - started >= DELAY_MS / 4, "and it really waited for the delayed view");
 
-    // A subscription made without waiting is not reflected yet...
-    await new Promise((resolve) => setTimeout(resolve, DELAY_MS * 2)); // let the first course reach the view
+    // A subscription is not in the view right away if the read does not wait...
     assert.strictEqual((await post("subscribe", { studentId: "ann", courseId })).status, 201);
-    assert.strictEqual((await getCourse(courseId)).body["seatsLeft"], 3, "stale: the subscription is not in the view yet");
+    assert.strictEqual((await getRaw(`/api/courses/${courseId}?consistency=eventual`)).body["seatsLeft"], 3, "stale: the subscription is not in the view yet");
 
-    // ...and one made with ?waitFor is, together with everything before it.
-    const second = await post("subscribe", { studentId: "bob", courseId }, "?waitFor=course-seats-view");
-    assert.strictEqual(((await second.json()) as { view: { caughtUp: boolean } }).view.caughtUp, true);
-    assert.strictEqual((await getCourse(courseId)).body["seatsLeft"], 1, "one read after the waited write is right");
+    // ...and it is, together with everything before it, by default.
+    assert.strictEqual((await post("subscribe", { studentId: "bob", courseId })).status, 201);
+    assert.strictEqual((await getRaw(`/api/courses/${courseId}`)).body["seatsLeft"], 1, "one read after the write is right, with no marker sent");
   });
 
-  it("a read that carries the write's marker waits for the view; without one it is stale (the course app does not wait unmarked reads)", { timeout: 30_000 }, async () => {
+  it("a read that carries the write's marker waits for exactly that write, on both endpoints", { timeout: 30_000 }, async () => {
     const courseId = `marked-${crypto.randomUUID().slice(0, 8)}`;
-    const define = (await (await post("define_course", { courseId, capacity: 3 })).json()) as { marker: string };
-    assert.match(define.marker, /^\d+:\d+$/, "a command's response carries the write's marker");
-
-    assert.strictEqual((await getRaw(`/api/courses/${courseId}`)).status, 404, "no marker: the read does not wait, the view has not seen it");
+    const define = await post("define_course", { courseId, capacity: 3 });
+    assert.match(String(define.marker), /^\d+:\d+$/, "a command's response carries the write's marker");
 
     const marked = await getRaw(`/api/courses/${courseId}?consistentWith=${define.marker}`);
     assert.strictEqual(marked.status, 200, "with the marker the read waited for the view");
     assert.strictEqual(marked.body["seatsLeft"], 3);
     assert.strictEqual(marked.headers.get("crablet-consistency"), null);
 
-    // the list endpoint is consistent in the same way
-    const subscribe = (await (await post("subscribe", { studentId: "ann", courseId })).json()) as { marker: string };
+    const subscribe = await post("subscribe", { studentId: "ann", courseId });
     const listed = await getRaw(`/api/courses?q=${courseId}&consistentWith=${subscribe.marker}`);
     assert.strictEqual(listed.status, 200);
     assert.deepStrictEqual(listed.body["items"].map((c: { seatsLeft: number }) => c.seatsLeft), [2]);
@@ -79,9 +72,9 @@ describe("the seats view held back by viewDelayMs", () => {
 
   it("a client can loosen a read (this app allows it): eventual does not wait, bounded answers stale after the timeout; strict refuses with a 503", { timeout: 30_000 }, async () => {
     const courseId = `loose-${crypto.randomUUID().slice(0, 8)}`;
-    const define = (await (await post("define_course", { courseId, capacity: 3 })).json()) as { marker: string };
+    const define = await post("define_course", { courseId, capacity: 3 });
     await getRaw(`/api/courses/${courseId}?consistentWith=${define.marker}`); // the course is in the view
-    const subscribe = (await (await post("subscribe", { studentId: "bob", courseId })).json()) as { marker: string };
+    const subscribe = await post("subscribe", { studentId: "bob", courseId });
 
     const eventual = await getRaw(`/api/courses/${courseId}?consistentWith=${subscribe.marker}&consistency=eventual`);
     assert.strictEqual(eventual.body["seatsLeft"], 3, "eventual does not wait: the subscription is not in the view yet");

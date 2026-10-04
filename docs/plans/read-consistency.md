@@ -25,7 +25,7 @@ Day estimates are mine, not measured.
 | 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper (done) | the feature | 2.5 days | 1, 2 | additive |
 | 4 | Wrap the example apps' reads; regenerate OpenAPI | proves it on two real apps | 1 day | 3 | additive |
 | 5 | Course UI sends the marker on its next read (done) | the first real client | 1 day | 4 | additive |
-| 6 | Remove `?waitFor` everywhere; amend ADR-0011; rewrite tutorial step 4; ADR-0015 to Accepted | closes the migration | 1.5 days | 5 | one breaking commit |
+| 6 | Remove `?waitFor` everywhere; amend ADR-0011; rewrite tutorial step 4; ADR-0015 to Accepted (done; the course app moved to the server default `latest`) | closes the migration | 1.5 days | 5 | one breaking commit |
 | 7 | Measure `latest` at read rates and the poll cost; add to the scale envelope | confirms the cost claims | 0.5 day | 4 | none or a small tweak |
 
 About 8.5 days. Phases 3 and 6 are the ones most likely to run over: 3 is six modules with unit and integration tests, and 6 touches about 25 files of code, tests and docs, plus a tested tutorial. Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites **run in batches of a few files**, see NOTES.md) and is committed on its own; push only on request.
@@ -90,7 +90,7 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 **Spike consequence.** A wrapped read's derived client resolves to `{ body, headers }` (phase 2), so `getCourse` and `listCourses` in `api.ts` and the page tests read `.body`.
 `defineCourseCall` currently passes `waitForView`; the derived client already types the API definition, so the new query parameters appear in it. Change the page so a write keeps the returned `marker` and the page's next `getCourse` or `listCourses` sends `consistentWith=<marker>`; the "wait for the seat map" toggle becomes "read with my marker" (default on), so the demo still shows the stale read and the fix. The live feed and its debounce are untouched. Update `page.test.ts`, `api-base-url.test.ts` if affected, and `page-against-server.test.ts`.
 
-## Phase 6. The breaking commit
+## Phase 6. The breaking commit - DONE (see NOTES "Read consistency, phase 6")
 Remove, in one commit, with "breaking" in the message (ADR-0013):
 - `commands-http`: `ViewWaiter.ts` (and its entry in `package.json`, which also matched), `viewWaiters` in `CommandApiConfig`, `waitableViews`, `waitQuery`, `ViewWaitResult` and the `view` member in `CommandApi.ts`, the wait branch in `CommandApiLive.ts`, and the tests that mention them (`command-api-description.test.ts`, `contract-api.types.ts`, `command-api-integration.test.ts`).
 - Course app: `courseViewWaiters` in `CourseApp.ts`, `ViewWaitResult` and the waiter comment in `CourseApi.ts`, the `waitFor` comment in `CourseQueryApi.ts`, `index.ts`, and the tests (`course-http`, `course-list`, `course-feed`, `course-view-delay`, `course-openapi`). Wallet app: `walletViewWaiters` in `WalletApp.ts` and `lifecycle-e2e`.

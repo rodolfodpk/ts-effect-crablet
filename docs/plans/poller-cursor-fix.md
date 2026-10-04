@@ -1,5 +1,7 @@
 # Plan: fix the pollers' skipped-event hole - move the progress cursor to (transaction_id, position)
 
+> Note (ADR-0015): `?waitFor=<view>` on the command API, mentioned below, was replaced by the write's marker and reads that carry it (`?consistentWith=`). This plan is the record of the work as it was.
+
 **Status:** done (the DCB conflict check and the pollers both moved to a `(transaction_id, position)` cursor; see ADR-0012). Kept as the record; its "What exists" section describes the code BEFORE the change.
 
 ## Context

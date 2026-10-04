@@ -21,7 +21,6 @@ import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPu
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
-import type { ViewWaiter, WriteMarker } from "@crablet/commands-http/ViewWaiter";
 import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
 import { makeWalletTransactionViewProjector } from "./views/WalletTransactionViewProjector.ts";
 import { makeWalletSummaryViewProjector } from "./views/WalletSummaryViewProjector.ts";
@@ -165,17 +164,6 @@ const walletImplementations: Implementations<typeof walletContracts> = {
   close_wallet: CloseWallet
 };
 
-// The views a write request may wait for (`?waitFor=wallet-balance-view`): the response is then sent only once that
-// view has processed the write, so the caller's next read is not stale. One entry per wallet view.
-const walletViewWaiters: Readonly<Record<string, ViewWaiter>> = Object.fromEntries(
-  walletViewSubscriptions.map(
-    (subscription) => [
-      subscription.viewName,
-      (write: WriteMarker, { timeout }: { readonly timeout: Duration.Duration }) => waitUntilProcessed(subscription, write, { timeout })
-    ]
-  )
-);
-
 // The app's HTTP API: commands-http's write group (one route per wallet command) + WalletQueryApi's
 // hand-written reads, combined into ONE HttpApi. A function of `basePath` because the command routes live under it.
 // Separate from `makeWalletApiLayer` so the API DESCRIPTION can be produced without serving anything
@@ -190,7 +178,7 @@ export const walletApiInfo = {
 export const makeWalletApi = (basePath: `/${string}` = "/api/commands") =>
   withApiInfo(
     HttpApi.make("walletApp")
-      .add(makeCommandApiGroup(basePath, walletContracts, { waitableViews: Object.keys(walletViewWaiters) }))
+      .add(makeCommandApiGroup(basePath, walletContracts))
       .add(walletQueryGroup),
     walletApiInfo
   );
@@ -203,8 +191,7 @@ export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
 
   const commandsLive = makeCommandApiGroupLive(api, walletContracts, walletImplementations, {
     basePath,
-    correlationHeaderEnabled: true,
-    viewWaiters: walletViewWaiters
+    correlationHeaderEnabled: true
   });
   const queryLive = makeWalletQueryApiLive(api);
 

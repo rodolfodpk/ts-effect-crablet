@@ -148,35 +148,29 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     assert.deepStrictEqual(served, JSON.parse(readFileSync(walletOpenApiFile, "utf8")));
   });
 
-  it("over HTTP: ?waitFor=<view> answers only once the view has the write, so ONE read is enough", async () => {
+  it("over HTTP: a command answers with the write's marker and nothing about views, and ONE read afterwards already has the write", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const open = await post("open_wallet", { walletId, owner: "Cy", initialBalance: 10 });
     assert.strictEqual(open.status, 201);
-    await waitUntilAsync(() => getJson(`/api/wallets/${walletId}`), (body) => body["balance"] === 10);
 
-    const res = await fetch(`${app.baseUrl}/api/commands/deposit?waitFor=wallet-balance-view`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ depositId: crypto.randomUUID(), walletId, amount: 25, description: "wait for me" })
-    });
+    const res = await post("deposit", { depositId: crypto.randomUUID(), walletId, amount: 25, description: "no waiting" });
     assert.strictEqual(res.status, 201);
     const body = (await res.json()) as Record<string, any>;
-    assert.deepStrictEqual(body["view"], { name: "wallet-balance-view", caughtUp: true });
+    assert.strictEqual(body["view"], undefined, "a write does not wait for views");
     assert.match(String(body["lastPosition"]), /^\d+$/);
+    assert.match(String(body["marker"]), /^\d+:\d+$/);
 
-    // a single read, no retry loop
+    // a single read, no retry loop and no marker sent: the server default waits for everything committed
     assert.strictEqual((await getJson(`/api/wallets/${walletId}`))["balance"], 35);
   });
 
-  it("an unknown view is refused before the command runs", async () => {
-    const walletId = `wallet-${crypto.randomUUID()}`;
+  it("a leftover ?waitFor from an older client is ignored: the command is not refused", async () => {
     const res = await fetch(`${app.baseUrl}/api/commands/open_wallet?waitFor=no-such-view`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletId, owner: "Di", initialBalance: 0 })
+      body: JSON.stringify({ walletId: `wallet-${crypto.randomUUID()}`, owner: "Dee", initialBalance: 1 })
     });
-    assert.strictEqual(res.status, 400);
-    assert.strictEqual((await fetch(`${app.baseUrl}/api/wallets/${walletId}`)).status, 404, "the wallet was never opened");
+    assert.strictEqual(res.status, 201);
   });
 
   it("a client DERIVED from the API (no codegen, no hand-written request code) drives the same flows, typed", async () => {
@@ -184,16 +178,13 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     const program = Effect.gen(function* () {
       const client: any = yield* HttpApiClient.make(makeWalletApi("/api/commands"), { baseUrl: app.baseUrl });
 
-      const opened = yield* client.commands.execute_open_wallet({ payload: { walletId, owner: "Eve", initialBalance: 5 }, query: {} });
-      const deposited = yield* client.commands.execute_deposit({
-        payload: { depositId: crypto.randomUUID(), walletId, amount: 20, description: "typed" },
-        query: { waitFor: "wallet-balance-view" }
-      });
+      const opened = yield* client.commands.execute_open_wallet({ payload: { walletId, owner: "Eve", initialBalance: 5 } });
+      const deposited = yield* client.commands.execute_deposit({ payload: { depositId: crypto.randomUUID(), walletId, amount: 20, description: "typed" } });
       // the read endpoint is part of the same API; a read resolves to { body, headers } (the header marks a stale answer)
       const wallet = yield* client.walletQueries.getWallet({ params: { walletId }, query: {} });
       // a declared domain error arrives as its typed problem, not as a bare status
       const missing = yield* Effect.flip(
-        client.commands.execute_deposit({ payload: { depositId: crypto.randomUUID(), walletId: `ghost-${walletId}`, amount: 1, description: "x" }, query: {} })
+        client.commands.execute_deposit({ payload: { depositId: crypto.randomUUID(), walletId: `ghost-${walletId}`, amount: 1, description: "x" } })
       );
       return { opened, deposited, wallet, missing };
     });
@@ -201,7 +192,7 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
 
     assert.strictEqual(opened.status, "CREATED");
     assert.strictEqual(deposited.status, "CREATED");
-    assert.deepStrictEqual(deposited.view, { name: "wallet-balance-view", caughtUp: true });
+    assert.match(deposited.marker, /^\d+:\d+$/, "the write's marker");
     assert.strictEqual(wallet.body.balance, 25, "one read, already includes the deposit");
     assert.deepStrictEqual(wallet.headers, {}, "and it is not marked stale");
     assert.strictEqual(missing.errorType, "WalletNotFound");

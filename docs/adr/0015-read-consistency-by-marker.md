@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Supersedes the `?waitFor=<view>` part of the command API (ADR-0011 and the tutorial's step 4). Breaking under ADR-0013: it lands in one commit that updates every consumer in this repository.
+Accepted, and implemented (docs/plans/read-consistency.md, phases 0-6). Supersedes the `?waitFor=<view>` part of the command API (ADR-0011 and the tutorial's step 4). Breaking under ADR-0013: the removal landed in one commit that updated every consumer in this repository.
 
 ## Context
 
@@ -89,4 +89,4 @@ Decisions the implementation made that the text above leaves open:
 - **A database failure while checking** (the head query, a view's progress) is a defect, a `500`, never a `503`: it is not a verdict about the views.
 - **`503` bodies list every view that was behind**, each with its own reason and, for a lagging one, the position its progress had reached.
 - **Metrics:** `crablet.read.consistency.reads` (tagged `mode` and `outcome`: `skipped`, `caught_up`, `stale`, `timeout`, `view_failed`) and `crablet.read.consistency.wait.duration`.
-- **The example apps (phase 4).** The wallet's three reads use the server default (strict, a read with no marker waits for the head of the log, no loosening): the app is always consistent. The course app's two reads wait only when a marker or `latest` is sent (`whenNoMarker: "none"`) and let a client loosen a read (`clientMayRelax`), because its tutorial is about the difference between a stale read and a read of your own write. That is a transitional choice made so the existing demos keep their meaning while the page learns to send markers (phase 5); phase 6 decides the course app's final policy when the tutorial is rewritten.
+- **The example apps (phases 4 and 6).** Both apps' reads use the server default (strict, a read with no marker waits for the head of the log): a read made after a write includes it. The wallet does not let a client loosen a read. The course app does (`clientMayRelax`), because its tutorial and its page show the difference: `?consistency=eventual` answers at once and may be stale (the page's checkbox, unticked, asks for it), `bounded` answers marked stale after the timeout. Phase 4 had given the course app `whenNoMarker: "none"` as a transitional choice while its page learned to send markers; phase 6 moved it to the default.

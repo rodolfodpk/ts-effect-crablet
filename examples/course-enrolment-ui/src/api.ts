@@ -77,40 +77,48 @@ export type CommandOutcome = typeof CommandOutcome.Type
 export const defineCourseCall = (courseId: string, capacity: number) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity }, query: {} });
+    const answer = yield* client.commands.execute_define_course({ payload: { courseId, capacity } });
     return outcomeOf(answer);
   });
 
 export const subscribeCall = (studentId: string, courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId }, query: {} });
+    const answer = yield* client.commands.execute_subscribe({ payload: { studentId, courseId } });
     return outcomeOf(answer);
   });
 
-// A read can carry a write's marker: `consistentWith` makes the server answer only once the seat map has that write (a 503 if it cannot in
-// time). Without one the read answers at once with whatever the seat map has.
-const consistentWithOf = (marker: string | null) => (marker === null ? {} : { consistentWith: marker });
+// How a read asks to be consistent. With nothing, the server's default applies (this app: a read waits for everything committed when it arrived).
+// `consistentWith` is a write's marker (the read waits for that write) or `latest`; either way the server answers only once the seat map has
+// it, or with a 503 if it cannot in time. `eventual` asks for no waiting at all: the answer may be stale, which is what the checkbox below shows.
+export interface ReadConsistency {
+  readonly consistentWith: string | null;
+  readonly eventual?: boolean;
+}
+const consistencyOf = (read: ReadConsistency) => ({
+  ...(read.consistentWith === null ? {} : { consistentWith: read.consistentWith }),
+  ...(read.eventual === true ? { consistency: "eventual" } : {})
+});
 
 // One page of the course list. `after` is the previous page's `next`; `q` keeps ids that start with it. A read resolves to
 // `{ body, headers }` (the header marks a stale answer, which this page never asks for): the page wants the body.
-export const listCourses = (options: { readonly q: string; readonly after: string | null; readonly consistentWith: string | null }) =>
+export const listCourses = (options: { readonly q: string; readonly after: string | null } & ReadConsistency) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
     const answer = yield* client.courseQueries.listCourses({
       query: {
         ...(options.q === "" ? {} : { q: options.q }),
         ...(options.after === null ? {} : { after: options.after }),
-        ...consistentWithOf(options.consistentWith)
+        ...consistencyOf(options)
       }
     });
     return answer.body;
   });
 
-export const getCourse = (courseId: string, consistentWith: string | null) =>
+export const getCourse = (courseId: string, read: ReadConsistency) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: consistentWithOf(consistentWith) });
+    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: consistencyOf(read) });
     return answer.body;
   });
 

@@ -57,26 +57,7 @@
           "commands"
         ],
         "operationId": "commands.execute_open_wallet",
-        "parameters": [
-          {
-            "name": "waitFor",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: wallet-balance-view, wallet-transaction-view, wallet-summary-view, wallet-statement-view."
-            },
-            "required": false
-          },
-          {
-            "name": "waitTimeout",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
-            },
-            "required": false
-          }
-        ],
+        "parameters": [],
         "security": [],
         "responses": {
           "200": {
@@ -171,26 +152,7 @@
           "commands"
         ],
         "operationId": "commands.execute_deposit",
-        "parameters": [
-          {
-            "name": "waitFor",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: wallet-balance-view, wallet-transaction-view, wallet-summary-view, wallet-statement-view."
-            },
-            "required": false
-          },
-          {
-            "name": "waitTimeout",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
-            },
-            "required": false
-          }
-        ],
+        "parameters": [],
         "security": [],
         "responses": {
           "200": {
@@ -294,26 +256,7 @@
           "commands"
         ],
         "operationId": "commands.execute_withdraw",
-        "parameters": [
-          {
-            "name": "waitFor",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: wallet-balance-view, wallet-transaction-view, wallet-summary-view, wallet-statement-view."
-            },
-            "required": false
-          },
-          {
-            "name": "waitTimeout",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
-            },
-            "required": false
-          }
-        ],
+        "parameters": [],
         "security": [],
         "responses": {
           "200": {
@@ -424,26 +367,7 @@
           "commands"
         ],
         "operationId": "commands.execute_transfer_money",
-        "parameters": [
-          {
-            "name": "waitFor",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: wallet-balance-view, wallet-transaction-view, wallet-summary-view, wallet-statement-view."
-            },
-            "required": false
-          },
-          {
-            "name": "waitTimeout",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
-            },
-            "required": false
-          }
-        ],
+        "parameters": [],
         "security": [],
         "responses": {
           "200": {
@@ -558,26 +482,7 @@
           "commands"
         ],
         "operationId": "commands.execute_close_wallet",
-        "parameters": [
-          {
-            "name": "waitFor",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "Wait for this view to process the write before responding, so a following read is not stale. One of: wallet-balance-view, wallet-transaction-view, wallet-summary-view, wallet-statement-view."
-            },
-            "required": false
-          },
-          {
-            "name": "waitTimeout",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "description": "How long to wait, in milliseconds (whole number, 1 to 30000; default 5000). Needs waitFor."
-            },
-            "required": false
-          }
-        ],
+        "parameters": [],
         "security": [],
         "responses": {
           "200": {
@@ -1458,9 +1363,6 @@
           },
           "marker": {
             "type": "null"
-          },
-          "view": {
-            "$ref": "#/components/schemas/ViewWaitResult"
           }
         },
         "required": [
@@ -1469,31 +1371,6 @@
           "lastPosition",
           "lastTransactionId",
           "marker"
-        ],
-        "additionalProperties": false
-      },
-      "ViewWaitResult": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "caughtUp": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "timeout",
-              "view_failed",
-              "unavailable",
-              "nothing_appended"
-            ]
-          }
-        },
-        "required": [
-          "name",
-          "caughtUp"
         ],
         "additionalProperties": false
       },
@@ -1517,9 +1394,6 @@
           },
           "marker": {
             "type": "string"
-          },
-          "view": {
-            "$ref": "#/components/schemas/ViewWaitResult"
           }
         },
         "required": [

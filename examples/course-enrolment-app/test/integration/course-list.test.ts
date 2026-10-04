@@ -10,8 +10,8 @@ let db: TestDb;
 let app: RunningCourseApp;
 const IDS = ["algebra", "art_history", "artXhistory", "biology", "calculus", "physics-101", "physics-201"];
 
-const post = (name: string, body: unknown, waitFor = true) =>
-  fetch(`${app.baseUrl}/api/commands/${name}${waitFor ? "?waitFor=course-seats-view" : ""}`, {
+const post = (name: string, body: unknown) =>
+  fetch(`${app.baseUrl}/api/commands/${name}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
@@ -30,7 +30,7 @@ before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   app = await startCourseAppForTest(db.connInfo);
-  // waitFor on every define: the view has the course before the next request is made
+  // no waiting between defines: a read waits for everything committed, so the list below has every course
   for (const [n, id] of IDS.entries()) assert.strictEqual((await post("define_course", { courseId: id, capacity: n + 1 })).status, 201);
 }, { timeout: 120_000 });
 after(async () => {

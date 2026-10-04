@@ -1,5 +1,7 @@
 # Plan: the API follow-ups the Foldkit page surfaced (seven items, ranked)
 
+> Note (ADR-0015): `?waitFor=<view>` on the command API, mentioned below, was replaced by the write's marker and reads that carry it (`?consistentWith=`). This plan is the record of the work as it was.
+
 ## Context
 The Foldkit page (examples/course-enrolment-ui, tutorial step 5) was the first real client of the HTTP API, and the typed command client closed its biggest gap. What is left are product questions, each small enough to be its own piece of work. They come from two places: the findings recorded in NOTES.md ("Course UI") and the design discussion about one definition with two consumers (OpenAPI for any language, Foldkit for TypeScript + Effect). The recommendation from that discussion is the frame for everything below: **keep one definition and one transport; specialize only at the edges** (the contract/logic boundary, UI-only endpoint groups, and CORS; evolution rules for a public projection are deferred until an external consumer exists, ADR-0013).
 

@@ -41,7 +41,7 @@ interface SummaryRow {
 
 // #region read-consistency
 // The wallet's reads are consistent by default (ADR-0015): strict, and a read with no marker waits for the head of the log, so a read made
-// after a write sees it, with no polling and no `?waitFor`. A read that carries the write's marker (`?consistentWith=<marker>`) waits only
+// after a write sees it, with no polling. A read that carries the write's marker (`?consistentWith=<marker>`) waits only
 // for that write. If a view is not there in time the read is a 503, never a stale answer; a client cannot ask for a looser read
 // (`clientMayRelax` is off).
 export const walletReadConsistency: ReadConsistencyConfig = defaultReadConsistency;

@@ -65,9 +65,9 @@ async function define(base: string, courseId: string) {
   return (await res.json()) as { lastTransactionId: string; lastPosition: string };
 }
 
-// Waits until the seats view has applied the write (a held request, as a client would with ?waitFor).
+// Waits until the seats view has applied the write (polling a read that asks for no waiting).
 async function waitUntilSeatsViewMoved(write: { lastTransactionId: string; lastPosition: string }) {
-  const res = await fetch(`${app.baseUrl}/api/courses/feed-seed`);
+  const res = await fetch(`${app.baseUrl}/api/courses/feed-seed?consistency=eventual`);
   if (res.status === 200) return;
   await new Promise((r) => setTimeout(r, 200));
   return waitUntilSeatsViewMoved(write);

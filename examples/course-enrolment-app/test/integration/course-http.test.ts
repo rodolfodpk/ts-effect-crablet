@@ -130,56 +130,46 @@ describe("tutorial step 3: the HTTP API", () => {
     assert.deepStrictEqual(refused.fields, { courseId, capacity: 1 });
   });
 
-  // ---- step 4: read your own writes ----
+  // ---- step 4: read your own writes (a read carries a marker, or the server default waits for everything committed) ----
   const getCourse = (courseId: string) => fetch(`${app.baseUrl}/api/courses/${courseId}`);
 
-  it("?waitFor=course-seats-view answers once the view has the write, so ONE read is enough - every time", async () => {
+  it("a read right after a write includes it: ONE read is enough - every time (the server default waits for everything committed)", async () => {
     const courseId = `seats-${uid()}`;
     assert.strictEqual((await post("define_course", { courseId, capacity: 5 })).status, 201);
     for (const [n, name] of ["ann", "bob", "cy", "di"].entries()) {
-      const student = `${name}-${uid()}`;
-      const res = await fetch(`${app.baseUrl}/api/commands/subscribe?waitFor=course-seats-view`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: student, courseId })
-      });
+      const res = await post("subscribe", { studentId: `${name}-${uid()}`, courseId });
       assert.strictEqual(res.status, 201);
-      assert.deepStrictEqual((await json(res))["view"], { name: "course-seats-view", caughtUp: true });
-      // a single read, no retry loop, already reflects the subscription that just returned
+      const body = await json(res);
+      assert.match(String(body["marker"]), /^\d+:\d+$/, "the write's marker");
+      assert.strictEqual(body["view"], undefined, "a write does not say anything about views: it does not wait for them");
+      // a single read, no retry loop, no marker sent: it already reflects the subscription that just returned
       assert.deepStrictEqual(await json(await getCourse(courseId)), { courseId, capacity: 5, subscribers: n + 1, seatsLeft: 4 - n });
     }
   });
 
-  it("a repeat subscription appended nothing: nothing to wait for, and the seats are not counted twice", async () => {
+  it("a repeat subscription appended nothing: it has no marker, and the seats are not counted twice", async () => {
     const courseId = `repeat-${uid()}`;
     await post("define_course", { courseId, capacity: 3 });
     const student = `ann-${uid()}`; // a fresh student: the 3-course limit is per student across the whole test file
-    const wait = () =>
-      fetch(`${app.baseUrl}/api/commands/subscribe?waitFor=course-seats-view`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: student, courseId })
-      });
-    assert.strictEqual((await wait()).status, 201);
-    const repeat = await wait();
+    assert.strictEqual((await post("subscribe", { studentId: student, courseId })).status, 201);
+    const repeat = await post("subscribe", { studentId: student, courseId });
     assert.strictEqual(repeat.status, 200);
-    assert.deepStrictEqual((await json(repeat))["view"], { name: "course-seats-view", caughtUp: false, reason: "nothing_appended" });
+    const body = await json(repeat);
+    assert.strictEqual(body["status"], "IDEMPOTENT");
+    assert.strictEqual(body["marker"], null);
     assert.strictEqual((await json(await getCourse(courseId)))["subscribers"], 1);
   });
 
-  it("an unknown view is refused before the command runs: nothing is written", async () => {
-    const courseId = `refused-${uid()}`;
+  it("a leftover ?waitFor from an older client is ignored: the write is not refused and does not wait", async () => {
+    const courseId = `ignored-${uid()}`;
     await post("define_course", { courseId, capacity: 3 });
-    const student = `ann-${uid()}`;
     const res = await fetch(`${app.baseUrl}/api/commands/subscribe?waitFor=no-such-view`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentId: student, courseId })
+      body: JSON.stringify({ studentId: `ann-${uid()}`, courseId })
     });
-    assert.strictEqual(res.status, 400);
-    assert.match(String((await json(res))["detail"]), /one of: course-seats-view/);
-    // the subscription never happened: the same student can still take the course
-    assert.strictEqual((await post("subscribe", { studentId: student, courseId })).status, 201);
+    assert.strictEqual(res.status, 201);
+    assert.strictEqual((await json(res))["view"], undefined);
   });
 
   it("reading an unknown course is the same 404 problem the write API uses", async () => {

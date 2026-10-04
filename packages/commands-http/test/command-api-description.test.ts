@@ -108,39 +108,27 @@ describe("how optional fields are described", () => {
   });
 });
 
-describe("waiting for a view (read your own writes)", () => {
-  const withViews = OpenApi.fromApi(makeCommandApi("/api/commands", contracts, undefined, { waitableViews: ["wallet-balance-view", "wallet-summary-view"] })) as any;
-  const parameters = (name: string) => withViews.paths[`/api/commands/${name}`].post.parameters as Array<any>;
+describe("a command route (it answers once the command has committed, with the write's marker)", () => {
+  const description = OpenApi.fromApi(makeCommandApi("/api/commands", contracts)) as any;
 
-  test("each command route accepts optional waitFor and waitTimeout query parameters, naming the views it can wait for", () => {
+  test("takes no query parameters: a command does not wait for views (a read asks for consistency, see @crablet/views-http)", () => {
     for (const name of ["deposit", "withdraw", "open"]) {
-      const byName = Object.fromEntries(parameters(name).map((p) => [p.name, p]));
-      expect(Object.keys(byName).sort()).toEqual(["waitFor", "waitTimeout"]);
-      expect(byName.waitFor.in).toBe("query");
-      expect(byName.waitFor.required).toBe(false);
-      expect(byName.waitFor.schema.description).toContain("wallet-balance-view, wallet-summary-view");
-      expect(byName.waitTimeout.schema.description).toContain("1 to 30000");
+      expect(post(name).parameters ?? []).toEqual([]);
     }
   });
 
-  test("the response says whether the view caught up (view is present only when asked for)", () => {
-    const created = withViews.components.schemas.CommandCreated;
+  test("the created response carries the write's position, transaction and marker, and nothing about views", () => {
+    const created = description.components.schemas.CommandCreated;
     expect(created.required).toEqual(["status", "reason", "lastPosition", "lastTransactionId", "marker"]);
-    expect(Object.keys(created.properties)).toContain("view");
-    const view = withViews.components.schemas.ViewWaitResult;
-    expect(view.required).toEqual(["name", "caughtUp"]);
-    expect(view.properties.reason.enum).toEqual(["timeout", "view_failed", "unavailable", "nothing_appended"]);
+    expect(Object.keys(created.properties)).toEqual(["status", "reason", "lastPosition", "lastTransactionId", "marker"]);
+    expect(description.components.schemas.ViewWaitResult).toBeUndefined();
   });
 
   test("the write's marker is a string on a created response and null on an idempotent one", () => {
-    const created = withViews.components.schemas.CommandCreated;
-    expect(created.properties.marker.type).toBe("string");
-    const idempotent = withViews.components.schemas.CommandIdempotent;
+    expect(description.components.schemas.CommandCreated.properties.marker.type).toBe("string");
+    const idempotent = description.components.schemas.CommandIdempotent;
     expect(idempotent.required).toContain("marker");
     expect(idempotent.properties.marker.type).toBe("null");
-  });
-
-  test("with no waitable views the parameters are not part of the description", () => {
-    expect(post("deposit").parameters ?? []).toEqual([]);
+    expect(Object.keys(idempotent.properties)).toEqual(["status", "reason", "lastPosition", "lastTransactionId", "marker"]);
   });
 });

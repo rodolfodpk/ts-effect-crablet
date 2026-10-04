@@ -11,7 +11,7 @@ import { makeCourseApiLayer, startCourseViews } from "./CourseApp.ts";
 // COURSES_CORS_ORIGINS=http://localhost:5173 (comma-separated) lets a page served from those origins call the API from the
 // browser; without it no CORS header is sent (a page behind a dev proxy, or served by this server, needs none).
 // COURSES_VIEW_DELAY_MS=400 (a demo knob, default 0) makes the seats view lag that long behind a write, so a read right after
-// a write is stale and ?waitFor=course-seats-view shows what it is for.
+// a write is stale (?consistency=eventual) and a read that carries the write's marker has something to wait for.
 const conn = dbConnInfoFromEnv();
 const port = Number(process.env["PORT"] ?? 8080);
 const docsUi = process.env["COURSES_DOCS"];

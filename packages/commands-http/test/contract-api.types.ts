@@ -23,7 +23,7 @@ const LogContract = commandContract({ name: "log", input: Schema.Struct({ note: 
 const contracts = [BookContract, LogContract];
 
 // ---- the API and the client derived from it ----
-const group = makeCommandApiGroup("/api/commands", contracts, { waitableViews: ["seats"] });
+const group = makeCommandApiGroup("/api/commands", contracts);
 export const api = withApiInfo(HttpApi.make("x").add(group), { title: "t", version: "1" });
 export const description = OpenApi.fromApi(api);
 export const serving = HttpApiBuilder.layer(api);
@@ -31,13 +31,13 @@ export const standalone = makeCommandApi("/api/commands", contracts);
 
 export const program = Effect.gen(function* () {
   const client = yield* HttpApiClient.make(api);
-  const booked = yield* client.commands.execute_book({ query: {}, payload: { seatId: "12A", row: 3 } });
+  const booked = yield* client.commands.execute_book({ payload: { seatId: "12A", row: 3 } });
   // @ts-expect-error a misspelled payload field
-  yield* client.commands.execute_book({ query: {}, payload: { seatID: "12A", row: 3 } });
+  yield* client.commands.execute_book({ payload: { seatID: "12A", row: 3 } });
   // @ts-expect-error the payload of ANOTHER command
-  yield* client.commands.execute_log({ query: {}, payload: { seatId: "12A", row: 3 } });
+  yield* client.commands.execute_log({ payload: { seatId: "12A", row: 3 } });
   // @ts-expect-error a command that has no contract
-  yield* client.commands.execute_nope({ query: {}, payload: {} });
+  yield* client.commands.execute_nope({ payload: {} });
   return booked;
 });
 const clientShape = Effect.gen(function* () {

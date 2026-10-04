@@ -12,7 +12,6 @@ import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
-import type { ViewWaiter } from "@crablet/commands-http/ViewWaiter";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
@@ -41,20 +40,11 @@ export interface CourseAppConfig {
   readonly maxFeedLifetime?: Duration.Input;
 }
 
-// #region wait-for
-// The views a write request may wait for (`?waitFor=course-seats-view`): the response is then sent only once that view has
-// processed the write, so the caller's next read is not stale. commands-http never imports the views package; this
-// map is the whole connection.
-const courseViewWaiters: Readonly<Record<string, ViewWaiter>> = {
-  [COURSE_SEATS_VIEW]: (write, { timeout }) => waitUntilProcessed(courseSeatsViewSubscription, write, { timeout })
-};
-// #endregion wait-for
-
 // Serves the API, its OpenAPI document and, when asked for, a documentation page.
 export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = makeCourseApi(basePath);
-  const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath, viewWaiters: courseViewWaiters });
+  const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath });
   const queryLive = makeCourseQueryApiLive(api);
   const feedLive = makeCourseFeedApiLive(api, { views: [COURSE_SEATS_VIEW], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
   const served = Layer.merge(
@@ -81,7 +71,7 @@ const viewsConfig: ViewsConfig = {
 // they are only stopped by `.service.stop` - call it before closing the database pool.
 //
 // `viewDelayMs` is a DEMO knob (default 0, off): it holds every batch back that long before the view applies it, so a read
-// made right after a write is visibly stale and `?waitFor=course-seats-view` has something to show. The delay is spent
+// made right after a write is visibly stale (`?consistency=eventual`) and a read that carries the write's marker has something to wait for. The delay is spent
 // BEFORE the projector's transaction opens, so no database transaction sits open while it waits.
 export interface CourseViewsOptions {
   readonly viewDelayMs?: number;

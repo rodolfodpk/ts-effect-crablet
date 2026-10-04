@@ -1,5 +1,7 @@
 # Plan: a typed command client - put the commands in the API's type
 
+> Note (ADR-0015): `?waitFor=<view>` on the command API, mentioned below, was replaced by the write's marker and reads that carry it (`?consistentWith=`). This plan is the record of the work as it was.
+
 **Status:** done (phases 0-3, ADR-0011 addendum). Kept as the record; its "What exists" section describes the code BEFORE the change.
 
 ## Context

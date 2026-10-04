@@ -1,5 +1,7 @@
 # Plan: a Foldkit UI for the course-enrolment app (tutorial step 5)
 
+> Note (ADR-0015): `?waitFor=<view>` on the command API, mentioned below, was replaced by the write's marker and reads that carry it (`?consistentWith=`). This plan is the record of the work as it was.
+
 **Status:** done (phases 0-5; the typed command client it called for is `typed-command-client.md`). Kept as the record of what was built and what building it showed; the follow-ups it surfaced are planned in `api-follow-ups.md`.
 
 ## Context

@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { inputJsonSchema } from "./InputJsonSchema.ts";
-import { defaultWaitTimeoutMs, maxWaitTimeoutMs } from "./ViewWaiter.ts";
 import type { SqlError } from "effect/sql/SqlError";
 import type { Command } from "@crablet/commands/Command";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
@@ -27,25 +26,13 @@ import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, probl
 //
 // `marker` is the same cursor as one string, `"<lastTransactionId>:<lastPosition>"` (`@crablet/eventstore/Marker`): the token to hold and
 // send back when reading, so that the read reflects this write (ADR-0015). Null when nothing was appended.
-//
-// `view` is present only when the request asked to wait for a view (`?waitFor=`): whether that view had caught up
-// to this write when the response was sent. The write itself has succeeded either way - a view that did not catch
-// up in time (or is failed) is reported here, not as an error status, because the command is done and
-// retrying it would be wrong. reason: `timeout` (not caught up in time), `view_failed` (the view is marked FAILED), `unavailable`
-// (its progress could not be read), `nothing_appended`: an idempotent repeat appended nothing, so there was nothing to wait for.
-export const ViewWaitResult = Schema.Struct({
-  name: Schema.String,
-  caughtUp: Schema.Boolean,
-  reason: Schema.optionalKey(Schema.Literals(["timeout", "view_failed", "unavailable", "nothing_appended"]))
-}).annotate({ identifier: "ViewWaitResult" } as never);
 
 export const CommandCreatedResponse = Schema.Struct({
   status: Schema.Literal("CREATED"),
   reason: Schema.Null,
   lastPosition: Schema.String,
   lastTransactionId: Schema.String,
-  marker: Schema.String,
-  view: Schema.optionalKey(ViewWaitResult)
+  marker: Schema.String
 }).annotate({ httpApiStatus: 201, identifier: "CommandCreated" } as never);
 
 export const CommandIdempotentResponse = Schema.Struct({
@@ -53,27 +40,8 @@ export const CommandIdempotentResponse = Schema.Struct({
   reason: Schema.NullOr(Schema.String),
   lastPosition: Schema.Null,
   lastTransactionId: Schema.Null,
-  marker: Schema.Null,
-  view: Schema.optionalKey(ViewWaitResult)
+  marker: Schema.Null
 }).annotate({ httpApiStatus: 200, identifier: "CommandIdempotent" } as never);
-
-// The optional query parameters of a command route when views can be waited for. Plain strings on purpose: the
-// handler validates them itself (BEFORE running the command), so a bad value answers with the same problem
-// body as every other 400 instead of the HTTP framework's empty-bodied default; the allowed values are
-// documented in the descriptions.
-export const waitQuery = (viewNames: ReadonlyArray<string>) =>
-  Schema.Struct({
-    waitFor: Schema.optionalKey(
-      Schema.String.annotate({
-        description: `Wait for this view to process the write before responding, so a following read is not stale. One of: ${viewNames.join(", ")}.`
-      } as never)
-    ),
-    waitTimeout: Schema.optionalKey(
-      Schema.String.annotate({
-        description: `How long to wait, in milliseconds (whole number, 1 to ${maxWaitTimeoutMs}; default ${defaultWaitTimeoutMs}). Needs waitFor.`
-      } as never)
-    )
-  });
 
 export const ExposedCommandsResponse = Schema.Struct({
   exposedCommands: Schema.Array(
@@ -114,7 +82,7 @@ type CommandEndpoint<BasePath extends string, K extends AnyCommandContract> = Ht
   "POST",
   `${BasePath}/${K["name"]}`,
   never,
-  ReturnType<typeof waitQuery>,
+  never,
   K["input"] extends infer I extends Schema.Top ? I : never,
   never,
   typeof CommandCreatedResponse | typeof CommandIdempotentResponse,
@@ -134,14 +102,12 @@ export type CommandGroup<BasePath extends string, C extends ReadonlyArray<AnyCom
 // it can be bundled for a browser. The group is built in a loop; the loop body is untyped (`any`) because TypeScript cannot follow a
 // runtime-variable set of endpoint names through `group.add(...)`. The RETURN type is the precise `CommandGroup` above - the one place that
 // asserts "the loop builds exactly this" (the OpenAPI description and the integration tests check the runtime, test/contract-api.types.ts the type).
-// `waitableViews`: names of the views a request may wait for (`?waitFor=`, `?waitTimeout=`); none by default. (The query is part of the static
-// type either way; with no waitable view the server answers any `waitFor` with a 400.)
+// A command route has no query parameters: it answers once the command has committed, with the write's marker. A client that wants a read to
+// include the write sends that marker to the read (`?consistentWith=`, see @crablet/views-http).
 export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
   basePath: BasePath,
-  contracts: C,
-  options: { readonly waitableViews?: ReadonlyArray<string> } = {}
+  contracts: C
 ): CommandGroup<BasePath, C> => {
-  const waitableViews = options.waitableViews ?? [];
   let group: any = HttpApiGroup.make("commands").add(
     HttpApiEndpoint.get("listExposedCommands", basePath, { success: ExposedCommandsResponse })
   );
@@ -149,7 +115,6 @@ export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C
     group = group.add(
       HttpApiEndpoint.post(executeEndpointName(contract.name), `${basePath}/${contract.name}` as `/${string}`, {
         payload: contract.input as unknown as Schema.Top,
-        ...(waitableViews.length > 0 ? { query: waitQuery(waitableViews) } : {}),
         success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
         error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...contract.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
       })
@@ -218,9 +183,8 @@ export const withApiInfo = <Id extends string, Groups extends HttpApiGroup.Const
 export const makeCommandApi = <const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
   basePath: BasePath,
   contracts: C,
-  info: ApiInfo = defaultApiInfo,
-  options: { readonly waitableViews?: ReadonlyArray<string> } = {}
-) => withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, contracts, options)), info);
+  info: ApiInfo = defaultApiInfo
+) => withApiInfo(HttpApi.make("commandApi").add(makeCommandApiGroup(basePath, contracts)), info);
 
 export const listedCommands = (contracts: ReadonlyArray<Pick<AnyCommandContract, "name" | "input">>) =>
   [...contracts]

@@ -147,8 +147,10 @@ They are fed by pollers. Guarantees: **no event is skipped** (cursor is a `(tran
 then position, so do not use "position is bigger than the last one I saw" as a general idempotency check; and a long-running transaction anywhere in
 the database delays delivery until it ends.
 
-Views update asynchronously. To read your own write, wait for the view to reach the command's position (`waitUntilProcessed`), or over HTTP add
-`?waitFor=<view>`; a client that did not write learns of changes by a ping over server-sent events ([ADR-0014](./docs/adr/0014-live-updates-by-ping.md)).
+Views update asynchronously. A command answers with a **marker** (where in the log the write ended), and waiting belongs to the read: a read that carries it
+(`?consistentWith=<marker>`) is answered only once the views it uses have that write, and a read with no marker waits for everything committed. The default is strict: the
+answer is right or a `503`, never stale ([ADR-0015](./docs/adr/0015-read-consistency-by-marker.md)). A client that did not write learns of changes by a ping over server-sent
+events ([ADR-0014](./docs/adr/0014-live-updates-by-ping.md)).
 Walkthrough: [tutorial step 4](./docs/tutorial/course-enrolment.md).
 
 ## HTTP API and OpenAPI
@@ -173,7 +175,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | `packages/commands-http` | A REST API over your commands, with RFC 7807 problem-detail errors |
 | `packages/views-http` | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
 | `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations) |
-| `examples/course-enrolment-app` | The [tutorial](./docs/tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view with `?waitFor=` |
+| `examples/course-enrolment-app` | The [tutorial](./docs/tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
 | `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 
 ## Build & test

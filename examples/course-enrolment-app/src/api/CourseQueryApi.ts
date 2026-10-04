@@ -25,7 +25,7 @@ export const CoursePage = Schema.Struct({
 export const defaultPageSize = 20;
 export const maxPageSize = 100;
 
-// Query values arrive as strings. They are plain strings here on purpose and validated by the handler (like `?waitFor`), so a bad
+// Query values arrive as strings. They are plain strings here on purpose and validated by the handler (like the consistency parameters), so a bad
 // value answers with the same problem body as every other 400 instead of the HTTP framework's empty-bodied default.
 export const listCoursesQuery = {
   limit: Schema.optionalKey(

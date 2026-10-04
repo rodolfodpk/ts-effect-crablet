@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-`?waitFor=<view>` makes the writer's own next read fresh. Nothing told a *different* client (a second tab, another user) that a view had changed, except polling. Views advance in a background processor, so the moment to tell is when a view's progress commits.
+A read that carries the writer's marker (`?consistentWith=<marker>`, ADR-0015; this ADR was written when it was `?waitFor=<view>` on the command) makes the writer's own next read fresh. Nothing told a *different* client (a second tab, another user) that a view had changed, except polling. Views advance in a background processor, so the moment to tell is when a view's progress commits.
 
 ## Decision
 

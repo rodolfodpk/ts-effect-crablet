@@ -35,7 +35,7 @@ That is the order model loads already use (`ORDER BY transaction_id, position`),
   position`. The progress tables gained `last_transaction_id` (V8; `last_position` stays for lag and operations). `V8` backfills it with the
   smaller of the xid at `last_position` and the smallest xid among later events, so an event the old cursor had not delivered is never put behind
   the new one (it may redeliver a few; handlers are at-least-once).
-- **Waiting.** `waitUntilProcessed` and `ViewWaiter` take the write as a `(transactionId, position)` pair (`ExecutionResult.lastTransactionId`),
+- **Waiting.** `waitUntilProcessed` and `ViewWaiter` (removed by ADR-0015; the read wrapper in `@crablet/views-http` calls `waitUntilProcessed`) take the write as a `(transactionId, position)` pair (`ExecutionResult.lastTransactionId`),
   and compare pairs: a view's cursor can be at a higher position than a write and still not have processed it. HTTP responses keep `lastPosition`.
 - **Append condition (V7).** `append_events_if` takes `p_after_cursor_transaction_id` and compares pairs. The model load returns, as its cursor,
   the pair of the last loaded event that was already SETTLED when it read (`transaction_id < pg_snapshot_xmin`), and ignores the caller's own
@@ -53,7 +53,7 @@ That is the order model loads already use (`ORDER BY transaction_id, position`),
 - **An occasional extra `Conflict`.** An event that a command loaded while an older transaction was still open counts as a conflict at the append;
   the retry settles it. Rare, and a retry fixes it.
 - **Breaking interface change** (packages are unpublished, so no shim): `EventFetcher.fetchEvents(id, cursor, n)`,
-  `ProgressTracker.getCursor/updateCursor`, `waitUntilProcessed(subscription, write, ...)`, `ViewWaiter(write, ...)`.
+  `ProgressTracker.getCursor/updateCursor`, `waitUntilProcessed(subscription, write, ...)`, `ViewWaiter(write, ...)` (since removed, ADR-0015).
 - **Unchanged limits.** The xmin bound still makes every poller wait for ANY open transaction in the database, including unrelated ones (an
   idle-in-transaction session stalls delivery): alert on long-running transactions. Handlers stay at-least-once and must be idempotent.
 - **Events already skipped before this fix** cannot be found automatically. To recover, reset the processor's progress row to zero
