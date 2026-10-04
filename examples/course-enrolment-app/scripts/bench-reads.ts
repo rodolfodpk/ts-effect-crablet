@@ -5,7 +5,8 @@
 //   2. reads under a steady write load: latest against eventual;
 //   3. waiters: N readers that all wait for one write while the seats view lags, and what that does to an unrelated read;
 //   4. the head-of-log query on a large log;
-//   5. open live feeds: how many database sessions N open feeds hold.
+//   5. open live feeds: how many database sessions N open feeds hold;
+//   6. read your own write: a write, then a read carrying its marker, one after the other: how long the read takes.
 //
 // Scenarios 1-3 run twice: with the wait POLLING the database every 25 ms ("polling": the app's view progress hub is replaced by one that is never
 // connected) and with the wait woken by the view progress hub's pings ("hub", ADR-0016), one after the other in the same session so they compare.
@@ -35,7 +36,7 @@ const arg = (name: string, fallback: number): number => {
 const SECONDS = arg("seconds", 4);
 const POOL = arg("pool", 10);
 const EVENTS = arg("events", 2_000_000);
-// `--only 2,3` runs just those scenarios (1 idle log, 2 under writes, 3 waiters, 4 head of log, 5 open feeds).
+// `--only 2,3` runs just those scenarios (1 idle log, 2 under writes, 3 waiters, 4 head of log, 5 open feeds, 6 read your own write).
 const onlyArg = process.argv.indexOf("--only");
 const only = onlyArg >= 0 ? new Set(process.argv[onlyArg + 1]!.split(",").map(Number)) : null;
 const wanted = (n: number) => only === null || only.has(n);
@@ -96,7 +97,7 @@ interface LoadResult {
 }
 
 // `concurrency` workers, each issuing one request after another until `ms` has passed.
-const load = async (baseUrl: string, concurrency: number, ms: number, path: () => string): Promise<LoadResult> => {
+const load = async (baseUrl: string, concurrency: number, ms: number, path: () => string, pauseMs = 0): Promise<LoadResult> => {
   const latencies: Array<number> = [];
   const statuses: Record<string, number> = {};
   const until = performance.now() + ms;
@@ -114,6 +115,7 @@ const load = async (baseUrl: string, concurrency: number, ms: number, path: () =
       }
       latencies.push(performance.now() - t0);
       statuses[status] = (statuses[status] ?? 0) + 1;
+      if (pauseMs > 0) await sleep(pauseMs);
     }
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
@@ -251,7 +253,8 @@ const main = async () => {
             await res.arrayBuffer();
             return { ms: performance.now() - started, status: res.status };
           });
-          const probe = load(slow.baseUrl, 1, 1200, () => "/api/courses/probe?consistency=eventual");
+          // the probe is paced (about 40 reads/s): a probe looping flat out is ~1,200 transactions/s and would swamp the waiters' own cost in the counter
+          const probe = load(slow.baseUrl, 1, 1200, () => "/api/courses/probe?consistency=eventual", 25);
           const results = await Promise.all(waiters);
           const probed = await probe;
           await sampler;
@@ -263,6 +266,29 @@ const main = async () => {
           );
         }
         await slow.stop();
+      }
+    }
+
+    // ---------------------------------------------------------------- 6. read your own write
+    if (wanted(6)) {
+      console.log("\n6. read your own write: a write, then at once a read that carries its marker (no other load, the view applies the write by itself); 300 rounds each");
+      const w6 = [9, 8, 8, 8, 8, 8];
+      console.log(row(["wait", "p50 ms", "p90 ms", "p95 ms", "p99 ms", "mean ms"], w6));
+      for (const wait of ["polling", "hub"] as const) {
+        const app = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 0, wait });
+        await sleep(500);
+        const times: Array<number> = [];
+        for (let n = 0; n < 300; n++) {
+          const { marker } = await post(app.baseUrl, "define_course", { courseId: `ryow-${wait}-${n}-${crypto.randomUUID().slice(0, 6)}`, capacity: 5 });
+          const t0 = performance.now();
+          const res = await fetch(`${app.baseUrl}/api/courses/bench-0?consistentWith=${marker}`);
+          await res.arrayBuffer();
+          times.push(performance.now() - t0);
+          await sleep(20);
+        }
+        const sorted = [...times].sort((a, b) => a - b);
+        console.log(row([wait, fmt(percentile(sorted, 50), 1), fmt(percentile(sorted, 90), 1), fmt(percentile(sorted, 95), 1), fmt(percentile(sorted, 99), 1), fmt(times.reduce((a, b) => a + b, 0) / times.length, 1)], w6));
+        await app.stop();
       }
     }
 

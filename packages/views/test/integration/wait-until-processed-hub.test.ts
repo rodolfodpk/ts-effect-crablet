@@ -154,6 +154,31 @@ describe("waitUntilProcessed with a hub", () => {
     assert.ok(polledQueries >= 60, `polling, for contrast: ${polledQueries} queries in 1.5 s`);
   });
 
+  it("a ping whose cursor covers the write ends the wait WITHOUT another look (the ping is sent after the progress commits, so it is the answer)", { timeout: 30_000 }, async () => {
+    await scenario(async (s) => {
+      const waiting = s.wait({ safetyInterval: "10 seconds", timeout: "20 seconds" });
+      await sleep(150);
+      const looksBefore = s.queries.n;
+      // The table is NOT moved: only the ping says the view reached the write. A wait that looked at the table again would find it behind and keep waiting.
+      s.fake.ping(s.view.viewName, s.write);
+      await waiting;
+      assert.strictEqual(s.queries.n, looksBefore, "no query after the ping");
+      assert.ok(looksBefore <= 2, `only the first look (${looksBefore} queries)`);
+    });
+  });
+
+  it("a ping that does NOT cover the write makes it look again (the view may have nothing relevant left to do)", { timeout: 30_000 }, async () => {
+    await scenario(async (s) => {
+      const waiting = s.wait({ safetyInterval: "10 seconds", timeout: "20 seconds" });
+      await sleep(150);
+      const looksBefore = s.queries.n;
+      await s.advance(); // the table has it...
+      s.fake.ping(s.view.viewName, { transactionId: "1", position: 1n }); // ...but the ping is older than the write
+      await waiting;
+      assert.ok(s.queries.n > looksBefore, "it looked at the table to decide");
+    });
+  });
+
   it("pings for other views do not make it look again", { timeout: 30_000 }, async () => {
     await scenario(async (s) => {
       const waiting = s.waitExit({ timeout: "1200 millis", safetyInterval: "10 seconds" });

@@ -15,7 +15,7 @@
 | 1 | `ViewProgressHub`: coalescing subscribers, reconnect with backoff, resync (done) | the piece everything else uses | - | additive (new module) |
 | 2 | `waitUntilProcessed` waits on the hub when one is provided (polls otherwise) (done) | removes the 25 ms floor and the polling load | 1 | additive |
 | 3 | `viewProgressFeed` uses the hub; the apps provide it; a test that many open feeds hold ONE database connection (done) | removes the per-page connection | 1 | breaking for `viewProgressFeed` and the apps' layers |
-| 4 | Re-measure with `bench-reads.ts`; update ADR-0014, ADR-0015 "Measured costs" and the scale envelope | confirms the gain | 2, 3 | docs and a small script change |
+| 4 | Re-measure with `bench-reads.ts`; update ADR-0014, ADR-0015 "Measured costs" and the scale envelope (done; it also found, and fixed, a thundering herd after a ping) | confirms the gain | 2, 3 | docs, a script change, and a small change to the wait |
 
 Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites in batches) and is committed on its own; push only on request.
 
@@ -34,7 +34,7 @@ Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integra
 - `makeCourseApiLayer` builds the hub once (`ViewProgressHubLive`) and provides it to the feed and the query group; `startCourseAppForTest` and `index.ts` need nothing more. The wallet app has no feed but its read wrapper benefits: provide the hub there too.
 - Tests: `course-feed.test.ts` unchanged in behavior; a new test opens 200 feeds and asserts the database's connection count stays small (a handful, not 200), and that a write reaches all of them; killing the hub's connection is followed by a resync and a re-emitted opening cursor on every feed.
 
-## Phase 4. Re-measure
+## Phase 4. Re-measure - DONE (see ADR-0016 "Measured results" and NOTES "Shared listener, phase 4")
 `bench-reads.ts` scenarios 2 and 3 again (the p95 floor under writes; the cost and latency of many waiting readers), plus a new scenario: N open feeds and the connection count. Update the numbers in ADR-0015 "Measured costs" and ADR-0014's consequence, and the scale envelope's live-pages limit.
 
 ## Risks

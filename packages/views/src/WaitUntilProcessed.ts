@@ -72,8 +72,9 @@ export const waitUntilProcessed = (
     const safetyMs = Duration.toMillis(Duration.fromInputUnsafe(options.safetyInterval ?? "1 second"));
     const startedAt = yield* Clock.currentTimeMillis;
 
-    // Look at the view; end the wait if it has the write, is failed, or time ran out; otherwise `pause` and look again. `pause` gets the time left.
-    const loop = (pause: (remainingMs: number) => Effect.Effect<void>) =>
+    // Look at the view; end the wait if it has the write, is failed, or time ran out; otherwise `pause` and look again. `pause` gets the time left and
+    // says whether, while it paused, the view was reported to have reached the write (a ping whose cursor covers it): then the wait is over without another look.
+    const loop = (pause: (remainingMs: number) => Effect.Effect<boolean>) =>
       Effect.gen(function* () {
         for (;;) {
           // last_position is BIGINT and last_transaction_id XID8; read both as text and convert
@@ -100,7 +101,7 @@ export const waitUntilProcessed = (
               reached
             });
           }
-          yield* pause(timeoutMs - elapsed);
+          if (yield* pause(timeoutMs - elapsed)) return;
         }
       });
 
@@ -108,14 +109,25 @@ export const waitUntilProcessed = (
     // meanwhile is already waiting for us, then look, and between looks wait for a ping, a reconnect of the hub, the safety interval or the
     // deadline, whichever comes first. With no hub, or while its LISTEN is down, poll every `interval`, exactly as before.
     const hub = yield* Effect.serviceOption(ViewProgressHub);
-    if (Option.isNone(hub)) return yield* loop(() => Effect.sleep(interval));
+    if (Option.isNone(hub)) return yield* loop(() => Effect.as(Effect.sleep(interval), false));
     const progress = hub.value;
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const pings = yield* progress.subscribe(new Set([viewName]));
         return yield* loop((remainingMs) =>
           Effect.flatMap(progress.connected, (connected) =>
-            connected ? Effect.asVoid(Effect.timeoutOption(pings.next, Duration.millis(Math.max(1, Math.min(safetyMs, remainingMs))))) : Effect.sleep(interval)
+            connected
+              ? Effect.map(
+                  Effect.timeoutOption(pings.next, Duration.millis(Math.max(1, Math.min(safetyMs, remainingMs)))),
+                  // A ping is sent in the same statement that moves the view's progress, so once it is delivered the progress has committed: a ping that
+                  // covers the write IS the answer, and the waiters a ping wakes do not all run a query at the same moment. After a resync (a ping may
+                  // have been lost), or with a ping that does not cover the write, look at the table.
+                  (batch) =>
+                    Option.isSome(batch) &&
+                    !batch.value.resync &&
+                    batch.value.pings.some((ping) => ping.id === viewName && ProgressCursorNS.compare(ProgressCursorNS.of(ping.transactionId, BigInt(ping.position)), write) >= 0)
+                )
+              : Effect.as(Effect.sleep(interval), false)
           )
         );
       })
