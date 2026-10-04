@@ -13,7 +13,7 @@
 | | Phase | Value | Depends on | Commit |
 |---|---|---|---|---|
 | 1 | `ViewProgressHub`: coalescing subscribers, reconnect with backoff, resync (done) | the piece everything else uses | - | additive (new module) |
-| 2 | `waitUntilProcessed` waits on the hub when one is provided (polls otherwise) | removes the 25 ms floor and the polling load | 1 | additive |
+| 2 | `waitUntilProcessed` waits on the hub when one is provided (polls otherwise) (done) | removes the 25 ms floor and the polling load | 1 | additive |
 | 3 | `viewProgressFeed` uses the hub; the course app provides it; a test that many open feeds hold ONE database connection | removes the per-page connection | 1 | breaking for `viewProgressFeed` and the apps' layers |
 | 4 | Re-measure with `bench-reads.ts`; update ADR-0014, ADR-0015 "Measured costs" and the scale envelope | confirms the gain | 2, 3 | docs and a small script change |
 
@@ -25,7 +25,7 @@ Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integra
 - The run loop (forked in the layer's scope): listen, mark connected, flag every subscriber `resync`, take and decode pings until the queue fails or ends, mark disconnected, back off, repeat. An undecodable payload is dropped.
 - Tests: unit (Bun, fake source): delivery and filtering, coalescing, `next` blocks until something arrives, resync on first connect and on reconnect, backoff schedule, a subscriber removed with its scope, a bad payload dropped. Integration (Node, real Postgres): a ping reaches subscribers; `pg_terminate_backend` of the hub's connection is followed by a reconnect and a resync, and pings flow again.
 
-## Phase 2. `waitUntilProcessed` on the hub
+## Phase 2. `waitUntilProcessed` on the hub - DONE (see NOTES "Shared listener, phase 2")
 - `Effect.serviceOption(ViewProgressHub)`: with a hub, subscribe to the view first, then loop check, wait for a ping (or the safety interval, default 1 s, or a resync), check again; without one, today's polling. A hub that is not connected counts as no hub (poll at `interval`).
 - Tests: every existing `waitUntilProcessed` test passes unchanged without a hub and with one; with a hub a wait returns within a few milliseconds of the ping (not the next 25 ms tick) and issues far fewer queries than polling (counted with a wrapping `SqlClient`); the safety interval still ends a wait when no ping comes; a resync re-checks at once.
 

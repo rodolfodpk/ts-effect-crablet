@@ -1,10 +1,11 @@
-import { Clock, Data, Duration, Effect } from "effect";
+import { Clock, Data, Duration, Effect, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { hasPendingSelectedEvents } from "@crablet/event-poller/SqlEventFetcher";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import type { ViewSubscription } from "./ViewSubscription.ts";
+import { ViewProgressHub } from "./ViewProgressHub.ts";
 
 // Read your own writes from an asynchronous view.
 //
@@ -29,7 +30,8 @@ import type { ViewSubscription } from "./ViewSubscription.ts";
 // The view has caught up when its progress has passed the write OR no event its subscription matches remains in
 // (progress, write]. That is why this takes the subscription, not just the view's name.
 //
-// The wait polls. It fails with `WaitTimeout` if the view has not caught up in time (it may be paused,
+// The wait polls, or - when a `ViewProgressHub` is in the context (ADR-0016) - is woken by the view's progress ping and looks only on a ping, on a
+// reconnect of the hub, on a safety interval and at the deadline. It fails with `WaitTimeout` if the view has not caught up in time (it may be paused,
 // lagging, or not running at all) and fails fast with `ViewFailed` if the view has been marked FAILED,
 // since it will not progress until someone resets it.
 
@@ -49,8 +51,11 @@ export class ViewFailed extends Data.TaggedError("ViewFailed")<{
 export interface WaitOptions {
   // How long to wait before giving up (default 5 seconds).
   readonly timeout?: Duration.Input;
-  // How often to look at the view's progress (default 25 ms).
+  // How often to look at the view's progress when polling (default 25 ms): with no hub, or while the hub's LISTEN is down.
   readonly interval?: Duration.Input;
+  // With a hub, how long to wait for a ping before looking anyway (default 1 second): the net for a ping that was lost. A ping, a reconnect of the
+  // hub and the deadline each end the pause sooner.
+  readonly safetyInterval?: Duration.Input;
 }
 
 export const waitUntilProcessed = (
@@ -64,33 +69,55 @@ export const waitUntilProcessed = (
     const sql = yield* SqlClient.SqlClient;
     const timeoutMs = Duration.toMillis(Duration.fromInputUnsafe(options.timeout ?? "5 seconds"));
     const interval = Duration.fromInputUnsafe(options.interval ?? "25 millis");
+    const safetyMs = Duration.toMillis(Duration.fromInputUnsafe(options.safetyInterval ?? "1 second"));
     const startedAt = yield* Clock.currentTimeMillis;
 
-    for (;;) {
-      // last_position is BIGINT and last_transaction_id XID8; read both as text and convert
-      const rows = yield* sql.unsafe<{ last_position: string; last_transaction_id: string; status: string }>(
-        "SELECT last_position::text AS last_position, last_transaction_id::text AS last_transaction_id, status FROM crablet_view_progress WHERE view_name = $1",
-        [viewName]
-      );
-      const cursor =
-        rows[0] === undefined
-          ? ProgressCursorNS.zero
-          : ProgressCursorNS.of(rows[0].last_transaction_id, BigInt(rows[0].last_position));
-      const reached = cursor.position;
-      if (ProgressCursorNS.compare(cursor, write) >= 0) return;
-      if (!(yield* hasPendingSelectedEvents(subscription, cursor, write))) return;
-      if (rows[0]?.status === "FAILED") {
-        return yield* new ViewFailed({ message: `View "${viewName}" is FAILED and will not progress`, viewName });
-      }
-      const elapsed = (yield* Clock.currentTimeMillis) - startedAt;
-      if (elapsed >= timeoutMs) {
-        return yield* new WaitTimeout({
-          message: `View "${viewName}" had only reached position ${reached} after ${elapsed} ms (waiting for ${write.position})`,
-          viewName,
-          position: write.position,
-          reached
-        });
-      }
-      yield* Effect.sleep(interval);
-    }
+    // Look at the view; end the wait if it has the write, is failed, or time ran out; otherwise `pause` and look again. `pause` gets the time left.
+    const loop = (pause: (remainingMs: number) => Effect.Effect<void>) =>
+      Effect.gen(function* () {
+        for (;;) {
+          // last_position is BIGINT and last_transaction_id XID8; read both as text and convert
+          const rows = yield* sql.unsafe<{ last_position: string; last_transaction_id: string; status: string }>(
+            "SELECT last_position::text AS last_position, last_transaction_id::text AS last_transaction_id, status FROM crablet_view_progress WHERE view_name = $1",
+            [viewName]
+          );
+          const cursor =
+            rows[0] === undefined
+              ? ProgressCursorNS.zero
+              : ProgressCursorNS.of(rows[0].last_transaction_id, BigInt(rows[0].last_position));
+          const reached = cursor.position;
+          if (ProgressCursorNS.compare(cursor, write) >= 0) return;
+          if (!(yield* hasPendingSelectedEvents(subscription, cursor, write))) return;
+          if (rows[0]?.status === "FAILED") {
+            return yield* new ViewFailed({ message: `View "${viewName}" is FAILED and will not progress`, viewName });
+          }
+          const elapsed = (yield* Clock.currentTimeMillis) - startedAt;
+          if (elapsed >= timeoutMs) {
+            return yield* new WaitTimeout({
+              message: `View "${viewName}" had only reached position ${reached} after ${elapsed} ms (waiting for ${write.position})`,
+              viewName,
+              position: write.position,
+              reached
+            });
+          }
+          yield* pause(timeoutMs - elapsed);
+        }
+      });
+
+    // With a hub in the context the wait is woken by the view's progress ping (ADR-0016): subscribe BEFORE the first look, so a ping that arrives
+    // meanwhile is already waiting for us, then look, and between looks wait for a ping, a reconnect of the hub, the safety interval or the
+    // deadline, whichever comes first. With no hub, or while its LISTEN is down, poll every `interval`, exactly as before.
+    const hub = yield* Effect.serviceOption(ViewProgressHub);
+    if (Option.isNone(hub)) return yield* loop(() => Effect.sleep(interval));
+    const progress = hub.value;
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const pings = yield* progress.subscribe(new Set([viewName]));
+        return yield* loop((remainingMs) =>
+          Effect.flatMap(progress.connected, (connected) =>
+            connected ? Effect.asVoid(Effect.timeoutOption(pings.next, Duration.millis(Math.max(1, Math.min(safetyMs, remainingMs))))) : Effect.sleep(interval)
+          )
+        );
+      })
+    );
   });
