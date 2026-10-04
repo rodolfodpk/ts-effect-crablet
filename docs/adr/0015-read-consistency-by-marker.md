@@ -25,8 +25,8 @@ The command response already carries the write's position in the log as `lastTra
 
    | Mode | A view has not caught up in time |
    |---|---|
-   | `strict` | Fail: `503` `application/problem+json`, `Retry-After`, the lagging views and how far each got. A view marked `FAILED` fails at once with a different problem type and no `Retry-After`. |
-   | `bounded` | Run the handler and add the header `Crablet-Consistency: stale`. |
+   | `strict` | Fail: one `503` `application/problem+json` whose `reason` is `lagging` (with `Retry-After`, the lagging views and how far each got) or `view_failed` (a view marked `FAILED` fails at once, with no `Retry-After`: retrying will not help until someone resets it). It is one problem with a `reason`, not two, because `HttpApi` rejects a second response on the same status once one carries headers (see the spike result below). |
+   | `bounded` | Run the handler and add the header `Crablet-Consistency: stale` (declared on the success schema, so it is in the OpenAPI description). |
    | `eventual` | Do not wait. |
 
 5. **The server owns the default; a request may only tighten it, unless the server allows loosening.** Configuration, at the API level and overridable per endpoint:
@@ -62,8 +62,19 @@ The command response already carries the write's position in the log as `lastTra
 
 ## Open questions
 
-- **How an endpoint declares the contract.** Today the reads are hand-written `HttpApi` groups in the example apps. Each read endpoint's schema would need `consistentWith`, `consistency` and `waitTimeout` in its query and the `503` in its errors, so the generated OpenAPI documents them. `views-http` should provide those schema fragments so an endpoint adds them in one line.
+- **How an endpoint declares the contract.** Today the reads are hand-written `HttpApi` groups in the example apps. Each read endpoint needs `consistentWith`, `consistency` and `waitTimeout` in its query, its success schema wrapped for the stale header, and the `400` and the `503` in its errors, so the generated OpenAPI documents them. `views-http` provides those pieces (a success wrapper, the query fragment, the problem) so an endpoint adds them in a line or two. What `HttpApi` supports is settled by the spike below.
 - **`latest` under many readers.** Every read runs the head-of-log query. It is indexed and cheap, but at the scale envelope's read rates it is worth a measurement, and a short in-process cache of the head (a few milliseconds) is an option if it shows up. The `Crablet-Consistency` response header on a typed success response is unverified against Effect's `HttpApi`; check it before relying on it.
-- **`Retry-After`.** The value for a strict timeout is not decided.
+- **The `Retry-After` value.** The mechanism is settled (spike below); the number of seconds for a strict timeout is not. A starting point: the view's polling interval, rounded up to a whole second.
 - **Offset pagination becomes a visible problem.** The wallet's transaction list (`page`/`size` with `OFFSET`, sorted by `occurred_at DESC`) shifts under concurrent writes and can repeat or skip a row. That is true today; this ADR does not fix it, but it recommends keyset `(occurred_at, id)` first.
 - **Unchanged.** The SSE feed (ADR-0014) and its connection cost stay as they are. A client with no marker learns of changes by ping and re-reads without waiting.
+
+## Spike result: what `HttpApi` supports (phase 2, Effect 4.0.0)
+
+Checked with a throwaway server and client, then removed; phase 3 keeps the same checks as a permanent test of the helpers.
+
+- **A success response with an optional header works, and is documented.** `HttpApiSchema.WithHeaders(Body, { "crablet-consistency": Schema.optionalKey(Schema.Literal("stale")) })` on the success schema; the handler returns `HttpApiSchema.withHeaders({ body, headers })`. An absent header is omitted from the response and a present one is sent. The generated OpenAPI lists the header under the `200` response (`required: false`).
+- **A `503` problem with `Retry-After` works, and is documented.** The problem class piped through `HttpApiSchema.encodeToWithHeaders({ body, headers: { "retry-after": Schema.Int } }, { decode, encode })`; a handler fails with the plain problem value. The wire has status `503`, `application/problem+json` and `retry-after: 2`; OpenAPI lists `retry-after` under `503` (its schema is a loose numeric-string pattern).
+- **One endpoint can declare several errors.** A domain `404`, the shared `400` (`BadRequestProblem`) and the `503` all appear in the description and answer with their own status.
+- **Limit: a response with headers cannot share its status and content type with another response.** Declaring a second `503` `application/problem+json` beside the one with `Retry-After` fails when the endpoint is built (`Cannot combine a response with headers with another response for status 503`). Hence one `503` problem with a `reason` and an optional header: the header is omitted for `view_failed` and the OpenAPI marks it `required: false`. (Declaring the failed view under another status is the alternative; one problem with a `reason` was chosen because both cases mean "the read cannot be consistent right now".)
+- **Cost: the derived client's success type changes.** For an endpoint whose success is wrapped with headers, `HttpApiClient` resolves to `{ body, headers }`, not the body. Every consumer of a wrapped read (the course page and the tests, in phase 5) reads `.body`, and can read the `Crablet-Consistency` header from `.headers`. Failures arrive as the decoded problem value.
+- **Not chosen:** setting the header from the handler with `HttpEffect.appendPreResponseHandler` (what `HttpApiBuilder` uses internally). It would leave the success type unchanged, but the header would be missing from the OpenAPI description. Not tested here.

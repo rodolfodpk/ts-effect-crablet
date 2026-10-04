@@ -21,7 +21,7 @@ Day estimates are mine, not measured.
 | 0 | Wallet transactions list to keyset pagination (done) | fixes a real repeat/skip bug whatever happens to the rest | 0.5 day | - | alone, breaking for that one endpoint |
 | 1 | `marker` in the command response, plus the marker codec (done) | the token every later phase uses | 0.5 day | - | additive |
 | 1b | A marker on idempotent repeats (`noop` and `idempotentBy`) | a client whose response was lost keeps read-your-write | 0.75 day | 1 | additive (one SQL migration) |
-| 2 | Spike: response header and `503` + `Retry-After` through `HttpApi` | decides how `bounded` and `strict` are expressed | 0.25 day | - | none (findings go in the ADR) |
+| 2 | Spike: response header and `503` + `Retry-After` through `HttpApi` (done) | decides how `bounded` and `strict` are expressed | 0.25 day | - | docs only (the ADR, the plan, NOTES) |
 | 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper | the feature | 2.5 days | 1, 2 | additive |
 | 4 | Wrap the example apps' reads; regenerate OpenAPI | proves it on two real apps | 1 day | 3 | additive |
 | 5 | Course UI sends the marker on its next read | the first real client | 1 day | 4 | additive |
@@ -50,7 +50,7 @@ The spike (phase 1) found that neither source of "already done" exposes a positi
 - **`idempotentBy`:** a migration (V9) makes `append_events_if` return the greatest `(transaction_id, position)` among the events matching the idempotency query; `Duplicate` carries it; the executor passes it through. Tests: a repeat's marker covers the first write (it equals the first response's marker when one event matched, and is at least it when several did); a concurrent repeat; the in-memory store matches Postgres (the conformance suite and the differential test already cover both stores, so they must be extended too).
 Until this lands, a client that retries after a lost response should read with `consistentWith=latest`.
 
-## Phase 2. Spike: what `HttpApi` lets us do
+## Phase 2. Spike: what `HttpApi` lets us do - DONE (results in ADR-0015, "Spike result")
 Two questions, answered before the package is built:
 1. Can a typed success response set a header (`Crablet-Consistency: stale`)? Commands already use `handleRaw` with `HttpServerResponse`, so the raw path is a known fallback; the question is whether the OpenAPI description still documents the success body and the header.
 2. Can a declared problem carry `Retry-After`, and can one endpoint declare both its domain 404 and the 503?
@@ -64,7 +64,8 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 | `ReadConsistency` | The config type and the **pure** policy resolver: request, then endpoint, then API default; `clientMayRelax`; timeout clamped to `maxTimeout`; `whenNoMarker`. No Effect, fully unit-tested. |
 | `HeadOfLog` | `SELECT transaction_id::text, position::text FROM crablet_events ORDER BY transaction_id DESC, position DESC LIMIT 1`, using the existing `(transaction_id, position)` index. An empty log yields the zero cursor, which returns at once. Also used to reject a marker beyond the head with a `400`. |
 | `WaitForViews` | Runs `waitUntilProcessed` for every subscription concurrently under one shared deadline and collects **every** outcome (it must not fail on the first), so the problem can list each lagging view and how far it got. |
-| `ReadProblems` | `ViewsNotCaughtUp` (503, `Retry-After`, `views: [{ name, reached }]`) and `ViewFailed` (503, no `Retry-After`). |
+| `ReadProblems` | ONE `503` problem, `ViewsUnavailable`, with `reason: "lagging" \| "view_failed"`, `views: [{ name, reached }]` and an optional `Retry-After` (phase 2: a header-carrying response cannot share its status with a second response). |
+| `ReadSuccess` | `ReadSuccess(Body)`: the success schema wrapped with the optional `Crablet-Consistency` header (`HttpApiSchema.WithHeaders`), and the matching `withHeaders` call in the wrapper. |
 | `ReadQuery` | Schema fragments to spread into an endpoint: `consistentWith`, `consistency`, `waitTimeout` as plain strings (validated by the wrapper, like `limit`, so a bad value gets the same problem body as every other 400). |
 | `withReadConsistency` | The wrapper: validate parameters (400, before any wait), resolve the policy, wait, then run the handler, or answer `503`, or mark stale. |
 
@@ -72,6 +73,7 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 **`reads` as a list of subscriptions, or a function of the request.**
 **Metrics** (small, in `metrics-otel`): a counter of reads by `{mode, outcome: caught_up | stale | timeout | view_failed | skipped}`, and a histogram of wait time. These are the signals that show the poller stall to readers.
 **Tests.**
+- A permanent version of the phase 2 spike against the real helpers: a header on a fresh and on a stale response, `503` with and without `Retry-After`, several errors on one endpoint, the OpenAPI description of each, and the derived client's `{ body, headers }`.
 - Unit (Bun): the policy matrix (every combination of default, endpoint, request, `clientMayRelax`, clamping); marker and `latest` handling with a fake head; the wait with fake subscriptions (all caught up, one lagging, one `FAILED`, timeout, shared deadline).
 - Integration (Node, real Postgres): a wrapped endpoint over a view held back by a delay: `strict` returns 503 then succeeds on retry; `bounded` returns the stale marker; `eventual` returns at once; a marker beyond the head is a 400; a read of **three** views waits for all three; `latest` with a long-open transaction times out under `strict` and returns under `eventual`. To make the stall, the test holds a second connection open with `BEGIN; SELECT pg_current_xact_id();` (the xid is assigned at the first such call), writes events from another connection, and checks the view cannot pass them until the first connection ends. Also pin what `latest` does **not** cover: a transaction still open when the request arrives is not part of "the head as of the request", so its events may be missing from the response.
 
@@ -85,6 +87,7 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 - The old `?waitFor` still works in this phase.
 
 ## Phase 5. The Foldkit page
+**Spike consequence.** A wrapped read's derived client resolves to `{ body, headers }` (phase 2), so `getCourse` and `listCourses` in `api.ts` and the page tests read `.body`.
 `defineCourseCall` currently passes `waitForView`; the derived client already types the API definition, so the new query parameters appear in it. Change the page so a write keeps the returned `marker` and the page's next `getCourse` or `listCourses` sends `consistentWith=<marker>`; the "wait for the seat map" toggle becomes "read with my marker" (default on), so the demo still shows the stale read and the fix. The live feed and its debounce are untouched. Update `page.test.ts`, `api-base-url.test.ts` if affected, and `page-against-server.test.ts`.
 
 ## Phase 6. The breaking commit
