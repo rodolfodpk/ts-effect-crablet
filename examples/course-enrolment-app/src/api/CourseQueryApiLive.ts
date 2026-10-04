@@ -3,8 +3,11 @@ import { HttpApiBuilder } from "effect/http-api";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { SqlClient } from "effect/sql";
 import { CommandApiBadRequest, domainProblemOf } from "@crablet/commands-http/ProblemDetail";
+import { makeConsistentRead } from "@crablet/views-http";
+import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
+import { courseSeatsViewSubscription } from "../views/CourseSeatsViewProjector.ts";
 
 interface SeatsRow {
   readonly course_id: string;
@@ -23,6 +26,15 @@ export const parseLimit = (raw: string | undefined): number | null => {
   return n >= 1 && n <= maxPageSize ? n : null;
 };
 
+// #region read-consistency
+// How consistent the reads are (ADR-0015). A read that carries a marker (`?consistentWith=<marker from a write>`, or `latest`) waits until
+// the seats view has reached it; strict: if the view is not there in time the read is a 503, never a wrong answer. A read with no marker
+// does not wait (`whenNoMarker: "none"`), which is what the tutorial's "a read right after a write can be stale" shows; the server-wide
+// default is `latest` (see @crablet/views-http). A client may loosen a read with `?consistency=bounded|eventual` (`clientMayRelax`).
+export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadConsistency, whenNoMarker: "none", clientMayRelax: true };
+const consistentRead = makeConsistentRead({ config: courseReadConsistency });
+// #endregion read-consistency
+
 // Same `any`-cast composability boundary commands-http's makeCommandApiGroupLive documents: HttpApiBuilder.group's
 // signature cannot prove an arbitrary caller-supplied `Groups` contains this literal group name.
 export const makeCourseQueryApiLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
@@ -34,37 +46,55 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
       handlers
         // Keyset pagination on the course id (no OFFSET: a page costs the same however deep it is, and a course added or removed
         // meanwhile cannot shift the pages). One extra row is read to know whether there is a next page.
-        .handle("listCourses", ({ query }: { query: { limit?: string; after?: string; q?: string } }) =>
-          Effect.gen(function* () {
-            const limit = parseLimit(query.limit);
-            if (limit === null) {
-              return yield* Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`));
-            }
-            const sql = yield* SqlClient.SqlClient;
-            const rows = yield* sql.unsafe<SeatsRow>(
-              `SELECT course_id, capacity, subscribers FROM course_seats_view
-               WHERE ($1::text IS NULL OR course_id > $1) AND ($2::text IS NULL OR course_id LIKE $2 ESCAPE '\\')
-               ORDER BY course_id LIMIT $3`,
-              [query.after ?? null, query.q === undefined || query.q === "" ? null : likePrefix(query.q), limit + 1]
-            );
-            const page = rows.slice(0, limit);
-            return {
-              items: page.map((row) => ({ courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers })),
-              next: rows.length > limit ? page[page.length - 1]!.course_id : null
-            };
-          })
+        // `parse` validates limit, cursor and filter BEFORE the read waits for the view, so a bad request is a 400 at once.
+        .handle(
+          "listCourses",
+          consistentRead(
+            {
+              reads: [courseSeatsViewSubscription],
+              parse: (request: { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string; readonly q?: string } }) => {
+                const limit = parseLimit(request.query.limit);
+                return limit === null
+                  ? Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`))
+                  : Effect.succeed({ limit, after: request.query.after, q: request.query.q });
+              }
+            },
+            ({ limit, after, q }) =>
+              Effect.gen(function* () {
+                const sql = yield* SqlClient.SqlClient;
+                const rows = yield* sql.unsafe<SeatsRow>(
+                  `SELECT course_id, capacity, subscribers FROM course_seats_view
+                   WHERE ($1::text IS NULL OR course_id > $1) AND ($2::text IS NULL OR course_id LIKE $2 ESCAPE '\\')
+                   ORDER BY course_id LIMIT $3`,
+                  [after ?? null, q === undefined || q === "" ? null : likePrefix(q), limit + 1]
+                ).pipe(Effect.orDie);
+                const page = rows.slice(0, limit);
+                return {
+                  items: page.map((row) => ({ courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers })),
+                  next: rows.length > limit ? page[page.length - 1]!.course_id : null
+                };
+              })
+          )
         )
-        .handle("getCourse", ({ params }: { params: { courseId: string } }) =>
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          const rows = yield* sql.unsafe<SeatsRow>("SELECT course_id, capacity, subscribers FROM course_seats_view WHERE course_id = $1", [
-            params.courseId
-          ]);
-          const row = rows[0];
-          if (!row) return yield* Effect.fail(domainProblemOf("not_found", new CourseNotFound({ courseId: params.courseId })));
-          return { courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers };
-        })
-      )
+        .handle(
+          "getCourse",
+          consistentRead(
+            {
+              reads: [courseSeatsViewSubscription],
+              parse: (request: { readonly params: { readonly courseId: string }; readonly query: ConsistencyParams }) => Effect.succeed(request.params)
+            },
+            (params: { readonly courseId: string }) =>
+              Effect.gen(function* () {
+                const sql = yield* SqlClient.SqlClient;
+                const rows = yield* sql.unsafe<SeatsRow>("SELECT course_id, capacity, subscribers FROM course_seats_view WHERE course_id = $1", [
+                  params.courseId
+                ]).pipe(Effect.orDie);
+                const row = rows[0];
+                if (!row) return yield* Effect.fail(domainProblemOf("not_found", new CourseNotFound({ courseId: params.courseId })));
+                return { courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers };
+              })
+          )
+        )
     )
   );
 };

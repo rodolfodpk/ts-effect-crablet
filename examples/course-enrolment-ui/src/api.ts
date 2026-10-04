@@ -94,15 +94,18 @@ export const subscribeCall = (studentId: string, courseId: string, options: { re
 export const listCourses = (options: { readonly q: string; readonly after: string | null }) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    return yield* client.courseQueries.listCourses({
+    // A read resolves to `{ body, headers }` (the header marks a stale answer, which this page does not ask for yet): the page wants the body.
+    const answer = yield* client.courseQueries.listCourses({
       query: { ...(options.q === "" ? {} : { q: options.q }), ...(options.after === null ? {} : { after: options.after }) }
     });
+    return answer.body;
   });
 
 export const getCourse = (courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    return yield* client.courseQueries.getCourse({ params: { courseId } });
+    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: {} });
+    return answer.body;
   });
 
 const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly view?: CommandOutcome["view"] }): CommandOutcome => ({

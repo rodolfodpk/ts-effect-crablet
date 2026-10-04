@@ -17,6 +17,7 @@
     "@crablet/automations": "workspace:*",
     "@crablet/outbox": "workspace:*",
     "@crablet/commands-http": "workspace:*",
+    "@crablet/views-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",
     "pg": "8.23.0"
   },

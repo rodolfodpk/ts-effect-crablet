@@ -1,9 +1,11 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
-import { BadRequestProblem } from "@crablet/commands-http";
+import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadQuery";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 import { defaultPageSize, maxPageSize } from "./TransactionPaging.ts";
 
+// Every read takes the consistency parameters (`consistentWith`, `consistency`, `waitTimeout`) and can answer 400 and 503 besides its own
+// errors; a client resolves each to `{ body, headers }` (`ReadSuccess`; the header marks a stale answer). See @crablet/views-http.
 // Hand-written reads (plain SqlClient
 // queries against the view tables, no event-store involvement), composed alongside
 // commands-http's generic write group under one shared HttpApi (see WalletApp.ts).
@@ -56,22 +58,24 @@ export const walletQueryGroup = HttpApiGroup.make("walletQueries")
   .add(
     HttpApiEndpoint.get("getWallet", "/api/wallets/:walletId", {
       params: walletIdParam,
-      success: WalletResponse,
-      error: WalletNotFoundProblem
+      query: consistencyQuery,
+      success: ReadSuccess(WalletResponse),
+      error: [WalletNotFoundProblem, ...readProblems]
     })
   )
   .add(
     HttpApiEndpoint.get("getWalletTransactions", "/api/wallets/:walletId/transactions", {
       params: walletIdParam,
-      query: TransactionsPageParams,
-      success: TransactionsResponse,
-      error: [WalletNotFoundProblem, BadRequestProblem]
+      query: { ...TransactionsPageParams, ...consistencyQuery },
+      success: ReadSuccess(TransactionsResponse),
+      error: [WalletNotFoundProblem, ...readProblems]
     })
   )
   .add(
     HttpApiEndpoint.get("getWalletSummary", "/api/wallets/:walletId/summary", {
       params: walletIdParam,
-      success: WalletSummaryResponse,
-      error: WalletNotFoundProblem
+      query: consistencyQuery,
+      success: ReadSuccess(WalletSummaryResponse),
+      error: [WalletNotFoundProblem, ...readProblems]
     })
   );

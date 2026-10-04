@@ -20,6 +20,7 @@
     "@crablet/event-poller": "workspace:*",
     "@crablet/views": "workspace:*",
     "@crablet/commands-http": "workspace:*",
+    "@crablet/views-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",
     "pg": "8.23.0"
   },

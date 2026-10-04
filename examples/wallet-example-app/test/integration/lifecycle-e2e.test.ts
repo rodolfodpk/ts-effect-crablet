@@ -189,8 +189,8 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
         payload: { depositId: crypto.randomUUID(), walletId, amount: 20, description: "typed" },
         query: { waitFor: "wallet-balance-view" }
       });
-      // the read endpoint is part of the same API
-      const wallet = yield* client.walletQueries.getWallet({ params: { walletId } });
+      // the read endpoint is part of the same API; a read resolves to { body, headers } (the header marks a stale answer)
+      const wallet = yield* client.walletQueries.getWallet({ params: { walletId }, query: {} });
       // a declared domain error arrives as its typed problem, not as a bare status
       const missing = yield* Effect.flip(
         client.commands.execute_deposit({ payload: { depositId: crypto.randomUUID(), walletId: `ghost-${walletId}`, amount: 1, description: "x" }, query: {} })
@@ -202,7 +202,8 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     assert.strictEqual(opened.status, "CREATED");
     assert.strictEqual(deposited.status, "CREATED");
     assert.deepStrictEqual(deposited.view, { name: "wallet-balance-view", caughtUp: true });
-    assert.strictEqual(wallet.balance, 25, "one read, already includes the deposit");
+    assert.strictEqual(wallet.body.balance, 25, "one read, already includes the deposit");
+    assert.deepStrictEqual(wallet.headers, {}, "and it is not marked stale");
     assert.strictEqual(missing.errorType, "WalletNotFound");
     assert.deepStrictEqual(missing.fields, { walletId: `ghost-${walletId}` });
   });

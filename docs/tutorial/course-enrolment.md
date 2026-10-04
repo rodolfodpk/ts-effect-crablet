@@ -414,7 +414,9 @@ and a read endpoint over it. Reads are written by hand (their response schema is
 
 <!-- file: examples/course-enrolment-app/src/api/CourseQueryApi.ts#query-api -->
 ```ts
-// A read endpoint, hand-written: the response schema is declared here (reads are not derived from the domain model).
+// A read endpoint, hand-written: the response schema is declared here (reads are not derived from the domain model). Both reads take the
+// consistency parameters (`consistentWith`, `consistency`, `waitTimeout`) and can answer 400 and 503 besides their own errors, and a
+// client resolves each to `{ body, headers }` (`ReadSuccess`; the header marks a stale answer): see @crablet/views-http.
 // Its 404 is the SAME problem the write API uses for CourseNotFound, so both appear as one component in the description.
 export const CourseResponse = Schema.Struct({
   courseId: Schema.String,
@@ -450,15 +452,16 @@ export const courseQueryGroup = HttpApiGroup.make("courseQueries")
   .add(
     HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
       params: { courseId: Schema.String },
-      success: CourseResponse,
-      error: problemSchemaOf(CourseNotFound)
+      query: consistencyQuery,
+      success: ReadSuccess(CourseResponse),
+      error: [problemSchemaOf(CourseNotFound), ...readProblems]
     })
   )
   .add(
     HttpApiEndpoint.get("listCourses", "/api/courses", {
-      query: listCoursesQuery,
-      success: CoursePage,
-      error: BadRequestProblem
+      query: { ...listCoursesQuery, ...consistencyQuery },
+      success: ReadSuccess(CoursePage),
+      error: [...readProblems]
     })
   );
 ```
@@ -621,15 +624,18 @@ export const subscribeCall = (studentId: string, courseId: string, options: { re
 export const listCourses = (options: { readonly q: string; readonly after: string | null }) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    return yield* client.courseQueries.listCourses({
+    // A read resolves to `{ body, headers }` (the header marks a stale answer, which this page does not ask for yet): the page wants the body.
+    const answer = yield* client.courseQueries.listCourses({
       query: { ...(options.q === "" ? {} : { q: options.q }), ...(options.after === null ? {} : { after: options.after }) }
     });
+    return answer.body;
   });
 
 export const getCourse = (courseId: string) =>
   Effect.gen(function* () {
     const client = yield* makeClient();
-    return yield* client.courseQueries.getCourse({ params: { courseId } });
+    const answer = yield* client.courseQueries.getCourse({ params: { courseId }, query: {} });
+    return answer.body;
   });
 
 const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly reason: string | null; readonly view?: CommandOutcome["view"] }): CommandOutcome => ({

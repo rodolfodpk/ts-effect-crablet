@@ -1,11 +1,13 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
-import { BadRequestProblem } from "@crablet/commands-http";
+import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadQuery";
 import { problemSchemaOf } from "@crablet/commands-http/ProblemDetail";
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 
 // #region query-api
-// A read endpoint, hand-written: the response schema is declared here (reads are not derived from the domain model).
+// A read endpoint, hand-written: the response schema is declared here (reads are not derived from the domain model). Both reads take the
+// consistency parameters (`consistentWith`, `consistency`, `waitTimeout`) and can answer 400 and 503 besides their own errors, and a
+// client resolves each to `{ body, headers }` (`ReadSuccess`; the header marks a stale answer): see @crablet/views-http.
 // Its 404 is the SAME problem the write API uses for CourseNotFound, so both appear as one component in the description.
 export const CourseResponse = Schema.Struct({
   courseId: Schema.String,
@@ -41,15 +43,16 @@ export const courseQueryGroup = HttpApiGroup.make("courseQueries")
   .add(
     HttpApiEndpoint.get("getCourse", "/api/courses/:courseId", {
       params: { courseId: Schema.String },
-      success: CourseResponse,
-      error: problemSchemaOf(CourseNotFound)
+      query: consistencyQuery,
+      success: ReadSuccess(CourseResponse),
+      error: [problemSchemaOf(CourseNotFound), ...readProblems]
     })
   )
   .add(
     HttpApiEndpoint.get("listCourses", "/api/courses", {
-      query: listCoursesQuery,
-      success: CoursePage,
-      error: BadRequestProblem
+      query: { ...listCoursesQuery, ...consistencyQuery },
+      success: ReadSuccess(CoursePage),
+      error: [...readProblems]
     })
   );
 // #endregion query-api

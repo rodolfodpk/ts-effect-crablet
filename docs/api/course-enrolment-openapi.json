@@ -294,6 +294,33 @@
               "type": "string"
             },
             "required": true
+          },
+          {
+            "name": "consistentWith",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Read at least as fresh as a write: the `marker` a command returned (`\"<transactionId>:<position>\"`), or `latest` for everything committed when the request arrived. Waits for the views this read uses."
+            },
+            "required": false
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "What to do if a view has not caught up in time: `strict` fails with 503, `bounded` answers anyway with the header `Crablet-Consistency: stale`, `eventual` does not wait. A request may ask for a stricter mode than the endpoint's, and a looser one only where the server allows it."
+            },
+            "required": false
+          },
+          {
+            "name": "waitTimeout",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "How long to wait for the views, in milliseconds (a whole number from 1 up to the endpoint's maximum)."
+            },
+            "required": false
           }
         ],
         "security": [],
@@ -327,6 +354,27 @@
                   "additionalProperties": false
                 }
               }
+            },
+            "headers": {
+              "crablet-consistency": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "stale"
+                  ]
+                },
+                "required": false
+              }
+            }
+          },
+          "400": {
+            "description": "CommandApiBadRequest",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiBadRequestEncoded"
+                }
+              }
             }
           },
           "404": {
@@ -336,6 +384,25 @@
                 "schema": {
                   "$ref": "#/components/schemas/CourseNotFoundProblem"
                 }
+              }
+            }
+          },
+          "503": {
+            "description": "ViewsUnavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewsUnavailableEncoded"
+                }
+              }
+            },
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+                },
+                "required": false
               }
             }
           }
@@ -373,6 +440,33 @@
             "schema": {
               "type": "string",
               "description": "Only courses whose id starts with this text (case-sensitive)."
+            },
+            "required": false
+          },
+          {
+            "name": "consistentWith",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Read at least as fresh as a write: the `marker` a command returned (`\"<transactionId>:<position>\"`), or `latest` for everything committed when the request arrived. Waits for the views this read uses."
+            },
+            "required": false
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "What to do if a view has not caught up in time: `strict` fails with 503, `bounded` answers anyway with the header `Crablet-Consistency: stale`, `eventual` does not wait. A request may ask for a stricter mode than the endpoint's, and a looser one only where the server allows it."
+            },
+            "required": false
+          },
+          {
+            "name": "waitTimeout",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "How long to wait for the views, in milliseconds (a whole number from 1 up to the endpoint's maximum)."
             },
             "required": false
           }
@@ -431,6 +525,17 @@
                   "additionalProperties": false
                 }
               }
+            },
+            "headers": {
+              "crablet-consistency": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "stale"
+                  ]
+                },
+                "required": false
+              }
             }
           },
           "400": {
@@ -440,6 +545,25 @@
                 "schema": {
                   "$ref": "#/components/schemas/CommandApiBadRequestEncoded"
                 }
+              }
+            }
+          },
+          "503": {
+            "description": "ViewsUnavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewsUnavailableEncoded"
+                }
+              }
+            },
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+                },
+                "required": false
               }
             }
           }
@@ -654,6 +778,88 @@
         "required": [
           "path",
           "message"
+        ],
+        "additionalProperties": false
+      },
+      "ViewsUnavailableEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:read:views-unavailable"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Service Unavailable"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              503
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "lagging",
+              "view_failed"
+            ]
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UncaughtView"
+            }
+          },
+          "retryAfterSeconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "reason",
+          "views"
+        ],
+        "additionalProperties": false
+      },
+      "UncaughtView": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "lagging",
+              "view_failed"
+            ]
+          },
+          "reachedPosition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "reason",
+          "reachedPosition"
         ],
         "additionalProperties": false
       },
