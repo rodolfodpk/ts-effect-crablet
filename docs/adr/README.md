@@ -23,3 +23,4 @@ records that this repo is now its own product and no code or API follows that pr
 - [ADR-0012: Cursors are (transaction_id, position) pairs, not bare positions](0012-transaction-position-cursors.md)
 - [ADR-0013: How the public API evolves - additive versus breaking](0013-api-evolution-additive-vs-breaking.md)
 - [ADR-0014: Live updates are a ping, sent after the commit, delivered at most once](0014-live-updates-by-ping.md)
+- [ADR-0015: Read consistency is a property of the read, requested with a write marker](0015-read-consistency-by-marker.md)
