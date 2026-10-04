@@ -2,9 +2,9 @@ import { Duration, Effect, Layer, Stream } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import type { SqlClient } from "effect/sql";
-import type { PgClient } from "@effect/sql-pg";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import { viewProgressFeed } from "@crablet/views/ViewProgressFeed";
+import type { ViewProgressHub } from "@crablet/views/ViewProgressHub";
 
 // A connection is ended after this long and the page reconnects (the Subscription does it by itself), so no proxy or load balancer holds
 // one for ever.
@@ -26,7 +26,7 @@ export const parseFeedViews = (raw: string, known: ReadonlySet<string>): Readonl
 export const makeCourseFeedApiLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
   api: HttpApi.HttpApi<ApiId, Groups>,
   options: CourseFeedOptions
-): Layer.Layer<HttpApiGroup.Service<ApiId, "courseFeed">, never, PgClient.PgClient | SqlClient.SqlClient> => {
+): Layer.Layer<HttpApiGroup.Service<ApiId, "courseFeed">, never, ViewProgressHub | SqlClient.SqlClient> => {
   const known = new Set(options.views);
   const maxLifetime = options.maxLifetime ?? defaultMaxFeedLifetime;
   const groupBuilder = HttpApiBuilder.group as any;

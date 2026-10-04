@@ -25,6 +25,6 @@ A read that carries the writer's marker (`?consistentWith=<marker>`, ADR-0015; t
 
 ## Consequences
 
-- One LISTEN connection per open feed (a pooled client cannot share it); a deployment with many thousands of open pages would put one fan-out listener in front. Not built.
+- ~~One LISTEN connection per open feed~~ Superseded by [ADR-0016](0016-one-listen-per-process-for-view-progress.md): the feed subscribes to a hub that holds one LISTEN per process, so an open page costs memory, not a pooled connection (the course app's test opens 200 feeds on a pool of 10). The hub reconnects a lost LISTEN and every feed then says where the views are again.
 - A production reverse proxy must not buffer the stream (`X-Accel-Buffering: no`, or `proxy_buffering off`). Not verified in a real browser in this repository's environment.
 - Only the course app has a feed so far; the wallet has none. The pieces (`ViewProgressFeed`, the ping schema) are reusable.

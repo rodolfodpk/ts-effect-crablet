@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted. Implemented in phases 1-3 (docs/plans/shared-listener.md); phase 4 re-measures.
 
 ## Context
 

@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | 1 | `ViewProgressHub`: coalescing subscribers, reconnect with backoff, resync (done) | the piece everything else uses | - | additive (new module) |
 | 2 | `waitUntilProcessed` waits on the hub when one is provided (polls otherwise) (done) | removes the 25 ms floor and the polling load | 1 | additive |
-| 3 | `viewProgressFeed` uses the hub; the course app provides it; a test that many open feeds hold ONE database connection | removes the per-page connection | 1 | breaking for `viewProgressFeed` and the apps' layers |
+| 3 | `viewProgressFeed` uses the hub; the apps provide it; a test that many open feeds hold ONE database connection (done) | removes the per-page connection | 1 | breaking for `viewProgressFeed` and the apps' layers |
 | 4 | Re-measure with `bench-reads.ts`; update ADR-0014, ADR-0015 "Measured costs" and the scale envelope | confirms the gain | 2, 3 | docs and a small script change |
 
 Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites in batches) and is committed on its own; push only on request.
@@ -29,7 +29,7 @@ Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integra
 - `Effect.serviceOption(ViewProgressHub)`: with a hub, subscribe to the view first, then loop check, wait for a ping (or the safety interval, default 1 s, or a resync), check again; without one, today's polling. A hub that is not connected counts as no hub (poll at `interval`).
 - Tests: every existing `waitUntilProcessed` test passes unchanged without a hub and with one; with a hub a wait returns within a few milliseconds of the ping (not the next 25 ms tick) and issues far fewer queries than polling (counted with a wrapping `SqlClient`); the safety interval still ends a wait when no ping comes; a resync re-checks at once.
 
-## Phase 3. The feed on the hub
+## Phase 3. The feed on the hub - DONE (see NOTES "Shared listener, phase 3")
 - `viewProgressFeed(names)` requires the hub: subscribe, then read the current cursors, emit them, then emit pings as batches arrive; a resync re-emits the current cursors. No `PgClient`, no connection.
 - `makeCourseApiLayer` builds the hub once (`ViewProgressHubLive`) and provides it to the feed and the query group; `startCourseAppForTest` and `index.ts` need nothing more. The wallet app has no feed but its read wrapper benefits: provide the hub there too.
 - Tests: `course-feed.test.ts` unchanged in behavior; a new test opens 200 feeds and asserts the database's connection count stays small (a handful, not 200), and that a write reaches all of them; killing the hub's connection is followed by a resync and a re-emitted opening cursor on every feed.

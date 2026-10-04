@@ -11,7 +11,7 @@ import type { EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
-import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
+import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
@@ -47,8 +47,14 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath });
   const queryLive = makeCourseQueryApiLive(api);
   const feedLive = makeCourseFeedApiLive(api, { views: [COURSE_SEATS_VIEW], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
+  // ONE view progress hub (one database LISTEN) for the whole process, shared by the feed and by the reads' wait (ADR-0016): the same layer value is
+  // provided to both, and Effect builds a layer value once per build.
   const served = Layer.merge(
-    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive), Layer.provide(feedLive)),
+    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(
+      Layer.provide(commandsLive),
+      Layer.provide(Layer.provide(queryLive, ViewProgressHubLive)),
+      Layer.provide(Layer.provide(feedLive, ViewProgressHubLive))
+    ),
     apiDocsLayer(api, config)
   );
   return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));

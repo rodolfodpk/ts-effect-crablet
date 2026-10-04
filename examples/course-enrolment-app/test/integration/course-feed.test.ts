@@ -3,6 +3,7 @@
 // lifetime; a closed connection does not leak; stopping the app with a connection open is fast.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { Client } from "pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
@@ -128,6 +129,63 @@ describe("GET /api/views/changes", () => {
       a.close();
       b.close();
       await Promise.all([a.finished, b.finished]);
+    }
+  });
+
+  // The feed is a subscription to ONE LISTEN per process (the view progress hub, ADR-0016), not a database connection of its own. The app's
+  // pool is 10 connections: before the hub, the 11th open feed could not even start.
+  it("200 open feeds hold ONE database LISTEN and no connection each, and one write reaches every one of them", { timeout: 90_000 }, async () => {
+    const admin = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
+    await admin.connect();
+    const feeds: Array<Awaited<ReturnType<typeof openFeed>>> = [];
+    try {
+      for (let n = 0; n < 200; n++) feeds.push(await openFeed(app.baseUrl));
+      await waitFor(() => feeds.every((f) => f.frames.length > 0), 30_000);
+      assert.ok(feeds.every((f) => f.res.status === 200 && f.frames.length > 0), "all 200 opened and got the opening frame");
+
+      const sessions = Number((await admin.query("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()")).rows[0].n);
+      const listeners = Number(
+        (await admin.query("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%crablet_view_progress%' AND pid <> pg_backend_pid()")).rows[0].n
+      );
+      assert.strictEqual(listeners, 1, "one LISTEN on the progress channel for the whole process");
+      assert.ok(sessions <= 12, `${sessions} database sessions with 200 feeds open (the pool is 10, plus the pollers' listeners)`);
+
+      const write = await define(app.baseUrl, `feed-many-${crypto.randomUUID().slice(0, 8)}`);
+      const writeCursor = ProgressCursor.of(write.lastTransactionId, BigInt(write.lastPosition));
+      const covers = (f: Advanced) => ProgressCursor.compare(ProgressCursor.of(f.transactionId, BigInt(f.position)), writeCursor) >= 0;
+      await waitFor(() => feeds.every((f) => f.frames.some(covers)), 30_000);
+      assert.strictEqual(feeds.filter((f) => f.frames.some(covers)).length, 200, "every feed got a ping covering the write");
+    } finally {
+      for (const f of feeds) f.close();
+      await Promise.all(feeds.map((f) => f.finished));
+      await admin.end();
+    }
+  });
+
+  it("when the hub's database connection is lost, every open feed is told where the view is again", { timeout: 60_000 }, async () => {
+    const admin = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
+    await admin.connect();
+    const feeds = [await openFeed(app.baseUrl), await openFeed(app.baseUrl), await openFeed(app.baseUrl)];
+    try {
+      await waitFor(() => feeds.every((f) => f.frames.length > 0));
+      await new Promise((r) => setTimeout(r, 300));
+      const before = feeds.map((f) => f.frames.length);
+      const killed = await admin.query(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%crablet_view_progress%' AND pid <> pg_backend_pid()"
+      );
+      assert.strictEqual(killed.rowCount, 1, "exactly the hub's session was terminated");
+      await waitFor(() => feeds.every((f, i) => f.frames.length > before[i]!), 20_000);
+      assert.ok(feeds.every((f, i) => f.frames.length > before[i]!), "each feed said where the view is again after the reconnect");
+
+      // and pings flow again through the new connection
+      const write = await define(app.baseUrl, `feed-after-${crypto.randomUUID().slice(0, 8)}`);
+      const writeCursor = ProgressCursor.of(write.lastTransactionId, BigInt(write.lastPosition));
+      await waitFor(() => feeds.every((f) => f.frames.some((x) => ProgressCursor.compare(ProgressCursor.of(x.transactionId, BigInt(x.position)), writeCursor) >= 0)), 20_000);
+      assert.ok(feeds.every((f) => f.frames.some((x) => ProgressCursor.compare(ProgressCursor.of(x.transactionId, BigInt(x.position)), writeCursor) >= 0)));
+    } finally {
+      for (const f of feeds) f.close();
+      await Promise.all(feeds.map((f) => f.finished));
+      await admin.end();
     }
   });
 

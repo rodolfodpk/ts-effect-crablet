@@ -10,7 +10,8 @@ import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
 // a queue of notifications once Postgres confirms LISTEN. No raw pg client / EventEmitter bridging is
 // needed. To publish, use `PgClient.notify(channel, payload)` (it accepts a dynamic payload).
 //
-// CAVEAT: there is no automatic reconnect-with-backoff if the LISTEN connection drops. A production
+// CAVEAT (this listener, the pollers' wake-up on `crablet_events`): there is no automatic reconnect-with-backoff if the LISTEN connection drops (the
+// queue fails and the stream ends). The view progress hub (@crablet/views/ViewProgressHub, ADR-0016) is the model for one that does. A production
 // deployment would wrap this stream in retry/reconnect logic (e.g. `Stream.retry(Schedule...)`); the
 // pollers' periodic polling is the safety net meanwhile.
 

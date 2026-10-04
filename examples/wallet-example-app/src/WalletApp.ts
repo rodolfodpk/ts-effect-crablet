@@ -11,7 +11,7 @@ import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
-import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
+import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { makeAutomationsProcessor } from "@crablet/automations";
 import type { AutomationsConfig } from "@crablet/automations/AutomationsConfig";
 import { makeOutboxProcessor } from "@crablet/outbox";
@@ -196,7 +196,8 @@ export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const queryLive = makeWalletQueryApiLive(api);
 
   return Layer.merge(
-    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(queryLive)),
+    // the reads' wait is woken by the view progress hub (one database LISTEN for the process, ADR-0016) instead of polling
+    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(Layer.provide(queryLive, ViewProgressHubLive))),
     apiDocsLayer(api, config)
   );
 };
