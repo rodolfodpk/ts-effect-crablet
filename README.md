@@ -171,6 +171,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | `packages/outbox` | Transactional outbox: per-topic publishers fed from the event stream by the poller |
 | `packages/automations` | Automations: react to an event by issuing a follow-up command |
 | `packages/commands-http` | A REST API over your commands, with RFC 7807 problem-detail errors |
+| `packages/views-http` | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (new; not yet used by the examples) |
 | `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations) |
 | `examples/course-enrolment-app` | The [tutorial](./docs/tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view with `?waitFor=` |
 | `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |

@@ -1,0 +1,28 @@
+{
+  "name": "@crablet/views-http",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/ConsistentRead.ts",
+    "./ReadConsistency": "./src/ReadConsistency.ts",
+    "./WaitForViews": "./src/WaitForViews.ts",
+    "./HeadOfLog": "./src/HeadOfLog.ts",
+    "./ReadProblems": "./src/ReadProblems.ts",
+    "./ReadQuery": "./src/ReadQuery.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0",
+    "@crablet/commands-http": "workspace:*",
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/metrics-otel": "workspace:*",
+    "@crablet/views": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*",
+    "@effect/platform-node": "4.0.0",
+    "@effect/sql-pg": "4.0.0",
+    "pg": "8.23.0"
+  }
+}

@@ -195,6 +195,24 @@
         "pg": "8.23.0",
       },
     },
+    "packages/views-http": {
+      "name": "@crablet/views-http",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/commands-http": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
+        "@crablet/views": "workspace:*",
+        "effect": "4.0.0",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+        "@effect/platform-node": "4.0.0",
+        "@effect/sql-pg": "4.0.0",
+        "pg": "8.23.0",
+      },
+    },
   },
   "packages": {
     "@apidevtools/json-schema-ref-parser": ["@apidevtools/json-schema-ref-parser@15.5.2", "", { "dependencies": { "js-yaml": "^5.2.2", "undici": "^6.28.0" }, "peerDependencies": { "@types/json-schema": "^7.0.15" } }, "sha512-B+C9Ok0DF/rjANIUHgwcV5/d4C72MB7f2IbKFL8jDGcGq2qn3yr893s8vAn2kbhmyaelAin0JK8EKF9P1+y7aQ=="],
@@ -226,6 +244,8 @@
     "@crablet/test-support": ["@crablet/test-support@workspace:packages/test-support"],
 
     "@crablet/views": ["@crablet/views@workspace:packages/views"],
+
+    "@crablet/views-http": ["@crablet/views-http@workspace:packages/views-http"],
 
     "@effect/platform-browser": ["@effect/platform-browser@4.0.0", "", { "peerDependencies": { "effect": "^4.0.0" } }, "sha512-OHo7EPpF3RVPiI+mjoU9yd05LdCdKPjzDXqs5wRgF9CsdVvwN76B0zgt54DxPUcvMYri1tVJOtLCVnK0tRkNQQ=="],
 

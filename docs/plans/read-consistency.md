@@ -22,7 +22,7 @@ Day estimates are mine, not measured.
 | 1 | `marker` in the command response, plus the marker codec (done) | the token every later phase uses | 0.5 day | - | additive |
 | 1b | A marker on idempotent repeats (`noop` and `idempotentBy`) | a client whose response was lost keeps read-your-write | 0.75 day | 1 | additive (one SQL migration) |
 | 2 | Spike: response header and `503` + `Retry-After` through `HttpApi` (done) | decides how `bounded` and `strict` are expressed | 0.25 day | - | docs only (the ADR, the plan, NOTES) |
-| 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper | the feature | 2.5 days | 1, 2 | additive |
+| 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper (done) | the feature | 2.5 days | 1, 2 | additive |
 | 4 | Wrap the example apps' reads; regenerate OpenAPI | proves it on two real apps | 1 day | 3 | additive |
 | 5 | Course UI sends the marker on its next read | the first real client | 1 day | 4 | additive |
 | 6 | Remove `?waitFor` everywhere; amend ADR-0011; rewrite tutorial step 4; ADR-0015 to Accepted | closes the migration | 1.5 days | 5 | one breaking commit |
@@ -56,7 +56,7 @@ Two questions, answered before the package is built:
 2. Can a declared problem carry `Retry-After`, and can one endpoint declare both its domain 404 and the 503?
 **Output.** A paragraph in ADR-0015 with the answer and the chosen mechanism. If neither works cleanly, `bounded` signals staleness with a field in the body envelope instead of a header, and the ADR says so.
 
-## Phase 3. `@crablet/views-http`
+## Phase 3. `@crablet/views-http` - DONE (see NOTES "Read consistency, phase 3"; the modules below are as built except where noted)
 New workspace package (picked up by `packages/*`, `tsconfig.json` and the test globs automatically; run `bun install` to link it). Depends on `views`, `event-poller`, `eventstore` and `effect`, and imports `commands-http/ProblemDetail` so reads and writes share one problem format.
 
 | Module | Job |
@@ -67,7 +67,7 @@ New workspace package (picked up by `packages/*`, `tsconfig.json` and the test g
 | `ReadProblems` | ONE `503` problem, `ViewsUnavailable`, with `reason: "lagging" \| "view_failed"`, `views: [{ name, reached }]` and an optional `Retry-After` (phase 2: a header-carrying response cannot share its status with a second response). |
 | `ReadSuccess` | `ReadSuccess(Body)`: the success schema wrapped with the optional `Crablet-Consistency` header (`HttpApiSchema.WithHeaders`), and the matching `withHeaders` call in the wrapper. |
 | `ReadQuery` | Schema fragments to spread into an endpoint: `consistentWith`, `consistency`, `waitTimeout` as plain strings (validated by the wrapper, like `limit`, so a bad value gets the same problem body as every other 400). |
-| `withReadConsistency` | The wrapper: validate parameters (400, before any wait), resolve the policy, wait, then run the handler, or answer `503`, or mark stale. |
+| `ConsistentRead` | `makeConsistentRead(options)(spec, run)`: the wrapper. `spec` is `{ reads, parse, consistency? }`; `parse` validates the endpoint's own parameters before any wait. Validate, resolve the policy, read the head, wait, then run the handler, or answer `503`, or mark stale. (Built under this name, not `withReadConsistency`; `ReadSuccess` and `readProblems` live in `ReadQuery`.) |
 
 **Order inside the wrapper.** Validate everything first, so a bad `limit` never waits. Then: no marker and `whenNoMarker: "none"` runs the handler; `latest` (or no marker with `whenNoMarker: "latest"`) reads the head of the log once; a given marker is parsed and checked against the head. Then the wait, then the mode decides.
 **`reads` as a list of subscriptions, or a function of the request.**

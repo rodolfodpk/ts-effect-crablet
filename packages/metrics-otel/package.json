@@ -10,7 +10,8 @@
     "./LeaderMetrics": "./src/LeaderMetrics.ts",
     "./ViewMetrics": "./src/ViewMetrics.ts",
     "./OutboxMetrics": "./src/OutboxMetrics.ts",
-    "./AutomationMetrics": "./src/AutomationMetrics.ts"
+    "./AutomationMetrics": "./src/AutomationMetrics.ts",
+    "./ReadConsistencyMetrics": "./src/ReadConsistencyMetrics.ts"
   },
   "dependencies": {
     "effect": "4.0.0"
