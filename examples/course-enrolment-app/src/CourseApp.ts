@@ -11,7 +11,7 @@ import type { EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makeViewsProcessor } from "@crablet/views";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
-import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
+import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
@@ -38,6 +38,9 @@ export interface CourseAppConfig {
   readonly cors?: CorsConfig;
   // How long a live-update connection (GET /api/views/changes) lives before the server ends it and the page reconnects (default 5 minutes).
   readonly maxFeedLifetime?: Duration.Input;
+  // The view progress hub the feed and the reads' wait share (default `ViewProgressHubLive`: one database LISTEN for the process, ADR-0016). It can be
+  // replaced, for example by a hub that is never connected to compare the polling wait with the hub's (scripts/bench-reads.ts).
+  readonly viewProgressHub?: Layer.Layer<ViewProgressHub, never, PgClient.PgClient>;
 }
 
 // Serves the API, its OpenAPI document and, when asked for, a documentation page.
@@ -49,11 +52,12 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const feedLive = makeCourseFeedApiLive(api, { views: [COURSE_SEATS_VIEW], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
   // ONE view progress hub (one database LISTEN) for the whole process, shared by the feed and by the reads' wait (ADR-0016): the same layer value is
   // provided to both, and Effect builds a layer value once per build.
+  const hub = config.viewProgressHub ?? ViewProgressHubLive;
   const served = Layer.merge(
     HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(
       Layer.provide(commandsLive),
-      Layer.provide(Layer.provide(queryLive, ViewProgressHubLive)),
-      Layer.provide(Layer.provide(feedLive, ViewProgressHubLive))
+      Layer.provide(Layer.provide(queryLive, hub)),
+      Layer.provide(Layer.provide(feedLive, hub))
     ),
     apiDocsLayer(api, config)
   );

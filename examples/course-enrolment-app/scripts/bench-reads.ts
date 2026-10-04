@@ -1,12 +1,16 @@
-// What a consistent read costs (docs/plans/read-consistency.md, phase 7). Starts the real course app on a throwaway Postgres (Testcontainers,
-// needs Docker) and measures, with the load generator, the app and the database all on this machine:
+// What a consistent read costs (docs/plans/read-consistency.md phase 7, docs/plans/shared-listener.md phase 4). Starts the real course app on a
+// throwaway Postgres (Testcontainers, needs Docker) and measures, with the load generator, the app and the database all on this machine:
 //
 //   1. reads on an idle log:        eventual (no wait) / latest (the server default) / a write's marker, at several concurrencies;
 //   2. reads under a steady write load: latest against eventual;
-//   3. waiters: N readers that all wait for one write while the seats view lags, and what that does to an unrelated read (the poll cost);
-//   4. the head-of-log query on a large log.
+//   3. waiters: N readers that all wait for one write while the seats view lags, and what that does to an unrelated read;
+//   4. the head-of-log query on a large log;
+//   5. open live feeds: how many database sessions N open feeds hold.
 //
-//     node scripts/bench-reads.ts [--seconds 4] [--pool 10] [--events 2000000]
+// Scenarios 1-3 run twice: with the wait POLLING the database every 25 ms ("polling": the app's view progress hub is replaced by one that is never
+// connected) and with the wait woken by the view progress hub's pings ("hub", ADR-0016), one after the other in the same session so they compare.
+//
+//     node scripts/bench-reads.ts [--seconds 4] [--pool 10] [--events 2000000] [--only 1,2,3,4,5]
 //
 // The numbers are for comparing the modes with each other on one machine, not capacity figures: absolute throughput depends on the hardware
 // and on the load generator sharing it. "xacts per read" is the database's transaction count (every statement here is its own transaction)
@@ -21,6 +25,7 @@ import { Client } from "pg";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type ConnInfo } from "@crablet/test-support";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
+import { ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { makeCourseApiLayer, startCourseViews } from "../src/CourseApp.ts";
 
 const arg = (name: string, fallback: number): number => {
@@ -30,7 +35,7 @@ const arg = (name: string, fallback: number): number => {
 const SECONDS = arg("seconds", 4);
 const POOL = arg("pool", 10);
 const EVENTS = arg("events", 2_000_000);
-// `--only 2,3` runs just those scenarios (1 idle log, 2 under writes, 3 waiters, 4 head of log).
+// `--only 2,3` runs just those scenarios (1 idle log, 2 under writes, 3 waiters, 4 head of log, 5 open feeds).
 const onlyArg = process.argv.indexOf("--only");
 const only = onlyArg >= 0 ? new Set(process.argv[onlyArg + 1]!.split(",").map(Number)) : null;
 const wanted = (n: number) => only === null || only.has(n);
@@ -42,8 +47,17 @@ interface App {
   stop(): Promise<void>;
 }
 
-// Like the tests' startCourseAppForTest, with a pool size and the view delay as parameters.
-const startApp = async (conn: ConnInfo, options: { readonly pool: number; readonly viewDelayMs: number }): Promise<App> => {
+type WaitMode = "polling" | "hub";
+
+// A hub that is never connected and never delivers: `waitUntilProcessed` treats it as no hub and polls, exactly as before ADR-0016.
+const neverConnectedHub = Layer.succeed(ViewProgressHub, {
+  subscribe: () => Effect.succeed({ next: Effect.never }),
+  connected: Effect.succeed(false),
+  subscriberCount: Effect.succeed(0)
+});
+
+// Like the tests' startCourseAppForTest, with a pool size, the view delay and the wait mode as parameters.
+const startApp = async (conn: ConnInfo, options: { readonly pool: number; readonly viewDelayMs: number; readonly wait: WaitMode }): Promise<App> => {
   const runtime = ManagedRuntime.make(
     Crablet.layer({ host: conn.host, port: conn.port, database: conn.database, username: conn.username, password: Redacted.make(conn.password), maxConnections: options.pool })
   );
@@ -52,7 +66,7 @@ const startApp = async (conn: ConnInfo, options: { readonly pool: number; readon
   const context = await runtime.runPromise(
     Scope.provide(
       Layer.build(
-        Layer.provideMerge(HttpRouter.serve(makeCourseApiLayer({})), NodeHttpServer.layer(createServer, { port: 0, gracefulShutdownTimeout: "1 second" }))
+        Layer.provideMerge(HttpRouter.serve(makeCourseApiLayer(options.wait === "polling" ? { viewProgressHub: neverConnectedHub } : {})), NodeHttpServer.layer(createServer, { port: 0, gracefulShutdownTimeout: "1 second" }))
       ) as Effect.Effect<Context.Context<HttpServer.HttpServer>, never, SqlClient.SqlClient>,
       scope
     ) as Effect.Effect<Context.Context<HttpServer.HttpServer>, never, never>
@@ -128,94 +142,106 @@ const main = async () => {
     const r = await stats.query("SELECT (xact_commit + xact_rollback)::float8 AS x FROM pg_stat_database WHERE datname = current_database()");
     return r.rows[0].x as number;
   };
-  const activeConnections = async (): Promise<number> =>
+  const sessions = async (): Promise<number> =>
     Number((await stats.query("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()")).rows[0].n);
 
   try {
-    // the database's own background rate with nothing running (the poller and the leader check), per second
-    const idleApp = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 0 });
-    const idle0 = await xacts();
-    await sleep(3000);
-    const idleRate = ((await xacts()) - idle0) / (3 + 2.5);
-    console.log(`\nidle background: ${fmt(idleRate)} transactions/s with no load`);
-
-    // ---------------------------------------------------------------- 1. idle log
+    // seed once; every app below finds the courses already in the view
+    const seedApp = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 0, wait: "hub" });
     const COURSES = 20;
     let lastMarker = "";
-    for (let n = 0; n < COURSES; n++) lastMarker = (await post(idleApp.baseUrl, "define_course", { courseId: `bench-${n}`, capacity: 100 })).marker!;
-    await fetch(`${idleApp.baseUrl}/api/courses/bench-${COURSES - 1}?consistentWith=${lastMarker}`); // the view has them all
+    for (let n = 0; n < COURSES; n++) lastMarker = (await post(seedApp.baseUrl, "define_course", { courseId: `bench-${n}`, capacity: 100 })).marker!;
+    await fetch(`${seedApp.baseUrl}/api/courses/bench-${COURSES - 1}?consistentWith=${lastMarker}`);
+    await post(seedApp.baseUrl, "define_course", { courseId: "bench-w", capacity: 1_000_000 });
+    await fetch(`${seedApp.baseUrl}/api/courses/bench-w`);
+    await seedApp.stop();
     const pick = () => `bench-${Math.floor(Math.random() * COURSES)}`;
 
+    const measureIdleRate = async (app: App) => {
+      const t0 = await xacts();
+      await sleep(3000);
+      void app;
+      return ((await xacts()) - t0) / (3 + 2.5);
+    };
+
+    // ---------------------------------------------------------------- 1. idle log
     if (wanted(1)) {
       console.log("\n1. reads on an idle log, GET /api/courses/{id} (the log is quiet and the view is caught up, so a wait returns at once)");
-      const w1 = [9, 5, 8, 8, 8, 8, 11, 8];
+      const w1 = [18, 5, 8, 8, 8, 8, 11, 8];
       console.log(row(["mode", "conc", "reads/s", "p50 ms", "p95 ms", "p99 ms", "xacts/read", "non-200"], w1));
-      const paths: ReadonlyArray<readonly [string, () => string]> = [
-        ["eventual", () => `/api/courses/${pick()}?consistency=eventual`],
-        ["latest", () => `/api/courses/${pick()}`],
-        ["marker", () => `/api/courses/${pick()}?consistentWith=${lastMarker}`]
-      ];
-      for (const concurrency of [1, 8, 32]) {
-        for (const [mode, path] of paths) {
-          const before = await xacts();
-          const t0 = performance.now();
-          const r = await load(idleApp.baseUrl, concurrency, SECONDS * 1000, path);
-          const seconds = (performance.now() - t0) / 1000;
-          const after = await xacts();
-          const perRead = (after - before - idleRate * (seconds + 2.5)) / r.count;
-          console.log(row([mode, concurrency, fmt(r.rps, 0), fmt(r.p50, 2), fmt(r.p95, 2), fmt(r.p99, 2), fmt(perRead, 2), r.count - r.ok], w1));
+      for (const wait of ["polling", "hub"] as const) {
+        const app = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 0, wait });
+        const idleRate = await measureIdleRate(app);
+        const paths: ReadonlyArray<readonly [string, () => string]> = [
+          ...(wait === "polling" ? ([["eventual", () => `/api/courses/${pick()}?consistency=eventual`]] as const) : []),
+          [`latest (${wait})`, () => `/api/courses/${pick()}`],
+          [`marker (${wait})`, () => `/api/courses/${pick()}?consistentWith=${lastMarker}`]
+        ];
+        for (const concurrency of [1, 8, 32]) {
+          for (const [mode, path] of paths) {
+            const before = await xacts();
+            const t0 = performance.now();
+            const r = await load(app.baseUrl, concurrency, SECONDS * 1000, path);
+            const seconds = (performance.now() - t0) / 1000;
+            const after = await xacts();
+            const perRead = (after - before - idleRate * (seconds + 2.5)) / r.count;
+            console.log(row([mode, concurrency, fmt(r.rps, 0), fmt(r.p50, 2), fmt(r.p95, 2), fmt(r.p99, 2), fmt(perRead, 2), r.count - r.ok], w1));
+          }
         }
+        await app.stop();
       }
     }
 
     // ---------------------------------------------------------------- 2. under writes
     if (wanted(2)) {
       console.log("\n2. reads under a steady write load (one writer, ~25 subscriptions/s, to one course); 16 readers of that course");
-      await post(idleApp.baseUrl, "define_course", { courseId: "bench-w", capacity: 1_000_000 });
-      await fetch(`${idleApp.baseUrl}/api/courses/bench-w`); // a default read waits until the view has the course, so no read below can 404
-      const w2 = [9, 9, 8, 8, 8, 8];
+      const w2 = [18, 9, 8, 8, 8, 8];
       console.log(row(["mode", "reads/s", "p50 ms", "p95 ms", "p99 ms", "non-200"], w2));
-      for (const [mode, path] of [
-        ["eventual", () => "/api/courses/bench-w?consistency=eventual"],
-        ["latest", () => "/api/courses/bench-w"]
-      ] as const) {
-        let stop = false;
-        let writes = 0;
-        const writer = (async () => {
-          while (!stop) {
-            const t0 = performance.now();
-            await post(idleApp.baseUrl, "subscribe", { studentId: `s-${crypto.randomUUID()}`, courseId: "bench-w" });
-            writes++;
-            await sleep(Math.max(0, 40 - (performance.now() - t0)));
-          }
-        })();
-        const r = await load(idleApp.baseUrl, 16, SECONDS * 1000, path);
-        stop = true;
-        await writer;
-        console.log(row([mode, fmt(r.rps, 0), fmt(r.p50, 2), fmt(r.p95, 2), fmt(r.p99, 2), r.count - r.ok], w2), `  statuses ${JSON.stringify(r.statuses)}, ${writes} writes in the window`);
+      for (const wait of ["polling", "hub"] as const) {
+        const app = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 0, wait });
+        const modes: ReadonlyArray<readonly [string, () => string]> = [
+          ...(wait === "polling" ? ([["eventual", () => "/api/courses/bench-w?consistency=eventual"]] as const) : []),
+          [`latest (${wait})`, () => "/api/courses/bench-w"]
+        ];
+        for (const [mode, path] of modes) {
+          let stop = false;
+          let writes = 0;
+          const writer = (async () => {
+            while (!stop) {
+              const t0 = performance.now();
+              await post(app.baseUrl, "subscribe", { studentId: `s-${crypto.randomUUID()}`, courseId: "bench-w" });
+              writes++;
+              await sleep(Math.max(0, 40 - (performance.now() - t0)));
+            }
+          })();
+          const r = await load(app.baseUrl, 16, SECONDS * 1000, path);
+          stop = true;
+          await writer;
+          console.log(row([mode, fmt(r.rps, 0), fmt(r.p50, 2), fmt(r.p95, 2), fmt(r.p99, 2), r.count - r.ok], w2), `  statuses ${JSON.stringify(r.statuses)}, ${writes} writes in the window`);
+        }
+        await app.stop();
       }
     }
-    await idleApp.stop();
 
     // ---------------------------------------------------------------- 3. waiters
     if (wanted(3)) {
       console.log("\n3. waiters: the seats view lags 400 ms; one write, then N readers all ask for that write's marker at once and wait; one unrelated reader (eventual) runs alongside");
-      const w3 = [6, 5, 8, 8, 8, 8, 11, 10, 10];
-      console.log(row(["pool", "N", "p50 ms", "p95 ms", "max ms", "non-200", "peak conns", "xacts/s", "probe p95"], w3));
-      for (const pool of [POOL, POOL * 3]) {
-        const slow = await startApp(db.connInfo, { pool, viewDelayMs: 400 });
+      const w3 = [9, 5, 8, 8, 8, 8, 11, 10, 10];
+      console.log(row(["wait", "N", "p50 ms", "p95 ms", "max ms", "non-200", "peak sess.", "xacts/s", "probe p95"], w3));
+      for (const wait of ["polling", "hub"] as const) {
+        const slow = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 400, wait });
+        const idleRate = await measureIdleRate(slow);
         await post(slow.baseUrl, "define_course", { courseId: "probe", capacity: 10 });
         await sleep(1500);
-        const quiet = await load(slow.baseUrl, 1, 1500, () => "/api/courses/probe?consistency=eventual");
         for (const n of [1, 10, 50, 200]) {
           const before = await xacts(); // BEFORE the write: reading the counter takes seconds, and the view would catch up meanwhile
           const t0 = performance.now();
-          const { marker } = await post(slow.baseUrl, "define_course", { courseId: `wait-${pool}-${n}-${crypto.randomUUID().slice(0, 6)}`, capacity: 5 });
+          const { marker } = await post(slow.baseUrl, "define_course", { courseId: `wait-${wait}-${n}-${crypto.randomUUID().slice(0, 6)}`, capacity: 5 });
           const writtenAt = performance.now();
           let peak = 0;
           const sampler = (async () => {
             while (performance.now() - writtenAt < 1500) {
-              peak = Math.max(peak, await activeConnections());
+              peak = Math.max(peak, await sessions());
               await sleep(50);
             }
           })();
@@ -233,12 +259,61 @@ const main = async () => {
           const after = await xacts();
           const sorted = results.map((r) => r.ms).sort((a, b) => a - b);
           console.log(
-            row([pool, n, fmt(percentile(sorted, 50), 0), fmt(percentile(sorted, 95), 0), fmt(sorted[sorted.length - 1]!, 0), results.filter((r) => r.status !== 200).length, peak, fmt((after - before - idleRate * (seconds + 2.5)) / seconds, 0), fmt(probed.p95, 1)], w3)
+            row([wait, n, fmt(percentile(sorted, 50), 0), fmt(percentile(sorted, 95), 0), fmt(sorted[sorted.length - 1]!, 0), results.filter((r) => r.status !== 200).length, peak, fmt((after - before - idleRate * (seconds + 2.5)) / seconds, 0), fmt(probed.p95, 1)], w3)
           );
         }
-        console.log(`     (unrelated eventual reader with nothing else running, pool ${pool}: p95 ${fmt(quiet.p95, 1)} ms)`);
         await slow.stop();
       }
+    }
+
+    // ---------------------------------------------------------------- 5. open feeds
+    if (wanted(5)) {
+      console.log("\n5. open live feeds (GET /api/views/changes): database sessions held by N open feeds, and the time for one write to reach all of them");
+      const w5 = [7, 9, 13, 14];
+      console.log(row(["feeds", "sessions", "open ms", "write->all ms"], w5));
+      const app = await startApp(db.connInfo, { pool: POOL, viewDelayMs: 0, wait: "hub" });
+      const open: Array<{ readonly controller: AbortController; frames: number; lastFrameAt: number }> = [];
+      const openFeed = async () => {
+        const controller = new AbortController();
+        const feed = { controller, frames: 0, lastFrameAt: 0 };
+        const res = await fetch(`${app.baseUrl}/api/views/changes?views=course-seats-view`, { signal: controller.signal, headers: { Accept: "text/event-stream" } });
+        const reader = res.body!.getReader();
+        void (async () => {
+          const decoder = new TextDecoder();
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const text = decoder.decode(value, { stream: true });
+              feed.frames += (text.match(/data:/g) ?? []).length;
+              feed.lastFrameAt = performance.now();
+            }
+          } catch {
+            // aborted
+          }
+        })();
+        open.push(feed);
+      };
+      for (const target of [0, 50, 200, 1000]) {
+        const t0 = performance.now();
+        while (open.length < target) await openFeed();
+        const openMs = performance.now() - t0;
+        while (open.some((f) => f.frames === 0)) await sleep(20);
+        await sleep(300);
+        const held = await sessions();
+        let reach = NaN;
+        if (target > 0) {
+          const framesBefore = open.map((f) => f.frames);
+          const t1 = performance.now();
+          await post(app.baseUrl, "define_course", { courseId: `feed-${target}-${crypto.randomUUID().slice(0, 6)}`, capacity: 5 });
+          const deadline = performance.now() + 15_000;
+          while (open.some((f, i) => f.frames <= framesBefore[i]!) && performance.now() < deadline) await sleep(5);
+          reach = Math.max(...open.map((f) => f.lastFrameAt)) - t1;
+        }
+        console.log(row([target, held, fmt(openMs, 0), fmt(reach, 0)], w5));
+      }
+      for (const f of open) f.controller.abort();
+      await app.stop();
     }
 
     // ---------------------------------------------------------------- 4. head of log
