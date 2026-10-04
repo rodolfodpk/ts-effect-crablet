@@ -125,11 +125,19 @@ describe("waiting for a view (read your own writes)", () => {
 
   test("the response says whether the view caught up (view is present only when asked for)", () => {
     const created = withViews.components.schemas.CommandCreated;
-    expect(created.required).toEqual(["status", "reason", "lastPosition", "lastTransactionId"]);
+    expect(created.required).toEqual(["status", "reason", "lastPosition", "lastTransactionId", "marker"]);
     expect(Object.keys(created.properties)).toContain("view");
     const view = withViews.components.schemas.ViewWaitResult;
     expect(view.required).toEqual(["name", "caughtUp"]);
     expect(view.properties.reason.enum).toEqual(["timeout", "view_failed", "unavailable", "nothing_appended"]);
+  });
+
+  test("the write's marker is a string on a created response and null on an idempotent one", () => {
+    const created = withViews.components.schemas.CommandCreated;
+    expect(created.properties.marker.type).toBe("string");
+    const idempotent = withViews.components.schemas.CommandIdempotent;
+    expect(idempotent.required).toContain("marker");
+    expect(idempotent.properties.marker.type).toBe("null");
   });
 
   test("with no waitable views the parameters are not part of the description", () => {

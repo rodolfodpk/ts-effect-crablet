@@ -19,7 +19,8 @@ Day estimates are mine, not measured.
 | | Phase | Value | Cost | Depends on | Commit |
 |---|---|---|---|---|---|
 | 0 | Wallet transactions list to keyset pagination (done) | fixes a real repeat/skip bug whatever happens to the rest | 0.5 day | - | alone, breaking for that one endpoint |
-| 1 | `marker` in the command response, plus the marker codec | the token every later phase uses | 0.5 day | - | additive |
+| 1 | `marker` in the command response, plus the marker codec (done) | the token every later phase uses | 0.5 day | - | additive |
+| 1b | A marker on idempotent repeats (`noop` and `idempotentBy`) | a client whose response was lost keeps read-your-write | 0.75 day | 1 | additive (one SQL migration) |
 | 2 | Spike: response header and `503` + `Retry-After` through `HttpApi` | decides how `bounded` and `strict` are expressed | 0.25 day | - | none (findings go in the ADR) |
 | 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper | the feature | 2.5 days | 1, 2 | additive |
 | 4 | Wrap the example apps' reads; regenerate OpenAPI | proves it on two real apps | 1 day | 3 | additive |
@@ -27,7 +28,7 @@ Day estimates are mine, not measured.
 | 6 | Remove `?waitFor` everywhere; amend ADR-0011; rewrite tutorial step 4; ADR-0015 to Accepted | closes the migration | 1.5 days | 5 | one breaking commit |
 | 7 | Measure `latest` at read rates and the poll cost; add to the scale envelope | confirms the cost claims | 0.5 day | 4 | none or a small tweak |
 
-About 7.75 days. Phases 3 and 6 are the ones most likely to run over: 3 is six modules with unit and integration tests, and 6 touches about 25 files of code, tests and docs, plus a tested tutorial. Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites **run in batches of a few files**, see NOTES.md) and is committed on its own; push only on request.
+About 8.5 days. Phases 3 and 6 are the ones most likely to run over: 3 is six modules with unit and integration tests, and 6 touches about 25 files of code, tests and docs, plus a tested tutorial. Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites **run in batches of a few files**, see NOTES.md) and is committed on its own; push only on request.
 
 ## Phase 0. Wallet transactions list to keyset pagination - DONE (see NOTES "Read consistency, phase 0")
 **Why first.** `getWalletTransactions` uses `ORDER BY occurred_at DESC LIMIT size OFFSET page*size`. A transaction arriving between two page requests moves a row onto both pages or off both. That is true today and independent of this work, but consistency makes it visible: a client now reads fresh data and still gets a torn listing.
@@ -37,11 +38,17 @@ About 7.75 days. Phases 3 and 6 are the ones most likely to run over: 3 is six m
 **Tests.** A concurrency test: page through a wallet while a writer appends, assert no repeat and no skip.
 **Breaking.** `page` and `size` go away; nothing in the repository consumes them besides the tests and the checked-in OpenAPI.
 
-## Phase 1. The marker
+## Phase 1. The marker - DONE for created responses (see NOTES "Read consistency, phase 1"); the idempotent marker is phase 1b below
 - `marker` (string `"<transactionId>:<position>"`) on `CommandCreatedResponse`; `null` on the idempotent response for now. Additive (ADR-0013).
 - **Where the codec lives.** `commands-http` produces markers and `views-http` parses them, and `commands-http` cannot import `event-poller`. Put `formatMarker` and `parseMarker` in a small new module of `@crablet/eventstore` (both packages already depend on it). Parsing rejects anything that is not two non-negative integers.
 - **The idempotent marker (open item in the ADR).** Spike first: does the idempotency check expose the matching event's position and transaction? If it does, return that marker, which fixes a retry after a lost response. If it does not, record that and leave `null`.
 - **Tests.** Codec round trip and rejection cases (unit); the response carries the marker (integration); regenerate `docs/api/*.json` (additive diff).
+
+## Phase 1b. A marker on idempotent repeats
+The spike (phase 1) found that neither source of "already done" exposes a position today (ADR-0015, consequences). Two parts, independent:
+- **`noop` from `decide`:** the compiled handler holds the model load's cursor; let `NoOp` carry it (null when the model loaded nothing) and have the executor turn it into the response's marker. No SQL.
+- **`idempotentBy`:** a migration (V9) makes `append_events_if` return the greatest `(transaction_id, position)` among the events matching the idempotency query; `Duplicate` carries it; the executor passes it through. Tests: a repeat's marker covers the first write (it equals the first response's marker when one event matched, and is at least it when several did); a concurrent repeat; the in-memory store matches Postgres (the conformance suite and the differential test already cover both stores, so they must be extended too).
+Until this lands, a client that retries after a lost response should read with `consistentWith=latest`.
 
 ## Phase 2. Spike: what `HttpApi` lets us do
 Two questions, answered before the package is built:

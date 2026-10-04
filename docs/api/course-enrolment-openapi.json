@@ -920,6 +920,9 @@
           "lastTransactionId": {
             "type": "null"
           },
+          "marker": {
+            "type": "null"
+          },
           "view": {
             "$ref": "#/components/schemas/ViewWaitResult"
           }
@@ -928,7 +931,8 @@
           "status",
           "reason",
           "lastPosition",
-          "lastTransactionId"
+          "lastTransactionId",
+          "marker"
         ],
         "additionalProperties": false
       },
@@ -975,6 +979,9 @@
           "lastTransactionId": {
             "type": "string"
           },
+          "marker": {
+            "type": "string"
+          },
           "view": {
             "$ref": "#/components/schemas/ViewWaitResult"
           }
@@ -983,7 +990,8 @@
           "status",
           "reason",
           "lastPosition",
-          "lastTransactionId"
+          "lastTransactionId",
+          "marker"
         ],
         "additionalProperties": false
       }

@@ -8,6 +8,7 @@ import type { SqlClient } from "effect/sql";
 import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
+import { formatMarker } from "@crablet/eventstore/Marker";
 import { checkImplementations, executeEndpointName, listedCommands, makeCommandApi } from "./CommandApi.ts";
 import type { Implementations } from "./CommandApi.ts";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
@@ -165,8 +166,8 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       // chosen here, after the command ran.
       return HttpServerResponse.jsonUnsafe(
         result.wasIdempotent
-          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, lastTransactionId: null, ...(view !== undefined ? { view } : {}) }
-          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, ...(view !== undefined ? { view } : {}) },
+          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, lastTransactionId: null, marker: null, ...(view !== undefined ? { view } : {}) }
+          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, marker: formatMarker({ transactionId: result.lastTransactionId!, position: result.lastPosition! }), ...(view !== undefined ? { view } : {}) },
         {
           status: result.wasIdempotent ? 200 : 201,
           ...(correlationId !== null ? { headers: { [CORRELATION_HEADER]: correlationId } } : {})

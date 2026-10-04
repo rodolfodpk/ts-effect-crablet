@@ -25,6 +25,9 @@ import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, probl
 // it has none. `lastTransactionId` is the transaction that wrote it (also a string): with the position it is the write's
 // cursor, which a client compares with a view's progress to know the view has caught up. Created is 201, an idempotent repeat 200.
 //
+// `marker` is the same cursor as one string, `"<lastTransactionId>:<lastPosition>"` (`@crablet/eventstore/Marker`): the token to hold and
+// send back when reading, so that the read reflects this write (ADR-0015). Null when nothing was appended.
+//
 // `view` is present only when the request asked to wait for a view (`?waitFor=`): whether that view had caught up
 // to this write when the response was sent. The write itself has succeeded either way - a view that did not catch
 // up in time (or is failed) is reported here, not as an error status, because the command is done and
@@ -41,6 +44,7 @@ export const CommandCreatedResponse = Schema.Struct({
   reason: Schema.Null,
   lastPosition: Schema.String,
   lastTransactionId: Schema.String,
+  marker: Schema.String,
   view: Schema.optionalKey(ViewWaitResult)
 }).annotate({ httpApiStatus: 201, identifier: "CommandCreated" } as never);
 
@@ -49,6 +53,7 @@ export const CommandIdempotentResponse = Schema.Struct({
   reason: Schema.NullOr(Schema.String),
   lastPosition: Schema.Null,
   lastTransactionId: Schema.Null,
+  marker: Schema.Null,
   view: Schema.optionalKey(ViewWaitResult)
 }).annotate({ httpApiStatus: 200, identifier: "CommandIdempotent" } as never);
 

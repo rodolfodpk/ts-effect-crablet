@@ -12,6 +12,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import { parseMarker } from "@crablet/eventstore/Marker";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
@@ -149,6 +150,8 @@ describe("commands-http integration (real Postgres)", () => {
       assert.strictEqual(body.reason, null);
       assert.match(String(body.lastPosition), /^\d+$/, "the position of the last appended event, as a string");
       assert.match(String(body.lastTransactionId), /^\d+$/, "the transaction that wrote it, as a string");
+      assert.strictEqual(body.marker, `${body.lastTransactionId}:${body.lastPosition}`, "the write's marker: transaction id and position");
+      assert.deepStrictEqual(parseMarker(String(body.marker)), { transactionId: String(body.lastTransactionId), position: BigInt(String(body.lastPosition)) });
     });
 
     const row = await getEventRow(`WalletOpened`);
@@ -176,6 +179,7 @@ describe("commands-http integration (real Postgres)", () => {
       assert.ok(body.reason, "expected a non-empty idempotency reason");
       assert.strictEqual(body.lastPosition, null, "a repeat appended nothing");
       assert.strictEqual(body.lastTransactionId, null);
+      assert.strictEqual(body.marker, null, "a repeat appended nothing, so it has no marker (yet)");
     });
   });
 
