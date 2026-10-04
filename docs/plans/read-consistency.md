@@ -18,7 +18,7 @@ Day estimates are mine, not measured.
 
 | | Phase | Value | Cost | Depends on | Commit |
 |---|---|---|---|---|---|
-| 0 | Wallet transactions list to keyset pagination | fixes a real repeat/skip bug whatever happens to the rest | 0.5 day | - | alone, breaking for that one endpoint |
+| 0 | Wallet transactions list to keyset pagination (done) | fixes a real repeat/skip bug whatever happens to the rest | 0.5 day | - | alone, breaking for that one endpoint |
 | 1 | `marker` in the command response, plus the marker codec | the token every later phase uses | 0.5 day | - | additive |
 | 2 | Spike: response header and `503` + `Retry-After` through `HttpApi` | decides how `bounded` and `strict` are expressed | 0.25 day | - | none (findings go in the ADR) |
 | 3 | `@crablet/views-http`: policy, head-of-log, concurrent wait, problems, schema fragments, wrapper | the feature | 2.5 days | 1, 2 | additive |
@@ -29,7 +29,7 @@ Day estimates are mine, not measured.
 
 About 7.75 days. Phases 3 and 6 are the ones most likely to run over: 3 is six modules with unit and integration tests, and 6 touches about 25 files of code, tests and docs, plus a tested tutorial. Each phase ends green (`bun run typecheck`, `bun run test:unit`, and the integration suites **run in batches of a few files**, see NOTES.md) and is committed on its own; push only on request.
 
-## Phase 0. Wallet transactions list to keyset pagination
+## Phase 0. Wallet transactions list to keyset pagination - DONE (see NOTES "Read consistency, phase 0")
 **Why first.** `getWalletTransactions` uses `ORDER BY occurred_at DESC LIMIT size OFFSET page*size`. A transaction arriving between two page requests moves a row onto both pages or off both. That is true today and independent of this work, but consistency makes it visible: a client now reads fresh data and still gets a torn listing.
 **Change.** `limit` (default 20, cap 100, validated by the handler like the course list) and `after` (an opaque cursor); read `limit + 1` rows to know whether `next` exists; the response becomes `{ transactions, next }`.
 **The cursor key.** The view's primary key is `(transaction_id, event_position)`, and a transfer writes two rows for one event (`{transferId}-from` and `-to`, same `event_position`). So `transaction_id` alone is not unique and `(occurred_at, transaction_id)` is not a safe tiebreaker across wallets or event types. Use `(occurred_at, event_position, transaction_id)`, which is unique per row. (This `transaction_id` is the wallet view's own text id, not the log's xid.)

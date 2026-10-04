@@ -740,32 +740,20 @@
             "required": true
           },
           {
-            "name": "page",
+            "name": "limit",
             "in": "query",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "type": "string",
+              "description": "How many transactions to return: a whole number from 1 to 100 (default 20)."
             },
             "required": false
           },
           {
-            "name": "size",
+            "name": "after",
             "in": "query",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "type": "string",
+              "description": "Return the transactions after this cursor: the `next` of the previous page. Opaque to clients."
             },
             "required": false
           }
@@ -813,12 +801,33 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "next": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "transactions"
+                    "transactions",
+                    "next"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "CommandApiBadRequest",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandApiBadRequestEncoded"
                 }
               }
             }
@@ -953,6 +962,72 @@
         ],
         "additionalProperties": false
       },
+      "CommandApiBadRequestEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:command-api:bad-request"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Bad Request"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              400
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputIssue"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "InputIssue": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "description": "Where in the request body: property names and array indexes, outermost first."
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "additionalProperties": false
+      },
       "WalletNotFoundProblem": {
         "type": "object",
         "properties": {
@@ -1080,72 +1155,6 @@
           "detail",
           "violationCode",
           "hint"
-        ],
-        "additionalProperties": false
-      },
-      "CommandApiBadRequestEncoded": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "urn:crablet:problem:command-api:bad-request"
-            ]
-          },
-          "title": {
-            "type": "string",
-            "enum": [
-              "Bad Request"
-            ]
-          },
-          "status": {
-            "type": "number",
-            "enum": [
-              400
-            ]
-          },
-          "detail": {
-            "type": "string"
-          },
-          "errors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InputIssue"
-            }
-          }
-        },
-        "required": [
-          "type",
-          "title",
-          "status",
-          "detail"
-        ],
-        "additionalProperties": false
-      },
-      "InputIssue": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "description": "Where in the request body: property names and array indexes, outermost first."
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "message"
         ],
         "additionalProperties": false
       },

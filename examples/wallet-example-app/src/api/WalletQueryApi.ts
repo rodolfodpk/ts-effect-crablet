@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
+import { BadRequestProblem } from "@crablet/commands-http";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
+import { defaultPageSize, maxPageSize } from "./TransactionPaging.ts";
 
 // Hand-written reads (plain SqlClient
 // queries against the view tables, no event-store involvement), composed alongside
@@ -21,8 +23,10 @@ export const TransactionResponse = Schema.Struct({
   occurredAt: Schema.String
 });
 
+// One page of a wallet's transactions, newest first. `next` is the cursor of the following page, or null on the last one; pass it back as `after`.
 export const TransactionsResponse = Schema.Struct({
-  transactions: Schema.Array(TransactionResponse)
+  transactions: Schema.Array(TransactionResponse),
+  next: Schema.NullOr(Schema.String)
 });
 
 export const WalletSummaryResponse = Schema.Struct({
@@ -35,10 +39,15 @@ export const WalletSummaryResponse = Schema.Struct({
   lastTransactionAt: Schema.NullOr(Schema.String)
 });
 
-// Query-string params for the transactions list (both optional, parsed from strings).
+// Query-string params for the transactions list. Plain strings on purpose: the handler validates them (so a bad value answers with the same
+// problem body as every other 400 instead of the HTTP framework's empty-bodied default); the allowed values are in the descriptions.
 export const TransactionsPageParams = {
-  page: Schema.optional(Schema.NumberFromString),
-  size: Schema.optional(Schema.NumberFromString)
+  limit: Schema.optionalKey(
+    Schema.String.annotate({ description: `How many transactions to return: a whole number from 1 to ${maxPageSize} (default ${defaultPageSize}).` } as never)
+  ),
+  after: Schema.optionalKey(
+    Schema.String.annotate({ description: "Return the transactions after this cursor: the `next` of the previous page. Opaque to clients." } as never)
+  )
 };
 
 const walletIdParam = { walletId: Schema.String };
@@ -56,7 +65,7 @@ export const walletQueryGroup = HttpApiGroup.make("walletQueries")
       params: walletIdParam,
       query: TransactionsPageParams,
       success: TransactionsResponse,
-      error: WalletNotFoundProblem
+      error: [WalletNotFoundProblem, BadRequestProblem]
     })
   )
   .add(
