@@ -108,4 +108,30 @@ describe("LISTEN/NOTIFY parity (Phase 0, Risk B part 1)", () => {
     assert.deepStrictEqual([...allTypes].sort(), ["EventA", "EventB", "EventC", "EventD"]);
     assert.deepStrictEqual([...allTagKeys].sort(), ["tag_a", "tag_b", "tag_c", "tag_d"]);
   });
+
+  it("when the LISTEN session is terminated the stream reconnects, announces a wildcard, and delivers again", { timeout: 30_000 }, async () => {
+    const channel = "crablet_events_reconnect";
+    const got = await Effect.runPromise(
+      Effect.provide(
+        Effect.gen(function* () {
+          const pg = yield* PgClient.PgClient;
+          const sql = yield* SqlClient.SqlClient;
+          const queue = yield* Queue.unbounded<WakeupBatch>();
+          const fiber = yield* Stream.runForEach(wakeupStream(pg, channel, { retryBase: "100 millis" }), (b) => Queue.offer(queue, b)).pipe(Effect.forkChild);
+          yield* Effect.sleep("300 millis");
+          const victims = yield* sql.unsafe<{ pid: number }>(`SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%${channel}%' AND pid <> pg_backend_pid()`);
+          for (const v of victims) yield* sql.unsafe("SELECT pg_terminate_backend($1)", [v.pid]);
+          const wildcard = yield* Queue.take(queue).pipe(Effect.timeout("10 seconds"));
+          yield* pg.notify(channel, encodePayload(new Set(["AfterReconnect"]), new Set()));
+          const batch = yield* Queue.take(queue).pipe(Effect.timeout("5 seconds"));
+          yield* Fiber.interrupt(fiber);
+          return { killed: victims.length, wildcard: wildcard.wildcard, types: [...batch.types] };
+        }),
+        layer
+      )
+    );
+    assert.strictEqual(got.killed, 1);
+    assert.strictEqual(got.wildcard, true);
+    assert.deepStrictEqual(got.types, ["AfterReconnect"]);
+  });
 });

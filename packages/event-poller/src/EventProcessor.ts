@@ -328,9 +328,14 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       })
     );
 
-    const dispatcherLoop: Effect.Effect<void> = Stream.runForEach(deps.wakeupStream, (batch: WakeupBatch) =>
-      PubSub.publish(hub, batch)
-    ).pipe(Effect.catch((e) => Effect.logError(String(e))));
+    // The stream from `wakeupStream` reconnects by itself; this is the second line: should it end or fail anyway, say so and drain it
+    // again, instead of leaving the processors on their polling interval for good.
+    const dispatcherLoop: Effect.Effect<void> = Effect.forever(
+      Stream.runForEach(deps.wakeupStream, (batch: WakeupBatch) => PubSub.publish(hub, batch)).pipe(
+        Effect.catch((e) => Effect.logError(String(e))),
+        Effect.andThen(Effect.sleep(Duration.seconds(1)))
+      )
+    );
 
     const start: Effect.Effect<void> = Effect.gen(function* () {
       const initialHandle = yield* acquireLeaderSafe;

@@ -1,4 +1,4 @@
-import { Duration, Effect, Stream } from "effect";
+import { Duration, Effect, Queue, type Scope, Stream } from "effect";
 import type { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
 import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
@@ -10,10 +10,7 @@ import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
 // a queue of notifications once Postgres confirms LISTEN. No raw pg client / EventEmitter bridging is
 // needed. To publish, use `PgClient.notify(channel, payload)` (it accepts a dynamic payload).
 //
-// CAVEAT (this listener, the pollers' wake-up on `crablet_events`): there is no automatic reconnect-with-backoff if the LISTEN connection drops (the
-// queue fails and the stream ends). The view progress hub (@crablet/views/ViewProgressHub, ADR-0016) is the model for one that does. A production
-// deployment would wrap this stream in retry/reconnect logic (e.g. `Stream.retry(Schedule...)`); the
-// pollers' periodic polling is the safety net meanwhile.
+// The stream reconnects by itself (see `wakeupStreamFrom`); the pollers' periodic polling stays the safety net while it is away.
 
 // PATTERN PRIMER - `Stream<A, E, R>`, Effect's model for "more than one value over time," the
 // counterpart to `Effect<A, E, R>`'s "exactly one value" (or none, on failure). Think of it as a
@@ -31,24 +28,66 @@ export interface WakeupBatch {
 
 const DEBOUNCE_MS = 20;
 
-export const wakeupStream = (
-  pg: PgClient.PgClient,
-  channel: string
-): Stream.Stream<WakeupBatch, SqlError> =>
-  // `pg.listen` yields the notification queue once Postgres confirms LISTEN (holding a dedicated
-  // connection for the stream's lifetime); `Stream.fromQueue` + `Stream.unwrap` turn that into a stream.
-  Stream.unwrap(Effect.map(pg.listen(channel), Stream.fromQueue)).pipe(
-    Stream.map((notification) => decodePayload(notification.payload)),
-    // `Stream.groupedWithin(maxSize, duration)` is the debounce/coalesce technique: it buffers
-    // elements into an array and flushes the buffer whenever EITHER `maxSize` elements have
-    // arrived OR `duration` has elapsed since the last flush - whichever comes first. Passing
-    // `Number.MAX_SAFE_INTEGER` for size effectively disables the size trigger, leaving pure
-    // time-based batching: every NOTIFY that arrives within the same 20ms window gets merged into
-    // one `WakeupBatch` instead of dispatching N separate wakeups.
+export type ListenSource = Effect.Effect<Queue.Dequeue<{ readonly payload: string | null }, SqlError>, SqlError, Scope.Scope>;
+
+export interface WakeupOptions {
+  // Delay before LISTEN is retried: `retryBase`, doubling after each failed attempt up to `retryMax`; back to `retryBase` after a connection
+  // that was established and then lost. Defaults 500 ms / 30 s.
+  readonly retryBase?: Duration.Input;
+  readonly retryMax?: Duration.Input;
+}
+
+const WILDCARD: DecodedPayload = { wildcard: true, types: new Set(), tagKeys: new Set() };
+
+// The stream never ends and never fails: when the LISTEN connection is lost (or cannot be made) it waits, with backoff, and listens again. After
+// every RE-connect it emits one wildcard wakeup, because notifications sent while it was away are gone for good: the poller must look at the log
+// itself. (The first connect announces nothing; the poller's first tick reads the log anyway.) Before this, a lost connection ended the stream and
+// the poller stayed on its polling interval for good (docs/plans/reliability-and-scale-diagnostic.md, D3).
+export const wakeupStreamFrom = (listen: ListenSource, options: WakeupOptions = {}): Stream.Stream<WakeupBatch, SqlError> => {
+  const retryBase = Duration.toMillis(Duration.fromInputUnsafe(options.retryBase ?? "500 millis"));
+  const retryMax = Duration.toMillis(Duration.fromInputUnsafe(options.retryMax ?? "30 seconds"));
+  let delay = retryBase;
+  let connectedOnce = false;
+  let connected = false;
+
+  // One connection's life; ends, without failing, however it ended.
+  const connection: Stream.Stream<DecodedPayload> = Stream.unwrap(
+    Effect.map(listen, (queue) => {
+      connected = true;
+      const reconnect = connectedOnce;
+      connectedOnce = true;
+      const notifications = Stream.map(Stream.fromQueue(queue), (n) => decodePayload(n.payload));
+      return reconnect ? Stream.concat(Stream.make(WILDCARD), notifications) : notifications;
+    })
+  ).pipe(Stream.catchCause(() => Stream.empty));
+
+  const pause: Stream.Stream<never> = Stream.drain(
+    Stream.fromEffect(
+      Effect.suspend(() => {
+        const wait = connected ? retryBase : delay;
+        delay = connected ? retryBase : Math.min(delay * 2, retryMax);
+        connected = false;
+        return Effect.sleep(Duration.millis(wait));
+      })
+    )
+  );
+
+  return Stream.forever(Stream.concat(connection, pause)).pipe(
+    // `Stream.groupedWithin(maxSize, duration)` is the debounce/coalesce technique: it buffers elements into an array and flushes the buffer
+    // whenever EITHER `maxSize` elements have arrived OR `duration` has elapsed since the last flush - whichever comes first. Passing
+    // `Number.MAX_SAFE_INTEGER` for size effectively disables the size trigger, leaving pure time-based batching: every NOTIFY that arrives
+    // within the same 20ms window gets merged into one `WakeupBatch` instead of dispatching N separate wakeups.
     Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(DEBOUNCE_MS)),
     Stream.filter((batch) => batch.length > 0),
     Stream.map(mergeBatch)
   );
+};
+
+export const wakeupStream = (
+  pg: PgClient.PgClient,
+  channel: string,
+  options: WakeupOptions = {}
+): Stream.Stream<WakeupBatch, SqlError> => wakeupStreamFrom(pg.listen(channel), options);
 
 function mergeBatch(payloads: ReadonlyArray<DecodedPayload>): WakeupBatch {
   if (payloads.some((p) => p.wildcard)) {
