@@ -159,4 +159,34 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
     );
     assert.strictEqual(outcome, "not-ready");
   });
+
+  it("updateCursor only moves forward: an older cursor (a zombie leader's late write) changes nothing", async () => {
+    const id = `view-${crypto.randomUUID()}`;
+    const cursor = await run(
+      Effect.gen(function* () {
+        const tracker = yield* makePostgresProgressTracker<string>(SPEC);
+        yield* tracker.autoRegister(id, "instance-a");
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("900", 900n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("100", 100n));
+        return yield* tracker.getCursor(id);
+      })
+    );
+    assert.strictEqual(cursor.position, 900n);
+    assert.strictEqual(cursor.transactionId, "900");
+  });
+
+  it("the same cursor again is a no-op, and a higher position in the same transaction advances", async () => {
+    const id = `view-${crypto.randomUUID()}`;
+    const cursor = await run(
+      Effect.gen(function* () {
+        const tracker = yield* makePostgresProgressTracker<string>(SPEC);
+        yield* tracker.autoRegister(id, "instance-a");
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 5n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 5n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 6n));
+        return yield* tracker.getCursor(id);
+      })
+    );
+    assert.strictEqual(cursor.position, 6n);
+  });
 });

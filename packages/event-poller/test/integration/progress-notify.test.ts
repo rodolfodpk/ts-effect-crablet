@@ -131,4 +131,19 @@ describe("progress tracker notifications", () => {
     await settle();
     assert.strictEqual(received.filter((r) => (JSON.parse(r.payload) as ProgressPing).id === id).length, 0);
   });
+
+  it("an update that does not advance the cursor sends no ping", async () => {
+    const id = `view-${crypto.randomUUID()}`;
+    await run(
+      Effect.gen(function* () {
+        const tracker = yield* makePostgresProgressTracker<string>(notifying);
+        yield* tracker.autoRegister(id, "instance-a");
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("600", 50n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("600", 50n)); // same
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("550", 45n)); // older
+      })
+    );
+    await settle();
+    assert.strictEqual(received.filter((r) => (JSON.parse(r.payload) as ProgressPing).id === id).length, 1);
+  });
 });

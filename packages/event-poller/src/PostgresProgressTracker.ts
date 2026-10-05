@@ -81,12 +81,14 @@ export const makePostgresProgressTracker = <I extends string>(
         )
       );
 
+    // Forward-only: the cursor never moves back. A processor that lost leadership without knowing it (a zombie) and writes late
+    // changes nothing, and no ping is sent for an update that did not advance (docs/plans/reliability-and-scale-diagnostic.md, D2).
     const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void, SqlError> =>
       spec.notifyChannel === undefined
         ? Effect.asVoid(
             sql.unsafe(
               `UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
-               WHERE ${idCol} = $1`,
+               WHERE ${idCol} = $1 AND (last_transaction_id, last_position) < ($3::xid8, $2::bigint)`,
               [id, cursor.position.toString(), cursor.transactionId]
             )
           )
@@ -95,7 +97,7 @@ export const makePostgresProgressTracker = <I extends string>(
             sql.unsafe(
               `WITH updated AS (
                  UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
-                 WHERE ${idCol} = $1
+                 WHERE ${idCol} = $1 AND (last_transaction_id, last_position) < ($3::xid8, $2::bigint)
                  RETURNING ${idCol} AS id, last_transaction_id::text AS transaction_id, last_position::text AS position)
                SELECT pg_notify($4, json_build_object('id', id, 'transactionId', transaction_id, 'position', position)::text) FROM updated`,
               [id, cursor.position.toString(), cursor.transactionId, spec.notifyChannel]

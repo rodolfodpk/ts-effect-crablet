@@ -25,6 +25,7 @@ const storedEvent = (position: bigint, type = "TestEvent", transactionId = posit
 const alwaysLeader = (): LeaderHandle => ({
   lockKey: 0n,
   isLeader: () => true,
+  verify: Effect.succeed(true),
   release: () => Effect.void
 });
 
@@ -237,6 +238,130 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
       expect((yield* tracker.getCursor(PROCESSOR_ID)).position).toBe(statusesBeforeMoreTime);
     });
 
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+});
+
+// ADR/plan step 1b: a processor whose leadership can no longer be confirmed stops - before the
+// handler runs and again before the cursor moves - and that is not a handler error.
+describe("EventProcessor leadership fence (scheduled loop)", () => {
+  const config = processorConfigOf(PROCESSOR_ID, {
+    pollingIntervalMs: 1000,
+    batchSize: 10,
+    backoffEnabled: false,
+    backoffThreshold: 1,
+    backoffMultiplier: 2,
+    backoffMaxSeconds: 120,
+    enabled: true
+  });
+
+  // `answers` are consumed one per verify call; after they run out the last one repeats.
+  const leaderAnswering = (answers: ReadonlyArray<boolean>) => {
+    let calls = 0;
+    const leader: LeaderHandle = {
+      lockKey: 0n,
+      isLeader: () => true,
+      verify: Effect.sync(() => answers[Math.min(calls++, answers.length - 1)]!),
+      release: () => Effect.void
+    };
+    return { leader, calls: () => calls };
+  };
+
+  const setup = (leader: LeaderHandle) =>
+    Effect.gen(function* () {
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([storedEvent(1n)]);
+      const { tracker, rows } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>();
+      const handle = yield* makeEventProcessor({
+        configs: [config],
+        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf: () => EventSelection.empty(),
+        instanceId: "test-instance",
+        acquireLeader: Effect.succeed(leader),
+        wakeupStream: Stream.never
+      });
+      return { tracker, rows, handlerHandle, handle };
+    });
+
+  const settle = Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow);
+
+  test("leadership that cannot be confirmed before the handler: the handler is not called, nothing is recorded", async () => {
+    const program = Effect.gen(function* () {
+      const { leader } = leaderAnswering([false]);
+      const { tracker, rows, handlerHandle, handle } = yield* setup(leader);
+      yield* tracker.autoRegister(PROCESSOR_ID, "test-instance");
+      yield* handle.service.start;
+      yield* settle;
+      expect(yield* handlerHandle.callCount).toBe(0);
+      expect((yield* tracker.getCursor(PROCESSOR_ID)).position).toBe(0n);
+      expect((yield* rows).get(PROCESSOR_ID)?.errorCount).toBe(0);
+      yield* handle.service.stop;
+    });
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+
+  test("leadership lost while the handler ran: the cursor does not move and no error is recorded", async () => {
+    const program = Effect.gen(function* () {
+      const { leader } = leaderAnswering([true, false]);
+      const { tracker, rows, handlerHandle, handle } = yield* setup(leader);
+      yield* tracker.autoRegister(PROCESSOR_ID, "test-instance");
+      yield* handle.service.start;
+      yield* settle;
+      expect(yield* handlerHandle.callCount).toBe(1);
+      expect((yield* tracker.getCursor(PROCESSOR_ID)).position).toBe(0n);
+      expect((yield* rows).get(PROCESSOR_ID)?.errorCount).toBe(0);
+      yield* handle.service.stop;
+    });
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+
+  test("a leader that stays confirmed works as before", async () => {
+    const program = Effect.gen(function* () {
+      const { leader } = leaderAnswering([true]);
+      const { tracker, handlerHandle, handle } = yield* setup(leader);
+      yield* handle.service.start;
+      yield* waitUntil(Effect.map(tracker.getCursor(PROCESSOR_ID), (c) => c.position), (p) => p === 1n);
+      expect(yield* handlerHandle.callCount).toBe(1);
+      yield* handle.service.stop;
+    });
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+
+  test("the retry loop releases a handle that is no longer leader before acquiring another", async () => {
+    const program = Effect.gen(function* () {
+      const released: string[] = [];
+      let n = 0;
+      const mk = (name: string, leading: () => boolean): LeaderHandle => ({
+        lockKey: 0n,
+        isLeader: leading,
+        verify: Effect.sync(leading),
+        release: () => Effect.sync(() => void released.push(name))
+      });
+      const first = mk("first", () => false);
+      const second = mk("second", () => true);
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([]);
+      const { tracker } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>();
+      const handle = yield* makeEventProcessor({
+        configs: [config],
+        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf: () => EventSelection.empty(),
+        instanceId: "test-instance",
+        leaderRetryIntervalMs: 1000,
+        acquireLeader: Effect.sync(() => (n++ === 0 ? first : second)),
+        wakeupStream: Stream.never
+      });
+      yield* handle.service.start;
+      yield* settle;
+      yield* TestClock.adjust("1000 millis");
+      yield* settle;
+      expect(released).toEqual(["first"]);
+      yield* handle.service.stop;
+    });
     await Effect.runPromise(Effect.provide(program, TestClock.layer()));
   });
 });

@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Ref, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Ref, Result, Stream } from "effect";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
@@ -15,6 +15,17 @@ import * as EventSelectionNS from "./EventSelection.ts";
 import type { EventSelection } from "./EventSelection.ts";
 import * as BackoffStateNS from "./BackoffState.ts";
 import type { BackoffState } from "./BackoffState.ts";
+
+// Raised by the leadership fence when this instance can no longer confirm it holds the lock. It is not a
+// handler failure: nothing is recorded against the processor, and the scheduled loop just stops the tick.
+class LeadershipLost {
+  readonly _tag = "LeadershipLost";
+}
+
+const isLeadershipLost = (cause: Cause.Cause<unknown>): boolean => {
+  const found = Cause.findError(cause);
+  return Result.isSuccess(found) && found.success instanceof LeadershipLost;
+};
 
 // The event processor: one persistent, long-lived fiber per processorId (see makeEventProcessor's
 // `processorLoop`). A single dedicated fiber processes strictly sequentially by construction, so a
@@ -107,7 +118,11 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     // The same 7-step sequence the scheduled loop calls, but with NO leadership check (that gate
     // lives only in `tick` below).
-    const process = (id: I): Effect.Effect<number, unknown> =>
+    //
+    // `fence`, when given, is checked before the handler runs and again before the cursor moves: a
+    // zombie leader (lock lost, session dead) then stops instead of handling events the new leader
+    // handles too (docs/plans/reliability-and-scale-diagnostic.md, D1).
+    const processWith = (id: I, fence: Effect.Effect<void, LeadershipLost>): Effect.Effect<number, unknown> =>
       Effect.gen(function* () {
         const config = configOf(id);
         if (!config) return yield* Effect.die(new Error(`Unknown processorId: ${id}`));
@@ -131,14 +146,18 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         const events = yield* deps.fetcher.fetchEvents(id, ready.cursor, config.batchSize);
         if (events.length === 0) return 0;
 
+        yield* fence;
         const handled = yield* deps.handler.handle(id, events).pipe(
           Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
         );
 
+        yield* fence;
         yield* deps.progressTracker.updateCursor(id, ProgressCursorNS.after(events[events.length - 1]!));
         yield* deps.progressTracker.resetErrorCount(id);
         return handled;
       });
+
+    const process = (id: I): Effect.Effect<number, unknown> => processWith(id, Effect.void);
 
     const waitForRelevantWakeup = (
       dequeue: PubSub.Subscription<WakeupBatch>,
@@ -186,7 +205,19 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         // outcome yourself rather than letting it bubble - here, so a handler exception can be
         // logged and leave backoff state untouched (see the comment below) instead of aborting this whole tick. `Exit.isSuccess(exit)` narrows the
         // type so `exit.value`/`exit.cause` are safe to read in each branch.
-        const exit = yield* Effect.exit(process(config.processorId));
+        const fence: Effect.Effect<void, LeadershipLost> = Effect.flatMap(leader!.verify, (ok) =>
+          ok ? Effect.void : Effect.fail(new LeadershipLost())
+        );
+        const exit = yield* Effect.exit(processWith(config.processorId, fence));
+
+        if (Exit.isFailure(exit) && isLeadershipLost(exit.cause)) {
+          yield* Effect.logWarning(`processor ${String(config.processorId)}: leadership lost, tick stopped`);
+          yield* Effect.race(
+            Effect.sleep(Duration.millis(config.pollingIntervalMs)),
+            waitForRelevantWakeup(dequeue, filter)
+          );
+          return;
+        }
 
         if (Exit.isSuccess(exit)) {
           const handled = exit.value;
@@ -282,7 +313,11 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.gen(function* () {
         const current = yield* Ref.get(leaderRef);
         if (current === null || !current.isLeader()) {
-          if (current !== null) yield* setLeadershipGauge(current, false);
+          if (current !== null) {
+            yield* setLeadershipGauge(current, false);
+            // Free what the lost handle still holds (its reserved connection) before taking a new one.
+            yield* current.release().pipe(Effect.ignore);
+          }
           const handle = yield* acquireLeaderSafe;
           if (handle !== null) {
             yield* Ref.set(leaderRef, handle);

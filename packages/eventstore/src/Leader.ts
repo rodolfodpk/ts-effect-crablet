@@ -1,13 +1,21 @@
-import { Effect, Exit, Scope } from "effect";
+import { Duration, Effect, Exit, Fiber, Scope } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
 import type { SqlError } from "effect/sql/SqlError";
 
 // Session-level pg_try_advisory_lock/pg_advisory_unlock on a
 // dedicated connection that is held open indefinitely on success (never returned to the pool
-// until explicitly released), and closed immediately on failure. No heartbeat query - liveness
-// is just "is the reserved connection still open" (Postgres auto-releases the lock server-side
-// if the connection drops).
+// until explicitly released), and closed immediately on failure.
+//
+// A session-level advisory lock lives exactly as long as the session that took it: if that connection dies (a network failure, a restart, an
+// administrator's `pg_terminate_backend`), Postgres drops the lock at once and another instance can take it. The leader must therefore KNOW when
+// its connection is gone, or two instances lead at the same time (measured: docs/plans/reliability-and-scale-diagnostic.md, D1). Two things do that:
+//
+//   - a HEARTBEAT: a trivial query on the leader's own connection every `heartbeat` (default 1 s). A query that succeeds on this connection proves the
+//     session is alive and so the lock is held at that instant (a reserved connection whose session dies fails every later query and never reconnects
+//     silently: D4). `failuresBeforeLost` consecutive failures (default 2) make the leader LOST: `isLeader()` turns false and the connection is released.
+//   - `verify`: the same check on demand, used by the processor right before it does work that must not be done by a non-leader (it fails closed: a
+//     failed check answers false at once, even before the heartbeat would call the leader lost).
 //
 // Uses SqlClient's public `reserve: Effect<Connection, SqlError, Scope>` primitive (verified in
 // effect/sql/SqlConnection) rather than a raw pg.Client, since
@@ -18,9 +26,22 @@ export const OUTBOX_LOCK_KEY = 4856221667890123456n;
 export const VIEWS_LOCK_KEY = 4856221667890123457n;
 export const AUTOMATIONS_LOCK_KEY = 4856221667890123458n;
 
+export interface LeaderOptions {
+  // How often the leader checks its own connection (default 1 second).
+  readonly heartbeat?: Duration.Input;
+  // How long a check may take before it counts as failed (default 2 seconds): a connection that answers nothing is as lost as one that errors.
+  readonly verifyTimeout?: Duration.Input;
+  // Consecutive failed checks before the leader is lost (default 2): one slow answer does not end leadership.
+  readonly failuresBeforeLost?: number;
+}
+
 export interface LeaderHandle {
   readonly lockKey: bigint;
+  // True until the leader is released on purpose or lost (its session died or stopped answering).
   isLeader(): boolean;
+  // Is the lock still held right now? Runs a check on the leader's own connection: true if it answers, false if it fails or times out (and false once the
+  // handle is released or lost). Two consecutive failures make the handle lost.
+  readonly verify: Effect.Effect<boolean>;
   release(): Effect.Effect<void>;
 }
 
@@ -43,7 +64,8 @@ export interface LeaderHandle {
 // some lexical block exits.
 export const tryAcquireGlobalLeader = (
   sql: SqlClient.SqlClient,
-  lockKey: bigint
+  lockKey: bigint,
+  options: LeaderOptions = {}
 ): Effect.Effect<LeaderHandle | null, SqlError> =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
@@ -61,22 +83,76 @@ export const tryAcquireGlobalLeader = (
       return null;
     }
 
+    const heartbeat = Duration.fromInputUnsafe(options.heartbeat ?? "1 second");
+    const verifyTimeout = Duration.fromInputUnsafe(options.verifyTimeout ?? "2 seconds");
+    const failuresBeforeLost = Math.max(1, options.failuresBeforeLost ?? 2);
+
+    // `closed`: released on purpose. `lost`: the session died or stopped answering. Either way this handle no longer leads.
     let closed = false;
-    // No isClosed() equivalent on the abstract Connection - track liveness via our own flag,
-    // set true only when we (or a crash-simulation test) actually tear the scope down.
+    let lost = false;
+    let failures = 0;
+    let monitor: Fiber.Fiber<void> | null = null;
+
+    const release = (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (closed) return;
+        closed = true;
+        // On a dead connection the unlock fails (or, on a half-open one, would hang): bound it, and ignore it. The lock is gone with the session.
+        yield* connection.execute("SELECT pg_advisory_unlock($1)", [lockKey.toString()], undefined).pipe(
+          Effect.timeout(verifyTimeout),
+          Effect.catch(() => Effect.void)
+        );
+        yield* Scope.close(scope, Exit.void);
+        if (monitor !== null) yield* Fiber.interrupt(monitor);
+      });
+
+    // Not `SELECT 1`: after the session is killed the pooled connection can come back on a NEW session that answers queries but
+    // does not hold the lock (measured: the heartbeat failed once, then succeeded). Leadership is true only while THIS session
+    // still holds the advisory lock, so ask Postgres exactly that.
+    const alive: Effect.Effect<boolean> = connection
+      .execute(
+        `SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()
+         AND ((classid::bigint << 32) | objid::bigint) = $1::bigint`,
+        [lockKey.toString()],
+        undefined
+      )
+      .pipe(
+        Effect.timeout(verifyTimeout),
+        Effect.map((rows) => rows.length > 0),
+        Effect.catch(() => Effect.succeed(false))
+      );
+
+    const verify: Effect.Effect<boolean> = Effect.gen(function* () {
+      if (closed || lost) return false;
+      if (yield* alive) {
+        failures = 0;
+        return true;
+      }
+      failures++;
+      if (failures >= failuresBeforeLost) {
+        lost = true;
+        // release from ANOTHER fiber: the caller may be the monitor itself, which release() interrupts
+        yield* Effect.forkDetach(release());
+      }
+      return false;
+    });
+
     const handle: LeaderHandle = {
       lockKey,
-      isLeader: () => !closed,
-      release: () =>
-        Effect.gen(function* () {
-          if (closed) return;
-          yield* connection.execute("SELECT pg_advisory_unlock($1)", [lockKey.toString()], undefined).pipe(
-            Effect.catch(() => Effect.void)
-          );
-          yield* Scope.close(scope, Exit.void);
-          closed = true;
-        })
+      isLeader: () => !closed && !lost,
+      verify,
+      release
     };
+
+    monitor = yield* Effect.forkDetach(
+      Effect.gen(function* () {
+        while (!closed && !lost) {
+          yield* Effect.sleep(heartbeat);
+          if (closed || lost) break;
+          yield* verify;
+        }
+      })
+    );
 
     return handle;
   });
