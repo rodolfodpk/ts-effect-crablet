@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import * as LogPosition from "@crablet/eventstore/LogPosition";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as Crablet from "../src/Crablet.ts";
 import { CommandExecutor } from "../src/CommandExecutor.ts";
@@ -45,6 +46,33 @@ describe("DIAG", () => {
       for (let i = 0; i < 25; i++) { const t0 = performance.now(); await plainAppend("big"); appendOnly.push(performance.now() - t0); }
       console.log(`DIAG E5 boundary of ${String(n).padStart(7)} events: command p50 ${pct(withModel, 50).toFixed(1).padStart(7)} ms  p95 ${pct(withModel, 95).toFixed(1).padStart(7)} ms   | unconditional append to the same tag p50 ${pct(appendOnly, 50).toFixed(1)} ms`);
     }
+  });
+
+  it("E5b: where the time of a command goes with 100,000 events in its boundary", { timeout: 600_000 }, async () => {
+    const N = 100_000;
+    await insertRaw("prof", N, '{"entityId":"prof"}');
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+    const reps = 15;
+    const time = async (f: () => Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return pct(xs, 50); };
+    const model = CountModel.of({ id: "prof" });
+    const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    // 1. fetch + driver + row parsing, nothing applied to the rows
+    const fetchOnly = await time(() => run(Effect.flatMap(EventStore, (es) => es.project(model.query, LogPosition.zero(), [noop]))));
+    // 2. the same plus decoding every payload with the schema and folding (what a command does to load its state)
+    const load = await time(() => run(Effect.flatMap(EventStore, (es) => model.load(es))));
+    // 3. server side only: the database's own execution time for the read (EXPLAIN ANALYZE), and the rows it returns
+    const explain = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ "QUERY PLAN": ReadonlyArray<{ "Execution Time": number; Plan: { "Node Type": string; "Actual Rows": number } }> }>(
+      "EXPLAIN (ANALYZE, FORMAT JSON) SELECT type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, (transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled FROM crablet_events WHERE (tags @> ARRAY['entity_id=prof']::text[]) ORDER BY crablet_events.transaction_id, position ASC")));
+    const plan = explain[0]!["QUERY PLAN"][0]!;
+    // 4. the whole command, and 5. the append alone, with the same condition but nothing to load (a boundary at the end of the log)
+    const command = await time(() => tick("prof"));
+    // 6. decode + fold in memory on already-fetched rows: what the CPU part costs without the database or the driver
+    const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ data: unknown }>("SELECT data FROM crablet_events WHERE tags @> ARRAY['entity_id=prof']::text[] ORDER BY transaction_id, position")));
+    const decode = Schema.decodeUnknownSync(Schema.Struct({ entityId: Schema.String }));
+    const t0 = performance.now(); let n = 0; for (const r of rows) { decode(r.data); n++; } const decodeMs = performance.now() - t0;
+    console.log(`DIAG E5b ${N} events in the boundary (p50 of ${reps} runs): command ${command.toFixed(0)} ms | load (fetch+parse+decode+fold) ${load.toFixed(0)} ms | fetch+parse only ${fetchOnly.toFixed(0)} ms | database execution of the read ${plan["Execution Time"].toFixed(0)} ms (${plan.Plan["Node Type"]}, ${plan.Plan["Actual Rows"]} rows)`);
+    console.log(`DIAG E5b so: decode+fold ~${(load - fetchOnly).toFixed(0)} ms, append and the rest of the command ~${(command - load).toFixed(0)} ms, driver+network+row objects ~${(fetchOnly - plan["Execution Time"]).toFixed(0)} ms; schema decode alone over ${n} payloads: ${decodeMs.toFixed(0)} ms`);
   });
 
   it("E7: an event whose stored payload no longer matches its schema is in a boundary", { timeout: 60_000 }, async () => {

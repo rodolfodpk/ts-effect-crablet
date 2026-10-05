@@ -55,7 +55,19 @@ The premise of step 1's heartbeat. A connection reserved from the pool takes an 
 | 100,000 | **190 ms** | 207 ms | 0.8 ms |
 | 500,000 | **1,119 ms** | 1,242 ms | 1.1 ms |
 
-Roughly linear, about 2 microseconds per event (**measured**). The events are tiny (about 40 bytes of JSON) and were inserted in bulk, so real payloads will cost more to load. The unconditional append is constant, but it has no condition, so it does not show whether the strict command's conflict check also grows with the boundary: **where the time goes (fetching the rows, decoding them, folding them, or the append's conflict check) is not yet measured.** Step 4 starts by measuring it.
+Roughly linear, about 2 microseconds per event (**measured**). The events are tiny (about 40 bytes of JSON) and were inserted in bulk, so real payloads will cost more to load. The unconditional append is constant, but it has no condition, so it does not show whether the strict command's conflict check also grows with the boundary: **where the time goes (fetching the rows, decoding them, folding them, or the append's conflict check) was measured next, in E5b below.**
+
+### E5b - where the time of a command goes (100,000 events in the boundary; p50 of 15 runs, one run of the script)
+| Part | Time | Share |
+|---|---|---|
+| Command, whole | 186 ms | 100 % |
+| Load the state (fetch, driver, row objects, decode, fold) | 180 ms | 97 % |
+| of which the database executing the read (EXPLAIN ANALYZE: index scan, 100,000 rows) | 44 ms | 24 % |
+| of which driver, network and building 100,000 row objects (fetch-and-parse-only minus database time) | ~109 ms | ~58 % |
+| of which schema decode and fold of the payloads | ~26 ms (decode alone, over the same payloads in a loop: 12 ms) | ~14 % |
+| Append with its conflict check, and the rest of the command | ~6 ms | ~3 % |
+
+**Measured**, with the split computed by subtraction (the parts were timed as separate runs, so they are approximate to a few ms). Three things follow. (1) The conflict check does not grow with the boundary: the append plus the rest is 6 ms at 100,000 events, because it only looks past the position the command loaded (**measured**). (2) The cost is moving rows: about 1.1 ms of the 1.8 ms per 1,000 events is the driver and object building, more than the database and the CPU work together (**derived** from the table). Making the decode or the fold faster cannot help much; fewer rows must be read. (3) The events are tiny (about 40 bytes of JSON) and the row has 8 columns, including `tags`, `occurred_at` and two ids that a fold rarely uses: with real payloads the share of transfer grows (**inference**, not measured). Not measured: the cost of reading fewer columns, and a snapshot (none exists).
 
 ### E7 - an event whose stored payload no longer matches its schema is in a command's boundary
 The command **fails with a defect** (a schema decode error, not a typed failure) and **fails again on every later attempt** (**measured**): one old-shape event makes the entity unusable until its data is fixed. Over HTTP that would be the generic 500 problem (**from the code**: the handler turns an unhandled defect into it; not run over HTTP).
@@ -74,7 +86,7 @@ Cause: followers retry `pg_try_advisory_lock` every `leaderElectionRetryInterval
 **F3. The poller's wake-up listener never recovers. Medium-High for freshness. Measured (D3, D3b).**
 A lost listener silently turns every processor of that module into timed polling, with a write-to-view lag of 7.7 s in the experiment and up to 120 s in the apps' configuration (derived); a database restart loses the listeners of all modules at once. The view progress hub (ADR-0016) already solves this for its own channel; the poller's channel does not use it.
 
-**F4. Command latency grows linearly with the boundary; there are no snapshots. High at scale. The growth is measured (E5); its cause is not yet attributed.**
+**F4. Command latency grows linearly with the boundary; there are no snapshots. High at scale. The growth is measured (E5) and attributed (E5b): loading the boundary is 97 % of the command.**
 A hot entity at one event per second reaches 100,000 events in about 28 hours (derived) and then costs 190 ms per command (measured); a strict command's per-entity throughput is then roughly the inverse, about 5/s (inference: strict commands on one boundary conflict and retry, not measured). Not a correctness problem; a cliff for long-lived entities.
 
 **F5. One event in an old payload shape bricks its boundary, with a defect. Medium, measured (E7).**
