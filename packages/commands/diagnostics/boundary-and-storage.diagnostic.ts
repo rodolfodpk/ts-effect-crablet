@@ -75,6 +75,31 @@ describe("DIAG", () => {
     console.log(`DIAG E5b so: decode+fold ~${(load - fetchOnly).toFixed(0)} ms, append and the rest of the command ~${(command - load).toFixed(0)} ms, driver+network+row objects ~${(fetchOnly - plan["Execution Time"]).toFixed(0)} ms; schema decode alone over ${n} payloads: ${decodeMs.toFixed(0)} ms`);
   });
 
+  it("E5c: reading only the events after a cursor (what a snapshot would leave to read) in a boundary of 100,000, with and without 400,000 other events in the log", { timeout: 600_000 }, async () => {
+    const reps = 15;
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const model = CountModel.of({ id: "tail" });
+    const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
+    const measure = async (label: string) => {
+      await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+      const cursorRow = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ p: string; x: string }>("SELECT position::text AS p, transaction_id::text AS x FROM crablet_events WHERE tags @> ARRAY['entity_id=tail']::text[] ORDER BY transaction_id, position OFFSET 99990 LIMIT 1")));
+      const cursor = LogPosition.of(BigInt(cursorRow[0]!.p), new Date(), cursorRow[0]!.x);
+      const xs: number[] = [];
+      const go = () => run(Effect.flatMap(EventStore, (es) => es.project(model.query, cursor, [noop])));
+      await go();
+      for (let i = 0; i < reps; i++) { const t0 = performance.now(); await go(); xs.push(performance.now() - t0); }
+      const plan = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ "QUERY PLAN": ReadonlyArray<{ "Execution Time": number; Plan: any }> }>(
+        `EXPLAIN (ANALYZE, FORMAT JSON) SELECT type, tags, data, transaction_id::text AS transaction_id, position FROM crablet_events WHERE (transaction_id, position) > ('${cursorRow[0]!.x}'::xid8, ${cursorRow[0]!.p}::bigint) AND (tags @> ARRAY['entity_id=tail']::text[]) ORDER BY crablet_events.transaction_id, position ASC`)));
+      const root = plan[0]!["QUERY PLAN"][0]!;
+      const nodes: string[] = []; const walk = (n: any) => { nodes.push(`${n["Node Type"]}${n["Index Name"] ? ` ${n["Index Name"]}` : ""}`); (n.Plans ?? []).forEach(walk); }; walk(root.Plan);
+      console.log(`DIAG E5c ${label}: reading the last 10 of 100,000 events through the command's read path: p50 ${pct(xs, 50).toFixed(1)} ms, p95 ${pct(xs, 95).toFixed(1)} ms | database execution ${root["Execution Time"].toFixed(1)} ms via ${nodes.join(" > ")}`);
+    };
+    await insertRaw("tail", 100_000, '{"entityId":"tail"}');
+    await measure("log = this entity only (plus earlier experiments' rows)");
+    await insertRaw("noise", 400_000, '{"entityId":"noise"}');
+    await measure("plus 400,000 events of other entities written after it");
+  });
+
   it("E7: an event whose stored payload no longer matches its schema is in a boundary", { timeout: 60_000 }, async () => {
     await insertRaw("drift", 3, '{"entityId":"drift"}'); // good
     await insertRaw("drift", 1, '{"entity":"drift","v":1}'); // an older shape: the field was renamed

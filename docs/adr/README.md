@@ -26,3 +26,4 @@ records that this repo is now its own product and no code or API follows that pr
 - [ADR-0015: Read consistency is a property of the read, requested with a write marker](0015-read-consistency-by-marker.md)
 - [ADR-0016: One LISTEN per process for view progress; a hub fans the pings out in memory](0016-one-listen-per-process-for-view-progress.md)
 - [ADR-0017: Events evolve by compatibility: a tolerant reader, and a new event for anything that is not](0017-event-evolution-by-compatibility.md)
+- [ADR-0018: A model's state can be snapshotted at a settled cursor; a snapshot is a cache, never a fact](0018-model-snapshots.md)
