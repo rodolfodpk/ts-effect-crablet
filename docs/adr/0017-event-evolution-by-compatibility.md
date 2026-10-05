@@ -1,0 +1,65 @@
+# ADR-0017: Events evolve by compatibility: a tolerant reader, and a new event for anything that is not
+
+## Status
+
+Proposed.
+
+## Context
+
+Events are never rewritten, so the log holds every shape an event has ever been written in. Today nothing in the framework says how a payload may change.
+
+**What the code does (checked).**
+- `defineEvent` builds `decode` with `Schema.decodeUnknownSync(schema)`. A stored payload that does not match throws. A model's fold decodes every event it handles (`Model.ts`), so a command over a boundary that contains one old-shape event fails with a **defect**, not a typed error, and fails again on every later attempt. Measured (docs/plans/reliability-and-scale-diagnostic.md, E7): one such event made every command on its boundary fail, an HTTP 500, with no indication of which event or type was the cause.
+- Readers are inconsistent. Commands and the course app's projector decode through the event definition; the wallet's view projectors and its automation cast the raw payload (`event.data as WalletEvents.DepositMade`) and validate nothing, so an old-shape event there is not an error but a silently wrong view.
+- Events carry no version. A row has a type, tags and a JSON payload.
+
+**What DCB adds.** A model's boundary is built from the event types it handles (`.on(...)`) and the tags it binds by (`Model.ts`: one query item per binding, types any-of, tags all-of). So:
+- an event type the model does not handle is not in its query: it is invisible to the fold **and to the conflict check**. Stopping handling an old type, or forgetting to handle a new one, silently shrinks the boundary and the protection with it. (In a stream-per-aggregate system an unknown event in a stream is at least present.)
+- tags are computed from the payload when the event is written and stored; they are how boundaries find events. A change to what a tag means, or a new tag that old events lack, changes which events a boundary contains.
+
+**What the talk says.** David Schmitz, "Event Sourcing - You are doing it wrong" (slides 94-108 of his deck, and the rule as summarized by the project owner): "a new version of an event must be constructible from the old version"; a new field needs a sensible default and the event stays the same; otherwise it is a **new event with a different name**. His team dropped traditional versioning, double-writes and upcasters because chains of them become unmaintainable ("Good luck maintaining that monster"), and prefers simple, human-readable JSON with a "weak schema" that describes and does not constrain. (An earlier draft of this thinking proposed upcasters; that was a misreading of a summary and is withdrawn.)
+
+## Decision
+
+1. **The compatibility rule.** A new shape of an event is allowed under the same name only if it is **constructible from every older shape**:
+   - allowed in place: adding a field that is optional or has a documented default; fields the reader does not know are ignored;
+   - not allowed in place: renaming or removing a field, changing a type or the meaning of a field, making a field required that old events lack, changing what a tag means.
+   Anything else is a **new event type with a new name**, preferably a business name (`DepositReversed`) over a version suffix (`DepositMadeV2`). The old type stays in the log and in the code that reads it.
+2. **No upcasters, no version column, no double-writes.** There is no version marker on an event and no chain of conversion functions. If a need appears that this rule cannot meet, it gets its own ADR.
+3. **A tolerant reader, and a failure that names its cause.**
+   - Event definitions express defaults, and every reader decodes through the definition: models (already), and view projectors, the outbox and automations (today some cast). A decoded payload is what a handler sees.
+   - A stored event that cannot be decoded is reported as an `EventDecodingError` carrying the event's **position, transaction id, type and the schema issues**, never as an anonymous defect. It is counted by a metric and logged once per event. It is never skipped: a decision made over a partial boundary is worse than a refused one, so reading fails closed.
+   - A default for a field marked `personal(...)` must not invent personal data (use absence, not a placeholder).
+4. **Compatibility is checked, not hoped.**
+   - *Fixtures.* Each event type keeps the payloads it has ever been written with as test fixtures, and a test asserts that the current definition decodes every one and derives the same tags from each.
+   - *`verify-events`.* A script decodes stored events by type against the current definitions and reports the count decoded and the positions of failures per type. It is meant for CI against a copy of production data and for operators; it can sample by type and position range, because a full scan is proportional to the log (about 476 bytes per event on disk).
+5. **DCB rule A: a model accounts for every type that can carry its tags.** `verify-events` also lists, for each model and each of its binding tag keys, the event types present in the log under that tag that the model neither handles nor declares as deliberately ignored; a non-empty list is a failure. This is the safety net for a "new name" policy, which by design makes the set of types per model grow.
+6. **DCB rule B: tags are additive-only.** A tag key is never removed or given a new meaning. A new tag on a new event type is fine. A new tag on a new shape of an old type does not make the old events findable by it. Making them findable means rebuilding the tag index from the payloads (tags are a pure function of the payload, `tags: (d) => ...`, so it can be done without touching the facts), which updates stored rows and needs exclusive locks; it is an exceptional maintenance operation that needs its own decision and is not built here.
+7. **Corrections are events.** Stored events are never updated; a mistake is corrected by a compensating event. (Restated because the whole policy depends on it.)
+
+## Alternatives considered
+
+- **A version on each event plus upcasters** (the common answer). Rejected: it adds a stored marker and a function chain that every consumer must run, the chain grows with every change, and it does nothing for tags. The talk's own experience is that it becomes unmaintainable.
+- **A version column without upcasters.** Costs a column and a migration and buys nothing the rule above does not already give.
+- **Rewriting old events when a shape changes.** Breaks immutability and the audit trail.
+- **Keep strict decoding as it is.** One incompatible event then bricks its boundary (E7).
+- **Skip events that fail to decode.** Rejected: it silently removes facts from decisions.
+
+## Consequences
+
+- **Old events keep working** with no migration of the log, and a breaking change is visible in the code as a new type that a model must `.on(...)`.
+- **More event types over time**, and each model's handler list grows. DCB rule A makes forgetting one a failing check instead of a silent hole.
+- **Every reader now decodes.** The wallet's projectors and automation change from casts to decoding through the definitions (additive for behavior, a real change in code).
+- **The decode failure is a new, named error** (an HTTP 500 problem type, with the event's position and type in logs, not necessarily in the response), instead of a bare defect.
+- **Discipline moves into tests and one script.** Fixtures must be kept when a shape changes, and `verify-events` needs a database with realistic data to be worth running.
+- **Unchanged by this ADR:** crypto-shredding of personal data (it needs each personal field to say which data subject it belongs to, because an event can concern several subjects; separate decision), and rebuilding the tag index.
+
+## Open points for the implementation
+
+- **How a default is written** in the pinned Effect Schema (4.0.0): two quick attempts to express "optional key with a decoding default" failed for reasons unrelated to the idea, and `withConstructorDefault` is the constructor kind, not the decoding kind. A short spike comes first and its result is recorded here.
+- **Where the typed failure is raised.** The model fold is synchronous, so the cleanest place is to catch the thrown `EventDecodingError` in the executor and in the projectors' runner and turn it into a typed failure; to be decided with the spike.
+- **`verify-events` at scale.** Sampling by type and by position range is the default; a full scan is opt-in.
+
+## Implementation order
+
+(Plan step 5 in docs/plans/reliability-and-scale-diagnostic.md.) 1. `EventDecodingError`, its metric, its mapping in the executor; E7 then fails with the named error. 2. Decode through the definitions in every reader (the wallet's projectors and automation). 3. The fixtures helper and the first fixtures. 4. `verify-events`. 5. The DCB rule A check. 6. A note in the tutorial and the README. Each step ends green and is committed on its own.
