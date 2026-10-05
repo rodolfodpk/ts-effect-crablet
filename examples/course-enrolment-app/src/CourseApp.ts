@@ -72,7 +72,7 @@ const viewsConfig: ViewsConfig = {
   backoffThreshold: 3,
   backoffMultiplier: 2,
   backoffMaxSeconds: 120,
-  leaderElectionRetryIntervalMs: 30_000,
+  leaderElectionRetryIntervalMs: 5_000,
   maxErrors: 10
 };
 

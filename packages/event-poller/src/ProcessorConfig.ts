@@ -34,6 +34,6 @@ export const processorConfigOf = <I>(
 ): ProcessorConfig<I> => ({
   processorId,
   maxErrors: 10,
-  leaderElectionRetryIntervalMs: 30_000,
+  leaderElectionRetryIntervalMs: 5_000,
   ...fields
 });

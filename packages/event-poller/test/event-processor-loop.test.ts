@@ -364,4 +364,37 @@ describe("EventProcessor leadership fence (scheduled loop)", () => {
     });
     await Effect.runPromise(Effect.provide(program, TestClock.layer()));
   });
+
+  test("a wakeup that carries no event type (a leader released the lock) makes a follower try for the lock at once, not after its retry interval", async () => {
+    const program = Effect.gen(function* () {
+      let attempts = 0;
+      const wakeups = yield* Queue.unbounded<WakeupBatch>();
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([]);
+      const { tracker } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>();
+      const handle = yield* makeEventProcessor({
+        configs: [config],
+        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf: () => EventSelection.empty(),
+        instanceId: "test-instance",
+        leaderRetryIntervalMs: 3_600_000,
+        acquireLeader: Effect.sync(() => { attempts++; return null; }),
+        wakeupStream: Stream.fromQueue(wakeups)
+      });
+      yield* handle.service.start;
+      yield* settle;
+      const before = attempts; // the one at start, and the retry loop's first
+      yield* Queue.offer(wakeups, { wildcard: true, types: new Set<string>(), tagKeys: new Set<string>() });
+      yield* settle;
+      expect(attempts).toBe(before + 1);
+      // an ordinary wakeup (an event of some type) is not a hint about the lock
+      yield* Queue.offer(wakeups, { wildcard: false, types: new Set(["X"]), tagKeys: new Set<string>() });
+      yield* settle;
+      expect(attempts).toBe(before + 1);
+      yield* handle.service.stop;
+    });
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
 });

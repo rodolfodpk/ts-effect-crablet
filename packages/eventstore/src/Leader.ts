@@ -1,4 +1,5 @@
 import { Duration, Effect, Exit, Fiber, Scope } from "effect";
+import { EVENTS_CHANNEL } from "./EventStore.ts";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
 import type { SqlError } from "effect/sql/SqlError";
@@ -97,8 +98,11 @@ export const tryAcquireGlobalLeader = (
       Effect.gen(function* () {
         if (closed) return;
         closed = true;
+        // Unlock and announce in ONE statement: the notification is delivered on commit, after the unlock took effect, so a follower that wakes
+        // on it finds the lock free. It is a wildcard on `crablet_events`, the channel every poller already listens to, so followers try for
+        // the lock now instead of when their retry timer fires. A session that died cannot announce: its followers wait for their timer.
         // On a dead connection the unlock fails (or, on a half-open one, would hang): bound it, and ignore it. The lock is gone with the session.
-        yield* connection.execute("SELECT pg_advisory_unlock($1)", [lockKey.toString()], undefined).pipe(
+        yield* connection.execute("SELECT pg_advisory_unlock($1), pg_notify($2, '*')", [lockKey.toString(), EVENTS_CHANNEL], undefined).pipe(
           Effect.timeout(verifyTimeout),
           Effect.catch(() => Effect.void)
         );

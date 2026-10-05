@@ -14,7 +14,7 @@ describe("processorConfigOf", () => {
       enabled: true
     });
     expect(config.maxErrors).toBe(10);
-    expect(config.leaderElectionRetryIntervalMs).toBe(30_000);
+    expect(config.leaderElectionRetryIntervalMs).toBe(5_000);
     expect(config.processorId).toBe("view-a");
   });
 

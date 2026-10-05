@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { Effect, Layer, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
+import { Client } from "pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader, type LeaderHandle } from "../../src/Leader.ts";
 
@@ -114,5 +115,29 @@ describe("a leader knows whether it still holds the lock", () => {
     const next = await acquire(key);
     assert.ok(next !== null);
     await Effect.runPromise(next!.release());
+  });
+
+  it("a graceful release announces itself on crablet_events, so followers need not wait for their retry timer; a lost leader sends nothing", { timeout: 20_000 }, async () => {
+    const listener = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
+    await listener.connect();
+    await listener.query("LISTEN crablet_events");
+    const payloads: Array<string | undefined> = [];
+    listener.on("notification", (n) => payloads.push(n.payload));
+    try {
+      const graceful = (await acquire(newKey()))!;
+      await Effect.runPromise(graceful.release());
+      assert.ok(await waitUntil(() => payloads.length === 1, 2000), "one notification after a graceful release");
+      assert.ok(payloads[0] === "*" || payloads[0] === "" || payloads[0] === undefined, "a wildcard payload");
+
+      const key = newKey();
+      const doomed = (await acquire(key))!;
+      await kill((await holderPid(key))!);
+      assert.ok(await waitUntil(() => !doomed.isLeader(), 3000));
+      await Effect.runPromise(doomed.release());
+      await sleep(300);
+      assert.strictEqual(payloads.length, 1, "a leader whose session died cannot announce anything");
+    } finally {
+      await listener.end();
+    }
   });
 });

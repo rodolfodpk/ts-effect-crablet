@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Ref, Result, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Queue, Ref, Result, Stream } from "effect";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
@@ -113,6 +113,9 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // deliberately fine here - a dropped wakeup notification only costs a slightly later poll, not
     // an incorrect one (see `waitForRelevantWakeup` below).
     const hub = yield* PubSub.sliding<WakeupBatch>(32);
+
+    // A wakeup that names no event type is also the announcement of a lock released on purpose (Leader.ts): it ends the leader retry loop's sleep.
+    const leaderHint = yield* Queue.sliding<void>(1);
 
     const configOf = (id: I): C | undefined => deps.configs.find((c) => c.processorId === id);
 
@@ -291,7 +294,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     const leaderRetryIntervalMs =
       deps.leaderRetryIntervalMs ??
       deps.configs.find((c) => c.enabled)?.leaderElectionRetryIntervalMs ??
-      30_000;
+      5_000;
 
     const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(
       Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))
@@ -324,14 +327,16 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
             yield* setLeadershipGauge(handle, true);
           }
         }
-        yield* Effect.sleep(Duration.millis(leaderRetryIntervalMs));
+        yield* Effect.race(Effect.sleep(Duration.millis(leaderRetryIntervalMs)), Queue.take(leaderHint));
       })
     );
 
     // The stream from `wakeupStream` reconnects by itself; this is the second line: should it end or fail anyway, say so and drain it
     // again, instead of leaving the processors on their polling interval for good.
     const dispatcherLoop: Effect.Effect<void> = Effect.forever(
-      Stream.runForEach(deps.wakeupStream, (batch: WakeupBatch) => PubSub.publish(hub, batch)).pipe(
+      Stream.runForEach(deps.wakeupStream, (batch: WakeupBatch) =>
+        Effect.andThen(PubSub.publish(hub, batch), batch.wildcard ? Queue.offer(leaderHint, undefined) : Effect.void)
+      ).pipe(
         Effect.catch((e) => Effect.logError(String(e))),
         Effect.andThen(Effect.sleep(Duration.seconds(1)))
       )

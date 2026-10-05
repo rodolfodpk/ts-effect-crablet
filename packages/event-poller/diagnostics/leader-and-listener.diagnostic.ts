@@ -142,6 +142,30 @@ describe("DIAG", () => {
     console.log(`DIAG D1b follower takeover after the leader process died, retry interval ${RETRY / 1000} s: ${gaps.map((g) => (g / 1000).toFixed(1)).join(", ")} s  (mean ${(gaps.reduce((x, y) => x + y, 0) / gaps.length / 1000).toFixed(1)} s)`);
   });
 
+  it("D1c: the leader stops gracefully (releases the lock): how long until the follower takes over?", { timeout: 180_000 }, async () => {
+    const RETRY = 5_000;
+    const gaps: number[] = [];
+    for (let trial = 0; trial < 6; trial++) {
+      const view = `diag-d1c-${trial}-${crypto.randomUUID().slice(0, 6)}`;
+      const key = BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);
+      const calls: Array<Call> = [];
+      const a = await run(start("A", view, key, calls, { polling: 100, retry: RETRY }));
+      await sleep(300);
+      const b = await run(start("B", view, key, calls, { polling: 100, retry: RETRY }));
+      let stop = false;
+      const writer = (async () => { while (!stop) { await append(view); await sleep(50); } })();
+      await sleep(900 + trial * 800);
+      const stoppedAt = performance.now();
+      await run(a.service.stop); // releases the lock on purpose
+      const before = calls.length;
+      while (!calls.slice(before).some((c) => c.who === "B") && performance.now() - stoppedAt < 30_000) await sleep(20);
+      const first = calls.slice(before).find((c) => c.who === "B");
+      gaps.push(first ? first.at - stoppedAt : NaN);
+      stop = true; await writer; await run(b.service.stop);
+    }
+    console.log(`DIAG D1c follower takeover after a graceful stop, retry interval ${RETRY / 1000} s: ${gaps.map((g) => (g / 1000).toFixed(2)).join(", ")} s  (mean ${(gaps.reduce((x, y) => x + y, 0) / gaps.length / 1000).toFixed(2)} s)`);
+  });
+
   it("D3: the crablet_events LISTEN connection is lost - does the view still wake on a write?", { timeout: 240_000 }, async () => {
     const lagFor = async (killListener: boolean) => {
       const view = `diag-d3-${killListener ? "killed" : "healthy"}-${crypto.randomUUID().slice(0, 6)}`;
