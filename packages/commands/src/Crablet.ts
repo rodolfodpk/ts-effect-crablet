@@ -4,6 +4,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { SnapshotStore, SnapshotStoreLive } from "@crablet/eventstore/SnapshotStore";
 import { CommandExecutor, CommandExecutorLive } from "./CommandExecutor.ts";
 import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
 
@@ -15,7 +16,7 @@ import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
 //     });
 //     Effect.runPromise(Effect.provide(program, AppLive));
 //
-// It provides `CommandExecutor`, `EventStore`, `CommandAuditStore` and the database clients
+// It provides `CommandExecutor`, `EventStore`, `CommandAuditStore`, `SnapshotStore` and the database clients
 // (`SqlClient`, and `PgClient` for LISTEN/NOTIFY - which views, outbox and automations modules need).
 //
 // Why a layer and not three `Layer.provide`s at every call site: the executor, the event store and the
@@ -26,7 +27,7 @@ import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
 
 export type PgConfig = Parameters<typeof PgClient.layer>[0];
 
-export type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
+export type Services = CommandExecutor | EventStore | CommandAuditStore | SnapshotStore | SqlClient.SqlClient | PgClient.PgClient;
 
 // `options.audit` sets what the command audit stores (see CommandAudit.ts): `{ payload: "redacted" | "none" | "full" | "off" }`,
 // "redacted" by default.
@@ -40,6 +41,7 @@ export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<S
       CommandExecutorLive,
       EventStoreLive,
       CommandAuditStoreLive,
+      SnapshotStoreLive,
       Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" })
     ),
     PgClient.layer(pg)
