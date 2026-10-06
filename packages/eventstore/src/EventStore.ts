@@ -48,6 +48,10 @@ export const existsProjector = (...eventTypes: ReadonlyArray<string>): StateProj
 export interface ProjectionResult<T> {
   readonly state: T;
   readonly logPosition: LogPosition;
+  // A cursor that sorts before every event this read could have MISSED (an event whose transaction had not finished when it read), so an append
+  // condition using it can never skip one. In Postgres: `(xmin of a snapshot taken before the read, 0)`: a read sees every event whose
+  // transaction id is below its xmin. A model over several entities uses the earliest of its members' horizons (ADR-0018, decision 8).
+  readonly horizon: LogPosition;
 }
 
 // PATTERN PRIMER - `Effect.Effect<A, E, R>`, the type every function in this codebase returns
@@ -159,6 +163,8 @@ export const EventStoreLive = Layer.effect(
         if (projectors.length === 0) {
           return yield* Effect.die("At least one projector is required");
         }
+        // BEFORE the read: xmin never decreases, so this one is never above the read's own snapshot's (and a lower one is only more cautious).
+        const xmin = yield* Sql.currentXmin(sql);
         const rows = yield* Sql.queryEvents(sql, query, after);
 
         let state = projectors[0]!.initialState;
@@ -180,7 +186,7 @@ export const EventStoreLive = Layer.effect(
           }
         }
 
-        return { state: state as T, logPosition: lastLogPosition };
+        return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin } };
       });
 
     const exists = (query: Query): Effect.Effect<boolean, SqlError> =>

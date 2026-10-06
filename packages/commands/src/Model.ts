@@ -43,6 +43,8 @@ export interface Loaded<S> {
   // The log position of the newest event in the boundary at load time. An append condition built
   // from `(query, logPosition)` means "fail if anything in the boundary is newer than this".
   readonly logPosition: LogPosition;
+  // A cursor before anything this load could have missed (see `ProjectionResult.horizon`); what `all` builds its cursor from.
+  readonly horizon: LogPosition;
 }
 
 export interface ModelInstance<S> {
@@ -140,7 +142,8 @@ export const defineModel = <S, Scope extends object = {}>(def: {
           load: (eventStore) =>
             Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), (r) => ({
               state: r.state,
-              logPosition: r.logPosition
+              logPosition: r.logPosition,
+              horizon: r.horizon
             }))
         };
       }
@@ -149,16 +152,17 @@ export const defineModel = <S, Scope extends object = {}>(def: {
   return build([]);
 };
 
-const positionOnly: StateProjector<null> = { eventTypes: [], initialState: null, transition: (s) => s };
-
 // A model over SEVERAL entities at once (e.g. both wallets of a transfer): one boundary - the union
-// of the members' queries - one log position, and each member's own state.
+// of the members' queries - one cursor, and each member's own state.
 //
 //     all({ from: WalletModel.of({ id: a }), to: WalletModel.of({ id: b }) })   // state: { from, to }
 //
-// The boundary is read FIRST, then each member. Events committed in between can only make a member's
-// state newer than the boundary position, never older, so a race shows up as an extra (safe)
-// conflict at append time, never as a missed one.
+// Each member loads on its own and reports its read HORIZON (ProjectionResult.horizon): a cursor before every event
+// its read could have missed. The cursor of the whole is the EARLIEST horizon, so no member's missed event can sort
+// before it (never a missed conflict); events a member did see and that had settled sort before it too (so no
+// conflict for ever). The maximum of the members' newest events would be unsafe and the minimum would refuse for
+// ever: docs/adr/0018-model-snapshots.md, decision 8, proved by eventstore's union-boundary-cursor test. The union
+// itself is never read just to learn a position.
 export const all = <M extends Record<string, ModelInstance<any>>>(
   members: M
 ): ModelInstance<{ readonly [K in keyof M]: M[K] extends ModelInstance<infer S> ? S : never }> => {
@@ -167,11 +171,12 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
     query,
     load: (eventStore) =>
       Effect.gen(function* () {
-        const boundary = yield* eventStore.project(query, LogPositionNS.zero(), [positionOnly]);
-        const states = yield* Effect.forEach(Object.entries(members), ([key, member]) =>
-          Effect.map(member.load(eventStore), (loaded) => [key, loaded.state] as const)
+        const loaded = yield* Effect.forEach(Object.entries(members), ([key, member]) =>
+          Effect.map(member.load(eventStore), (l) => [key, l] as const)
         );
-        return { state: Object.fromEntries(states) as never, logPosition: boundary.logPosition };
+        const horizons = loaded.map(([, l]) => l.horizon);
+        const horizon = horizons.length === 0 ? LogPositionNS.zero() : horizons.reduce((a, b) => LogPositionNS.earliest(a, b));
+        return { state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never, logPosition: horizon, horizon };
       })
   };
 };

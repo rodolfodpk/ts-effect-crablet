@@ -72,6 +72,9 @@ Roughly linear, about 2 microseconds per event (**measured**). The events are ti
 ### E5c - reading only the events after a cursor (what a snapshot leaves to read)
 In a boundary of 100,000 events, reading the last 10 through the command's read path: **0.5 ms** (p50) when nothing newer is in the log, **16 ms** (database 14.7 ms) when 400,000 events of other entities were written after it (**measured**, one run, 15 reads each). In the second case the planner reads the whole entity through the GIN tags index and filters by cursor afterwards, so the tail read is still linear in the entity's size, about a tenth of the full read (**derived**: 16 ms against 180 ms). The events were bulk-inserted in one transaction, so every row has the same transaction id and the cursor effectively compares positions only; a log with many transactions was not measured.
 
+### E5d - a transfer (`all`, two accounts) when one has 100,000 events
+Before the horizon change: p50 **403 ms**, p95 572 ms; after: p50 **218 ms**, p95 281 ms (**measured**, one run each, 15 transfers; the same script before and after). The saving is the union read that `all` did only to learn a position (ADR-0018, decision 8).
+
 ### E7 - an event whose stored payload no longer matches its schema is in a command's boundary
 The command **fails with a defect** (a schema decode error, not a typed failure) and **fails again on every later attempt** (**measured**): one old-shape event makes the entity unusable until its data is fixed. Over HTTP that would be the generic 500 problem (**from the code**: the handler turns an unhandled defect into it; not run over HTTP).
 

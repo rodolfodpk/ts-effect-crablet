@@ -194,3 +194,10 @@ export const queryEvents = (
       `FROM crablet_events${whereSql} ORDER BY crablet_events.transaction_id, position ASC`;
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
   });
+
+// The oldest transaction id still running (or the next one to be assigned): everything below it has finished, committed or not.
+export const currentXmin = (sql: SqlClient.SqlClient): Effect.Effect<string, SqlError> =>
+  Effect.map(
+    sql.unsafe<{ xmin: string }>("SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS xmin"),
+    (rows) => rows[0]!.xmin
+  );

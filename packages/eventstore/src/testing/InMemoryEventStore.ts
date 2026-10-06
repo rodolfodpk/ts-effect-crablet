@@ -81,6 +81,9 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
       if (projectors.length === 0) return yield* Effect.die("At least one projector is required");
       let state = projectors[0]!.initialState;
       let last = after;
+      // serial and atomic: a read sees the whole log as it is, so its horizon is the end of the log
+      const head = log[log.length - 1];
+      const horizon = head ? LogPositionNS.of(head.position, head.occurredAt, head.transactionId) : after;
       for (const event of log) {
         if (event.position <= after.position || !queryMatches(query, event)) continue;
         for (const projector of projectors) {
@@ -90,7 +93,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         }
         last = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
       }
-      return { state: state as never, logPosition: last };
+      return { state: state as never, logPosition: last, horizon };
     });
 
   const service: EventStoreService = {

@@ -100,6 +100,21 @@ describe("DIAG", () => {
     await measure("plus 400,000 events of other entities written after it");
   });
 
+  it("E5d: a transfer (a model over TWO accounts, `all`) when one of them has 100,000 events", { timeout: 600_000 }, async () => {
+    const { Transfer, AccountOpened } = await import("../test/support/transfer.ts");
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const big = `big-${crypto.randomUUID().slice(0, 6)}`, small = `small-${crypto.randomUUID().slice(0, 6)}`;
+    await run(Effect.flatMap(EventStore, (es) => es.append([AccountOpened({ accountId: big, balance: 1_000_000_000 }), AccountOpened({ accountId: small, balance: 0 })])));
+    // 100,000 deposits on `big`, written raw like the other experiments (the tag the model reads is account_id)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("INSERT INTO crablet_events (type, tags, data, transaction_id) SELECT 'Deposited', ARRAY['account_id=' || $1], jsonb_build_object('accountId', $1::text, 'amount', 1), pg_current_xact_id() FROM generate_series(1, 100000)", [big])));
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+    const xs: number[] = [];
+    const go = () => run(Effect.flatMap(CommandExecutor, (ex) => ex.run(Transfer, { transferId: crypto.randomUUID(), from: big, to: small, amount: 1 })));
+    await go();
+    for (let i = 0; i < 15; i++) { const t0 = performance.now(); await go(); xs.push(performance.now() - t0); }
+    console.log(`DIAG E5d transfer between an account with 100,000 events and an empty one: p50 ${pct(xs, 50).toFixed(0)} ms, p95 ${pct(xs, 95).toFixed(0)} ms`);
+  });
+
   it("E7: an event whose stored payload no longer matches its schema is in a boundary", { timeout: 60_000 }, async () => {
     await insertRaw("drift", 3, '{"entityId":"drift"}'); // good
     await insertRaw("drift", 1, '{"entity":"drift","v":1}'); // an older shape: the field was renamed

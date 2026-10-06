@@ -137,7 +137,7 @@ describe("defineModel: log position", () => {
 });
 
 describe("all: a model over several entities", () => {
-  test("one boundary (union of the members'), one position, each member's own state", async () => {
+  test("one boundary (union of the members'), one cursor, each member's own state", async () => {
     const fake = makeInMemoryEventStore();
     fake.seed(
       Opened({ accountId: "a", initial: 100 }), // 1
@@ -153,15 +153,38 @@ describe("all: a model over several entities", () => {
     const { state, logPosition } = await load(fake, both);
     expect(state.from.balance).toBe(60);
     expect(state.to.balance).toBe(40);
-    // the newest event in EITHER member's boundary
-    expect(logPosition.position).toBe(3n);
+    // the cursor is the members' READ HORIZON (here the end of the in-memory log), not the newest event of the union: it does not need the union read
+    expect(logPosition.position).toBe(4n);
   });
 
-  test("the position covers events that only one member's boundary contains", async () => {
+  test("the cursor is the earliest of the members' horizons", async () => {
     const fake = makeInMemoryEventStore();
     fake.seed(Opened({ accountId: "a", initial: 1 }), Closed({ accountId: "b" }));
     const { logPosition } = await load(fake, all({ x: AccountModel.of({ id: "a", year: 1 }), y: AccountModel.of({ id: "b", year: 1 }) }));
     expect(logPosition.position).toBe(2n);
+    // members read one after the other, so a write between the reads shows up in the LATER member only; the cursor must not pass the earlier horizon
+    let reads = 0;
+    const racing: typeof fake.service = {
+      ...fake.service,
+      project: (query, after, projectors) =>
+        Effect.tap(fake.service.project(query, after, projectors), () => Effect.sync(() => { if (++reads === 1) fake.seed(Opened({ accountId: "late", initial: 0 })); }))
+    };
+    const raced = await load({ ...fake, service: racing }, all({ x: AccountModel.of({ id: "a", year: 1 }), y: AccountModel.of({ id: "b", year: 1 }) }));
+    expect(raced.logPosition.position).toBe(2n);
+  });
+
+  test("a model over several entities reads each member's boundary once and nothing else (no read of the union)", async () => {
+    const fake = makeInMemoryEventStore();
+    fake.seed(Opened({ accountId: "a", initial: 1 }), Opened({ accountId: "b", initial: 1 }));
+    const queries: Array<number> = [];
+    const spying: typeof fake.service = {
+      ...fake.service,
+      project: (query, after, projectors) => (queries.push(query.items.length), fake.service.project(query, after, projectors))
+    };
+    const a = AccountModel.of({ id: "a", year: 1 });
+    const b = AccountModel.of({ id: "b", year: 1 });
+    await load({ ...fake, service: spying }, all({ a, b }));
+    expect(queries).toEqual([a.query.items.length, b.query.items.length]);
   });
 });
 

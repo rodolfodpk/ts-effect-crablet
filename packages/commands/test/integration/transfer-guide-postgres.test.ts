@@ -153,4 +153,25 @@ describe("transfer against Postgres", () => {
     assert.equal(out.again.wasIdempotent, true);
     assert.deepEqual([out.a, out.b], [0, 50]);
   });
+
+  it("many concurrent transfers over overlapping accounts: no account is ever overspent, money is conserved, and every refusal is the domain's", async () => {
+    const accounts = ["a", "b", "c", "d"].map((x) => `${x}-${uid()}`);
+    const result = await run(
+      Effect.gen(function* () {
+        for (const id of accounts) yield* open(id, 100);
+        const executor = yield* CommandExecutor;
+        // 48 transfers of 40 in a ring and across it, all at once: far more is asked of each account than it has, so many must be refused
+        const attempts = Array.from({ length: 48 }, (_, i) =>
+          executor.run(Transfer, { transferId: uid(), from: accounts[i % 4]!, to: accounts[(i + 1 + (i % 3)) % 4]! === accounts[i % 4]! ? accounts[(i + 2) % 4]! : accounts[(i + 1 + (i % 3)) % 4]!, amount: 40 })
+        );
+        const exits = yield* exitAll(attempts);
+        return { exits, balances: yield* Effect.forEach(accounts, balanceOf) };
+      })
+    );
+    assert.ok(result.balances.every((b) => b >= 0), `an account was overspent: ${result.balances}`);
+    assert.strictEqual(result.balances.reduce((x, y) => x + y, 0), 400, "money is conserved");
+    const failures = result.exits.filter((e: any) => e._tag === "Failure").map((e) => errorOf(e));
+    assert.ok(failures.every((f) => f instanceof InsufficientFunds || f instanceof Conflict), "only domain refusals or exhausted retries");
+    assert.ok(result.exits.some((e: any) => e._tag === "Success"), "some succeeded");
+  });
 });

@@ -19,3 +19,11 @@ export const of = (position: bigint, occurredAt: Date, transactionId: string): L
 };
 
 export const zero = (): LogPosition => ({ position: 0n, occurredAt: new Date(0), transactionId: "0" });
+
+// The earlier of two cursors, in the order the append condition uses: (transaction_id, position) when both carry a transaction id, else position.
+export const earliest = (a: LogPosition, b: LogPosition): LogPosition => {
+  const ax = a.transactionId, bx = b.transactionId;
+  const useXid = ax !== null && ax !== "0" && bx !== null && bx !== "0" && BigInt(ax) !== BigInt(bx);
+  if (useXid) return BigInt(ax) < BigInt(bx) ? a : b;
+  return a.position <= b.position ? a : b;
+};
