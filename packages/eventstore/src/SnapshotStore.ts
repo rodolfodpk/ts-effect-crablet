@@ -1,6 +1,7 @@
-import { Context, Duration, Effect, Layer, Ref } from "effect";
+import { Context, Duration, Effect, Layer, Metric, Ref } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
+import * as SnapshotMetrics from "@crablet/metrics-otel/SnapshotMetrics";
 import type { LogPosition } from "./LogPosition.ts";
 import type { Query } from "./Query.ts";
 
@@ -120,12 +121,14 @@ export const flushSnapshots: Effect.Effect<void, never, SnapshotCollector | Snap
   const collector = yield* SnapshotCollector;
   const store = yield* SnapshotStore;
   const pendings = yield* collector.drain;
+  const count = (name: string, outcome: string) => Metric.update(Metric.withAttributes(SnapshotMetrics.writes, { model: name, outcome }), 1);
   yield* Effect.forEach(
     pendings,
     (p) =>
       store.save(p).pipe(
         Effect.timeout(Duration.seconds(1)),
-        Effect.catchCause((cause) => Effect.logWarning(`snapshot ${p.name} v${p.version} not written: ${String(cause)}`))
+        Effect.flatMap((written) => count(p.name, written ? "written" : "not_newer")),
+        Effect.catchCause((cause) => Effect.andThen(Effect.logWarning(`snapshot ${p.name} v${p.version} not written: ${String(cause)}`), count(p.name, "failed")))
       ),
     { discard: true }
   );
