@@ -115,6 +115,29 @@ describe("DIAG", () => {
     console.log(`DIAG E5d transfer between an account with 100,000 events and an empty one: p50 ${pct(xs, 50).toFixed(0)} ms, p95 ${pct(xs, 95).toFixed(0)} ms`);
   });
 
+  it("E5e: the same command with a snapshot on its model (ADR-0018), 100,000 and 500,000 events in the boundary, with other entities' events after them", { timeout: 900_000 }, async () => {
+    const SnapModel = defineModel({ by: "entity_id", initial: () => ({ n: 0 }) }).on(Ticked, (s) => ({ n: s.n + 1 })).snapshot({ name: "ticker", version: 1, schema: Schema.Struct({ n: Schema.Number }) });
+    const TickSnap = defineCommand({ name: "tick_snap", errors: [], input: Schema.Struct({ entityId: Schema.String }), model: (c) => SnapModel.of({ id: c.entityId }), decide: (_m, c) => emit(Ticked(c)) });
+    const tickSnap = (entity: string) => runtime.runPromise(Effect.flatMap(CommandExecutor, (ex) => ex.run(TickSnap, { entityId: entity })));
+    const entity = "e5e";
+    let have = 0;
+    for (const n of [100_000, 500_000]) {
+      await insertRaw(entity, n - have, '{"entityId":"e5e"}'); have = n;
+      await insertRaw("e5e-noise", 200_000, '{"entityId":"e5e-noise"}'); // other entities' events written AFTER: the planner then walks the tags index
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+      const plain: number[] = [], warm: number[] = [];
+      for (let i = 0; i < 15; i++) { const t0 = performance.now(); await tick(entity); plain.push(performance.now() - t0); }
+      const t0 = performance.now(); await tickSnap(entity); const cold = performance.now() - t0; // folds everything and leaves the snapshot
+      for (let i = 0; i < 25; i++) { const t1 = performance.now(); await tickSnap(entity); warm.push(performance.now() - t1); }
+      // the realistic case: the log keeps growing with OTHER entities' events after the snapshot was taken, so the tail read has to filter them out
+      await insertRaw("e5e-noise-after", 200_000, '{"entityId":"e5e-noise-after"}');
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+      const afterNoise: number[] = [];
+      for (let i = 0; i < 25; i++) { const t1 = performance.now(); await tickSnap(entity); afterNoise.push(performance.now() - t1); }
+      console.log(`DIAG E5e boundary of ${String(n).padStart(7)} events: command without snapshot p50 ${pct(plain, 50).toFixed(0)} ms | with snapshot: first (full fold + write) ${cold.toFixed(0)} ms, then p50 ${pct(warm, 50).toFixed(1)} ms p95 ${pct(warm, 95).toFixed(1)} ms | after 200,000 OTHER events were written following the snapshot: p50 ${pct(afterNoise, 50).toFixed(1)} ms p95 ${pct(afterNoise, 95).toFixed(1)} ms`);
+    }
+  });
+
   it("E7: an event whose stored payload no longer matches its schema is in a boundary", { timeout: 60_000 }, async () => {
     await insertRaw("drift", 3, '{"entityId":"drift"}'); // good
     await insertRaw("drift", 1, '{"entity":"drift","v":1}'); // an older shape: the field was renamed

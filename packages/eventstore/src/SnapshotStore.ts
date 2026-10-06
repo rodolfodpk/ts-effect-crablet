@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Layer, Metric, Ref } from "effect";
+import { Context, Duration, Effect, Layer, Metric, Option, Ref } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import * as SnapshotMetrics from "@crablet/metrics-otel/SnapshotMetrics";
@@ -115,14 +115,11 @@ export const makeSnapshotCollector: Effect.Effect<SnapshotCollectorService> = Ef
 
 export const SnapshotCollectorLive: Layer.Layer<SnapshotCollector> = Layer.effect(SnapshotCollector, makeSnapshotCollector);
 
-// Writes what the collector holds, one write at a time, each with a timeout, and ignores every failure: a snapshot is a cache, and not writing one costs only
-// the next load a longer tail. Call it AFTER the command's transaction has ended, whether it committed or not (the state is the state at a settled cursor, valid either way).
-export const flushSnapshots: Effect.Effect<void, never, SnapshotCollector | SnapshotStore> = Effect.gen(function* () {
-  const collector = yield* SnapshotCollector;
-  const store = yield* SnapshotStore;
-  const pendings = yield* collector.drain;
+// Writes the given pending snapshots, one at a time, each with a timeout, and ignores every failure (a warning and a `failed` count): a snapshot is a cache,
+// and not writing one costs only the next load a longer tail.
+export const writeSnapshots = (store: SnapshotStoreService, pendings: ReadonlyArray<PendingSnapshot>): Effect.Effect<void> => {
   const count = (name: string, outcome: string) => Metric.update(Metric.withAttributes(SnapshotMetrics.writes, { model: name, outcome }), 1);
-  yield* Effect.forEach(
+  return Effect.forEach(
     pendings,
     (p) =>
       store.save(p).pipe(
@@ -132,4 +129,22 @@ export const flushSnapshots: Effect.Effect<void, never, SnapshotCollector | Snap
       ),
     { discard: true }
   );
+};
+
+// Writes what the collector holds. Call it AFTER the command's transaction has ended, whether it committed or not (the state is the state at a settled
+// cursor, valid either way).
+export const flushSnapshots: Effect.Effect<void, never, SnapshotCollector | SnapshotStore> = Effect.gen(function* () {
+  const collector = yield* SnapshotCollector;
+  const store = yield* SnapshotStore;
+  yield* writeSnapshots(store, yield* collector.drain);
 });
+
+// The executor's flush: the same, for a collector it made itself, and a no-op when nothing was recorded (every command on a model without a snapshot) or
+// when the context has no store.
+export const flushCollected = (collector: SnapshotCollectorService): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const pendings = yield* collector.drain;
+    if (pendings.length === 0) return;
+    const store = yield* Effect.serviceOption(SnapshotStore);
+    if (Option.isSome(store)) yield* writeSnapshots(store.value, pendings);
+  });

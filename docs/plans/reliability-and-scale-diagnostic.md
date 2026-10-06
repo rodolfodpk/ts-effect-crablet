@@ -75,6 +75,9 @@ In a boundary of 100,000 events, reading the last 10 through the command's read 
 ### E5d - a transfer (`all`, two accounts) when one has 100,000 events
 Before the horizon change: p50 **403 ms**, p95 572 ms; after: p50 **218 ms**, p95 281 ms (**measured**, one run each, 15 transfers; the same script before and after). The saving is the union read that `all` did only to learn a position (ADR-0018, decision 8).
 
+### E5e - the same command with a snapshot on its model (ADR-0018, fully wired)
+p50 of 25 commands, one run: at 100,000 events 185 ms without a snapshot, 2.9 ms with one once taken, **19.1 ms** after 200,000 events of other entities were written following the snapshot; at 500,000 events 1,094 ms, 3.0 ms, **26.2 ms**. The first command (full fold plus the write) costs about the same as without a snapshot (193 and 941 ms). **Measured**; payloads were about 40 bytes and the bulk-inserted events share few transaction ids. The last figure is the realistic one: the tail read still walks the other entities' newer events through the tags index (E5c), so it grows with the log written after the snapshot, not with the entity's size.
+
 ### E7 - an event whose stored payload no longer matches its schema is in a command's boundary
 The command **fails with a defect** (a schema decode error, not a typed failure) and **fails again on every later attempt** (**measured**): one old-shape event makes the entity unusable until its data is fixed. Over HTTP that would be the generic 500 problem (**from the code**: the handler turns an unhandled defect into it; not run over HTTP).
 
@@ -92,7 +95,7 @@ Cause: followers retry `pg_try_advisory_lock` every `leaderElectionRetryInterval
 **F3. The poller's wake-up listener never recovers. Medium-High for freshness. Measured (D3, D3b).**
 A lost listener silently turns every processor of that module into timed polling, with a write-to-view lag of 7.7 s in the experiment and up to 120 s in the apps' configuration (derived); a database restart loses the listeners of all modules at once. The view progress hub (ADR-0016) already solves this for its own channel; the poller's channel does not use it.
 
-**F4. Command latency grows linearly with the boundary; there are no snapshots. High at scale. The growth is measured (E5) and attributed (E5b): loading the boundary is 97 % of the command.**
+**F4. Command latency grows linearly with the boundary; there are no snapshots. High at scale. The growth is measured (E5) and attributed (E5b): loading the boundary is 97 % of the command. Addressed by ADR-0018 (snapshots, opt-in per model): 185 to 19 ms at 100,000 events and 1,094 to 26 ms at 500,000 in the realistic case (E5e).**
 A hot entity at one event per second reaches 100,000 events in about 28 hours (derived) and then costs 190 ms per command (measured); a strict command's per-entity throughput is then roughly the inverse, about 5/s (inference: strict commands on one boundary conflict and retry, not measured). Not a correctness problem; a cliff for long-lived entities.
 
 **F5. One event in an old payload shape bricks its boundary, with a defect. Medium, measured (E7).**

@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
+import { SnapshotCollector, flushCollected, makeSnapshotCollector } from "@crablet/eventstore/SnapshotStore";
 import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command } from "./Command.ts";
@@ -122,7 +123,7 @@ export const CommandExecutorLive = Layer.effect(
 
     // One attempt: the handler and its append inside one transaction. `Duplicate` is reported here for
     // every command; `runDecoded` turns it into an idempotent success unless the command opted in.
-    const execute = <T, E>(
+    const executeOnce = <T, E>(
       definition: Command<T, E>,
       command: T,
       handler: CommandHandler<T, E>
@@ -161,6 +162,19 @@ export const CommandExecutorLive = Layer.effect(
           })
         ),
         [["command_type", definition.name]]
+      );
+
+    // One attempt with snapshots (ADR-0018): the model loads inside the transaction only RECORD the snapshot they would like written (a write from there
+    // needs a second connection while the first is held, which deadlocks a small pool); it is written here, AFTER the transaction ended, whether it
+    // committed or failed (the state is the state at a settled cursor, valid either way), with a timeout and failures ignored. Nothing recorded (every command
+    // on a model without a snapshot) costs one empty drain.
+    const execute = <T, E>(
+      definition: Command<T, E>,
+      command: T,
+      handler: CommandHandler<T, E>
+    ): Effect.Effect<ExecutionResult, E | Conflict | Duplicate | SqlError, EventStore | CommandAuditStore | SqlClient.SqlClient> =>
+      Effect.flatMap(makeSnapshotCollector, (collector) =>
+        Effect.ensuring(Effect.provideService(executeOnce(definition, command, handler), SnapshotCollector, collector), flushCollected(collector))
       );
 
     // Execute, re-running after a Conflict while retries remain (each attempt is its own transaction).
