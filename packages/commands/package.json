@@ -23,6 +23,7 @@
     "@effect/sql-pg": "4.0.0"
   },
   "devDependencies": {
-    "@crablet/test-support": "workspace:*"
+    "@crablet/test-support": "workspace:*",
+    "pg": "8.23.0"
   }
 }

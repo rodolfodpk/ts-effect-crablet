@@ -104,6 +104,7 @@
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
+        "pg": "8.23.0",
       },
     },
     "packages/commands-http": {
