@@ -55,6 +55,11 @@ export interface ModelInstance<S> {
   readonly query: Query.Query;
   // Present when the model declared `.snapshot(...)`: what verify-snapshots needs to check its rows (name, version, state schema).
   readonly snapshot?: { readonly name: string; readonly version: number; readonly schema: Schema.Schema<any> };
+  // What the model accounts for, as data (for the change-impact report, DCB rule A: ModelImpact.ts): the event types it handles, the ones it declared with `.ignores(...)`,
+  // and the tag keys it binds by.
+  readonly handles?: ReadonlyArray<string>;
+  readonly ignores?: ReadonlyArray<string>;
+  readonly bindings?: ReadonlyArray<string>;
   // `EventDecodingError`: a stored event in the boundary that its definition cannot read (ADR-0017); never skipped.
   readonly load: (eventStore: EventStoreService) => Effect.Effect<Loaded<S>, SqlError | EventDecodingError>;
 }
@@ -91,6 +96,9 @@ export interface ModelBuilder<S, Scope extends object> {
   // Like `on`, for lifecycle events (open/close): bound by id only and NOT scoped, because they
   // matter regardless of which period or scope the model instance is about.
   lifecycle<E extends EventLike>(event: E, apply: Handler<S, DataOf<E>>): ModelBuilder<S, Scope>;
+  // Declare event types that carry this model's binding tags but are deliberately NOT part of its decision. Changes nothing at runtime (the boundary and the fold
+  // are the same); it records the intent, which the change-impact report (ModelImpact.ts, ADR-0017 rule A) reads to tell "forgotten" from "not relevant".
+  ignores(...events: ReadonlyArray<EventLike>): ModelBuilder<S, Scope>;
   // Opt this model in to snapshots. Chain it last: the state type is already fixed by `initial`.
   snapshot(options: SnapshotOptions<S>): ModelBuilder<S, Scope>;
   of(args: { readonly id: string } & Scope): ModelInstance<S>;
@@ -106,7 +114,7 @@ export const defineModel = <S, Scope extends object = {}>(def: {
   // Extra tags that narrow the non-lifecycle events to a slice (e.g. a year/month period).
   readonly scope?: (scope: Scope) => Record<string, TagValue>;
 }): ModelBuilder<S, Scope> => {
-  const build = (entries: ReadonlyArray<OnEntry<S>>, snap: SnapshotOptions<S> | null): ModelBuilder<S, Scope> => {
+  const build = (entries: ReadonlyArray<OnEntry<S>>, snap: SnapshotOptions<S> | null, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope> => {
     // Group entries into query items by (lifecycle?, binding tag): events of several types that are
     // bound the same way share one item (type any-of, tags all-of).
     const queryFor = (id: string, scopeTags: ReadonlyArray<Tag.Tag>, lifecycleOnly: boolean): Query.Query => {
@@ -144,14 +152,17 @@ export const defineModel = <S, Scope extends object = {}>(def: {
             apply: (state, raw, ctx) => apply(state, event.decode(raw), ctx)
           }
         ],
-        snap
+        snap,
+        ignored
       );
 
     return {
       on: (event, apply, opts) => add(event, apply, opts),
       lifecycle: (event, apply) => add(event, apply, { lifecycle: true }),
       lifecycleQuery: (id) => queryFor(id, [], true),
-      snapshot: (options) => build(entries, options),
+      snapshot: (options) => build(entries, options, ignored),
+      // a declaration only: the boundary and the fold are untouched
+      ignores: (...events) => build(entries, snap, [...new Set([...ignored, ...events.map((e) => e.type)])]),
       of: (args) => {
         const scopeTags = Object.entries(def.scope?.(args as never) ?? {}).map(([k, v]) => Tag.of(k, String(v)));
         const query = queryFor(args.id, scopeTags, false);
@@ -171,6 +182,9 @@ export const defineModel = <S, Scope extends object = {}>(def: {
         return {
           query,
           ...(snap === null ? {} : { snapshot: { name: snap.name, version: snap.version, schema: snap.schema } }),
+          handles: eventTypes,
+          ignores: ignored,
+          bindings: [...new Set([def.by, ...entries.flatMap((e) => e.by ?? [])])],
           load: (eventStore) =>
             snap === null
               ? Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), loaded)

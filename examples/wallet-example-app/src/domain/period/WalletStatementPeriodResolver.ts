@@ -45,7 +45,8 @@ export const periodTags = (period: ActivePeriod): ReadonlyArray<Tag.Tag> => [
 
 // Which statement (if any) is open for a wallet: the last statement event decides.
 const initialTracking = { openStatementId: null as string | null, openYear: null as number | null, openMonth: null as number | null };
-const StatementTracking = defineModel({ by: WalletTags.WALLET_ID, initial: () => initialTracking })
+// (exported for the model-impact test)
+export const StatementTracking = defineModel({ by: WalletTags.WALLET_ID, initial: () => initialTracking })
   .on(WalletStatementOpened, (_, d) => ({ openStatementId: d.statementId, openYear: d.year, openMonth: d.month ?? null }))
   .on(WalletStatementClosed, () => initialTracking);
 

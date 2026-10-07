@@ -137,6 +137,37 @@ describe("defineModel: log position", () => {
   });
 });
 
+describe("ignores and the metadata a model exposes (ADR-0017, DCB rule A)", () => {
+  test("declaring ignored event types changes neither the boundary nor the fold", async () => {
+    const plain = defineModel({ by: "account_id", initial: () => ({ n: 0 }) }).on(Deposited, (s) => ({ n: s.n + 1 }));
+    const declared = plain.ignores(Unrelated, Closed);
+    expect(declared.of({ id: "a" }).query).toEqual(plain.of({ id: "a" }).query);
+    const fake = makeInMemoryEventStore();
+    fake.seed(Deposited({ accountId: "a", amount: 1 }), Closed({ accountId: "a" }), Deposited({ accountId: "a", amount: 1 }));
+    expect((await Effect.runPromise(declared.of({ id: "a" }).load(fake.service))).state).toEqual({ n: 2 });
+  });
+
+  test("the instance says what it handles, what it ignores and what it binds by", () => {
+    const m = defineModel({ by: "account_id", initial: () => ({ n: 0 }) })
+      .lifecycle(Opened, (s) => s)
+      .on(Deposited, (s) => s)
+      .on(Transferred, (s) => s, { by: ["from_id", "to_id"] })
+      .ignores(Closed, Unrelated, Closed)
+      .of({ id: "a" });
+    expect(m.handles).toEqual(["Opened", "Deposited", "Transferred"]);
+    expect(m.ignores).toEqual(["Closed", "Unrelated"]);
+    expect([...m.bindings!].sort()).toEqual(["account_id", "from_id", "to_id"]);
+  });
+
+  test("ignores and snapshot keep what was declared before them, whatever the order", () => {
+    const m = defineModel({ by: "account_id", initial: () => ({ n: 0 }) }).ignores(Closed).on(Deposited, (s) => s).snapshot({ name: "x", version: 1, schema: Schema.Struct({ n: Schema.Number }) });
+    const instance = m.of({ id: "a" });
+    expect(instance.ignores).toEqual(["Closed"]);
+    expect(instance.handles).toEqual(["Deposited"]);
+    expect(instance.snapshot?.name).toBe("x");
+  });
+});
+
 describe("all: a model over several entities", () => {
   test("one boundary (union of the members'), one cursor, each member's own state", async () => {
     const fake = makeInMemoryEventStore();
