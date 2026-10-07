@@ -54,11 +54,20 @@ Events are never rewritten, so the log holds every shape an event has ever been 
 - **Discipline moves into tests and one script.** Fixtures must be kept when a shape changes, and `verify-events` needs a database with realistic data to be worth running.
 - **Unchanged by this ADR:** crypto-shredding of personal data (it needs each personal field to say which data subject it belongs to, because an event can concern several subjects; separate decision), and rebuilding the tag index.
 
+## Spike result (2026-10-06): the policy is implementable as written
+
+Recorded as 17 tests in `packages/commands/test/event-evolution.test.ts`, against the pinned Effect 4.0.0 (`Schema.d.ts`). The two earlier failed attempts were my misuse (guessed names and signatures), not a limit of the library.
+
+1. **How a default is written.** `Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0)))` inside a `Schema.Struct`. The key may be absent in the stored payload (not `null`, not wrong-typed: those are still errors); the decoded type has the field REQUIRED (`fee: number`), so code that reads events never handles a missing field, and a NEW event must be built with it (omitting it is a compile error, so the default serves old stored payloads only). Use a constant default (`Effect.succeed`): `defineEvent` decodes synchronously. For a field with no sensible default use `Schema.optionalKey(...)` (type `note?: string`; absent stays absent, nothing is invented). `personal(...)` is still found on both an optional and a defaulted field (`personalPaths`), so redaction and the audit still see it.
+2. **A tolerant reader both ways.** Fields a reader does not know are ignored (Struct's default), so older code reads events written by newer code, and the old definition still decodes the new payload. What is stored is the event's data as written (`defineEvent` stores the decoded value, it does not re-encode), so `encodingStrategy` does not matter for storage.
+3. **What a failure carries.** `defineEvent`'s `decode` throws a `SchemaError` with the issue tree. `SchemaIssue.makeFormatterStandardSchemaV1()` turns it into a flat list of `{ path, message }`, and `{ errors: "all" }` (a parse option) reports every problem instead of only the first. The default messages ("Expected number", "Missing key") do **not** echo the offending value, checked on a length check, a literal and a type mismatch with personal-looking values: so these issues are safe to log. Caution: a custom message or a filter that reports its input can echo it; `EventDecodingError` carries paths and messages, never the payload.
+4. **Rule B (tags additive-only) is checkable.** A prototype of the fixture check (the payload an event type was once written with, plus the tags it was stored with): decode it with the current definition, derive its tags, and compare. A compatible change passes; a tag computed from a defaulted field is reported ("the definition now derives fee_class=free, which this stored event does not have, a boundary on it would miss the event"); a rename or a new required field is reported as an undecodable old payload.
+
 ## Open points for the implementation
 
-- **How a default is written** in the pinned Effect Schema (4.0.0): two quick attempts to express "optional key with a decoding default" failed for reasons unrelated to the idea, and `withConstructorDefault` is the constructor kind, not the decoding kind. A short spike comes first and its result is recorded here.
-- **Where the typed failure is raised.** The model fold is synchronous, so the cleanest place is to catch the thrown `EventDecodingError` in the executor and in the projectors' runner and turn it into a typed failure; to be decided with the spike.
-- **`verify-events` at scale.** Sampling by type and by position range is the default; a full scan is opt-in.
+1. ~~How a default is written~~ (resolved above).
+2. **Where the typed failure is raised** (design, not built). `defineEvent.decode` would catch the `SchemaError` and throw a small `EventDecodingFailure` carrying the `{ path, message }` list (decoded with `errors: "all"`); `EventStore.project`'s loop (and the in-memory store's) catches it around `transition` and fails with a typed `EventDecodingError { position, transactionId, type, issues }`, because only the loop knows the event's metadata. The executor maps it to an HTTP 500 problem type naming position and type in logs. This keeps the fold synchronous and changes the failure from a defect to a typed error. To be built and tested against E7.
+3. **`verify-events` at scale.** Sampling by type and by position range is the default; a full scan is opt-in.
 
 ## Implementation order
 
