@@ -1,3 +1,4 @@
+import { EventDecodingFailure, decodingErrorOf } from "../EventDecoding.ts";
 import { Effect, Exit, Layer, Semaphore } from "effect";
 import { EventStore, existsProjector, type EventStoreService, type StoredEvent } from "../EventStore.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
@@ -88,7 +89,12 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         if (event.position <= after.position || !queryMatches(query, event)) continue;
         for (const projector of projectors) {
           if (projector.eventTypes.length === 0 || projector.eventTypes.includes(event.type)) {
-            state = projector.transition(state, event);
+            try {
+              state = projector.transition(state, event);
+            } catch (error) {
+              if (!(error instanceof EventDecodingFailure)) throw error;
+              return yield* decodingErrorOf(error, event);
+            }
           }
         }
         last = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
@@ -99,7 +105,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const service: EventStoreService = {
     append,
     project,
-    exists: (query) => Effect.map(project(query, LogPositionNS.zero(), [existsProjector()]), (r) => r.state)
+    exists: (query) => Effect.map(Effect.catchTag(project(query, LogPositionNS.zero(), [existsProjector()]), "EventDecodingError", (e) => Effect.die(e)), (r) => r.state)
   };
 
   const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>

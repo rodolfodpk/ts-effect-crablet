@@ -19,3 +19,6 @@ export const eventTypeAppended = Metric.counter("crablet.eventstore.event_type_a
 // A dedicated counter alongside `append.failures` - the one failure mode worth calling out
 // specifically, not just folding it into the generic failure count.
 export const concurrencyViolations = Metric.counter("crablet.eventstore.concurrency_violations");
+
+// A stored event that its definition could not decode (ADR-0017): one count each time a read stopped because of it. Tag with ("event_type", type).
+export const decodingFailures = Metric.counter("crablet.eventstore.decoding_failures");

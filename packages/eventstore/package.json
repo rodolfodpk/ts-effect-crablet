@@ -14,6 +14,7 @@
     "./AppendEvent": "./src/AppendEvent.ts",
     "./AppendCondition": "./src/AppendCondition.ts",
     "./AppendErrors": "./src/AppendErrors.ts",
+    "./EventDecoding": "./src/EventDecoding.ts",
     "./AppendResult": "./src/AppendResult.ts",
     "./CorrelationContext": "./src/CorrelationContext.ts",
     "./Listen": "./src/Listen.ts",

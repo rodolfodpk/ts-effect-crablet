@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted (2026-10-06), after the spike below showed the policy is implementable as written. Being built in the order given under "Implementation order"; each step is committed on its own and recorded in NOTES.md.
 
 ## Context
 
@@ -50,7 +50,7 @@ Events are never rewritten, so the log holds every shape an event has ever been 
 - **Old events keep working** with no migration of the log, and a breaking change is visible in the code as a new type that a model must `.on(...)`.
 - **More event types over time**, and each model's handler list grows. DCB rule A makes forgetting one a failing check instead of a silent hole.
 - **Every reader now decodes.** The wallet's projectors and automation change from casts to decoding through the definitions (additive for behavior, a real change in code).
-- **The decode failure is a new, named error** (an HTTP 500 problem type, with the event's position and type in logs, not necessarily in the response), instead of a bare defect.
+- **The decode failure is a new, named error** (typed, in the `E` channel; over HTTP the generic 500 problem, with the event's position and type in the log line and the metric, not in the response), instead of a bare defect. A caller that catches `Conflict` and `SqlError` exhaustively now sees `EventDecodingError` in the union too (the wallet example's period resolver needed it added).
 - **Discipline moves into tests and one script.** Fixtures must be kept when a shape changes, and `verify-events` needs a database with realistic data to be worth running.
 - **Unchanged by this ADR:** crypto-shredding of personal data (it needs each personal field to say which data subject it belongs to, because an event can concern several subjects; separate decision), and rebuilding the tag index.
 
@@ -71,4 +71,4 @@ Recorded as 17 tests in `packages/commands/test/event-evolution.test.ts`, agains
 
 ## Implementation order
 
-(Plan step 5 in docs/plans/reliability-and-scale-diagnostic.md.) 1. `EventDecodingError`, its metric, its mapping in the executor; E7 then fails with the named error. 2. Decode through the definitions in every reader (the wallet's projectors and automation). 3. The fixtures helper and the first fixtures. 4. `verify-events`. 5. The DCB rule A check. 6. A note in the tutorial and the README. Each step ends green and is committed on its own.
+(Plan step 5 in docs/plans/reliability-and-scale-diagnostic.md.) 1. ~~`EventDecodingError`, its metric, its mapping in the executor; E7 then fails with the named error.~~ (done: `defineEvent.decode` throws an `EventDecodingFailure` with every problem as `{ path, message }`; `EventStore.project` (and the in-memory store) turns it into a typed `EventDecodingError { type, position, transactionId, issues }`, logs it once with `Effect.logError` and counts `crablet.eventstore.decoding_failures` by event type; `Model.load` and the commands' error channel carry it; `commands-http` presents it as the generic 500 without naming the event. E7 re-run: the command fails with `EventDecodingError` naming Ticked at position 4, transaction 765, issue `Missing key at entityId`, and again on the second attempt, instead of a defect. Tests: unit 549, real Postgres through the executor, and over HTTP; mutation-checked.) 2. Decode through the definitions in every reader (the wallet's projectors and automation). 3. The fixtures helper and the first fixtures. 4. `verify-events`. 5. The DCB rule A check. 6. A note in the tutorial and the README. Each step ends green and is committed on its own.

@@ -1,6 +1,7 @@
 import { Effect, Metric, Option } from "effect";
 import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/sql/SqlError";
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { EventStoreService, StateProjector, StoredEvent } from "@crablet/eventstore";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
@@ -54,7 +55,8 @@ export interface ModelInstance<S> {
   readonly query: Query.Query;
   // Present when the model declared `.snapshot(...)`: what verify-snapshots needs to check its rows (name, version, state schema).
   readonly snapshot?: { readonly name: string; readonly version: number; readonly schema: Schema.Schema<any> };
-  readonly load: (eventStore: EventStoreService) => Effect.Effect<Loaded<S>, SqlError>;
+  // `EventDecodingError`: a stored event in the boundary that its definition cannot read (ADR-0017); never skipped.
+  readonly load: (eventStore: EventStoreService) => Effect.Effect<Loaded<S>, SqlError | EventDecodingError>;
 }
 
 interface OnEntry<S> {
@@ -199,7 +201,7 @@ const loadWithSnapshot = <S>(
   snap: SnapshotOptions<S>,
   initial: () => S,
   entity: object
-): Effect.Effect<Loaded<S>, SqlError> =>
+): Effect.Effect<Loaded<S>, SqlError | EventDecodingError> =>
   Effect.gen(function* () {
     const count = (outcome: string) => Metric.update(Metric.withAttributes(SnapshotMetrics.loads, { model: snap.name, outcome }), 1);
     const store = yield* Effect.serviceOption(SnapshotStore);

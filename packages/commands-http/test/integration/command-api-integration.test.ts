@@ -15,6 +15,8 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { parseMarker } from "@crablet/eventstore/Marker";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
+import { defineEvent } from "@crablet/commands/Event";
+import { defineModel } from "@crablet/commands/Model";
 import { DomainError } from "@crablet/commands/Errors";
 import { commandContract } from "@crablet/commands/Contract";
 import * as Query from "@crablet/eventstore/Query";
@@ -474,5 +476,33 @@ describe("commands-http from contracts (real Postgres)", () => {
       () => makeCommandApiLive(contracts, { open_wallet: OpenWallet } as never, {}),
       (error: unknown) => error instanceof Error && error.name === "ContractMismatch" && /no command for the contract "refuse"/.test(error.message)
     );
+  });
+});
+
+// ADR-0017: a stored event its definition cannot read is a typed EventDecodingError in the command; over HTTP it is the generic 500 problem, which does not say
+// which event (that is for the log line written where it was found), and every later request over that boundary answers the same.
+describe("a command over a boundary that contains an unreadable stored event (real Postgres)", () => {
+  const Ticked = defineEvent("Ticked", { schema: Schema.Struct({ entityId: Schema.String }), tags: (d) => ({ entity_id: d.entityId }) });
+  const Count = defineModel({ by: "entity_id", initial: () => ({ n: 0 }) }).on(Ticked, (s) => ({ n: s.n + 1 }));
+  const TickContract = commandContract({ name: "tick", input: Schema.Struct({ entityId: Schema.String }) });
+  const Tick = defineCommand({ ...TickContract, model: (c) => Count.of({ id: c.entityId }), decide: (_m, c) => emit(Ticked(c)) });
+  const tickContracts = [TickContract];
+  const post = (baseUrl: string, entityId: string) => fetch(`${baseUrl}/api/commands/tick`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityId }) });
+
+  it("answers 500, the generic problem, without naming the event; the same again; and another entity is fine", { timeout: 30_000 }, async () => {
+    const bad = `bad-${crypto.randomUUID().slice(0, 6)}`;
+    const good = `good-${crypto.randomUUID().slice(0, 6)}`;
+    await runtime.runPromise(
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ('Ticked', ARRAY['entity_id=' || $1], '{\"entity\":\"old shape\"}'::jsonb, pg_current_xact_id())", [bad]))
+    );
+    await serve(makeCommandApiLive(tickContracts, { tick: Tick }, {}), async (baseUrl) => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await post(baseUrl, bad);
+        assert.strictEqual(res.status, 500);
+        const text = await res.text();
+        assert.ok(!text.includes("Ticked") && !text.includes("old shape") && !text.includes("position"), `the response must not name the event: ${text}`);
+      }
+      assert.strictEqual((await post(baseUrl, good)).status, 201);
+    });
   });
 });

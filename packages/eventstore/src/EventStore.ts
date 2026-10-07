@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Metric } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
+import { EventDecodingFailure, decodingErrorOf, type EventDecodingError } from "./EventDecoding.ts";
 import type { Tag } from "./Tag.ts";
 import type { AppendEvent } from "./AppendEvent.ts";
 import type { AppendResult } from "./AppendResult.ts";
@@ -92,7 +93,7 @@ export interface EventStoreService {
     query: Query,
     after: LogPosition,
     projectors: ReadonlyArray<StateProjector<T>>
-  ) => Effect.Effect<ProjectionResult<T>, SqlError>;
+  ) => Effect.Effect<ProjectionResult<T>, SqlError | EventDecodingError>;
 
   readonly exists: (query: Query) => Effect.Effect<boolean, SqlError>;
 }
@@ -162,7 +163,7 @@ export const EventStoreLive = Layer.effect(
       query: Query,
       after: LogPosition,
       projectors: ReadonlyArray<StateProjector<T>>
-    ): Effect.Effect<ProjectionResult<T>, SqlError> =>
+    ): Effect.Effect<ProjectionResult<T>, SqlError | EventDecodingError> =>
       Effect.gen(function* () {
         if (projectors.length === 0) {
           return yield* Effect.die("At least one projector is required");
@@ -179,7 +180,16 @@ export const EventStoreLive = Layer.effect(
           const event = parseRow(row);
           for (const projector of projectors) {
             if (projector.eventTypes.length === 0 || projector.eventTypes.includes(event.type)) {
-              state = projector.transition(state, event);
+              try {
+                state = projector.transition(state, event);
+              } catch (error) {
+                // A stored event its definition cannot read (ADR-0017): a typed failure that names it, not a defect, and never a skip.
+                if (!(error instanceof EventDecodingFailure)) throw error;
+                const failure = decodingErrorOf(error, event);
+                yield* Effect.logError(failure.message);
+                yield* Metric.update(Metric.withAttributes(EventStoreMetrics.decodingFailures, { event_type: event.type }), 1);
+                return yield* failure;
+              }
             }
           }
           // The cursor only advances over SETTLED events (their transaction had finished when we read): an
@@ -197,7 +207,8 @@ export const EventStoreLive = Layer.effect(
 
     const exists = (query: Query): Effect.Effect<boolean, SqlError> =>
       Effect.map(
-        project(query, LogPositionNS.zero(), [existsProjector()]),
+        // `existsProjector` never decodes a payload, so no decoding error can come out of it
+        Effect.catchTag(project(query, LogPositionNS.zero(), [existsProjector()]), "EventDecodingError", (e) => Effect.die(e)),
         (r) => r.state
       );
 

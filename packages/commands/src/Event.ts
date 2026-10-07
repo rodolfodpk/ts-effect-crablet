@@ -1,4 +1,6 @@
 import * as Schema from "effect/Schema";
+import * as SchemaIssue from "effect/SchemaIssue";
+import { EventDecodingFailure, type DecodingIssue } from "@crablet/eventstore/EventDecoding";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
@@ -35,8 +37,8 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   readonly type: Type;
   // The payload schema (what the event log API documents, and what personal-data handling reads: see Personal.ts).
   readonly schema: Schema.Constraint;
-  // Validate and narrow a stored event's raw JSON payload. Throws if the stored data does not match
-  // the schema (a defect: the log contains something this definition cannot read).
+  // Validate and narrow a stored event's raw JSON payload. Throws an `EventDecodingFailure` (paths and messages, never the value) if the stored data does
+  // not match the schema; `EventStore.project` turns it into a typed `EventDecodingError` that names the event's position and type (ADR-0017).
   readonly decode: (raw: unknown) => Data;
   // Query for events of this type, optionally restricted to events carrying these tag values.
   // Only tag keys this event declares are accepted.
@@ -51,7 +53,23 @@ export const defineEvent = <
   type: Type,
   def: { readonly schema: S; readonly tags: (data: Schema.Schema.Type<S>) => T }
 ): EventDef<Type, Schema.Schema.Type<S>, Extract<keyof T, string>> => {
-  const decode = Schema.decodeUnknownSync(def.schema as never) as (raw: unknown) => Schema.Schema.Type<S>;
+  const decodeRaw = Schema.decodeUnknownSync(def.schema as never) as unknown as (raw: unknown, options?: { readonly errors?: "first" | "all" }) => Schema.Schema.Type<S>;
+  const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1();
+  // Every problem is reported (`errors: "all"`), as paths and messages only: the schema's default messages do not echo the value, so they are safe to log
+  // for events that carry personal data (ADR-0017). Anything that is not a schema failure is rethrown as it is.
+  const decode = (raw: unknown): Schema.Schema.Type<S> => {
+    try {
+      return decodeRaw(raw, { errors: "all" });
+    } catch (error) {
+      const issue = (error as { _tag?: string; issue?: SchemaIssue.Issue } | null)?._tag === "SchemaError" ? (error as { issue: SchemaIssue.Issue }).issue : undefined;
+      if (issue === undefined) throw error;
+      const issues: ReadonlyArray<DecodingIssue> = formatIssues(issue).issues.map((i) => ({
+        path: (i.path ?? []).map((segment) => (typeof segment === "object" && segment !== null && "key" in segment ? (segment as { key: PropertyKey }).key : segment)).map((k) => (typeof k === "number" ? k : String(k))),
+        message: i.message
+      }));
+      throw new EventDecodingFailure(type, issues);
+    }
+  };
 
   const hasPersonal = hasPersonalData(def.schema as never);
 

@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
+import { EventDecodingFailure } from "@crablet/eventstore/EventDecoding";
 import { defineEvent } from "../src/Event.ts";
 import { personal, personalPaths } from "../src/Personal.ts";
 
@@ -78,51 +79,41 @@ describe("a field with NO sensible default is optional, not defaulted", () => {
   });
 });
 
-describe("a decoding failure: what a typed EventDecodingError can carry", () => {
-  const failureOf = (payload: unknown) => {
+describe("a decoding failure: what the event definition throws (EventDecodingFailure)", () => {
+  const failureOf = (def: { readonly decode: (raw: unknown) => unknown }, payload: unknown): EventDecodingFailure | null => {
     try {
-      Deposit.decode(payload);
+      def.decode(payload);
       return null;
     } catch (error) {
-      return error as { _tag: string; issue: SchemaIssue.Issue; message: string };
+      return error as EventDecodingFailure;
     }
   };
-  const issuesOf = (error: { issue: SchemaIssue.Issue }) => SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues;
 
-  test("the thrown value is a SchemaError with the issue tree, and the standard formatter turns it into a flat list of { path, message }; by default only the FIRST problem is reported", () => {
-    const error = failureOf({ id: 1, amount: "x" })!;
-    expect(error._tag).toBe("SchemaError");
-    expect(issuesOf(error).map((i) => ({ path: i.path, message: i.message }))).toEqual([{ path: ["id"], message: "Expected string" }]);
+  test("it carries the event type and EVERY problem as { path, message }", () => {
+    const failure = failureOf(Deposit, { id: 1, amount: "x" })!;
+    expect(failure).toBeInstanceOf(EventDecodingFailure);
+    expect(failure.eventType).toBe("Deposit");
+    expect(failure.issues).toEqual([
+      { path: ["id"], message: "Expected string" },
+      { path: ["amount"], message: "Expected number" }
+    ]);
   });
 
-  test("with `{ errors: \"all\" }` every problem is reported: that is what EventDecodingError should ask for", () => {
-    const decodeAll = Schema.decodeUnknownSync(V2 as never) as unknown as (x: unknown, options?: { readonly errors?: "first" | "all" }) => unknown;
-    try {
-      decodeAll({ id: 1, amount: "x" }, { errors: "all" });
-      throw new Error("should have failed");
-    } catch (error) {
-      expect(issuesOf(error as never).map((i) => ({ path: i.path, message: i.message }))).toEqual([
-        { path: ["id"], message: "Expected string" },
-        { path: ["amount"], message: "Expected number" }
-      ]);
-    }
-  });
-
-  test("a missing required key is reported with its path", () => {
-    expect(issuesOf(failureOf({ id: "a" })!).map((i) => ({ path: i.path, message: i.message }))).toEqual([{ path: ["amount"], message: "Missing key" }]);
+  test("a missing required key is reported with its path; a nested path keeps its numbers", () => {
+    expect(failureOf(Deposit, { id: "a" })!.issues).toEqual([{ path: ["amount"], message: "Missing key" }]);
+    const Order = defineEvent("Order", { schema: Schema.Struct({ items: Schema.Array(Schema.Struct({ qty: Schema.Number })) }), tags: () => ({}) });
+    expect(failureOf(Order, { items: [{ qty: 1 }, { qty: "two" }] })!.issues).toEqual([{ path: ["items", 1, "qty"], message: "Expected number" }]);
   });
 
   test("the default messages do NOT echo the offending value, so issues can be logged for events that carry personal data", () => {
-    const S = Schema.Struct({ email: personal(Schema.String.check(Schema.isMinLength(8))), age: Schema.Number, kind: Schema.Literals(["a", "b"]) });
-    const decode = Schema.decodeUnknownSync(S as never);
+    const Secretive = defineEvent("Secretive", {
+      schema: Schema.Struct({ email: personal(Schema.String.check(Schema.isMinLength(8))), age: Schema.Number, kind: Schema.Literals(["a", "b"]) }),
+      tags: () => ({})
+    });
     for (const payload of [{ email: "a@b.c", age: 1, kind: "a" }, { email: "long-enough@x.com", age: "personal-42", kind: "a" }, { email: "long-enough@x.com", age: 1, kind: "secret-value" }]) {
-      try {
-        decode(payload);
-        throw new Error("should have failed");
-      } catch (error) {
-        const text = JSON.stringify(issuesOf(error as never));
-        for (const secret of ["a@b.c", "personal-42", "secret-value", "long-enough"]) expect(text.includes(secret)).toBe(false);
-      }
+      const failure = failureOf(Secretive, payload)!;
+      const text = JSON.stringify(failure.issues) + failure.message;
+      for (const secret of ["a@b.c", "personal-42", "secret-value", "long-enough"]) expect(text.includes(secret)).toBe(false);
     }
   });
 });

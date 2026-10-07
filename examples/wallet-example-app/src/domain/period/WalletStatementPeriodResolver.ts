@@ -1,3 +1,4 @@
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventStoreService } from "@crablet/eventstore";
@@ -67,7 +68,7 @@ export const resolveActivePeriod = (
   eventStore: EventStoreService,
   walletId: string,
   now: Date = new Date()
-): Effect.Effect<ActivePeriod, SqlError | Conflict | Duplicate, never> =>
+): Effect.Effect<ActivePeriod, SqlError | Conflict | Duplicate | EventDecodingError, never> =>
   Effect.gen(function* () {
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth() + 1;

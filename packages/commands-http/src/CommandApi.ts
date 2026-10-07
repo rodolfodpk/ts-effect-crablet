@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import { inputJsonSchema } from "./InputJsonSchema.ts";
 import type { SqlError } from "effect/sql/SqlError";
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { Command } from "@crablet/commands/Command";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
 import type { InvalidInput, KindedError } from "@crablet/commands/Errors";
@@ -64,7 +65,9 @@ export const executeEndpointName = (commandType: string) => `execute_${commandTy
 // status; `defineCommand` already requires it to be declared), or one of the framework's own errors (input validation, a stale decision, a
 // repeated operation, a database failure). Anything else - a plain string, say, or an untagged class - is a compile error where the server
 // registers its commands (`Implementations` below): it could only ever surface as a generic 500.
-export type Presentable = KindedError | Conflict | Duplicate | SqlError | InvalidInput;
+// `EventDecodingError`: a stored event its definition cannot read (ADR-0017). It is presented as the generic 500 (the response does not say which event: the
+// log line written where it was found does, with its position and type).
+export type Presentable = KindedError | Conflict | Duplicate | SqlError | EventDecodingError | InvalidInput;
 
 // ---- the group's STATIC type (the loop in `makeCommandApiGroup` builds exactly this) ----
 //

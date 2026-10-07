@@ -3,6 +3,7 @@ import { Cause, Effect, Exit } from "effect";
 import * as Schema from "effect/Schema";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { defineEvent } from "../src/Event.ts";
 import { all, defineModel } from "../src/Model.ts";
@@ -189,11 +190,30 @@ describe("all: a model over several entities", () => {
 });
 
 describe("malformed stored data", () => {
-  test("an event whose payload does not match its definition is a defect, not a silent skip", async () => {
+  test("an event whose payload does not match its definition is a TYPED failure naming it (position, transaction, type, issues), never a skip and never a defect", async () => {
     const fake = makeInMemoryEventStore();
-    fake.seed({ type: "Opened", tags: [Tag.of("account_id", "a1")], eventData: { accountId: "a1" } }); // missing `initial`
+    fake.seed(Opened({ accountId: "a1", initial: 1 }), { type: "Opened", tags: [Tag.of("account_id", "a1")], eventData: { accountId: "a1" } }); // the 2nd is missing `initial`
     const exit = await Effect.runPromiseExit(AccountModel.of({ id: "a1", year: 2026 }).load(fake.service));
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) expect(exit.cause.reasons.some(Cause.isDieReason)).toBe(true);
+    if (!Exit.isFailure(exit)) return;
+    expect(exit.cause.reasons.some(Cause.isDieReason)).toBe(false);
+    const error = exit.cause.reasons.filter(Cause.isFailReason).map((r) => r.error)[0] as unknown as EventDecodingError;
+    expect(error._tag).toBe("EventDecodingError");
+    expect(error.type).toBe("Opened");
+    expect(error.position).toBe(2n);
+    expect(error.transactionId).toBe("1"); // both events were seeded in one in-memory transaction
+    expect(error.issues).toEqual([{ path: ["initial"], message: "Missing key" }]);
+    expect(error.message).toContain("position 2");
+  });
+
+  test("it fails the same way every time, and the message carries no payload value", async () => {
+    const fake = makeInMemoryEventStore();
+    fake.seed({ type: "Opened", tags: [Tag.of("account_id", "a1")], eventData: { accountId: "a1", initial: "personal-secret-42" } });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const exit = await Effect.runPromiseExit(AccountModel.of({ id: "a1", year: 2026 }).load(fake.service));
+      const error = (Exit.isFailure(exit) ? exit.cause.reasons.filter(Cause.isFailReason).map((r) => r.error)[0] : undefined) as unknown as EventDecodingError;
+      expect(error._tag).toBe("EventDecodingError");
+      expect(JSON.stringify(error.issues) + error.message).not.toContain("personal-secret-42");
+    }
   });
 });
