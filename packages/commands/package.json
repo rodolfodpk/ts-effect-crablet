@@ -14,6 +14,7 @@
     "./Command": "./src/Command.ts",
     "./Contract": "./src/Contract.ts",
     "./VerifySnapshots": "./src/VerifySnapshots.ts",
+    "./VerifyEvents": "./src/VerifyEvents.ts",
     "./testing/Scenario": "./src/testing/Scenario.ts",
     "./testing/Snapshots": "./src/testing/Snapshots.ts",
     "./testing/EventFixtures": "./src/testing/EventFixtures.ts",
