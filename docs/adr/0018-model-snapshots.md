@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Accepted (2026-10-06), implemented: migrations V9 and V10, `SnapshotStore`, the load with snapshot + tail, the executor's write after the transaction, the `all(...)` horizon, `verify-snapshots`. Measured results are in Consequences and in docs/plans/reliability-and-scale-diagnostic.md (E5e).
+
+Follow-ups that stay open (none blocks the decision): the tail read still walks other entities' newer events (point 2); the default `every` of 1,000 is a guess to tune (point 4); where `version` is declared for generated models (point 5); a tutorial and README note. Not measured: payloads larger than about 40 bytes, a log of many small transactions, many entities snapshotting at once.
 
 ## Context
 
