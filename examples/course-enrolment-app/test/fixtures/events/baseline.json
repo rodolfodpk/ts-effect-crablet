@@ -1,0 +1,25 @@
+[
+  {
+    "type": "CourseDefined",
+    "payload": {
+      "courseId": "c-1",
+      "capacity": 20
+    },
+    "tags": [
+      "course_id=c-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "StudentSubscribed",
+    "payload": {
+      "studentId": "s-1",
+      "courseId": "c-1"
+    },
+    "tags": [
+      "student_id=s-1",
+      "course_id=c-1"
+    ],
+    "note": "first release"
+  }
+]

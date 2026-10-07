@@ -1,0 +1,152 @@
+[
+  {
+    "type": "WalletOpened",
+    "payload": {
+      "walletId": "w-1",
+      "owner": "Alice",
+      "initialBalance": 100,
+      "openedAt": "2026-01-15T10:00:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "WalletClosed",
+    "payload": {
+      "walletId": "w-1",
+      "closedAt": "2026-01-15T10:00:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "WalletStatementOpened",
+    "payload": {
+      "walletId": "w-1",
+      "statementId": "s-2026-1",
+      "year": 2026,
+      "month": 1,
+      "openingBalance": 100,
+      "openedAt": "2026-01-15T10:00:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1",
+      "statement_id=s-2026-1",
+      "year=2026",
+      "month=1"
+    ],
+    "note": "first release (monthly statements: day and hour absent)"
+  },
+  {
+    "type": "WalletStatementClosed",
+    "payload": {
+      "walletId": "w-1",
+      "statementId": "s-2026-1",
+      "year": 2026,
+      "month": 1,
+      "openingBalance": 100,
+      "closingBalance": 130,
+      "closedAt": "2026-01-15T10:00:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1",
+      "statement_id=s-2026-1",
+      "year=2026",
+      "month=1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "DepositMade",
+    "payload": {
+      "depositId": "d-1",
+      "walletId": "w-1",
+      "amount": 30,
+      "newBalance": 130,
+      "depositedAt": "2026-01-15T10:00:00.000Z",
+      "description": "salary"
+    },
+    "tags": [
+      "wallet_id=w-1",
+      "deposit_id=d-1",
+      "year=2026",
+      "month=1",
+      "statement_id=s-2026-1"
+    ],
+    "scopeTags": [
+      "year",
+      "month",
+      "statement_id"
+    ],
+    "note": "first release; the command adds the period tags"
+  },
+  {
+    "type": "WithdrawalMade",
+    "payload": {
+      "withdrawalId": "x-1",
+      "walletId": "w-1",
+      "amount": 20,
+      "newBalance": 80,
+      "withdrawnAt": "2026-01-15T10:00:00.000Z",
+      "description": "rent"
+    },
+    "tags": [
+      "wallet_id=w-1",
+      "withdrawal_id=x-1",
+      "year=2026",
+      "month=1",
+      "statement_id=s-2026-1"
+    ],
+    "scopeTags": [
+      "year",
+      "month",
+      "statement_id"
+    ],
+    "note": "first release; the command adds the period tags"
+  },
+  {
+    "type": "MoneyTransferred",
+    "payload": {
+      "transferId": "t-1",
+      "fromWalletId": "w-1",
+      "toWalletId": "w-2",
+      "amount": 10,
+      "fromBalance": 70,
+      "toBalance": 10,
+      "transferredAt": "2026-01-15T10:00:00.000Z",
+      "description": "gift"
+    },
+    "tags": [
+      "transfer_id=t-1",
+      "from_wallet_id=w-1",
+      "to_wallet_id=w-2",
+      "year=2026",
+      "month=1",
+      "from_statement_id=s-2026-1",
+      "to_statement_id=s-2026-1"
+    ],
+    "scopeTags": [
+      "year",
+      "month",
+      "from_statement_id",
+      "to_statement_id"
+    ],
+    "note": "first release; the command adds the period and both statement tags"
+  },
+  {
+    "type": "WelcomeNotificationSent",
+    "payload": {
+      "walletId": "w-1",
+      "owner": "Alice",
+      "sentAt": "2026-01-15T10:00:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1"
+    ],
+    "note": "first release"
+  }
+]

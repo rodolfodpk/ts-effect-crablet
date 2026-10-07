@@ -147,36 +147,4 @@ describe("decodeStored: the reader for projectors and automations", () => {
   });
 });
 
-// DCB rule B (ADR-0017): tags are stored when the event is written and are how a boundary finds it. A tag computed from a field that was DEFAULTED does not exist on
-// the events written before the field did. A fixture check (the payload an event type was once written with, and the tags it was stored with) finds that.
-describe("tags and old events: the fixture check (prototype of ADR-0017 step 3)", () => {
-  // what was stored when the event was written under the OLD definition
-  const stored = { type: "Deposit", payload: { id: "a", amount: 5 }, tags: [{ key: "deposit_id", value: "a" }] };
-  const problems = (def: ReturnType<typeof defineEvent<"Deposit", any, any>>, fixture: typeof stored): ReadonlyArray<string> => {
-    let decoded: unknown;
-    try {
-      decoded = def.decode(fixture.payload);
-    } catch (error) {
-      return [`the current definition cannot decode a payload written before: ${String(error).split("\n")[0]}`];
-    }
-    const now = (def as unknown as (d: unknown) => { tags: ReadonlyArray<{ key: string; value: string }> })(decoded).tags;
-    const key = (t: { key: string; value: string }) => `${t.key}=${t.value}`;
-    const missing = fixture.tags.filter((t) => !now.some((n) => key(n) === key(t))).map(key);
-    const invented = now.filter((n) => !fixture.tags.some((t) => key(t) === key(n))).map(key);
-    return [...missing.map((t) => `the stored tag ${t} is no longer derived`), ...invented.map((t) => `the definition now derives ${t}, which this stored event does not have (a boundary on it would miss the event)`)];
-  };
-
-  test("a compatible change (a defaulted field that no tag uses) passes", () => {
-    expect(problems(Deposit as never, stored)).toEqual([]);
-  });
-
-  test("a tag computed from the defaulted field is caught: the old event does not carry it", () => {
-    const Tagged = defineEvent("Deposit", { schema: V2, tags: (d) => ({ deposit_id: d.id, fee_class: d.fee > 0 ? "paid" : "free" }) });
-    expect(problems(Tagged as never, stored)).toEqual(["the definition now derives fee_class=free, which this stored event does not have (a boundary on it would miss the event)"]);
-  });
-
-  test("a rename or a new required field is caught as an undecodable old payload", () => {
-    const Renamed = defineEvent("Deposit", { schema: Schema.Struct({ depositId: Schema.String, amount: Schema.Number }), tags: (d) => ({ deposit_id: d.depositId }) });
-    expect(problems(Renamed as never, stored)[0]).toContain("cannot decode a payload written before");
-  });
-});
+// The fixture check that this spike prototyped (decode the old payload, derive its tags, compare with the stored ones) is now `testing/EventFixtures` and is tested in event-fixtures.test.ts.

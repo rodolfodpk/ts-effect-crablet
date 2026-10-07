@@ -16,6 +16,7 @@
     "./VerifySnapshots": "./src/VerifySnapshots.ts",
     "./testing/Scenario": "./src/testing/Scenario.ts",
     "./testing/Snapshots": "./src/testing/Snapshots.ts",
+    "./testing/EventFixtures": "./src/testing/EventFixtures.ts",
     "./Crablet": "./src/Crablet.ts"
   },
   "dependencies": {
