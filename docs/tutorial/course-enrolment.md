@@ -379,34 +379,36 @@ are left?" could see the old answer. Add a **view** - a table kept up to date by
 // last event it applied, and an event at or before that position is ignored. That is sound here because the events that
 // touch one course are written one after another (their commands share a boundary), so a course's positions only grow;
 // for events of unrelated transactions, delivery order is not position order, so key idempotency on the event instead.
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
-  switch (event.type) {
-    case CourseDefined.type: {
-      const data = CourseDefined.decode(event.data);
-      return Effect.asVoid(
-        sql.unsafe(
+//
+// `decodeStored` reads the payload through the event's own definition: one this definition cannot read fails the batch with a typed `EventDecodingError`
+// (position, type, issues), which the processor records against the view, instead of projecting something wrong. Casting `event.data` would validate nothing.
+const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
+  Effect.gen(function* () {
+    switch (event.type) {
+      case CourseDefined.type: {
+        const data = yield* CourseDefined.decodeStored(event);
+        yield* sql.unsafe(
           `INSERT INTO course_seats_view (course_id, capacity, subscribers, last_position) VALUES ($1, $2, 0, $3)
            ON CONFLICT (course_id) DO NOTHING`,
           [data.courseId, data.capacity, event.position.toString()]
-        )
-      );
-    }
-    case StudentSubscribed.type: {
-      const data = StudentSubscribed.decode(event.data);
-      return Effect.asVoid(
-        sql.unsafe(
+        );
+        return;
+      }
+      case StudentSubscribed.type: {
+        const data = yield* StudentSubscribed.decodeStored(event);
+        yield* sql.unsafe(
           `UPDATE course_seats_view SET subscribers = subscribers + 1, last_position = $2
            WHERE course_id = $1 AND last_position < $2`,
           [data.courseId, event.position.toString()]
-        )
-      );
+        );
+        return;
+      }
+      default:
+        return;
     }
-    default:
-      return Effect.void;
-  }
-};
+  });
 
-export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError>, never, SqlClient.SqlClient> =>
+export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
   makeTransactionalViewProjector(COURSE_SEATS_VIEW, handleEvent);
 ```
 

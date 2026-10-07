@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
-import { EventDecodingFailure, type DecodingIssue } from "@crablet/eventstore/EventDecoding";
+import { Effect } from "effect";
+import { EventDecodingFailure, decodingErrorOf, reportDecodingError, type DecodingIssue, type EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import type { StoredEvent } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
@@ -40,6 +42,11 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   // Validate and narrow a stored event's raw JSON payload. Throws an `EventDecodingFailure` (paths and messages, never the value) if the stored data does
   // not match the schema; `EventStore.project` turns it into a typed `EventDecodingError` that names the event's position and type (ADR-0017).
   readonly decode: (raw: unknown) => Data;
+  // The same for a STORED EVENT, as an Effect for the readers that are not models (view projectors, automations, the outbox): a payload this definition
+  // cannot read fails with the typed `EventDecodingError` (position, transaction, type, issues), is logged once and counted, and is never skipped. In a
+  // processor that failure is recorded against it (and, after `maxErrors`, marks it FAILED) instead of silently projecting something wrong. Casting
+  // `event.data` instead validates nothing (ADR-0017).
+  readonly decodeStored: (event: Pick<StoredEvent, "data" | "position" | "transactionId">) => Effect.Effect<Data, EventDecodingError>;
   // Query for events of this type, optionally restricted to events carrying these tag values.
   // Only tag keys this event declares are accepted.
   readonly where: (filter?: { readonly [K in TagKeys]?: TagValue }) => Query.Query;
@@ -112,7 +119,17 @@ export const defineEvent = <
         .map(([key, value]) => Tag.of(key, String(value)))
     );
 
-  return Object.assign(build, { type, schema: def.schema as Schema.Constraint, decode, where }) as EventDef<
+  const decodeStored = (event: Pick<StoredEvent, "data" | "position" | "transactionId">): Effect.Effect<Schema.Schema.Type<S>, EventDecodingError> =>
+    Effect.suspend(() => {
+      try {
+        return Effect.succeed(decode(event.data));
+      } catch (error) {
+        if (!(error instanceof EventDecodingFailure)) throw error;
+        return reportDecodingError(decodingErrorOf(error, event));
+      }
+    });
+
+  return Object.assign(build, { type, schema: def.schema as Schema.Constraint, decode, decodeStored, where }) as EventDef<
     Type,
     Schema.Schema.Type<S>,
     Extract<keyof T, string>

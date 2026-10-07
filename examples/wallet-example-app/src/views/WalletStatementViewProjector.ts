@@ -4,6 +4,8 @@ import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import * as WalletTags from "../domain/WalletTags.ts";
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import * as Wallet from "../domain/WalletModel.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
 // The most edge-case-heavy projector in the app. Maintains
@@ -31,21 +33,20 @@ const recordProcessedEvent = (
     )
     .pipe(Effect.map((rows) => rows.length > 0));
 
-const handleStatementOpened = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
-  const data = event.data as WalletEvents.WalletStatementOpened;
-  return Effect.asVoid(
-    sql.unsafe(
+const handleStatementOpened = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
+  Effect.gen(function* () {
+    const data = yield* Wallet.WalletStatementOpened.decodeStored(event);
+    yield* sql.unsafe(
       `INSERT INTO wallet_statement_view (statement_id, wallet_id, year, month, day, hour, opening_balance, opened_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (statement_id) DO NOTHING`,
       [data.statementId, data.walletId, data.year, data.month ?? null, data.day ?? null, data.hour ?? null, data.openingBalance, data.openedAt]
-    )
-  );
-};
+    );
+  });
 
-const handleStatementClosed = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> =>
+const handleStatementClosed = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
   Effect.gen(function* () {
-    const data = event.data as WalletEvents.WalletStatementClosed;
+    const data = yield* Wallet.WalletStatementClosed.decodeStored(event);
     const isNew = yield* recordProcessedEvent(sql, data.statementId, event.position);
     if (!isNew) return;
     yield* sql.unsafe("UPDATE wallet_statement_view SET closing_balance = $1, closed_at = $2 WHERE statement_id = $3", [
@@ -55,26 +56,26 @@ const handleStatementClosed = (event: StoredEvent, sql: SqlClient.SqlClient): Ef
     ]);
   });
 
-const handleDepositMade = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> =>
+const handleDepositMade = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
   Effect.gen(function* () {
+    const data = yield* Wallet.DepositMade.decodeStored(event);
     const statementId = tagValue(event, WalletTags.STATEMENT_ID);
     if (!statementId) return;
     const isNew = yield* recordProcessedEvent(sql, statementId, event.position);
     if (!isNew) return;
-    const data = event.data as WalletEvents.DepositMade;
     yield* sql.unsafe(
       "UPDATE wallet_statement_view SET total_deposits = total_deposits + $1, transaction_count = transaction_count + 1 WHERE statement_id = $2",
       [data.amount, statementId]
     );
   });
 
-const handleWithdrawalMade = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> =>
+const handleWithdrawalMade = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
   Effect.gen(function* () {
+    const data = yield* Wallet.WithdrawalMade.decodeStored(event);
     const statementId = tagValue(event, WalletTags.STATEMENT_ID);
     if (!statementId) return;
     const isNew = yield* recordProcessedEvent(sql, statementId, event.position);
     if (!isNew) return;
-    const data = event.data as WalletEvents.WithdrawalMade;
     yield* sql.unsafe(
       "UPDATE wallet_statement_view SET total_withdrawals = total_withdrawals + $1, transaction_count = transaction_count + 1 WHERE statement_id = $2",
       [data.amount, statementId]
@@ -83,9 +84,9 @@ const handleWithdrawalMade = (event: StoredEvent, sql: SqlClient.SqlClient): Eff
 
 // A transfer touches two wallets, each with its own statement_id (see WalletTags.ts's primer) -
 // each side is recorded/updated independently, so one side succeeding doesn't depend on the other.
-const handleMoneyTransferred = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> =>
+const handleMoneyTransferred = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
   Effect.gen(function* () {
-    const data = event.data as WalletEvents.MoneyTransferred;
+    const data = yield* Wallet.MoneyTransferred.decodeStored(event);
     const fromStatementId = tagValue(event, WalletTags.FROM_STATEMENT_ID);
     const toStatementId = tagValue(event, WalletTags.TO_STATEMENT_ID);
 
@@ -109,7 +110,7 @@ const handleMoneyTransferred = (event: StoredEvent, sql: SqlClient.SqlClient): E
     }
   });
 
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
+const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> => {
   switch (event.type) {
     case WalletEvents.WALLET_STATEMENT_OPENED:
       return handleStatementOpened(event, sql);
@@ -127,7 +128,7 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
 };
 
 export const makeWalletStatementViewProjector = (): Effect.Effect<
-  ViewProjector<SqlError>,
+  ViewProjector<SqlError | EventDecodingError>,
   never,
   SqlClient.SqlClient
 > => makeTransactionalViewProjector("wallet-statement-view", handleEvent);

@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
-import { EventDecodingFailure } from "@crablet/eventstore/EventDecoding";
+import { EventDecodingFailure, type EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { defineEvent } from "../src/Event.ts";
 import { personal, personalPaths } from "../src/Personal.ts";
 
@@ -115,6 +115,35 @@ describe("a decoding failure: what the event definition throws (EventDecodingFai
       const text = JSON.stringify(failure.issues) + failure.message;
       for (const secret of ["a@b.c", "personal-42", "secret-value", "long-enough"]) expect(text.includes(secret)).toBe(false);
     }
+  });
+});
+
+describe("decodeStored: the reader for projectors and automations", () => {
+  const stored = (data: unknown, position = 7n, transactionId = "41") => ({ data, position, transactionId });
+
+  test("a readable event is its decoded data (the default applied)", async () => {
+    expect(await Effect.runPromise(Deposit.decodeStored(stored({ id: "a", amount: 5 })))).toEqual({ id: "a", amount: 5, fee: 0 });
+  });
+
+  test("an unreadable one FAILS (typed, in the error channel) with its position, transaction, type and issues: it is not a defect and not a skip", async () => {
+    const exit = await Effect.runPromiseExit(Deposit.decodeStored(stored({ id: 1 }, 7n, "41")));
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag !== "Failure") return;
+    expect(exit.cause.reasons.some((r) => r._tag === "Die")).toBe(false);
+    const error = exit.cause.reasons.filter((r) => r._tag === "Fail").map((r) => (r as { error: EventDecodingError }).error)[0]!;
+    expect(error._tag).toBe("EventDecodingError");
+    expect(error).toMatchObject({ type: "Deposit", position: 7n, transactionId: "41" });
+    expect(error.issues).toEqual([
+      { path: ["id"], message: "Expected string" },
+      { path: ["amount"], message: "Missing key" }
+    ]);
+    expect(error.message).toContain("position 7");
+  });
+
+  test("it is lazy: building the effect reads nothing, running it twice reads twice", async () => {
+    const effect = Deposit.decodeStored(stored({ id: 1 }));
+    expect((await Effect.runPromiseExit(effect))._tag).toBe("Failure");
+    expect((await Effect.runPromiseExit(effect))._tag).toBe("Failure");
   });
 });
 

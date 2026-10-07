@@ -3,6 +3,8 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import * as Wallet from "../domain/WalletModel.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
 // Running totals per
@@ -47,35 +49,36 @@ const incrementColumn = (
     )
   );
 
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
+const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
+  Effect.gen(function* () {
   switch (event.type) {
     case WalletEvents.WALLET_OPENED: {
-      const data = event.data as WalletEvents.WalletOpened;
-      return upsertOnOpen(sql, data.walletId, data.initialBalance);
+      const data = yield* Wallet.WalletOpened.decodeStored(event);
+      return yield* upsertOnOpen(sql, data.walletId, data.initialBalance);
     }
     case WalletEvents.DEPOSIT_MADE: {
-      const data = event.data as WalletEvents.DepositMade;
-      return incrementColumn(sql, "total_deposits", data.walletId, data.amount, data.newBalance, data.depositedAt);
+      const data = yield* Wallet.DepositMade.decodeStored(event);
+      return yield* incrementColumn(sql, "total_deposits", data.walletId, data.amount, data.newBalance, data.depositedAt);
     }
     case WalletEvents.WITHDRAWAL_MADE: {
-      const data = event.data as WalletEvents.WithdrawalMade;
-      return incrementColumn(sql, "total_withdrawals", data.walletId, data.amount, data.newBalance, data.withdrawnAt);
+      const data = yield* Wallet.WithdrawalMade.decodeStored(event);
+      return yield* incrementColumn(sql, "total_withdrawals", data.walletId, data.amount, data.newBalance, data.withdrawnAt);
     }
     case WalletEvents.MONEY_TRANSFERRED: {
-      const data = event.data as WalletEvents.MoneyTransferred;
-      return Effect.gen(function* () {
+      const data = yield* Wallet.MoneyTransferred.decodeStored(event);
+      return yield* Effect.gen(function* () {
         yield* incrementColumn(sql, "total_transfers_out", data.fromWalletId, data.amount, data.fromBalance, data.transferredAt);
         yield* incrementColumn(sql, "total_transfers_in", data.toWalletId, data.amount, data.toBalance, data.transferredAt);
       });
     }
     case WalletEvents.WALLET_CLOSED: {
-      const data = event.data as WalletEvents.WalletClosed;
-      return Effect.asVoid(sql.unsafe("DELETE FROM wallet_summary_view WHERE wallet_id = $1", [data.walletId]));
+      const data = yield* Wallet.WalletClosed.decodeStored(event);
+      return yield* Effect.asVoid(sql.unsafe("DELETE FROM wallet_summary_view WHERE wallet_id = $1", [data.walletId]));
     }
     default:
-      return Effect.void;
+      return;
   }
-};
+  });
 
-export const makeWalletSummaryViewProjector = (): Effect.Effect<ViewProjector<SqlError>, never, SqlClient.SqlClient> =>
+export const makeWalletSummaryViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
   makeTransactionalViewProjector("wallet-summary-view", handleEvent);

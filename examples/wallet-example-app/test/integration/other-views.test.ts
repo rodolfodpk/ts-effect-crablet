@@ -166,4 +166,29 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
     assert.strictEqual(Number(row.total_withdrawals), 10);
     assert.strictEqual(Number(row.current_balance), 40);
   });
+
+  it("an unreadable event fails the batch with a typed EventDecodingError naming it, and nothing of the batch is projected (balance, transaction and summary views)", async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    const good = (): StoredEvent => fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: walletId }, { walletId, owner: "Alice", initialBalance: 100, openedAt: new Date().toISOString() });
+    // a DepositMade in an older shape: `newBalance` and `depositedAt` did not exist
+    const unreadable = (): StoredEvent => fakeEvent(WalletEvents.DEPOSIT_MADE, { wallet_id: walletId }, { walletId, depositId: "d1", amount: 5 });
+    for (const [name, make, table] of [
+      ["balance", makeWalletBalanceViewProjector, "wallet_balance_view"],
+      ["transaction", makeWalletTransactionViewProjector, "wallet_transaction_view"],
+      ["summary", makeWalletSummaryViewProjector, "wallet_summary_view"]
+    ] as const) {
+      const bad = unreadable();
+      const exit = await run(Effect.exit(Effect.flatMap(make(), (projector) => projector.handle([good(), bad]))));
+      assert.strictEqual(exit._tag, "Failure", name);
+      const failures = (exit as unknown as { cause: { reasons: ReadonlyArray<{ _tag: string; error?: { _tag: string; type: string; position: bigint; issues: ReadonlyArray<{ path: ReadonlyArray<string> }> } }> } }).cause.reasons;
+      assert.strictEqual(failures.some((r) => r._tag === "Die"), false, `${name}: a typed failure, not a defect`);
+      const error = failures.find((r) => r._tag === "Fail")!.error!;
+      assert.strictEqual(error._tag, "EventDecodingError", name);
+      assert.strictEqual(error.type, WalletEvents.DEPOSIT_MADE, name);
+      assert.strictEqual(error.position, bad.position, name);
+      assert.ok(error.issues.some((i) => i.path[0] === "newBalance"), `${name}: the issues name the missing field`);
+      const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(`SELECT 1 FROM ${table} WHERE wallet_id = $1`, [walletId])));
+      assert.strictEqual(rows.length, 0, `${name}: the good event of the same batch was rolled back with it, so the view never shows a half-applied batch`);
+    }
+  });
 });

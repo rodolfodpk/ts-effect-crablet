@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Metric } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
-import { EventDecodingFailure, decodingErrorOf, type EventDecodingError } from "./EventDecoding.ts";
+import { EventDecodingFailure, decodingErrorOf, reportDecodingError, type EventDecodingError } from "./EventDecoding.ts";
 import type { Tag } from "./Tag.ts";
 import type { AppendEvent } from "./AppendEvent.ts";
 import type { AppendResult } from "./AppendResult.ts";
@@ -185,10 +185,7 @@ export const EventStoreLive = Layer.effect(
               } catch (error) {
                 // A stored event its definition cannot read (ADR-0017): a typed failure that names it, not a defect, and never a skip.
                 if (!(error instanceof EventDecodingFailure)) throw error;
-                const failure = decodingErrorOf(error, event);
-                yield* Effect.logError(failure.message);
-                yield* Metric.update(Metric.withAttributes(EventStoreMetrics.decodingFailures, { event_type: event.type }), 1);
-                return yield* failure;
+                return yield* reportDecodingError(decodingErrorOf(error, event));
               }
             }
           }

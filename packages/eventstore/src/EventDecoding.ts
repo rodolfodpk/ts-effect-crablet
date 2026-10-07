@@ -1,4 +1,5 @@
-import { Data } from "effect";
+import { Data, Effect, Metric } from "effect";
+import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
 
 // A stored event that its definition cannot read (ADR-0017). Two values, because two places know different things:
 //
@@ -51,3 +52,11 @@ export const decodingErrorOf = (
     transactionId: event.transactionId,
     issues: failure.issues
   });
+
+// Says it once, where it was found: a log line (position, transaction, type and the issues, never the payload) and a count by event type, then fails with the
+// error. `EventStore.project` and `decodeStored` (an event definition's reader for projectors and automations) both go through it.
+export const reportDecodingError = (error: EventDecodingError): Effect.Effect<never, EventDecodingError> =>
+  Effect.logError(error.message).pipe(
+    Effect.andThen(Metric.update(Metric.withAttributes(EventStoreMetrics.decodingFailures, { event_type: error.type }), 1)),
+    Effect.andThen(Effect.fail(error))
+  );

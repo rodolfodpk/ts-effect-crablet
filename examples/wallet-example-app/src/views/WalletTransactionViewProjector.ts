@@ -3,6 +3,8 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
+import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import * as Wallet from "../domain/WalletModel.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
 // One row per
@@ -30,11 +32,12 @@ const insertRow = (
     )
   );
 
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError, never> => {
+const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
+  Effect.gen(function* () {
   switch (event.type) {
     case WalletEvents.DEPOSIT_MADE: {
-      const data = event.data as WalletEvents.DepositMade;
-      return insertRow(sql, {
+      const data = yield* Wallet.DepositMade.decodeStored(event);
+      return yield* insertRow(sql, {
         transactionId: data.depositId,
         walletId: data.walletId,
         eventType: WalletEvents.DEPOSIT_MADE,
@@ -45,8 +48,8 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
       });
     }
     case WalletEvents.WITHDRAWAL_MADE: {
-      const data = event.data as WalletEvents.WithdrawalMade;
-      return insertRow(sql, {
+      const data = yield* Wallet.WithdrawalMade.decodeStored(event);
+      return yield* insertRow(sql, {
         transactionId: data.withdrawalId,
         walletId: data.walletId,
         eventType: WalletEvents.WITHDRAWAL_MADE,
@@ -57,8 +60,8 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
       });
     }
     case WalletEvents.MONEY_TRANSFERRED: {
-      const data = event.data as WalletEvents.MoneyTransferred;
-      return Effect.gen(function* () {
+      const data = yield* Wallet.MoneyTransferred.decodeStored(event);
+      return yield* Effect.gen(function* () {
         yield* insertRow(sql, {
           transactionId: `${data.transferId}-from`,
           walletId: data.fromWalletId,
@@ -80,9 +83,9 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
       });
     }
     default:
-      return Effect.void;
+      return;
   }
-};
+  });
 
-export const makeWalletTransactionViewProjector = (): Effect.Effect<ViewProjector<SqlError>, never, SqlClient.SqlClient> =>
+export const makeWalletTransactionViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
   makeTransactionalViewProjector("wallet-transaction-view", handleEvent);
