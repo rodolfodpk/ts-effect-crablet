@@ -22,7 +22,7 @@ describe("crablet_model_snapshots (V9)", () => {
   it("has the columns, types and key the ADR describes", async () => {
     const cols = (await c.query("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'crablet_model_snapshots' ORDER BY ordinal_position")).rows;
     assert.deepStrictEqual(cols.map((r) => `${r.column_name}:${r.data_type}:${r.is_nullable}`), [
-      "name:text:NO", "version:integer:NO", "fingerprint:text:NO", "transaction_id:xid8:NO", "position:bigint:NO", "state:jsonb:NO", "updated_at:timestamp with time zone:NO"
+      "name:text:NO", "version:integer:NO", "fingerprint:text:NO", "transaction_id:xid8:NO", "position:bigint:NO", "state:jsonb:NO", "updated_at:timestamp with time zone:NO", "entity:jsonb:YES"
     ]);
     const pk = (await c.query("SELECT a.attname FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) WHERE i.indrelid = 'crablet_model_snapshots'::regclass AND i.indisprimary ORDER BY array_position(i.indkey::int2[], a.attnum)")).rows.map((r) => r.attname);
     assert.deepStrictEqual(pk, ["name", "version", "fingerprint"]);
@@ -50,6 +50,15 @@ describe("crablet_model_snapshots (V9)", () => {
     assert.strictEqual(await save("m", 1, "fp2", "10", "1", { v: "other entity" }), true);
     assert.strictEqual(await save("n", 1, "fp", "10", "1", { v: "other model" }), true);
     assert.deepStrictEqual((await row("m", 1, "fp")).state, { v: "base" });
+  });
+
+  it("stores the entity with the row, and a later save replaces it; a six-argument call (no entity) still works", async () => {
+    await c.query("SELECT crablet_save_snapshot('ent', 1, 'fp', '1'::xid8, 1, '{}'::jsonb, '{\"id\":\"a\"}'::jsonb)");
+    assert.deepStrictEqual((await c.query("SELECT entity FROM crablet_model_snapshots WHERE name = 'ent'")).rows[0].entity, { id: "a" });
+    await c.query("SELECT crablet_save_snapshot('ent', 1, 'fp', '2'::xid8, 2, '{}'::jsonb, '{\"id\":\"a\",\"year\":2026}'::jsonb)");
+    assert.deepStrictEqual((await c.query("SELECT entity FROM crablet_model_snapshots WHERE name = 'ent'")).rows[0].entity, { id: "a", year: 2026 });
+    await save("legacy", 1, "fp", "1", "1", {});
+    assert.strictEqual((await c.query("SELECT entity FROM crablet_model_snapshots WHERE name = 'legacy'")).rows[0].entity, null);
   });
 
   it("rejects an empty or over-long name and a negative version", async () => {

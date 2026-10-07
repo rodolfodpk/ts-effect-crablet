@@ -28,12 +28,31 @@ export interface StoredSnapshot {
 export interface PendingSnapshot extends SnapshotKey {
   readonly cursor: LogPosition;
   readonly state: unknown;
+  // The model's `of(...)` arguments (id and scope), JSON-safe, stored with the row so verify-snapshots can rebuild the model instance. Optional for callers
+  // that write snapshots by hand.
+  readonly entity?: unknown;
+}
+
+// A stored row as maintenance sees it.
+export interface SnapshotRow {
+  readonly name: string;
+  readonly version: number;
+  readonly fingerprint: string;
+  // null for a row written before migration V10, or by a caller that passed none
+  readonly entity: unknown | null;
+  readonly state: unknown;
+  readonly cursor: LogPosition;
 }
 
 export interface SnapshotStoreService {
   readonly get: (key: SnapshotKey) => Effect.Effect<StoredSnapshot | null, SqlError>;
   // Forward-only (`crablet_save_snapshot`): true when the row was written, false when an equal or later cursor is already stored.
   readonly save: (snapshot: PendingSnapshot) => Effect.Effect<boolean, SqlError>;
+  // Maintenance (verify-snapshots): a random sample of up to `limit` rows of a model, optionally one version; how many rows each (name, version) has; and the
+  // fingerprint a canonical query is stored under.
+  readonly list: (filter: { readonly name: string; readonly version?: number; readonly limit: number }) => Effect.Effect<ReadonlyArray<SnapshotRow>, SqlError>;
+  readonly summary: Effect.Effect<ReadonlyArray<{ readonly name: string; readonly version: number; readonly count: number }>, SqlError>;
+  readonly fingerprint: (canonical: string) => Effect.Effect<string, SqlError>;
   // Maintenance: delete the snapshots of `name` that are not of `keepVersion`; returns how many.
   readonly pruneOtherVersions: (name: string, keepVersion: number) => Effect.Effect<number, SqlError>;
 }
@@ -69,11 +88,34 @@ export const SnapshotStoreLive = Layer.effect(
       save: (s) =>
         Effect.map(
           sql.unsafe<{ written: boolean }>(
-            `SELECT crablet_save_snapshot($1, $2, ${FINGERPRINT}, $4::xid8, $5::bigint, $6::jsonb) AS written`,
-            [s.name, s.version, s.canonical, s.cursor.transactionId, s.cursor.position.toString(), JSON.stringify(s.state)]
+            `SELECT crablet_save_snapshot($1, $2, ${FINGERPRINT}, $4::xid8, $5::bigint, $6::jsonb, $7::jsonb) AS written`,
+            [s.name, s.version, s.canonical, s.cursor.transactionId, s.cursor.position.toString(), JSON.stringify(s.state), s.entity === undefined ? null : JSON.stringify(s.entity)]
           ),
           (rows) => rows[0]!.written
         ),
+      list: (filter) =>
+        Effect.map(
+          sql.unsafe<{ name: string; version: number; fingerprint: string; entity: unknown; state: unknown; transaction_id: string; position: string }>(
+            `SELECT name, version, fingerprint, entity, state, transaction_id::text AS transaction_id, position::text AS position FROM crablet_model_snapshots
+             WHERE name = $1 AND ($2::integer IS NULL OR version = $2) ORDER BY random() LIMIT $3`,
+            [filter.name, filter.version ?? null, filter.limit]
+          ),
+          (rows) =>
+            rows.map((r) => ({
+              name: r.name,
+              version: r.version,
+              fingerprint: r.fingerprint,
+              entity: r.entity ?? null,
+              state: r.state,
+              cursor: { position: BigInt(r.position), occurredAt: null, transactionId: r.transaction_id }
+            }))
+        ),
+      summary: Effect.map(
+        sql.unsafe<{ name: string; version: number; count: string }>("SELECT name, version, count(*) AS count FROM crablet_model_snapshots GROUP BY name, version ORDER BY name, version"),
+        (rows) => rows.map((r) => ({ name: r.name, version: r.version, count: Number(r.count) }))
+      ),
+      fingerprint: (canonical) =>
+        Effect.map(sql.unsafe<{ fp: string }>("SELECT encode(sha256(convert_to($1, 'UTF8')), 'hex') AS fp", [canonical]), (rows) => rows[0]!.fp),
       pruneOtherVersions: (name, keepVersion) =>
         Effect.map(
           sql.unsafe<{ version: number }>("DELETE FROM crablet_model_snapshots WHERE name = $1 AND version <> $2 RETURNING version", [name, keepVersion]),

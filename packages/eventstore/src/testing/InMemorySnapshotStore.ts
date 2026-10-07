@@ -32,6 +32,24 @@ export const makeInMemorySnapshotStore = (): InMemorySnapshotStore => {
         rows.set(keyOf(snapshot), { ...snapshot, state: JSON.parse(JSON.stringify(snapshot.state)) });
         return true;
       }),
+    list: (filter) =>
+      Effect.sync(() =>
+        [...rows.values()]
+          .filter((r) => r.name === filter.name && (filter.version === undefined || r.version === filter.version))
+          .slice(0, filter.limit)
+          .map((r) => ({ name: r.name, version: r.version, fingerprint: r.canonical, entity: r.entity ?? null, state: JSON.parse(JSON.stringify(r.state)), cursor: r.cursor }))
+      ),
+    summary: Effect.sync(() => {
+      const counts = new Map<string, { name: string; version: number; count: number }>();
+      for (const r of rows.values()) {
+        const k = `${r.name}\u0000${r.version}`;
+        const c = counts.get(k) ?? { name: r.name, version: r.version, count: 0 };
+        counts.set(k, { ...c, count: c.count + 1 });
+      }
+      return [...counts.values()];
+    }),
+    // the in-memory key is the canonical text itself
+    fingerprint: (canonical) => Effect.succeed(canonical),
     pruneOtherVersions: (name, keepVersion) =>
       Effect.sync(() => {
         let removed = 0;

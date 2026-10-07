@@ -13,6 +13,7 @@
     "./Errors": "./src/Errors.ts",
     "./Command": "./src/Command.ts",
     "./Contract": "./src/Contract.ts",
+    "./VerifySnapshots": "./src/VerifySnapshots.ts",
     "./testing/Scenario": "./src/testing/Scenario.ts",
     "./testing/Snapshots": "./src/testing/Snapshots.ts",
     "./Crablet": "./src/Crablet.ts"

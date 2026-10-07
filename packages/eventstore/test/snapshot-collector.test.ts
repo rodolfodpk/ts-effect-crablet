@@ -36,6 +36,9 @@ const fakeStore = (saved: Array<PendingSnapshot>, behaviour: (p: PendingSnapshot
   Layer.succeed(SnapshotStore, {
     get: () => Effect.succeed(null),
     save: (p) => Effect.tap(behaviour(p), () => Effect.sync(() => void saved.push(p))),
+    list: () => Effect.succeed([]),
+    summary: Effect.succeed([]),
+    fingerprint: (c) => Effect.succeed(c),
     pruneOtherVersions: () => Effect.succeed(0)
   } satisfies SnapshotStoreService);
 

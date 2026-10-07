@@ -52,6 +52,8 @@ export interface Loaded<S> {
 
 export interface ModelInstance<S> {
   readonly query: Query.Query;
+  // Present when the model declared `.snapshot(...)`: what verify-snapshots needs to check its rows (name, version, state schema).
+  readonly snapshot?: { readonly name: string; readonly version: number; readonly schema: Schema.Schema<any> };
   readonly load: (eventStore: EventStoreService) => Effect.Effect<Loaded<S>, SqlError>;
 }
 
@@ -166,10 +168,11 @@ export const defineModel = <S, Scope extends object = {}>(def: {
         });
         return {
           query,
+          ...(snap === null ? {} : { snapshot: { name: snap.name, version: snap.version, schema: snap.schema } }),
           load: (eventStore) =>
             snap === null
               ? Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), loaded)
-              : loadWithSnapshot(eventStore, query, projector, snap, def.initial)
+              : loadWithSnapshot(eventStore, query, projector, snap, def.initial, args)
         };
       }
     };
@@ -194,7 +197,8 @@ const loadWithSnapshot = <S>(
   query: Query.Query,
   projector: StateProjector<S>,
   snap: SnapshotOptions<S>,
-  initial: () => S
+  initial: () => S,
+  entity: object
 ): Effect.Effect<Loaded<S>, SqlError> =>
   Effect.gen(function* () {
     const count = (outcome: string) => Metric.update(Metric.withAttributes(SnapshotMetrics.loads, { model: snap.name, outcome }), 1);
@@ -224,7 +228,7 @@ const loadWithSnapshot = <S>(
       if (Option.isSome(collector)) {
         try {
           const encoded = (Schema.encodeSync(snap.schema as never) as unknown as (state: S) => unknown)(r.settledState);
-          yield* collector.value.add({ ...key, cursor: r.logPosition, state: encoded });
+          yield* collector.value.add({ ...key, cursor: r.logPosition, state: encoded, entity });
         } catch (error) {
           yield* Effect.logWarning(`snapshot ${snap.name}: the state does not encode with its schema, no snapshot recorded: ${String(error)}`);
         }
