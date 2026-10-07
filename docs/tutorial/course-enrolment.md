@@ -830,3 +830,4 @@ docker compose down -v
 - [ADR-0010](../adr/0010-declarative-command-api.md) explains the command API; [ADR-0011](../adr/0011-http-api-from-the-domain-model.md) the HTTP one.
 - The [DCB guide](../dcb-guide.md) works through a transfer and this same enrolment example in more depth, including how the append conditions map onto the
   [DCB specification](https://dcb.events/specification/).
+- [Evolving events](../evolving-events.md) is what to do when an event has to change after it has been written, and [Snapshots](../snapshots.md) what to do when an entity's history gets long.
