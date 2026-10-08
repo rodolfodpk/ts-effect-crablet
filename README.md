@@ -28,13 +28,18 @@ flowchart LR
   client["Client"] --> api["commands-http"]
   api --> cmd["commands<br/>decide on a boundary"]
   cmd -- "append if nothing newer<br/>in the boundary" --> log[("One event log<br/>PostgreSQL")]
-  log -- "poller, at-least-once" --> react["views, outbox, automations"]
-  react -- "a command, from an automation" --> cmd
-  react --> read["views-http<br/>reads that wait for your write"]
+
+  log -- "a poller per module,<br/>at-least-once" --> views["views<br/>projectors into your tables"]
+  log --> auto["automations<br/>an event in, a command out"]
+  log --> outbox["outbox<br/>publishers per topic"]
+
+  views --> read["views-http<br/>reads that wait for your write"]
   read --> client
+  auto -- "a command" --> cmd
+  outbox --> ext["External systems<br/>brokers, webhooks"]
 ```
 
-More diagrams (a command's path, two commands conflicting, event to view, leadership, changing an event, the tables): [Architecture](./docs/architecture.md).
+More diagrams (a command's path, two commands conflicting, event to view, leadership per module, changing an event, the tables): [Architecture](./docs/architecture.md).
 
 > **Status: experimental, pre-release.** The API changes often, packages are not published to npm
 > ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). Not a fit if you are not on PostgreSQL or need a stable library today.
