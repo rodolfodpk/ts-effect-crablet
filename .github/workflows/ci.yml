@@ -35,11 +35,13 @@ jobs:
       - name: Unit tests (Bun, with coverage)
         run: bun run test:unit:coverage
 
+      # Unit coverage only for now. The merged report (unit + integration, scripts/merge-coverage.ts) replaces this upload once
+      # `bun run test:integration:coverage` has been shown to finish reliably (docs/plans/test-coverage.md, step 1).
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/lcov.info
+          files: ./coverage/unit/lcov.info
           fail_ci_if_error: false
 
       - name: Integration tests (Node + Testcontainers)
