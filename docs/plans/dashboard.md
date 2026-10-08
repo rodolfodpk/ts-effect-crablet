@@ -5,7 +5,7 @@
 ## Recommendation in one paragraph
 
 Do **not** build a web dashboard application. Crablet already emits OpenTelemetry metrics and spans; the gap is that the most important number for a poller, **how far behind each consumer is**, is not a metric
-at all (it is a database query behind `getLag`), and that nobody has told an operator which panels to build. So: (1) close the metric gaps, (2) ship a **Grafana dashboard as JSON, checked in and tested**
+at all (it is a database query behind `getLag`, and `getLag` is the wrong number: see step 1), and that nobody has told an operator which panels to build. So: (1) close the metric gaps, (2) ship a **Grafana dashboard as JSON, checked in and tested**
 (plus alert rules), with a one-image Docker Compose stack to try it locally, and (3) only if a need remains that Grafana cannot meet (pause, resume or reset a processor), add a small **admin API package**, and on top of it, optionally, a generic Foldkit example (step 4). The dashboard is a document in the repository, like the diagrams, not a service to run.
 
 ## Why not our own UI
@@ -19,7 +19,7 @@ at all (it is a database query behind `getLag`), and that nobody has told an ope
 | Source | What it gives | Gap |
 |---|---|---|
 | `@crablet/metrics-otel` | counters and timers per area: poller cycles, events fetched, empty polls, backoff, leadership gauge (`crablet.poller.leadership`), view/outbox/automation success, failure, duration, events processed; command and eventstore counters; `crablet.storage.*` gauges | **no lag, no cursor position, no processor status** |
-| `ProcessorManagementService` | `getStatus`, `getAllStatuses`, `getLag`, backoff info, pause, resume, reset | read on demand, per processor; not exported as metrics. `getLag` is `MAX(position) − last_position`: it ignores the cursor's transaction id, so it is an approximation of the true distance |
+| `ProcessorManagementService` | `getStatus`, `getAllStatuses`, `getLag`, backoff info, pause, resume, reset | read on demand, per processor; not exported as metrics. `getLag` is `MAX(position) − last_position` over the whole log: wrong for a consumer of a rare event type, whose cursor only lands on events it selected (see step 1) |
 | Spans (`crablet.command`, `crablet.poller.batch`, `crablet.eventstore.append`) and log annotations (`processor`, `instance`) | request and batch traces, logs filterable by processor | no trace backend wired in the examples |
 | Postgres progress tables (separate ones for views, automations and outbox, keyed by view, automation, or topic plus publisher) | cursor, status (`ACTIVE`, `PAUSED`, `FAILED`), error count, last error; outbox rows also hold leader instance and heartbeat | only readable by SQL; the three kinds differ in shape |
 
@@ -35,8 +35,8 @@ Four rows, from the top of an operator's questions down.
    - Processors by status: `ACTIVE`, `PAUSED`, `FAILED` (stat panels, red when `FAILED > 0`).
    - Leader per processor: which instance holds it (`crablet.poller.leadership` = 1), and a panel that goes red when a processor has **no leader** for more than a minute.
 2. **Are consumers keeping up?** *(the main panel; needs new metrics)*
-   - **Lag in events** per processor: `head position − cursor position`, as a time series and a table sorted worst first.
-   - **Lag in seconds** (age of the oldest unprocessed event), the number a person can reason about.
+   - **Lag in events** per processor: the events it selects that are waiting after its cursor, as a time series and a table sorted worst first.
+   - **Lag in seconds** (age of the first event waiting for it), the number a person can reason about.
    - Throughput: events fetched per second per processor, and events projected, published or processed per consumer (the metrics for those use `view`, `publisher` or no processor label, see above); empty-poll ratio; backoff active.
 3. **Is it failing?**
    - Failures per consumer (view project, outbox publish, automation decide), rate and total, with the last error text in a table (from the status row, not a metric label).
@@ -51,22 +51,26 @@ Variables: `processor`, `instance_id`, `view`. Annotations: leader changes (from
 
 Each is its own commit.
 
-### 1. Close the metric gaps (the real work)
+### 1. Close the metric gaps (the real work) - done (2026-10-08)
 
-New gauges, in `metrics-otel` and recorded from the shared engine in `event-poller` (as the existing poller metrics are, once for all consumers):
+Built as `monitorProcessors` in `@crablet/event-poller/MonitorProcessors`, one sampler per process over the management services of the modules it runs (`[views, automations, outbox]`), default every 15 s, in every instance. Gauges in `PollerMetrics`, all tagged `processor` and `instance_id`:
 
-- `crablet.poller.lag_events` (processor): head position minus cursor position.
-- `crablet.poller.lag_seconds` (processor): age of the oldest unprocessed event, or 0 when caught up.
-- `crablet.poller.cursor_position` (processor), so lag can also be computed in the backend.
-- `crablet.poller.status` (processor, status): 1 for the current status label, so Grafana can count `ACTIVE`, `PAUSED`, `FAILED`. Low cardinality (3 values).
-- `crablet.poller.errors` counter (processor), if the failure counters per area do not already cover the engine itself.
+- `crablet.poller.lag_events`: events the processor selects that are committed and after its cursor, counted up to `BACKLOG_CAP` (100 000).
+- `crablet.poller.lag_seconds`: age, by the events' own `occurred_at`, of the first of them; 0 when caught up.
+- `crablet.poller.cursor_position`.
+- `crablet.poller.status` (also `status`): 1 for the current `ACTIVE`, `PAUSED` or `FAILED`, 0 for the others.
 
-Decision to make here: **where lag is computed.** Options: (a) the leader refreshes it each poll (cheap: it already reads the cursor and fetched batch, the head costs one `MAX(position)`), but only the leader reports and a processor with no leader reports nothing, which is exactly when you want it; (b) every instance
-runs a low-frequency sampler (like `monitorStorage`), at the cost of one small query per instance per interval. Recommend **(b)**, as `monitorProcessors` in `event-poller` (the processor tables and `ProcessorManagementService` live there; `monitorStorage` is in `eventstore`, which does not depend on it), same shape and default every 15 s: a dead leader must still show as growing lag. Consequence: every instance reports the same value, so the dashboard uses `max by (processor)`, never `sum`.
+What the work found, which changed the design:
 
-Lag in events uses `getLag`'s definition (position only) and says so; the true distance would need the cursor's transaction id, which the plan does not attempt. Lag in seconds reads `occurred_at` of the first event after the cursor; `occurred_at` can be supplied by the caller (it is a parameter of `append`), so it is the event's own time, not the time it was stored. For most adopters these are the same; the panel's description says what it measures.
+- **`getLag` could not be the lag.** It is `MAX(position) − last_position` over the whole log, but a cursor only ever lands on events the processor's selection matched (`SqlEventFetcher` says so). A consumer of a rare event type that has everything shows a large "lag" for ever. The new `ProcessorManagementService.getBacklog` counts against the processor's own selection (`buildBacklogQuery`, the fetch predicate minus the xmin bound), and the engine exposes each processor's selection as `EventProcessorHandle.selectionFor`. `getLag` stays, documented as the distance to the head of the log. A Postgres test shows the two disagreeing (0 pending, `getLag` at least 4).
+- **The outbox's `getCursor` writes.** It refreshes `leader_instance` and `leader_heartbeat` on every read, so a sampler reading it would write on every sample and attribute the heartbeat to itself. `ProgressTracker` gained `peekCursor` (a read with no side effect); the sampler, `getLag` and `getBacklog` use it. A Postgres test shows `getCursor` changing the leader column and `peekCursor` not.
+- **Label mapping.** The new gauges all use `processor`, so they join with the existing poller metrics. A view's processor id is its name; an outbox publisher's is the JSON pair `["topic","publisher"]`. The per-area counters (`view`, `publisher`) still use their own labels.
+- **No `crablet.poller.errors` counter.** The per-area failure counters and the `FAILED` status already cover it.
+- **Not done here:** the wallet example does not yet run the sampler or export OTLP; that is step 3, where both are wired and the "metrics appear in an OTLP export" check is made.
 
-Done when: the metrics appear in an OTLP export from the wallet example, with a test that drives a processor behind the head and asserts the gauge.
+Tests: unit (the sampler, the gauges, a failing round, the service's reading of the row, the cap, `selectionFor`) and Postgres (the rare-type consumer, the first-event age, the tag clauses, `peekCursor`). Two deliberate breaks, the selection dropped from the backlog query and a status gauge stuck at 1, were each caught.
+
+Not covered: the lag in seconds on a very large table (measure in step 3 with the load script), and the sampler against a real views processor end to end (step 3).
 
 ### 2. The dashboard as code
 
@@ -107,7 +111,7 @@ Done when: the handlers have integration tests (pause and resume on an unknown i
 
 ## Risks and costs
 
-- **Lag in seconds needs the event's timestamp**, which means reading the oldest unprocessed event each sample; a small indexed read, but measure it on a large table.
+- **The backlog query counts up to 100 000 matching events per processor per sample** (and reads the first one's time). It follows the fetch's indexes, but a selection that matches few events over a long log may scan far; measure it on a large table in step 3 and lengthen the interval or lower the cap if it shows.
 - **Cardinality.** Labels are processor and instance only (tens of series). Never label by command, stream or tag value.
 - **A sampler is another thing that can fail.** It must never take the application down: errors are logged and the gauge goes stale, which the alert on "metric absent" catches.
 - **Prometheus-shaped.** Adopters on Datadog, New Relic or Honeycomb get the metrics and spans from OTel but import none of the JSON. Say so; the metric catalogue is the portable part.
@@ -122,6 +126,6 @@ Done when: the handlers have integration tests (pause and resume on an unknown i
 ## Decisions for the owner
 
 1. ~~Reference stack~~ Decided 2026-10-08: Grafana with Prometheus over OTLP, locally the single `grafana/otel-lgtm` image.
-2. Lag sampled by every instance (recommended) or by the leader only?
+2. ~~Lag sampled by every instance or by the leader only?~~ Decided: every instance (built).
 3. Is the admin API (step 4) in scope, or only watching?
 4. Where does `ops/` live: in this repository (recommended, so the test can check it), or a separate one?

@@ -136,6 +136,7 @@ export const makePostgresProgressTracker = <I extends string>(
 
     const tracker: ProgressTracker<I> = {
       getCursor,
+      peekCursor: getCursor,
       updateCursor,
       recordError,
       resetErrorCount,

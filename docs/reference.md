@@ -47,6 +47,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
   A graceful release wakes the others at once; a crash is picked up on the next retry (5 s by default). Processors started with `startScoped` are released when their scope closes, so a shutdown signal
   under `NodeRuntime.runMain` is a graceful release ([Run it in production](./guides/run-in-production.md)).
 - **Traces and logs.** Spans for commands, boundary reads, appends and handled batches, and log lines that say which processor or command wrote them; no exporter is shipped ([Monitor it](./guides/monitor-it.md#traces-and-log-context)).
+- **Consumer lag.** `monitorProcessors()` (`@crablet/event-poller/MonitorProcessors`) keeps `crablet.poller.lag_events`, `lag_seconds`, `cursor_position` and `status` current in every instance, counted against each processor's own selection ([Monitor it](./guides/monitor-it.md#are-the-consumers-keeping-up)).
 - **Storage.** `storageReport()` and `monitorStorage()` (`@crablet/eventstore/Storage`) report the size of the log and its indexes, and `metrics-otel`
   exposes them as `crablet.storage.*` gauges; `examples/wallet-example-app/scripts/report-storage.ts` prints the report. A tag-key table keeps the pollers'
   tag filters cheap (about 1.2 KB per event in all). Nothing deletes events, and retention is not decided ([ADR-0019](./adr/0019-storage-visibility-and-the-tag-table.md)).

@@ -64,12 +64,9 @@ const toDetails = (row: ProgressRow): OutboxProgressDetails => ({
 });
 
 // `instanceId` here is for the management service's OWN progress-tracker instance (used only by
-// pause/resume/reset/getLag), not the running processor's - calling getLag (which reads
-// getCursor, and getCursor always refreshes leader_instance/leader_heartbeat as a
-// side effect - see internal/OutboxProgressTracker.ts) from an ops process will momentarily
-// attribute the heartbeat to whatever instanceId is passed here. Harmless: no failover logic
-// consumes these columns yet (see the Phase 4 plan), so this is a cosmetic quirk, not a
-// correctness concern.
+// pause/resume/reset), not the running processor's. The reads (getLag, getBacklog) use peekCursor, which does not
+// refresh leader_instance/leader_heartbeat the way getCursor does (see internal/OutboxProgressTracker.ts), so
+// monitoring never writes.
 export const makeOutboxManagementService = (
   handle: EventProcessorHandle<ProcessorConfig<string>, string>,
   instanceId = "outbox-management-service"
@@ -85,6 +82,7 @@ export const makeOutboxManagementService = (
       resumeProcessor: handle.service.resume,
       backoffSnapshot: handle.backoffSnapshot,
       allBackoffSnapshots: handle.allBackoffSnapshots,
+      selectionOf: handle.selectionFor,
       sql
     });
 

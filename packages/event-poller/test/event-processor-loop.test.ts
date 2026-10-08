@@ -135,6 +135,12 @@ describe("EventProcessor.process (direct call, no leadership gate)", () => {
     expect(await run(handle.service.process(PROCESSOR_ID))).toBe(1); // event 2 was waiting
   });
 
+  test("selectionFor answers with the selection of each configured processor, and undefined for an id it does not run", async () => {
+    const { handle } = await run(makeHarness());
+    expect(handle.selectionFor(PROCESSOR_ID)).toEqual(EventSelection.empty());
+    expect(handle.selectionFor("not-a-processor")).toBeUndefined();
+  });
+
   test("FAILED status -> 0, no fetch performed", async () => {
     const { handle, tracker, eventsRef } = await run(makeHarness());
     await run(tracker.autoRegister(PROCESSOR_ID, "test-instance"));

@@ -65,6 +65,23 @@ export const makeOutboxProgressTracker = (
       );
     };
 
+    const peekCursor = (key: string): Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady> => {
+      const { topic, publisher } = fromKey(key);
+      return mapTableNotReady(
+        Effect.map(
+          sql.unsafe<{ last_position: string; last_transaction_id: string }>(
+            `SELECT last_position::text AS last_position, last_transaction_id::text AS last_transaction_id
+             FROM crablet_outbox_topic_progress WHERE topic = $1 AND publisher = $2`,
+            [topic, publisher]
+          ),
+          (rows) =>
+            rows[0]
+              ? ProgressCursorNS.of(rows[0].last_transaction_id, BigInt(rows[0].last_position))
+              : ProgressCursorNS.zero
+        )
+      );
+    };
+
     // Forward-only, like PostgresProgressTracker: a late write from a leader that lost the lock moves nothing.
     const updateCursor = (key: string, cursor: ProgressCursor): Effect.Effect<void, SqlError> => {
       const { topic, publisher } = fromKey(key);
@@ -134,6 +151,7 @@ export const makeOutboxProgressTracker = (
 
     const tracker: ProgressTracker<string> = {
       getCursor,
+      peekCursor,
       updateCursor,
       recordError,
       resetErrorCount,

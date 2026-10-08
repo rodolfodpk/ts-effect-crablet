@@ -116,6 +116,29 @@ export const buildPendingSelectionQuery = (
   return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} LIMIT 1`, params };
 };
 
+// How much is waiting for a processor: the committed events its selection matches after `cursor`, counted up to `cap` (a processor
+// that is days behind does not make the sampler count millions of rows), and the age in seconds of the first of them by `occurred_at`.
+// Same predicate as the fetch, minus the xmin bound: this asks what exists, not what the poller may safely read yet.
+export const buildBacklogQuery = (
+  selection: EventSelection,
+  cursor: ProgressCursor,
+  cap: number,
+  options: SelectionQueryOptions = {}
+): EventSelectionQuery => {
+  const clauses: Array<string> = [];
+  const params: Array<unknown> = [];
+  clauses.push(`(e.transaction_id, e.position) > ($${params.length + 1}::xid8, $${params.length + 2}::bigint)`);
+  params.push(cursor.transactionId, cursor.position.toString());
+  pushSelectionClauses(selection, clauses, params, options.tagKeys);
+  params.push(cap);
+  return {
+    sql:
+      "SELECT count(*)::text AS pending, extract(epoch FROM (now() - min(b.occurred_at)))::float8 AS oldest_seconds " +
+      `FROM (SELECT e.occurred_at FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.transaction_id ASC, e.position ASC LIMIT $${params.length}) b`,
+    params
+  };
+};
+
 export interface StoredEventRow {
   readonly type: string;
   readonly tags: ReadonlyArray<string>;

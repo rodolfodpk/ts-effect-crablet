@@ -76,6 +76,8 @@ export interface EventProcessorHandle<C extends ProcessorConfig<I>, I extends st
   readonly service: EventProcessorService<C, I>;
   readonly backoffSnapshot: (processorId: I) => Effect.Effect<BackoffSnapshot | null>;
   readonly allBackoffSnapshots: Effect.Effect<ReadonlyMap<I, BackoffSnapshot>>;
+  // The events this processor selects, by id: what its backlog is counted against (ProcessorManagementService.getBacklog).
+  readonly selectionFor: (processorId: I) => EventSelection | undefined;
 }
 
 const toBackoffSnapshot = (state: BackoffState): BackoffSnapshot => ({
@@ -428,6 +430,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       (m) => new Map([...m.entries()].map(([id, state]) => [id, toBackoffSnapshot(state)]))
     );
 
-    const handle: EventProcessorHandle<C, I> = { service, backoffSnapshot, allBackoffSnapshots };
+    const selectionById = new Map<I, EventSelection>(deps.configs.map((c) => [c.processorId, deps.selectionOf(c)] as const));
+    const selectionFor = (processorId: I): EventSelection | undefined => selectionById.get(processorId);
+    const handle: EventProcessorHandle<C, I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor };
     return handle;
   });

@@ -9,7 +9,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { ProgressTableNotReady } from "@crablet/event-poller/ProgressTracker";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import { makeOutboxProgressTracker } from "../../src/internal/OutboxProgressTracker.ts";
-import { toKey } from "../../src/TopicPublisherPair.ts";
+import { fromKey, toKey } from "../../src/TopicPublisherPair.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<SqlClient.SqlClient, never>;
@@ -83,6 +83,29 @@ describe("the outbox progress tracker (against crablet_outbox_topic_progress)", 
       })
     );
     assert.deepStrictEqual(cursor, ProgressCursorNS.of("10", 50n));
+  });
+
+  it("peekCursor reads the cursor without refreshing the leader columns that getCursor refreshes, and says so when the topic has no row yet", async () => {
+    const k = key();
+    const { peeked, afterPeek, afterGet, unknown } = await run(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const tracker = yield* makeOutboxProgressTracker("instance-sampler");
+        yield* tracker.autoRegister(k, "instance-a");
+        yield* tracker.updateCursor(k, ProgressCursorNS.of("10", 50n));
+        const leaderOf = () => sql.unsafe<{ leader_instance: string | null }>("SELECT leader_instance FROM crablet_outbox_topic_progress WHERE topic = $1", [fromKey(k).topic]);
+        yield* sql.unsafe("UPDATE crablet_outbox_topic_progress SET leader_instance = 'instance-a', leader_heartbeat = NULL WHERE topic = $1", [fromKey(k).topic]);
+        const peeked = yield* tracker.peekCursor(k);
+        const afterPeek = (yield* leaderOf())[0]!.leader_instance;
+        yield* tracker.getCursor(k);
+        const afterGet = (yield* leaderOf())[0]!.leader_instance;
+        return { peeked, afterPeek, afterGet, unknown: yield* tracker.peekCursor(key()) };
+      })
+    );
+    assert.deepStrictEqual(peeked, ProgressCursorNS.of("10", 50n));
+    assert.strictEqual(afterPeek, "instance-a", "the peek attributed nothing to the sampler");
+    assert.strictEqual(afterGet, "instance-sampler", "getCursor does refresh it, which is why monitoring must not use it");
+    assert.deepStrictEqual(unknown, ProgressCursorNS.zero);
   });
 
   it("before the progress table exists the cursor read says so with ProgressTableNotReady, not with a raw SQL error", async () => {

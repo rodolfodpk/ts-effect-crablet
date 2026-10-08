@@ -10,6 +10,7 @@ shared so the three modules get the same guarantees.
   and a cursor that can only move forward.
 - **`EventSelection`**, **`SqlEventFetcher`** - which events a processor wants (types and tags) and the SQL that fetches them.
 - **`ProgressTracker`** / **`PostgresProgressTracker`**, **`ProgressCursor`**, **`ProgressPing`** - where a processor has got to.
+- **`monitorProcessors`** (`@crablet/event-poller/MonitorProcessors`) - keeps the `crablet.poller.lag_*`, cursor and status gauges current.
 - **`ProcessorManagementService`**, **`ProcessorStatus`**, **`ProcessorConfig`** - inspect and control processors (pause, reset, status).
 
 ## Depends on

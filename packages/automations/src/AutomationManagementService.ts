@@ -65,6 +65,7 @@ export const makeAutomationManagementService = (
       resumeProcessor: handle.service.resume,
       backoffSnapshot: handle.backoffSnapshot,
       allBackoffSnapshots: handle.allBackoffSnapshots,
+      selectionOf: handle.selectionFor,
       sql
     });
 

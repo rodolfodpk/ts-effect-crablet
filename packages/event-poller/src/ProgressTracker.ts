@@ -16,6 +16,9 @@ export class ProgressTableNotReady extends Data.TaggedError("ProgressTableNotRea
 export interface ProgressTracker<I> {
   // Where the processor resumes: the zero cursor when it has never run.
   readonly getCursor: (id: I) => Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady>;
+  // The same cursor, read with no side effect: for monitoring and management, which must not write (the outbox's `getCursor` refreshes the
+  // leader columns, so reading it from a sampler would put a write on every sample and attribute the heartbeat to the sampler).
+  readonly peekCursor: (id: I) => Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady>;
   readonly updateCursor: (id: I, cursor: ProgressCursor) => Effect.Effect<void, SqlError>;
   readonly recordError: (id: I, error: string, maxErrors: number) => Effect.Effect<void, SqlError>;
   readonly resetErrorCount: (id: I) => Effect.Effect<void, SqlError>;

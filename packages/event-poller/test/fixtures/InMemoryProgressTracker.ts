@@ -77,6 +77,7 @@ export const makeInMemoryProgressTracker = <I>(): Effect.Effect<InMemoryProgress
 
     const tracker: ProgressTracker<I> = {
       getCursor,
+      peekCursor: getCursor,
       updateCursor,
       recordError,
       resetErrorCount,

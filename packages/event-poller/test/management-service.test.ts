@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
-import { isBackedOff, makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
+import { BACKLOG_CAP, isBackedOff, makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
+import * as EventSelection from "../src/EventSelection.ts";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
 import * as ProgressCursorNS from "../src/ProgressCursor.ts";
 
@@ -80,5 +81,56 @@ describe("ProcessorManagementService: lag and backoff reporting", () => {
 
   test("isBackedOff is false when currentSkipCounter is 0", () => {
     expect(isBackedOff({ emptyPollCount: 4, currentSkipCounter: 0 })).toBe(false);
+  });
+});
+
+describe("ProcessorManagementService: backlog", () => {
+  // The query's shape is exercised against Postgres in integration/backlog.test.ts; here only what the service makes of the row.
+  const backlogSql = (row: { pending: string; oldest_seconds: number | null }): SqlClient.SqlClient =>
+    ({ unsafe: () => Effect.succeed([row]) }) as unknown as SqlClient.SqlClient;
+
+  const serviceOver = async (sql: SqlClient.SqlClient, selectionOf?: () => EventSelection.EventSelection | undefined) => {
+    const { tracker } = await run(makeInMemoryProgressTracker<string>());
+    await run(tracker.autoRegister("view-a", "test-instance"));
+    await run(tracker.updateCursor("view-a", ProgressCursorNS.of("7", 7n)));
+    // Reading the backlog must not go through getCursor (the outbox's refreshes the leader columns): make that one fail loudly.
+    const guarded = { ...tracker, getCursor: () => Effect.die(new Error("getCursor must not be used for monitoring")) };
+    return makeProcessorManagementService({
+      progressTracker: guarded,
+      getAllStatuses: Effect.succeed(new Map([["view-a", "ACTIVE" as const]])),
+      pauseProcessor: () => Effect.void,
+      resumeProcessor: () => Effect.void,
+      backoffSnapshot: () => Effect.succeed(null),
+      allBackoffSnapshots: Effect.succeed(new Map()),
+      sql,
+      ...(selectionOf === undefined ? {} : { selectionOf })
+    });
+  };
+  const some = () => EventSelection.of({ eventTypes: new Set(["Rare"]) });
+
+  test("reports the cursor, the pending events and the age of the oldest, reading the cursor with peekCursor", async () => {
+    const management = await serviceOver(backlogSql({ pending: "3", oldest_seconds: 12.5 }), some);
+    expect(await run(management.getBacklog("view-a"))).toEqual({ cursor: ProgressCursorNS.of("7", 7n), pendingEvents: 3, capped: false, oldestPendingSeconds: 12.5 });
+  });
+
+  test("nothing pending: zero events, no age", async () => {
+    const management = await serviceOver(backlogSql({ pending: "0", oldest_seconds: null }), some);
+    expect(await run(management.getBacklog("view-a"))).toMatchObject({ pendingEvents: 0, capped: false, oldestPendingSeconds: null });
+  });
+
+  test("a count that reaches the cap says it is capped; an age from a clock that is behind the database is clamped to zero", async () => {
+    const management = await serviceOver(backlogSql({ pending: String(BACKLOG_CAP), oldest_seconds: -3 }), some);
+    expect(await run(management.getBacklog("view-a"))).toMatchObject({ pendingEvents: BACKLOG_CAP, capped: true, oldestPendingSeconds: 0 });
+  });
+
+  test("an id whose selection this service does not know has no backlog (null), and no query is made", async () => {
+    const noSql = { unsafe: () => Effect.die(new Error("no query expected")) } as unknown as SqlClient.SqlClient;
+    expect(await run((await serviceOver(noSql)).getBacklog("view-a"))).toBeNull();
+    expect(await run((await serviceOver(noSql, () => undefined)).getBacklog("view-a"))).toBeNull();
+  });
+
+  test("getLag reads the cursor with peekCursor too", async () => {
+    const management = await serviceOver(fakeSql(20n));
+    expect(await run(management.getLag("view-a"))).toBe(20n);
   });
 });

@@ -1,6 +1,9 @@
 import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
+import type { EventSelection } from "./EventSelection.ts";
+import { buildBacklogQuery } from "./internal/sql.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import type { ProgressCursor } from "./ProgressCursor.ts";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 
 // Backoff info for a processor. Structurally
@@ -14,6 +17,18 @@ export interface BackoffInfo {
 
 export const isBackedOff = (info: BackoffInfo): boolean => info.currentSkipCounter > 0;
 
+// What is waiting for one processor: the committed events its own selection matches after its cursor. Counted up to BACKLOG_CAP so that a processor
+// days behind does not make the count read millions of rows; `capped` says the true number is at least `pendingEvents`.
+export const BACKLOG_CAP = 100_000;
+export interface Backlog {
+  readonly cursor: ProgressCursor;
+  readonly pendingEvents: number;
+  readonly capped: boolean;
+  // Age, by the events' own `occurred_at`, of the first pending event; null when nothing is pending. `occurred_at` can be supplied by the
+  // writer, so this is the event's time, not the time it was stored.
+  readonly oldestPendingSeconds: number | null;
+}
+
 // Pause/resume/reset and status inspection for processors.
 export interface ProcessorManagementService<I> {
   readonly pause: (processorId: I) => Effect.Effect<boolean, unknown>;
@@ -21,7 +36,11 @@ export interface ProcessorManagementService<I> {
   readonly reset: (processorId: I) => Effect.Effect<boolean, unknown>;
   readonly getStatus: (processorId: I) => Effect.Effect<ProcessorStatus, unknown>;
   readonly getAllStatuses: Effect.Effect<ReadonlyMap<I, ProcessorStatus>, unknown>;
+  // Positions between the head of the WHOLE log and the cursor. A cursor only lands on events the processor selected, so for a processor that
+  // selects a rare event type this stays large while it is fully caught up; use `getBacklog` to ask whether it is behind.
   readonly getLag: (processorId: I) => Effect.Effect<bigint | null, unknown>;
+  // The processor's own pending events (see Backlog); null for an id whose selection is not known to this service.
+  readonly getBacklog: (processorId: I) => Effect.Effect<Backlog | null, unknown>;
   readonly getBackoffInfo: (processorId: I) => Effect.Effect<BackoffInfo | null>;
   readonly getAllBackoffInfo: Effect.Effect<ReadonlyMap<I, BackoffInfo>>;
 }
@@ -34,6 +53,8 @@ export interface ProcessorManagementDeps<I> {
   readonly backoffSnapshot: (id: I) => Effect.Effect<BackoffInfo | null>;
   readonly allBackoffSnapshots: Effect.Effect<ReadonlyMap<I, BackoffInfo>>;
   readonly sql: SqlClient.SqlClient;
+  // What each processor selects, for `getBacklog`. Absent: `getBacklog` answers null.
+  readonly selectionOf?: (id: I) => EventSelection | undefined;
 }
 
 // pause/resume/reset all check existence via getAllStatuses().has(id), NOT getStatus(id) -
@@ -70,13 +91,30 @@ export const makeProcessorManagementService = <I>(
   // null if either side is null (empty events table, or no progress row yet).
   const getLag = (id: I): Effect.Effect<bigint | null, unknown> =>
     Effect.gen(function* () {
-      const { position: lastPosition } = yield* deps.progressTracker.getCursor(id);
+      const { position: lastPosition } = yield* deps.progressTracker.peekCursor(id);
       const rows = yield* deps.sql.unsafe<{ lag: string | null }>(
         "SELECT (SELECT MAX(position) FROM crablet_events) - $1::bigint AS lag",
         [lastPosition.toString()]
       );
       const lag = rows[0]?.lag;
       return lag === null || lag === undefined ? null : BigInt(lag);
+    });
+
+  const getBacklog = (id: I): Effect.Effect<Backlog | null, unknown> =>
+    Effect.gen(function* () {
+      const selection = deps.selectionOf?.(id);
+      if (selection === undefined) return null;
+      const cursor = yield* deps.progressTracker.peekCursor(id);
+      const query = buildBacklogQuery(selection, cursor, BACKLOG_CAP);
+      const rows = yield* deps.sql.unsafe<{ pending: string; oldest_seconds: number | null }>(query.sql, query.params);
+      const pendingEvents = Number(rows[0]?.pending ?? 0);
+      const oldest = rows[0]?.oldest_seconds;
+      return {
+        cursor,
+        pendingEvents,
+        capped: pendingEvents >= BACKLOG_CAP,
+        oldestPendingSeconds: pendingEvents === 0 || oldest === null || oldest === undefined ? null : Math.max(0, oldest)
+      };
     });
 
   return {
@@ -86,6 +124,7 @@ export const makeProcessorManagementService = <I>(
     getStatus,
     getAllStatuses: deps.getAllStatuses,
     getLag,
+    getBacklog,
     getBackoffInfo: deps.backoffSnapshot,
     getAllBackoffInfo: deps.allBackoffSnapshots
   };

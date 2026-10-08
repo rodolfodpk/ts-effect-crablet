@@ -18,7 +18,8 @@
     "./PostgresProgressTracker": "./src/PostgresProgressTracker.ts",
     "./SqlEventFetcher": "./src/SqlEventFetcher.ts",
     "./ProcessorManagementService": "./src/ProcessorManagementService.ts",
-    "./InstanceId": "./src/InstanceId.ts"
+    "./InstanceId": "./src/InstanceId.ts",
+    "./MonitorProcessors": "./src/MonitorProcessors.ts"
   },
   "dependencies": {
     "effect": "4.0.0",
