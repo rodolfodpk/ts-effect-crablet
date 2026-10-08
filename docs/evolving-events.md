@@ -26,6 +26,24 @@ type that carries a model's tags but that the model does not know about. Both ar
 There are no upcasters, no version column and no double-writes. Chains of conversion functions grow with every change; a new name is explicit and
 visible in the code.
 
+## Who does what: you decide, the framework detects
+
+Nothing converts an old event for you, and nothing decides whether a change is compatible. Keep the two phases apart:
+
+| | When | Who | What |
+|---|---|---|---|
+| **Decide** | when you edit the definition | **you** | Is the change compatible with every stored shape? If not, define a new event with a new name. Keep the old definition. Make every model, projector and automation that reads the old event handle the new one (or declare `.ignores(...)`). |
+| **Check** | before you deploy | **you, with the tools below** | Keep fixtures of old payloads; run the change-impact report; run `verify-events` on production-like data. The first two run as unit tests; `verify-events` is a script you run (CI does not, because it needs real data). |
+| **Detect** | at run time, on every read | **automatic** | A stored event is read through its definition. One that does not fit fails with a typed `EventDecodingError`, and is never skipped. |
+| **Repair** | after a detection | **you** | Revert or loosen the definition, or append a new event that corrects the facts ([Corrections are events](#corrections-are-events)). The stored event is never edited. |
+
+So the runtime part is a **safety net, not a feature that handles change**: it turns a silent wrong answer into a loud, typed failure. Whether the change was safe was decided, or missed, at
+design time. What *is* automatic and benign: fields the reader does not know are ignored (an older reader with a newer writer), and the defaults and optional fields you declare are
+applied when an old event is decoded.
+
+If an incompatible change reaches production under the old name, the effects are the ones in [Reading events](#reading-events-models-projectors-automations) below: commands over that
+boundary fail on every attempt, and a view or automation is marked FAILED after `maxErrors`, until you repair it.
+
 ## A compatible change: a field with a default
 
 A deposit as first released:

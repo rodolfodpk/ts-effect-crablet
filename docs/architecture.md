@@ -229,27 +229,32 @@ others notice on their next retry (5 s by default). See [ADR-0006](./adr/0006-le
 
 ## Changing an event
 
-Events are stored for ever, so a definition change must keep old events readable. The rule and its checks:
+Events are stored for ever, so a definition change must keep old events readable. **Deciding that is the programmer's job, at design time.** The framework's part at run time is only to detect an
+event it cannot read and refuse it; it never converts or repairs one.
 
 ```mermaid
 flowchart TD
-  want(["I need to change an event"]) --> kind{"Can every stored event<br/>still be decoded?"}
-  kind -- "yes: add a field with a default,<br/>or an optional field" --> compat["Same event name:<br/>withDecodingDefaultKey or optionalKey"]
-  kind -- "no: rename, retype, remove,<br/>or the meaning changed" --> newev["A new event name;<br/>the old one stays readable"]
-  compat --> checks
-  newev --> checks
-  checks["Checks"] --> fx["Fixtures: old payloads still decode"]
-  checks --> ve["verifyEvents: decode a sample of stored events"]
-  checks --> impact["Change-impact report: which models handle,<br/>ignore or lack this event, against a committed baseline"]
-  fx --> ship(["Deploy"])
-  ve --> ship
-  impact --> ship
-  ship --> bad{"A stored event the code<br/>cannot read?"}
-  bad -- yes --> fail["Typed EventDecodingError:<br/>never skipped, never carries the payload"]
-  bad -- no --> ok(["Works"])
+  subgraph design["Design time: your decisions and your checks"]
+    want(["I change an event definition"]) --> kind{"Can the new definition still decode<br/>every shape already stored?"}
+    kind -- "yes: a field with a default,<br/>or an optional field" --> compat["Keep the name"]
+    kind -- "no: rename, retype, remove,<br/>or the meaning changed" --> newev["A new event name. The old definition stays,<br/>and models and readers handle both"]
+    compat --> checks
+    newev --> checks
+    checks["Run the checks: fixtures and the change-impact report<br/>(unit tests), verify-events on production-like data"] --> ship(["Deploy"])
+  end
+
+  subgraph runtime["Run time: automatic, but only detects and refuses"]
+    read["Every read of a stored event<br/>goes through its definition"] --> ok{"Does it decode?"}
+    ok -- yes --> use["Used by the model, projector or automation"]
+    ok -- no --> err["Typed EventDecodingError, never skipped,<br/>never carrying the payload.<br/>A command fails; a view or automation is recorded as failing"]
+  end
+
+  ship --> read
+  err -.-> fix["You repair it: revert or loosen the definition,<br/>or append an event that corrects the facts.<br/>Nothing edits the stored event"]
 ```
 
-Tags are additive-only for the same reason: a model's boundary is found by tags. Guide: [Evolving events](./evolving-events.md); decision: [ADR-0017](./adr/0017-event-evolution-by-compatibility.md).
+Tags are additive-only for the same reason: a model's boundary is found by tags. Who does what, in a table: [Evolving events](./evolving-events.md#who-does-what-you-decide-the-framework-detects);
+decision: [ADR-0017](./adr/0017-event-evolution-by-compatibility.md).
 
 ## What is in the database
 
