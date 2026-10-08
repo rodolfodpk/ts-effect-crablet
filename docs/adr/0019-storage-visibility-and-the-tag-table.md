@@ -1,8 +1,8 @@
-# ADR-0019: Storage is visible, and the tag table costs more than it buys
+# ADR-0019: Storage is visible, and the tag table is heavier than its reads need
 
 ## Status
 
-Proposed. The visibility part is built (below). The tag table recommendation is **not** applied, and it is **not yet verified against the real pollers** (see "What has not been verified for the pollers"): it changes the schema and needs your decision after that check.
+Accepted (2026-10-07). The visibility part and the slim tag-key table (**migration V11**) are built and tested. Retention is deliberately not decided. **The recommendation changed twice while it was checked, and the history is part of the record**: the first measurement (hand-written approximations of the poller's SQL) said "drop the table"; the check with the poller's real query builders said the opposite for rare keys; a third measurement found the middle path that was built. Shipped numbers are in "What shipped" and differ from the forecast in one respect (the disk saving is smaller; see there).
 
 ## Context
 
@@ -20,7 +20,7 @@ Plan step 6 (docs/plans/reliability-and-scale-diagnostic.md, F6) asked for stora
 | **tag table total** | **958 MiB** | **1,004 B** |
 | **both** | **1,573 MiB** | **1,649 B** |
 
-The tag table is **61 %** of the space, and three of its own indexes are two thirds of it. At 100 million events of this shape the log would take about 165 GB (**derived**), of which the tag table is about 100 GB; at a billion, about 1.65 TB.
+The tag table is **61 %** of the space, and its three indexes are more than two thirds of it. At 100 million events of this shape the log would take about 165 GB (**derived**), of which the tag table is about 100 GB; at a billion, about 1.65 TB.
 
 **Why it exists, in the schema's own words** (V1): "derived data maintained atomically on append ... to give legacy per-processor poller SQL an indexed key/value lookup shape instead of scanning `unnest(crablet_events.tags)` per candidate row." That is the claim the measurements below test.
 
@@ -28,51 +28,81 @@ The tag table is **61 %** of the space, and three of its own indexes are two thi
 
 **What it costs on the write path (E9c).** 60,000 deposits through the real append function, with and without the tag-row inserts (the function altered in a scratch database): **4,832 events/s with them, 18,718 without**: the tag rows cost 74 % of append throughput here (one connection, batches of 200, indicative).
 
-**What it buys on the read path (E9b), 1,000,000 events, p50 of a batch of 100:**
+**What it buys on the read path: the corrected measurement (E9d, E9f).** The first version of this section used hand-written SQL imitating the poller's and a one-key filter, and concluded that "the tag table is never meaningfully faster than scanning the events' own tags". **That was wrong.** With the poller's real query builders (`buildEventSelectionQuery`, `buildPendingSelectionQuery`) and the wallet's real selections, 1,000,000 events, p50 of a batch of 100 (the shapes agreed across two full runs; the numbers below are the second run):
 
-| Selection | Tag table | Slim `(key, position)` | `tag_keys` column + GIN | No helper (split the tags of each row) |
-|---|---|---|---|---|
-| tail, key on every event | 1.2 ms | 1.4 | 1.2 | 1.0 |
-| tail, key on 5 % | 3.0 | 3.8 | 7.9 | 2.5 |
-| catch-up from the start, key on 5 % | 2.8 | 3.4 | 1.4 | 2.6 |
-| tail, rare key (0.01 %) | 7.5 | 7.2 | 0.6 | 6.9 |
-| catch-up from the start, rare key (0.01 %) | **3,064 ms** | 2,202 | 688 | 2,075 |
-| space | 958 MiB | 421 MiB (44 %) | 93 MiB (10 %) | 0 |
+| Selection | Tag table | Scan the events' own tags | Slim table `(key, position)` |
+|---|---|---|---|
+| a wallet view (5 types + the 3 wallet keys), tail / catch-up | 1.9 / 1.0 ms | 2.2 / 0.9 | 2.0 / (same plan) |
+| the outbox topic (3 wallet keys), tail / catch-up | 1.2 / 1.0 | 1.1 / 1.6 | |
+| **rare key (0.01 %), tail** | 0.7 | 8.1 | 0.6 |
+| **rare key, catch-up from the start** | **0.7 ms** | **2,539 ms** | **0.6 ms** |
+| required `transfer_id` on transfers, catch-up | 7.3 | 1.3 | 9.7 |
+| **pending check, rare key, last 5,000 events** | 5.8 | 162 | 5.9 |
+| pending check, key that never occurs, last 100,000 | 119 | 246 | 126 |
+| **size** | 958 MiB | 0 | **420 MiB (44 %)** |
+| **append throughput** (60,000 deposits, one connection) | 4,186 events/s | (no rows) 18,718 | **9,664 (2.3 times)** |
 
-In none of the five selections does the tag table beat scanning the events' own tags by a meaningful amount, and on the one that should favour an index, a rare key on a catch-up, it is the slowest (the poller's query is `ORDER BY transaction_id, position LIMIT n` with an `EXISTS`, so the planner walks the events in cursor order and probes the tag table per row; the key index is not what it uses). A `tag_keys` array column with a GIN index is much better for rare keys (0.6 ms, 688 ms) but worse for a selective tail (7.9 ms against 3.0) because the planner chooses a bitmap scan; it is not a free win.
+So: for the wallet's own selections (common keys) the tag table buys nothing; for a **rare key** it is the difference between 0.7 ms and 2.5 seconds on a catch-up (and the scan grows with the log: about 25 seconds at 10 million events, derived), and between 6 ms and 160 ms on the "anything pending" check behind consistent reads. A slim table with just `(key, position)` and its primary key gives the same reads as the full one at 44 % of the space and 2.3 times the append throughput. (A `tag_keys` array column with a GIN index was also tried in the first round: best for rare keys, but worse for a selective tail; not pursued.)
+
+**Under concurrency (E9e): five pollers (four views and an outbox topic, the wallet's selections) and a writer at once, 20 s each, 1,000,000 events already in the log:**
+
+| | Writer | Poller fetch p50 / p95 / p99 |
+|---|---|---|
+| as built | 2,463 events/s | 2.9 / 36.7 / 405 ms |
+| no tag table, scan, no tag rows | 7,598 | 1.6 / 8.4 / 352 |
+| **slim table, written, pollers use it** | **5,368 (2.2 times)** | **2.4 / 9.7 / 377** |
+
+The p99 of 350 to 400 ms appears in all three (a periodic stall, checkpoint or vacuum, not examined); the slim table is better than as-built on every other figure. One run each, a laptop.
+
 
 ## Decision (visibility, built)
 
 1. `storageReport({ exact? })` (`@crablet/eventstore/Storage`): for every `crablet_*` table, the estimated rows and the bytes split into total, heap, indexes and TOAST, read from the catalog (no table scan), largest first, plus events and bytes per event. `formatStorageReport` prints it; `examples/wallet-example-app/scripts/report-storage.ts` runs it (`--exact` also counts the events table).
 2. Gauges `crablet.storage.table_bytes` (by table and part), `crablet.storage.table_rows` and `crablet.storage.bytes_per_event`, kept current by `monitorStorage({ every })`, a fiber the application forks (default every 5 minutes; a failed read is logged and retried).
 
-## Recommendation (the tag table, NOT applied: your decision, after the poller check)
+## Decision (the tag table): slim it, built as migration V11
 
-**Stop writing the tag table and drop it**, in a new migration, once the poller check below has passed:
-- remove the tag-row insert from `append_events_batch` (it is about 74 % of the write cost);
-- rewrite the pollers' `requiredTags` and `anyOfTags` clauses to test the events' own tags (`EXISTS (SELECT 1 FROM unnest(e.tags) ...)`, as the "no helper" column), and `eventFactsFromLog` the same way (a maintenance read);
-- `DROP TABLE crablet_event_tags`.
+Approved by you on 2026-10-07 and built:
+- a new table `crablet_event_tag_keys (key, position)` with primary key `(key, position)` and nothing else: no `value` column, no other index, no foreign key. Nothing read `value`; the primary key answers the pollers' `EXISTS` lookups; the table is derived data;
+- **one row per distinct key of an event**: the insert is `DISTINCT`, because an event can carry the same key more than once (list-valued tags such as `product_id=p1, product_id=p2`) and a primary key on `(key, position)` would otherwise refuse the second row. (The measurements of the slim copy did not include this; a test would have failed without it: mutation-checked.)
+- the backfill reads **`crablet_events.tags`, the source of truth**, not the old table, so it also repairs drift (the migration test found an event inserted raw, bypassing the append function, that the old table never had a row for);
+- `append_events_batch` writes only the key rows; the pollers' two clauses and `eventFactsFromLog` read the new table; the old `crablet_event_tags` is dropped;
+- the migration takes `LOCK TABLE crablet_events IN SHARE ROW EXCLUSIVE MODE` first, so no writer can append through the old function between the backfill and the function swap; **writers wait for the length of the backfill (a full scan of the events table): plan a window on a large log**; readers carry on.
 
-Result, on this data (the write and space figures are solid; the read figures are from approximations of the poller's SQL, see below): about 61 % less disk (644 instead of 1,649 bytes per event), about 3.9 times the append throughput, and the poller's selections within noise of today's (and faster on the rare-key catch-up).
+Why not the alternatives: **dropping the table** (the first recommendation) would make a rare-key selection take seconds per catch-up batch at a million events, growing with the log (2.5 s then; the pending check on a rare key 162 ms against 6 ms); **keeping it as it was** paid for a column and two indexes nothing used; **indexing only the keys some selection uses** needs a registry and a backfill when a key is added, and was not pursued; **a `tag_keys` array column with GIN** was mixed (worse on a selective tail).
 
-Why this and not the alternatives:
-- **Keep it as is**: pays 61 % of the space and 74 % of the write cost for no measured read benefit.
-- **A slim `(key, position)` table**: saves 56 % of the tag table, still pays the per-row insert on every append and is not faster.
-- **A `tag_keys` column with a GIN index**: 90 % cheaper than the tag table and the best for rare keys, but it changes the events table's shape, slows the selective tail in this test, and the gain is on a case (catch-up on a rare key) that can be addressed later if it ever matters.
+Consequences specific to having no foreign key: `TRUNCATE crablet_events ... CASCADE` no longer clears the key table, and deleting events leaves their key rows behind (harmless to the pollers, which join through `crablet_events`). **Anything that resets a log (a test, a development database) must truncate both tables**, because positions restart at 1 and would collide with the stale rows; the differential test, which does so, failed until it did (fixed). The change is irreversible for an existing database once the old table is dropped (the key rows are rebuildable from `crablet_events.tags`; the old rows are not needed).
 
-Risks, stated: the drop is irreversible for existing databases (the rows are derivable from `crablet_events.tags`, one `INSERT ... SELECT` would rebuild it); anything outside this repository that reads `crablet_event_tags` breaks; the measurement is one run on one laptop with one event shape, a single connection and no concurrency, and a database with different statistics or a rare key on a much larger log could plan differently; the poller's selections on a key present in only a tiny fraction of a very long log were measured only at 0.01 % of 1,000,000 events.
+## What shipped, measured on the shipped schema (E9a, E9c, E9d, E9e with `SCHEMA=current`; 1,000,000 events; one laptop)
 
-## What has not been verified for the pollers
+| | Before (V10) | Shipped (V11) |
+|---|---|---|
+| Tag table | 958 MiB (1,004 B/event) | **532 MiB (558 B/event)**, -44 % |
+| **The log, events + tags** | **1,649 B/event** | **1,203 B/event, -27 %** |
+| Loading 1,000,000 events through the append path | 177 s (5,658 events/s) | **66 s (15,095 events/s), 2.7 times** |
+| 60,000 deposits, tag rows written / not written | 4,832 / 18,718 events/s (rows cost 74 %) | 13,012 / 22,143 (rows cost 41 %) |
+| Five pollers + a writer: writer | 2,463 events/s | **7,470** (a no-key-rows variant: 8,510) |
+| Five pollers + a writer: poller p50 / p95 / p99 | 2.9 / 36.7 / 405 ms | **2.2 / 7.0 / 266 ms** (variant: 1.6 / 5.1 / 354) |
+| Rare key, catch-up from the start / pending check, last 5,000 | 0.7 ms / 5.8 ms | **0.6 ms / 6.7 ms** (scanning: 1,691 ms / 151 ms) |
+| Wallet views and outbox (common keys), fetch | about 1 ms | about 1.2 to 1.7 ms (scanning: about the same) |
 
-The read timings in E9b come from **hand-written SQL that imitates** the poller's fetch, not from the SQL the pollers actually build, and they cover less than the pollers do. Specifically:
+**A correction to my own forecast.** I forecast about 1,086 bytes per event (-34 %). The shipped schema is **1,203 (-27 %)**: the slim table I had measured was a compact copy built in one pass (`CREATE TABLE AS`, then the primary key), whereas the real table is filled by incremental inserts, whose B-tree is less dense (532 MiB, not 420). The write-side gain was larger than forecast (2.7 times on a load, not 2.3). At 100 million events of this shape: about 120 GB instead of 165 GB (derived).
 
-1. **The real selections use several keys at once.** The wallet's four views and its outbox topic all filter with `anyOfTags` = `wallet_id`, `from_wallet_id`, `to_wallet_id` (`WalletViewConfig.ts`, `WalletApp.ts`). E9b measured one key (`= ANY` of a one-element array). An any-of-three test is a different plan and per-row cost.
-2. **The "is anything still pending" query was not measured at all.** `buildPendingSelectionQuery` (`SELECT 1 ... LIMIT 1` over a `(after, upTo]` range, no `ORDER BY`) is what decides that a view has caught up, so it sits behind consistent reads (ADR-0015). Its plan and cost may differ from the fetch's.
-3. **The SQL is not the real SQL.** E9b selected fewer columns and spelled the clauses by hand; the equivalence "the new query returns exactly the same events as the old" has not been tested.
-4. **No concurrency.** Four views, the outbox and any automations poll at once in a real deployment, each with these queries, while commands append.
-5. **Bloat, vacuum and statistics over time** were not examined.
+Two weaker spots of the key table, both present before V11 and both seen in every run, recorded so they are not discovered later: the **pending check for a view that has matches shows a p95 of 170 to 370 ms** (p50 0.6 ms; scanning the events' own tags has no such tail) and a **selective combination (`MoneyTransferred` + a required key present on all of them) catch-up is 6.6 ms against 1.1 ms scanning**. Neither is new and neither was investigated.
 
-To close this before any decision: generate the queries with the real `buildEventSelectionQuery` and `buildPendingSelectionQuery`, with the tag clauses swapped for the `unnest` form behind a switch; (a) a property test that old and new return the same rows for random selections (one key, several keys, none, combined with types and exact tags) over random data, including rows inserted out of order; (b) re-run E9b with the real builders and the wallet's three-key selection, and time the pending check; (c) run the poller, outbox, automation, views and views-http integration suites against the new form; (d) re-time under concurrent pollers and writers. If (a) or (c) fails, or (b)/(d) show a regression, the recommendation changes.
+
+## What was found, in the order it was found, and what remains
+
+1. **E9b (first measurement, wrong conclusion).** Hand-written SQL, one key. Said: the tag table is never faster than scanning. Recommended dropping it. Written into this ADR as a recommendation.
+2. **Asked "should we check the impact on the pollers?"** The real consumers filter on three keys at once and use a second query (the pending check) that had not been measured. I corrected the ADR to say so and then ran the check.
+3. **The check (E9d with the real builders).** Reversed the conclusion for rare keys (above). Also built and kept:
+   - the builders take `{ tagKeys: "table" | "scan" }` (default `"table"`, behaviour unchanged), so both forms run through the same code;
+   - **an equivalence test** (`packages/event-poller/test/integration/tag-key-strategy-equivalence.test.ts`): 400 random selections (event types, required keys, any-of keys including ones that never occur, exact tags) and random cursors over 2,450 events written through the real append path, 50 of them in constructed transaction-id/position inversions; fetches and pending answers are identical between the two forms (mutation-checked: breaking the scan form fails it). The same test is a permanent guard that a derived key table agrees with the events' own tags.
+   - the poller, outbox, automations, views, views-http and both example applications' integration suites (180 tests) were run with the scan form as the default: all passed except this very test, whose precondition (out-of-order positions) had depended on timing and was made deterministic.
+4. **E9f / E9e (the slim table).** The middle path, above.
+
+Since then the slim table was built (V11) and everything was run against it: the migration test (a populated V10 database upgraded to V11: the same pairs plus the one raw-insert repair, the old table gone, list-valued tags, the single-index shape, and the writer pause), the equivalence test (the key table against scanning), and the whole integration suite (342 tests). Still not done: the migration was not timed on a large existing table (the backfill is a full scan of the events table, with writers paused); the p99 stalls of 260 to 400 ms seen in every concurrent variant were not examined; behaviour over time (bloat, vacuum); and, as before, one machine and one event shape.
+
 
 ## Retention (not decided)
 
@@ -81,5 +111,8 @@ Nothing here deletes events: the log is the source of truth, and **retention is 
 ## Consequences
 
 - Operators can see where the bytes are and how fast they grow (the report and the gauges); the snapshot table and the audit table are included.
-- If the recommendation is accepted: a migration (V11), a changed append function, three changed queries, a rebuild path documented, and a regression test that the poller's selections return the same events as before.
-- If it is rejected: the cost per event stays 1,649 bytes for events of this shape, and the gauges make it visible.
+- The log costs about 1,200 bytes per event for events of this shape (down from 1,650) and appends run about 2.7 times faster on a load; the pollers' reads are unchanged, rare keys included.
+- Upgrading a database means a pause of writers for the length of a full scan of the events table; reads continue.
+- Resetting a log means truncating `crablet_events` and `crablet_event_tag_keys` together.
+- The equivalence test (the key table against the events' own tags) stays as a permanent guard that the derived table agrees with its source.
+- The lesson recorded here applies to the rest of this work: a number measured with an approximation of the real query is not a measurement of the real query. The first conclusion was written down with confidence and was wrong; it was caught only because the real builders were run. And a number measured on a hand-built copy is not a measurement of the table the system will actually build.

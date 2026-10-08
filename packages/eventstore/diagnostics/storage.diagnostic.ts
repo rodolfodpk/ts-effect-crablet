@@ -1,5 +1,7 @@
 // DIAGNOSTIC EXPERIMENTS (docs/adr/0019-storage-visibility-and-retention.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/eventstore/diagnostics/storage.diagnostic.ts   and read the `DIAG` lines.   N=200000 node --test ... for a quicker, smaller run.
+// By default it runs on the schema as it was BEFORE migration V11 (the tag table with key, value, position and three indexes), which is what ADR-0019 measured and
+// decided about. SCHEMA=current runs E9a and E9c on the shipped schema (V11: crablet_event_tag_keys) to measure the result of the change.
 // E9a: where the bytes of one event go, at N events shaped like the wallet's (95 % deposits with 5 tags, 5 % transfers with 7).
 // E9b: what the tag table would cost, and what the poller's key-presence selections would cost, under alternatives to it.
 import { after, before, describe, it } from "node:test";
@@ -7,16 +9,18 @@ import { performance } from "node:perf_hooks";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { startTestDb, type TestDb } from "@crablet/test-support";
+import { migrationFiles, startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "../src/EventStore.ts";
 import * as AppendEvent from "../src/AppendEvent.ts";
 
 const N = Number(process.env["N"] ?? 1_000_000);
+const CURRENT = process.env["SCHEMA"] === "current";
+const TAG_TABLE = CURRENT ? "crablet_event_tag_keys" : "crablet_event_tags";
 const WALLETS = Math.max(1_000, Math.floor(N / 10));
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient, never>;
 before(async () => {
-  db = await startTestDb();
+  db = await startTestDb(CURRENT ? {} : { migrations: migrationFiles.slice(0, -1) });
   runtime = ManagedRuntime.make(
     Layer.provideMerge(EventStoreLive, PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient, never>
   );
@@ -54,7 +58,7 @@ describe("DIAG", () => {
       }
     }));
     const secs = (performance.now() - t0) / 1000;
-    await q("VACUUM ANALYZE crablet_events"); await q("VACUUM ANALYZE crablet_event_tags");
+    await q("VACUUM ANALYZE crablet_events"); await q(`VACUUM ANALYZE ${TAG_TABLE}`);
     console.log(`DIAG E9a appended ${N} events through the real append path in ${secs.toFixed(0)} s (${(N / secs).toFixed(0)} events/s, batches of 200)`);
     const sizes = await q<{ rel: string; kind: string; bytes: string }>(`
       SELECT c.relname AS rel, CASE WHEN c.relkind = 'i' THEN 'index' ELSE 'heap' END AS kind, pg_relation_size(c.oid)::text AS bytes
@@ -63,14 +67,14 @@ describe("DIAG", () => {
         AND (c.relname LIKE 'crablet\\_%' OR c.oid IN (SELECT i.indexrelid FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid WHERE t.relname LIKE 'crablet\\_%'))
       ORDER BY pg_relation_size(c.oid) DESC`);
     for (const s of sizes) console.log(`DIAG E9a   ${s.kind.padEnd(5)} ${s.rel.padEnd(52)} ${mb(s.bytes).padStart(10)}  ${(Number(s.bytes) / N).toFixed(0).padStart(4)} B/event`);
-    const tagRows = Number((await q<{ n: string }>("SELECT count(*) AS n FROM crablet_event_tags"))[0]!.n);
-    const tagTotal = Number((await q<{ b: string }>("SELECT pg_total_relation_size('crablet_event_tags') AS b"))[0]!.b);
+    const tagRows = Number((await q<{ n: string }>(`SELECT count(*) AS n FROM ${TAG_TABLE}`))[0]!.n);
+    const tagTotal = Number((await q<{ b: string }>(`SELECT pg_total_relation_size('${TAG_TABLE}') AS b`))[0]!.b);
     const evTotal = Number((await q<{ b: string }>("SELECT pg_total_relation_size('crablet_events') AS b"))[0]!.b);
     const toast = Number((await q<{ b: string }>("SELECT COALESCE(pg_total_relation_size(reltoastrelid), 0) AS b FROM pg_class WHERE relname = 'crablet_events'"))[0]!.b);
     console.log(`DIAG E9a total ${mb(evTotal + tagTotal)} for ${N} events = ${((evTotal + tagTotal) / N).toFixed(0)} B/event; events table ${mb(evTotal)} (${(evTotal / N).toFixed(0)} B/event, toast ${mb(toast)}), tag table ${mb(tagTotal)} (${(tagTotal / N).toFixed(0)} B/event, ${tagRows} rows, ${(tagTotal / tagRows).toFixed(0)} B/tag row) = ${((100 * tagTotal) / (evTotal + tagTotal)).toFixed(0)} % of events+tags`);
   });
 
-  it("E9b: the tag table against its alternatives, for the poller's key-presence selections", { timeout: 1_800_000 }, async () => {
+  it("E9b: the tag table against its alternatives, for the poller's key-presence selections (V10 schema only)", { timeout: 1_800_000, skip: CURRENT }, async () => {
     const sec = (text: string) => console.log(`DIAG E9b ${text}`);
     // alternatives, built from the data that is there
     await q("CREATE TABLE tag_slim AS SELECT key, position FROM crablet_event_tags");

@@ -50,7 +50,8 @@ const resetPostgres = async () => {
   });
   await client.connect();
   try {
-    await client.query("TRUNCATE crablet_events RESTART IDENTITY CASCADE");
+    // both tables: crablet_event_tag_keys has no foreign key to the events (migration V11), so CASCADE no longer clears it, and positions restart at 1
+    await client.query("TRUNCATE crablet_events, crablet_event_tag_keys RESTART IDENTITY CASCADE");
   } finally {
     await client.end();
   }

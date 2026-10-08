@@ -17,8 +17,11 @@ Measured on one laptop with tiny events (about 40 bytes of JSON), one run each, 
 \* with 200,000 events of *other* entities written after the snapshot, which is what a busy log looks like. The first command after a long history still folds
 everything once (and writes the snapshot), so it costs about what no snapshot costs.
 
-A model with a few hundred events gains very little: leave it alone. Snapshots are **opt-in per model**. Not measured: larger payloads, many small
-transactions, many entities snapshotting at once.
+**Do you need them?** Probably not, until you measure a problem. Without a snapshot a command costs about 2 microseconds per event of the entity's history, so
+the history a model can carry is roughly its latency budget divided by that: 50,000 events for 100 ms, 250,000 for 500 ms. An entity that gains one event a second
+reaches 100,000 in about 28 hours; most entities never get near such numbers. Often the better fix is modelling: scope the model by period (the wallet's statement
+periods do) so its boundary stays small. Snapshots are for entities whose history grows without bound; they are **opt-in per model**, and no example application uses
+them. Not measured: larger payloads, many small transactions, many entities snapshotting at once.
 
 ## Opting in
 

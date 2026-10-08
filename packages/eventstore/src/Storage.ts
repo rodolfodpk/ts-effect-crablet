@@ -60,7 +60,7 @@ export const storageReport = (options: { readonly exact?: boolean } = {}): Effec
     const events = options.exact === true
       ? Number((yield* sql.unsafe<{ n: string }>("SELECT count(*) AS n FROM crablet_events"))[0]!.n)
       : (eventsTable?.rows ?? 0);
-    const tagBytes = tables.find((t) => t.table === "crablet_event_tags")?.totalBytes ?? 0;
+    const tagBytes = tables.find((t) => t.table === "crablet_event_tag_keys")?.totalBytes ?? 0;
     const bytesPerEvent = events > 0 && eventsTable !== undefined ? (eventsTable.totalBytes + tagBytes) / events : null;
     return { tables, events, bytesPerEvent };
   });

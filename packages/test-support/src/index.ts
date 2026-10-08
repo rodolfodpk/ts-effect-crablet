@@ -5,6 +5,9 @@ import { mkdir, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { migrationFiles, sqlDir } from "@crablet/db-migrations";
 
+// for tests of a migration itself (see `StartTestDbOptions`)
+export { migrationFiles, sqlDir };
+
 export interface ConnInfo {
   readonly host: string;
   readonly port: number;
@@ -79,7 +82,13 @@ async function startContainerWithRetry(attempts = 3): Promise<StartedPostgreSqlC
 // actually composes with the rest of this Effect-based codebase.
 //
 // Testcontainers-node hangs indefinitely under Bun (see NOTES.md) - this must run under Node.
-export async function startTestDb(): Promise<TestDb> {
+export interface StartTestDbOptions {
+  // The migration files to apply, in order (default: all of them). A test of a migration starts the database at the schema BEFORE it, puts data in, then applies
+  // the migration itself: `startTestDb({ migrations: migrationFiles.slice(0, -1) })`.
+  readonly migrations?: ReadonlyArray<string>;
+}
+
+export async function startTestDb(options: StartTestDbOptions = {}): Promise<TestDb> {
   const container = await withContainerStartLock(startContainerWithRetry);
 
   const connInfo: ConnInfo = {
@@ -99,7 +108,7 @@ export async function startTestDb(): Promise<TestDb> {
   });
   await client.connect();
   try {
-    for (const file of migrationFiles) {
+    for (const file of options.migrations ?? migrationFiles) {
       const sqlText = readFileSync(`${sqlDir}/${file}`, "utf-8");
       await client.query(sqlText);
     }

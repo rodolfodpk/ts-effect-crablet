@@ -90,11 +90,11 @@ export const eventFactsFromFixtures = (definitions: ReadonlyArray<unknown>, fixt
   return [...keys].map(([type, set]) => ({ type, tagKeys: [...set].sort() })).sort((a, b) => (a.type < b.type ? -1 : 1));
 };
 
-// Tag keys per event type, from the log: what is really stored (types and keys that exist in the data). Needs the tag index (`crablet_event_tags`).
+// Tag keys per event type, from the log: what is really stored (types and keys that exist in the data). Needs the tag index (`crablet_event_tag_keys`).
 export const eventFactsFromLog: Effect.Effect<ReadonlyArray<EventFacts>, SqlError, SqlClient.SqlClient> = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql.unsafe<{ type: string; key: string }>(
-    "SELECT DISTINCT e.type, t.key FROM crablet_event_tags t JOIN crablet_events e ON e.position = t.position ORDER BY e.type, t.key"
+    "SELECT DISTINCT e.type, t.key FROM crablet_event_tag_keys t JOIN crablet_events e ON e.position = t.position ORDER BY e.type, t.key"
   );
   const byType = new Map<string, Array<string>>();
   for (const r of rows) byType.set(r.type, [...(byType.get(r.type) ?? []), r.key]);

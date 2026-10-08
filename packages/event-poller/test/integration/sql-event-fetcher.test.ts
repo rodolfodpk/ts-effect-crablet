@@ -37,7 +37,7 @@ after(async () => {
 const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) =>
   Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
 
-describe("SqlEventFetcher (against real crablet_events/crablet_event_tags)", () => {
+describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)", () => {
   it("eventTypes: only matching types are returned", async () => {
     const marker = crypto.randomUUID();
     await run(

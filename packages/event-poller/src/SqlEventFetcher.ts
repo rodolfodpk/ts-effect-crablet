@@ -4,9 +4,9 @@ import type { SqlError } from "effect/sql/SqlError";
 import type { EventFetcher } from "./EventFetcher.ts";
 import type { EventSelection } from "./EventSelection.ts";
 import type { ProgressCursor } from "./ProgressCursor.ts";
-import { buildEventSelectionQuery, buildPendingSelectionQuery, parseStoredEventRow, type StoredEventRow } from "./internal/sql.ts";
+import { buildEventSelectionQuery, buildPendingSelectionQuery, parseStoredEventRow, type SelectionQueryOptions, type StoredEventRow } from "./internal/sql.ts";
 
-// A generic, selection-keyed EventFetcher against crablet_events/crablet_event_tags - the query
+// A generic, selection-keyed EventFetcher against crablet_events/crablet_event_tag_keys - the query
 // logic (event types / required-tags / any-of-tags / exact-tags) is the same across every
 // consumer module, so this is reusable as-is rather than reimplemented per module in Phase 3
 // (this factory *is* that shared logic, not a per-module wrapper around it).
@@ -20,14 +20,15 @@ import { buildEventSelectionQuery, buildPendingSelectionQuery, parseStoredEventR
 // (the SqlClient requirement is discharged by the caller providing a layer around this factory
 // Effect, not by every downstream consumer of the fetcher).
 export const makeSqlEventFetcher = <I>(
-  selection: EventSelection
+  selection: EventSelection,
+  options: SelectionQueryOptions = {}
 ): Effect.Effect<EventFetcher<I, SqlError, never>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
     const fetchEvents = (_processorId: I, cursor: ProgressCursor, batchSize: number) =>
       Effect.gen(function* () {
-        const query = buildEventSelectionQuery(selection, cursor, batchSize);
+        const query = buildEventSelectionQuery(selection, cursor, batchSize, options);
         const rows = yield* sql.unsafe<StoredEventRow>(query.sql, query.params);
         return rows.map(parseStoredEventRow);
       });
@@ -43,11 +44,12 @@ export const makeSqlEventFetcher = <I>(
 export const hasPendingSelectedEvents = (
   selection: EventSelection,
   after: ProgressCursor,
-  upTo: ProgressCursor
+  upTo: ProgressCursor,
+  options: SelectionQueryOptions = {}
 ): Effect.Effect<boolean, SqlError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const query = buildPendingSelectionQuery(selection, after, upTo);
+    const query = buildPendingSelectionQuery(selection, after, upTo, options);
     const rows = yield* sql.unsafe<{ pending: number }>(query.sql, query.params);
     return rows.length > 0;
   });

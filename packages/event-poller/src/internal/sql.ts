@@ -5,8 +5,8 @@ import type { ProgressCursor } from "../ProgressCursor.ts";
 
 // Builds the WHERE clause for an EventSelection - dimensions AND together;
 // eventTypes empty = unrestricted, requiredTags = ALL keys present, anyOfTags = ANY key present,
-// exactTags = ALL key=value pairs match. requiredTags/anyOfTags query crablet_event_tags (the
-// framework's key-presence lookup table, documented as existing for exactly this purpose);
+// exactTags = ALL key=value pairs match. requiredTags/anyOfTags query crablet_event_tag_keys (the
+// framework's key-presence lookup table: one row per tag key of an event, documented as existing for exactly this purpose);
 // exactTags reuses the same `tags @> ARRAY[...]::text[]` containment technique EventStore's own
 // queryEvents (packages/eventstore/src/internal/sql.ts) uses against crablet_events.tags directly.
 //
@@ -18,6 +18,15 @@ import type { ProgressCursor } from "../ProgressCursor.ts";
 // (transaction_id, position) does: every transaction with an xid below xmin has finished, so every row that
 // appears later has an xid at or above that xmin and therefore sorts after every row already delivered
 // (docs/plans/poller-cursor-fix.md, ADR-0012).
+// How tag-KEY presence (requiredTags / anyOfTags) is tested: against the derived `crablet_event_tag_keys` table ("table", the default), or by looking at the
+// event's own `tags` array ("scan"). The two answer the same question: the key table holds a row per distinct key of the tags that contain '=', the key being what
+// is before the first '='. "scan" is the reference: a test compares the two on random data, and it is the one to use if the key table is ever suspected
+// (docs/adr/0019-storage-visibility-and-the-tag-table.md).
+export type TagKeyStrategy = "table" | "scan";
+export interface SelectionQueryOptions {
+  readonly tagKeys?: TagKeyStrategy;
+}
+
 export interface EventSelectionQuery {
   readonly sql: string;
   readonly params: ReadonlyArray<unknown>;
@@ -25,7 +34,7 @@ export interface EventSelectionQuery {
 
 // The selection's own clauses (types / required tags / any-of tags / exact tags), appended to `clauses`
 // and `params`. Shared by the poller's fetch and by "is anything still pending up to position p?".
-const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>, params: Array<unknown>): void => {
+const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>, params: Array<unknown>, strategy: TagKeyStrategy = "table"): void => {
   let paramIndex = params.length + 1;
 
   if (selection.eventTypes.size > 0) {
@@ -35,14 +44,18 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
 
   for (const key of selection.requiredTags) {
     clauses.push(
-      `EXISTS (SELECT 1 FROM crablet_event_tags t WHERE t.position = e.position AND t.key = $${paramIndex++})`
+      strategy === "scan"
+        ? `EXISTS (SELECT 1 FROM unnest(e.tags) u WHERE u LIKE '%=%' AND split_part(u, '=', 1) = $${paramIndex++})`
+        : `EXISTS (SELECT 1 FROM crablet_event_tag_keys t WHERE t.position = e.position AND t.key = $${paramIndex++})`
     );
     params.push(key);
   }
 
   if (selection.anyOfTags.size > 0) {
     clauses.push(
-      `EXISTS (SELECT 1 FROM crablet_event_tags t WHERE t.position = e.position AND t.key = ANY($${paramIndex++}))`
+      strategy === "scan"
+        ? `EXISTS (SELECT 1 FROM unnest(e.tags) u WHERE u LIKE '%=%' AND split_part(u, '=', 1) = ANY($${paramIndex++}))`
+        : `EXISTS (SELECT 1 FROM crablet_event_tag_keys t WHERE t.position = e.position AND t.key = ANY($${paramIndex++}))`
     );
     params.push([...selection.anyOfTags]);
   }
@@ -57,7 +70,8 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
 export const buildEventSelectionQuery = (
   selection: EventSelection,
   cursor: ProgressCursor,
-  batchSize: number
+  batchSize: number,
+  options: SelectionQueryOptions = {}
 ): EventSelectionQuery => {
   const clauses: Array<string> = [];
   const params: Array<unknown> = [];
@@ -70,7 +84,7 @@ export const buildEventSelectionQuery = (
 
   clauses.push("e.transaction_id < pg_snapshot_xmin(pg_current_snapshot())");
 
-  pushSelectionClauses(selection, clauses, params);
+  pushSelectionClauses(selection, clauses, params, options.tagKeys);
 
   const limitParamIndex = params.length + 1;
   params.push(batchSize);
@@ -89,7 +103,8 @@ export const buildEventSelectionQuery = (
 export const buildPendingSelectionQuery = (
   selection: EventSelection,
   after: ProgressCursor,
-  upTo: ProgressCursor
+  upTo: ProgressCursor,
+  options: SelectionQueryOptions = {}
 ): EventSelectionQuery => {
   const clauses: Array<string> = [];
   const params: Array<unknown> = [];
@@ -97,7 +112,7 @@ export const buildPendingSelectionQuery = (
   params.push(after.transactionId, after.position.toString());
   clauses.push(`(e.transaction_id, e.position) <= ($${params.length + 1}::xid8, $${params.length + 2}::bigint)`);
   params.push(upTo.transactionId, upTo.position.toString());
-  pushSelectionClauses(selection, clauses, params);
+  pushSelectionClauses(selection, clauses, params, options.tagKeys);
   return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} LIMIT 1`, params };
 };
 
