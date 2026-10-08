@@ -43,7 +43,12 @@ jobs:
       - name: Merge unit and integration coverage
         run: bun run coverage:merge
 
+      # Fails the build when a package falls below coverage-baseline.json (scripts/coverage-gate.ts). Raise the baseline with `bun run coverage:baseline`.
+      - name: Coverage gate
+        run: bun run coverage:check
+
       - name: Upload coverage to Codecov
+        if: always()
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

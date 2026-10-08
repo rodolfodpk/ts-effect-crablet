@@ -24,6 +24,8 @@ bun run test:integration   # real Postgres through Testcontainers (Docker), runs
 
 Coverage of both suites, merged into one report (`coverage/lcov.info`; takes about 5 minutes, Docker needed): `bun run test:coverage`. How the merge counts lines, and why: [the coverage plan](docs/plans/test-coverage.md).
 
+**Coverage may not go down.** CI fails when a package's merged line coverage falls below its entry in [`coverage-baseline.json`](coverage-baseline.json) (by more than the 0.3-point tolerance). Add tests for what you changed; when coverage went up, raise the baseline with `bun run coverage:baseline` and commit the file. Lowering a baseline is done by hand, with the reason in the commit message. Only the packages count; the examples are reported in the log but not gated.
+
 CI runs exactly these three (typecheck, unit with coverage, integration) on every push and pull request to `main`. There is no linter or formatter configured; match the
 style of the file you are in.
 

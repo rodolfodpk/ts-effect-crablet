@@ -17,7 +17,9 @@
     "test:integration": "node --test --test-concurrency=4 \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
     "test:integration:coverage": "mkdir -p coverage/integration && node --test --test-concurrency=4 --experimental-test-coverage --test-coverage-include=\"packages/*/src/**/*.ts\" --test-reporter=lcov --test-reporter-destination=coverage/integration/lcov.info \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
     "coverage:merge": "bun scripts/merge-coverage.ts --unit coverage/unit/lcov.info --integration coverage/integration/lcov.info --out coverage/lcov.info",
-    "test:coverage": "bun run test:unit:coverage && bun run test:integration:coverage && bun run coverage:merge",
+    "coverage:check": "bun scripts/coverage-gate.ts",
+    "coverage:baseline": "bun scripts/coverage-gate.ts --update",
+    "test:coverage": "bun run test:unit:coverage && bun run test:integration:coverage && bun run coverage:merge && bun run coverage:check",
     "typecheck": "tsc --noEmit -p tsconfig.json && bun run --cwd examples/course-enrolment-ui typecheck",
     "docs:api": "bun examples/wallet-example-app/scripts/generate-openapi.ts"
   },

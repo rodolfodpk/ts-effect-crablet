@@ -1,6 +1,6 @@
 # Plan: improve test coverage, starting by measuring it properly
 
-**Status:** step 1 done (2026-10-08); steps 2-6 open, and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
+**Status:** steps 1-3 done (2026-10-08); steps 4-6 open, and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
 not counted); the ratchet is a hard gate that fails CI.
 
 ## Result of step 1 (2026-10-08): the real number is 98.5 %, not 67 %
@@ -112,14 +112,20 @@ Built: `bun run test:coverage` (unit with coverage, integration with coverage, m
 
 Done when: CI shows one merged number for the packages, and this plan has the baseline table.
 
-### 2. Count only the packages
+### 2. Count only the packages - DONE (2026-10-08)
+
+Built: the merged `coverage/lcov.info` that CI uploads contains the packages only (test code, diagnostics, tutorial tests and scripts were already left out; now the examples are too); the examples' number (66.4 %, unit tests only) is printed in the log, not gated. `codecov.yml` repeats the ignores with a reason for each and sets the Codecov statuses (project: no lower than the base commit, 0.3 % threshold; patch: the lines a change adds should be 90 % covered).
 
 - Add `codecov.yml` that ignores `examples/**`, `**/test/**`, `**/diagnostics/**`, and the type-only files that have no executable lines; keep the same exclusions in the merge script so the local and the uploaded numbers agree.
 - Report the examples' coverage separately (a Codecov flag or a line in the CI log), without a threshold.
 
 Done when: the badge and the Codecov page show packages only, and a comment in `codecov.yml` says why each ignore is there.
 
-### 3. The ratchet: a hard gate
+### 3. The ratchet: a hard gate - DONE (2026-10-08)
+
+Built: `coverage-baseline.json` (per package and overall, rounded down to a tenth, plus a tolerance of 0.3 points), `scripts/coverage-gate.ts` (`bun run coverage:check` fails on a regression; `bun run coverage:baseline` raises the baseline and never lowers it), a CI step between the merge and the upload, and the upload now runs even when the gate fails so Codecov shows the drop. Checked by a unit test of the logic and by hand: raising `eventstore` to 99.5 % in the file made the check exit 1 with the package named.
+
+**What the gate does not catch.** It works on percentages with a tolerance, so a change that adds a few untested lines to a large package can stay inside it (0.3 points of `commands` is about 3 lines). Codecov's patch status (90 % of the added lines) is the guard for that, but it blocks a merge only if branch protection requires it; the hard gate in CI guards against drops larger than the tolerance. The baseline was measured on macOS with Node 25; if the first CI run (Linux, Node 24) differs on a package by more than the tolerance, set that baseline from the CI number and say so in the commit.
 
 - A package may not lose coverage: CI fails if a package's merged line coverage falls below its recorded baseline (a small committed JSON, `coverage-baseline.json`, updated by the commit that
   raises it). A change that adds code is also checked on its own lines (Codecov patch status, target the package's current level).

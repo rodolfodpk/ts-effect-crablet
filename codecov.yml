@@ -1,0 +1,18 @@
+# Codecov settings (docs/plans/test-coverage.md, steps 2 and 3). The report CI uploads is already packages only (scripts/merge-coverage.ts); these ignores keep it that way
+# if a file slips in, and the statuses below are the second guard next to the baseline check in CI (scripts/coverage-gate.ts).
+ignore:
+  - "examples/**"       # demonstration code; its coverage is reported in the CI log but is not what the library is judged by
+  - "**/test/**"        # test support is not product code
+  - "**/diagnostics/**" # experiments that measure, outside CI
+  - "scripts/**"        # repository tooling
+  - "**/*.test.ts"
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto       # no lower than the base commit
+        threshold: 0.3%    # the same tolerance as coverage-baseline.json
+    patch:
+      default:
+        target: 90%        # the lines a change adds should be covered

@@ -1,0 +1,17 @@
+{
+  "tolerancePoints": 0.3,
+  "overall": 98.5,
+  "packages": {
+    "automations": 100,
+    "commands": 98.9,
+    "commands-http": 99.7,
+    "db-migrations": 89.4,
+    "event-poller": 97.9,
+    "eventstore": 97.2,
+    "metrics-otel": 100,
+    "outbox": 97.1,
+    "test-support": 100,
+    "views": 100,
+    "views-http": 100
+  }
+}

@@ -122,13 +122,17 @@ export const totalsOf = (coverage: Coverage, include: (file: string) => boolean 
 
 export const percent = ({ hit, total }: Totals): string => (total === 0 ? "n/a" : `${((100 * hit) / total).toFixed(1)}%`);
 
-const packageOf = (file: string): string | null => /^packages\/([^/]+)\/src\//u.exec(file)?.[1] ?? null;
+export const packageOf = (file: string): string | null => /^packages\/([^/]+)\/src\//u.exec(file)?.[1] ?? null;
 
 export const summary = (coverage: Coverage): string => {
   const packages = [...new Set([...coverage.keys()].map(packageOf).filter((p): p is string => p !== null))].sort();
-  const all = totalsOf(coverage);
   const pkgs = totalsOf(coverage, (f) => packageOf(f) !== null);
-  const lines = [`all measured files   ${percent(all).padStart(6)}  ${all.hit}/${all.total} lines`, `packages only        ${percent(pkgs).padStart(6)}  ${pkgs.hit}/${pkgs.total} lines`, ""];
+  const examples = totalsOf(coverage, (f) => packageOf(f) === null);
+  const lines = [
+    `packages (the number we are judged by, and gated on)  ${percent(pkgs).padStart(6)}  ${pkgs.hit}/${pkgs.total} lines`,
+    `examples (unit tests only; reported, not gated)       ${percent(examples).padStart(6)}  ${examples.hit}/${examples.total} lines`,
+    ""
+  ];
   for (const p of packages) {
     const t = totalsOf(coverage, (f) => packageOf(f) === p);
     lines.push(`  ${p.padEnd(18)} ${percent(t).padStart(6)}  ${t.hit}/${t.total}`);
@@ -147,6 +151,7 @@ if (import.meta.main) {
   const merged = mergeSuites(read(arg("unit")), read(arg("integration")), (file) => (existsSync(file) ? readFileSync(file, "utf8") : null));
   const out = arg("out");
   mkdirSync(path.dirname(out), { recursive: true });
-  writeFileSync(out, toLcov(merged));
+  // what is uploaded and gated is the packages only; the examples are demonstration code (docs/plans/test-coverage.md, step 2)
+  writeFileSync(out, toLcov(new Map([...merged].filter(([file]) => packageOf(file) !== null))));
   console.log(summary(merged));
 }
