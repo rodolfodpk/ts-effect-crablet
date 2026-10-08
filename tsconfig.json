@@ -19,7 +19,8 @@
     "packages/*/test/**/*.ts",
     "examples/*/src/**/*.ts",
     "examples/*/test/**/*.ts",
-    "examples/*/tutorial/**/*.ts"
+    "examples/*/tutorial/**/*.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": ["examples/course-enrolment-ui"]
 }

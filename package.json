@@ -12,9 +12,12 @@
     "examples/*"
   ],
   "scripts": {
-    "test:unit": "bun test packages/*/test/*.test.ts examples/*/test/*.test.ts examples/*/tutorial/*.test.ts",
-    "test:unit:coverage": "bun test --coverage --coverage-reporter=lcov packages/*/test/*.test.ts examples/*/test/*.test.ts examples/*/tutorial/*.test.ts",
+    "test:unit": "bun test packages/*/test/*.test.ts examples/*/test/*.test.ts examples/*/tutorial/*.test.ts scripts/*.test.ts",
+    "test:unit:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/unit packages/*/test/*.test.ts examples/*/test/*.test.ts examples/*/tutorial/*.test.ts scripts/*.test.ts",
     "test:integration": "node --test --test-concurrency=4 \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
+    "test:integration:coverage": "mkdir -p coverage/integration && node --test --test-concurrency=4 --experimental-test-coverage --test-coverage-include=\"packages/*/src/**/*.ts\" --test-reporter=lcov --test-reporter-destination=coverage/integration/lcov.info \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
+    "coverage:merge": "bun scripts/merge-coverage.ts --out coverage/lcov.info coverage/unit/lcov.info coverage/integration/lcov.info",
+    "test:coverage": "bun run test:unit:coverage && bun run test:integration:coverage && bun run coverage:merge",
     "typecheck": "tsc --noEmit -p tsconfig.json && bun run --cwd examples/course-enrolment-ui typecheck",
     "docs:api": "bun examples/wallet-example-app/scripts/generate-openapi.ts"
   },
