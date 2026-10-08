@@ -1,0 +1,18 @@
+{
+  "name": "@crablet/processors-http",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/ProcessorsApi.ts",
+    "./ProcessorsApiLive": "./src/ProcessorsApiLive.ts",
+    "./Authorization": "./src/Authorization.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0",
+    "@crablet/event-poller": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "4.0.0"
+  }
+}

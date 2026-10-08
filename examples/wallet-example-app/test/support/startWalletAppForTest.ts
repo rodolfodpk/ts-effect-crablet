@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { Context, Effect, Exit, Layer, ManagedRuntime, Scope } from "effect";
+import { Context, Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { HttpRouter, HttpServer } from "effect/http";
@@ -8,12 +8,14 @@ import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
-import { startBackgroundProcessors, stopBackgroundProcessors, makeWalletApiLayer } from "../../src/WalletApp.ts";
+import { startBackgroundProcessors, stopBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
 
 export type CoreServices = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
 
 export interface RunningWalletApp {
   readonly baseUrl: string;
+  // The running app's processors, for a test that needs their handles (for example to build a management service over them).
+  readonly processors: BackgroundProcessors;
   stop(): Promise<void>;
 }
 
@@ -26,7 +28,9 @@ export interface RunningWalletApp {
 // starting Effect returns.
 export const startWalletAppForTest = async (
   runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>,
-  outboxPublishers?: ReadonlyArray<OutboxPublisher>
+  outboxPublishers?: ReadonlyArray<OutboxPublisher>,
+  // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
+  adminToken?: string
 ): Promise<RunningWalletApp> => {
   const scope = await runtime.runPromise(Scope.make());
 
@@ -34,8 +38,9 @@ export const startWalletAppForTest = async (
     Effect.gen(function* () {
       const processors = yield* startBackgroundProcessors(undefined, outboxPublishers);
 
+      const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
       const serverLayer = Layer.provideMerge(
-        HttpRouter.serve(makeWalletApiLayer({ basePath: "/api/commands" })),
+        HttpRouter.serve(Layer.merge(makeWalletApiLayer({ basePath: "/api/commands" }), admin)),
         NodeHttpServer.layer(createServer, { port: 0 })
       );
       const context = yield* Scope.provide(Layer.build(serverLayer), scope);
@@ -48,6 +53,7 @@ export const startWalletAppForTest = async (
 
   return {
     baseUrl: `http://localhost:${port}`,
+    processors,
     // Must stop the background processors' daemon fibers (see stopBackgroundProcessors' own
     // primer) BEFORE closing the scope/disposing the runtime - otherwise they keep polling
     // against a pool that's about to close, spinning forever instead of exiting.

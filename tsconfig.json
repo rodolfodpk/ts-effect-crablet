@@ -22,5 +22,5 @@
     "examples/*/tutorial/**/*.ts",
     "scripts/**/*.ts"
   ],
-  "exclude": ["examples/course-enrolment-ui"]
+  "exclude": ["examples/course-enrolment-ui", "examples/processors-admin-ui"]
 }

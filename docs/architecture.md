@@ -21,6 +21,7 @@ flowchart TB
     direction TB
     http["commands-http<br/>POST /api/commands/name"]
     vhttp["views-http<br/>reads that wait for a marker"]
+    phttp["processors-http<br/>list, pause, resume, reset<br/>(behind your authorization)"]
     cmd["commands<br/>defineEvent, defineModel, defineCommand<br/>CommandExecutor"]
     views["views<br/>projectors into your tables"]
     outbox["outbox<br/>publishers per topic"]
@@ -39,6 +40,8 @@ flowchart TB
 
   client --> http
   client --> vhttp
+  client --> phttp
+  phttp --> poller
   http --> cmd
   cmd --> es
   es --> pg
@@ -58,7 +61,7 @@ flowchart TB
 ```
 
 Reading it: a **write** goes client → `commands-http` → `commands` → `eventstore` → Postgres. A **reaction** starts at the poller, which reads new events and hands them to views,
-the outbox or automations; an automation turns an event back into a command. A **read** of a view goes through `views-http`, which can wait until the view has caught up. Each package
+the outbox or automations; an automation turns an event back into a command. A **read** of a view goes through `views-http`, which can wait until the view has caught up. An operator can list the processors and pause, resume or reset one through `processors-http`. Each package
 is described in [the reference](./reference.md#packages).
 
 ## A command, from request to append

@@ -29,6 +29,12 @@ export interface Backlog {
   readonly oldestPendingSeconds: number | null;
 }
 
+// What a processor's progress row says about its failures: how many errors in a row, and the last one's text.
+export interface ProcessorDetails {
+  readonly errorCount: number;
+  readonly lastError: string | null;
+}
+
 // Pause/resume/reset and status inspection for processors.
 export interface ProcessorManagementService<I> {
   readonly pause: (processorId: I) => Effect.Effect<boolean, unknown>;
@@ -41,6 +47,8 @@ export interface ProcessorManagementService<I> {
   readonly getLag: (processorId: I) => Effect.Effect<bigint | null, unknown>;
   // The processor's own pending events (see Backlog); null for an id whose selection is not known to this service.
   readonly getBacklog: (processorId: I) => Effect.Effect<Backlog | null, unknown>;
+  // The failure details of every processor that has a progress row (a processor that never ran has none).
+  readonly getAllDetails: Effect.Effect<ReadonlyMap<I, ProcessorDetails>, unknown>;
   readonly getBackoffInfo: (processorId: I) => Effect.Effect<BackoffInfo | null>;
   readonly getAllBackoffInfo: Effect.Effect<ReadonlyMap<I, BackoffInfo>>;
 }
@@ -53,6 +61,8 @@ export interface ProcessorManagementDeps<I> {
   readonly backoffSnapshot: (id: I) => Effect.Effect<BackoffInfo | null>;
   readonly allBackoffSnapshots: Effect.Effect<ReadonlyMap<I, BackoffInfo>>;
   readonly sql: SqlClient.SqlClient;
+  // Each processor's error count and last error, read from the module's progress table. Absent: `getAllDetails` is empty.
+  readonly details?: Effect.Effect<ReadonlyMap<I, ProcessorDetails>, unknown>;
   // What each processor selects, for `getBacklog`. Absent: `getBacklog` answers null.
   readonly selectionOf?: (id: I) => EventSelection | undefined;
 }
@@ -125,6 +135,7 @@ export const makeProcessorManagementService = <I>(
     getAllStatuses: deps.getAllStatuses,
     getLag,
     getBacklog,
+    getAllDetails: deps.details ?? Effect.succeed(new Map<I, ProcessorDetails>()),
     getBackoffInfo: deps.backoffSnapshot,
     getAllBackoffInfo: deps.allBackoffSnapshots
   };

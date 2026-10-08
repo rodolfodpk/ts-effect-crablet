@@ -66,10 +66,12 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | [`packages/outbox`](../packages/outbox/README.md) | Transactional outbox: per-topic publishers fed from the event stream by the poller |
 | [`packages/automations`](../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command |
 | [`packages/commands-http`](../packages/commands-http/README.md) | A REST API over your commands, with RFC 7807 problem-detail errors |
+| [`packages/processors-http`](../packages/processors-http/README.md) | An admin API over the processors: list them (status, failures, cursor, backlog), pause, resume or reset one; closed until the application provides an authorization ([ADR-0020](./adr/0020-processors-admin-api.md)) |
 | [`packages/views-http`](../packages/views-http/README.md) | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
 | [`packages/metrics-otel`](../packages/metrics-otel/README.md) | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
 | [`examples/course-enrolment-app`](../examples/course-enrolment-app/README.md) | The [tutorial](./tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
 | [`examples/course-enrolment-ui`](../examples/course-enrolment-ui/README.md) | A Foldkit page for that API: a typed client, marker reads, live updates ([tutorial step 5](./tutorial/05-a-page-that-uses-it.md)) |
+| [`examples/processors-admin-ui`](../examples/processors-admin-ui/README.md) | A generic Foldkit page for the processors admin API: a table of processors with Pause, Resume and Reset (with a confirmation); works against any application that mounts the API |
 | [`examples/quickstart`](../examples/quickstart/README.md) | The [README example](../README.md) as a script that runs with no database |
 | [`examples/wallet-example-app`](../examples/wallet-example-app/README.md) | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 

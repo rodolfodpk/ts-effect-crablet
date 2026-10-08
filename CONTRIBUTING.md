@@ -46,7 +46,7 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 ## Where things are
 
 [`docs/reference.md#packages`](docs/reference.md#packages) lists every package and example, and each has its own README. The shape in one line: `eventstore` (the log) ->
-`commands` (events, models, commands) -> `commands-http` (REST); `event-poller` -> `views`, `outbox`, `automations` (pollers) -> `views-http` (consistent reads).
+`commands` (events, models, commands) -> `commands-http` (REST); `event-poller` -> `views`, `outbox`, `automations` (pollers) -> `views-http` (consistent reads) and `processors-http` (the admin API).
 
 ## Common tasks
 

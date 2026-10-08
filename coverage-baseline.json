@@ -12,6 +12,7 @@
     "eventstore": 99.4,
     "metrics-otel": 100,
     "outbox": 100,
+    "processors-http": 100,
     "test-support": 96.4,
     "views": 100,
     "views-http": 100

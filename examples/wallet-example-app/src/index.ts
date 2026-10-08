@@ -5,7 +5,7 @@ import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import { monitorStorage } from "@crablet/eventstore/Storage";
 import { migrateIfFresh } from "./migrate.ts";
-import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, makeWalletApiLayer } from "./WalletApp.ts";
+import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 
 const connInfo = {
@@ -35,8 +35,12 @@ async function main(): Promise<void> {
     yield* monitorBackgroundProcessors(processors);
     yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
     yield* Effect.log(`wallet-example-app listening on :${port}`);
+    // The admin API (list, pause, resume and reset the processors) exists only when WALLET_ADMIN_TOKEN is set, and is behind that bearer token.
+    const adminToken = process.env["WALLET_ADMIN_TOKEN"];
+    const admin = adminToken === undefined || adminToken === "" ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
+    if (admin !== Layer.empty) yield* Effect.log("admin API mounted at /admin/processors (bearer token from WALLET_ADMIN_TOKEN)");
     yield* Layer.launch(
-      HttpRouter.serve(makeWalletApiLayer({ basePath: "/api/commands" })).pipe(
+      HttpRouter.serve(Layer.merge(makeWalletApiLayer({ basePath: "/api/commands" }), admin)).pipe(
         Layer.provide(NodeHttpServer.layer(createServer, { port }))
       )
     );

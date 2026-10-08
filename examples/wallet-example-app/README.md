@@ -12,6 +12,7 @@ node examples/wallet-example-app/src/index.ts
 ```
 
 Connection (all optional): `WALLET_DB_HOST`, `WALLET_DB_PORT`, `WALLET_DB_NAME`, `WALLET_DB_USER`, `WALLET_DB_PASSWORD`; the API listens on `PORT` (8080).
+Two more are off unless set: `OTEL_EXPORTER_OTLP_ENDPOINT` exports metrics, spans and logs ([See it on a dashboard](../../docs/guides/dashboard.md)), and `WALLET_ADMIN_TOKEN` mounts the processors admin API at `/admin/processors` behind that bearer token ([`@crablet/processors-http`](../../packages/processors-http/README.md), with a page for it: [`processors-admin-ui`](../processors-admin-ui/README.md)).
 
 Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/c4-examples.md#wallet).
 

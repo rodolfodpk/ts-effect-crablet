@@ -134,3 +134,28 @@ describe("ProcessorManagementService: backlog", () => {
     expect(await run(management.getLag("view-a"))).toBe(20n);
   });
 });
+
+describe("ProcessorManagementService: failure details", () => {
+  const withDetails = async (details?: Effect.Effect<ReadonlyMap<string, { errorCount: number; lastError: string | null }>, unknown>) => {
+    const { tracker } = await run(makeInMemoryProgressTracker<string>());
+    return makeProcessorManagementService({
+      progressTracker: tracker,
+      getAllStatuses: Effect.succeed(new Map()),
+      pauseProcessor: () => Effect.void,
+      resumeProcessor: () => Effect.void,
+      backoffSnapshot: () => Effect.succeed(null),
+      allBackoffSnapshots: Effect.succeed(new Map()),
+      sql: fakeSql(null),
+      ...(details === undefined ? {} : { details })
+    });
+  };
+
+  test("getAllDetails passes through what the module's progress table said", async () => {
+    const management = await withDetails(Effect.succeed(new Map([["view-a", { errorCount: 3, lastError: "boom" }]])));
+    expect(await run(management.getAllDetails)).toEqual(new Map([["view-a", { errorCount: 3, lastError: "boom" }]]));
+  });
+
+  test("a service built without details has none", async () => {
+    expect((await run((await withDetails()).getAllDetails)).size).toBe(0);
+  });
+});

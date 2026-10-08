@@ -9,6 +9,7 @@ import type { EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
+import * as TopicPublisherPair from "./TopicPublisherPair.ts";
 
 // Outbox management and progress details - wraps the
 // generic ProcessorManagementService with one extra query against crablet_outbox_topic_progress
@@ -83,6 +84,13 @@ export const makeOutboxManagementService = (
       backoffSnapshot: handle.backoffSnapshot,
       allBackoffSnapshots: handle.allBackoffSnapshots,
       selectionOf: handle.selectionFor,
+      details: Effect.map(
+        sql.unsafe<{ readonly topic: string; readonly publisher: string; readonly error_count: number; readonly last_error: string | null }>(
+          "SELECT topic, publisher, error_count, last_error FROM crablet_outbox_topic_progress",
+          []
+        ),
+        (rows) => new Map(rows.map((r) => [TopicPublisherPair.toKey({ topic: r.topic, publisher: r.publisher }), { errorCount: r.error_count, lastError: r.last_error }] as const))
+      ),
       sql
     });
 

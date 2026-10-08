@@ -71,7 +71,7 @@ by a processor's loop carry `processor` and `instance`, and logs written while a
 
 Each module has a management service (`ViewManagementService`, `AutomationManagementService`, `OutboxManagementService`) on top of the poller's
 `ProcessorManagementService`. For a view, its progress details give the status, the instance holding it, the last position, the error count and the last error; the
-poller service can pause, resume and reset a processor. They are plain Effect services you can put behind your own admin endpoint; the repository's apps do not
-expose one.
+poller service can pause, resume and reset a processor. They are plain Effect services. To reach them over HTTP, mount [`@crablet/processors-http`](../../packages/processors-http/README.md): a list with status, failures, cursor and
+backlog, and pause, resume and reset, behind an authorization you provide ([ADR-0020](../adr/0020-processors-admin-api.md)). Reset clears the error count and restarts the processor; it does not move its cursor.
 
 Delivery guarantees to keep in mind while reading these numbers: [reference](../reference.md#views-the-outbox-and-automations).

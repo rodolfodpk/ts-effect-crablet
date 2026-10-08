@@ -66,6 +66,10 @@ export const makeAutomationManagementService = (
       backoffSnapshot: handle.backoffSnapshot,
       allBackoffSnapshots: handle.allBackoffSnapshots,
       selectionOf: handle.selectionFor,
+      details: Effect.map(
+        sql.unsafe<{ readonly id: string; readonly error_count: number; readonly last_error: string | null }>("SELECT automation_name AS id, error_count, last_error FROM crablet_automation_progress", []),
+        (rows) => new Map(rows.map((r) => [r.id, { errorCount: r.error_count, lastError: r.last_error }] as const))
+      ),
       sql
     });
 

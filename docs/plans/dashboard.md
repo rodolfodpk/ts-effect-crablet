@@ -1,6 +1,6 @@
 # Plan: a dashboard for the poller and its consumers
 
-**Status:** proposed (2026-10-08). Nothing built.
+**Status:** steps 1 to 4 done (2026-10-08); step 5 (keeping it honest in CONTRIBUTING) not done.
 
 ## Recommendation in one paragraph
 
@@ -106,16 +106,30 @@ Found on the way, and fixed: the wallet example **crashed on its second start** 
 
 Not done: the "no leader" alert and the stale-series behaviour of a crashed leader (about five minutes in Prometheus) were not exercised by killing a process; the alert's `noDataState` is the only mechanism and is untried. The compose stack was tried with Docker Desktop on one machine, not in CI.
 
-### 4. Optional: operate, not only watch
+### 4. Optional: operate, not only watch - done (2026-10-08)
 
-Only if step 3 leaves people wishing to act from the dashboard. Two parts, in this order.
+Two parts, in the planned order.
 
-1. **An admin API package**, in the style of `views-http` (for example `@crablet/processors-http`): an `/admin/processors` API over `ProcessorManagementService` with list (status, lag, leader, last error), pause, resume and reset. The schema is exported, so any client can be typed against it. It needs authentication decisions the framework has so far left to the adopter (the HTTP packages ship handlers and leave authentication to the adopter; no ADR states this as a rule, so write the sentence into the package README), so it ships as handlers the adopter mounts behind their own auth, never on by default. Processor ids are free-form, so the API carries an optional description to say what each processor is for. Grafana can link to it.
-2. **A generic Foldkit page**, an example in `examples/` (not a package, not coupled to the course or wallet example). It takes a base URL and is typed against the admin API's schema only: a table of processors, pause and resume, and reset behind a confirmation. Reset clears the error count, sets the status to `ACTIVE` and resumes the processor; it does **not** rewind the cursor (so it is not destructive to data, but it does restart a processor that was FAILED, which may fail again). The page says that, and that the API must be behind auth. Do it after the Foldkit upgrade from rc.118 is settled, so it is not built on a version we are leaving.
+1. **`@crablet/processors-http`** ([ADR-0020](../adr/0020-processors-admin-api.md)): `processorsGroup` (`GET /admin/processors`, `POST /admin/processors/:kind/:id/pause|resume|reset`, problems as RFC 7807) and handlers over a list of sources (`{ kind, service, describe? }`, one per module). The list carries status, error count, last error, cursor, backlog (step 1's `getBacklog`), backoff and an optional description. To get the failure details the base `ProcessorManagementService` gained `getAllDetails`, which the views, automations and outbox services fill from their progress tables.
+   - **Authorization is required.** Every endpoint carries `ProcessorsAuthorization` (a bearer-token `HttpApiMiddleware`); the application provides it (`authorizationFrom(check)`), or the server does not start (`Service not found: ...ProcessorsAuthorization`). The wallet mounts the API only when `WALLET_ADMIN_TOKEN` is set, and compares the token in constant time. A check that fails is a 401, one that dies a 500; neither lets the request through.
+   - **Decided before publishing** (the plan said to): the evolution rules (fields are added, never removed or retyped; a changed meaning gets a new path), what `reset` means (clears the error count, sets `ACTIVE`, resumes; **does not move the cursor**), and no `leader` column (the progress tables record who registered a view, not who leads it).
+2. **`examples/processors-admin-ui`**, a generic Foldkit page: a table (processor and description, status, failures with the last error, what waits and for how long, cursor), Pause / Resume, and Reset behind a confirmation. Its client is derived from `processorsGroup` alone and it imports nothing from any application, so it works against anything that mounts the group. The token is kept in memory only; a 401 ends the session. A last error with a zero count (after a reset) is shown as history.
 
-Cost to note: once adopters type a client against the admin schema, changing it breaks them. This is the same evolution question `api-follow-ups.md` deferred (item B); decide the rules before publishing the package.
+Tests: the package (12, no database: a fake service through a web handler: authorization, listing, actions, the encoded outbox id, 404s, duplicate kinds, the OpenAPI scheme, the start-up failure without an authorization); `admin-api-e2e.test.ts` (6, the wallet's real processors on Postgres: 401s, the list across the three modules, pause holding events back and resume catching up, a `FAILED` view reset, the outbox's JSON-pair id); the page (28: stories on `update`, scenes on the real `view`, error mapping, base URL and bearer header) and `page-against-server.test.ts` (5, the page's own `update` and commands against the real wallet on Postgres). Run live: the wallet with `WALLET_ADMIN_TOKEN`, the Vite dev server in front, the list and an outbox pause through the proxy; without the token the route is a 404 and absent from the OpenAPI description.
 
-Done when: the handlers have integration tests (pause and resume on an unknown id return not-found, as the service returns `false` there; reset on a `FAILED` processor leaves it `ACTIVE` with a zero error count and the cursor unchanged), and the page runs against the wallet and the course example without a line of either in it.
+Found on the way:
+
+- **A claim of mine was wrong, and the test showed it.** I had written that the admin API "cannot be mounted without an authorization" at the type level. The layer's type is `Layer<never, never, HttpRouter>`: the requirement is invisible to the compiler. It fails closed at **runtime**: a real server layer fails to build (`Service not found: ...ProcessorsAuthorization`), and through a web handler the first request is refused. The ADR, the README and the tests now say that; a compile-time guarantee would need a different design.
+- **`getLag` and the outbox's `getCursor`** (step 1) were already known; here `reset` was found to leave the last error's *text*, so the page shows an error with a zero count as history rather than as a current failure.
+- **The wallet's automation id** is `wallet-opened-welcome-notification`, not the handler's name; the e2e test caught the wrong description key.
+- Stubbing `globalThis.fetch` per test does not work with Effect's fetch client, which captures it once: tests supply `FetchHttpClient.Fetch`.
+
+Not done:
+
+- The page was **not run in a browser** (none is available here): its `view` is exercised by scene tests, and its bundle builds and is served, but nobody has looked at it.
+- The **evolution rules are not enforced** by a test that compares the API description with a committed copy.
+- The **admin API has no audit trail**: who paused what is not recorded.
+- Grafana does not link to the page; the dashboard guide does.
 
 ### 5. Keep it honest
 
@@ -140,5 +154,5 @@ Done when: the handlers have integration tests (pause and resume on an unknown i
 
 1. ~~Reference stack~~ Decided 2026-10-08: Grafana with Prometheus over OTLP, locally the single `grafana/otel-lgtm` image.
 2. ~~Lag sampled by every instance or by the leader only?~~ Decided: every instance (built).
-3. Is the admin API (step 4) in scope, or only watching?
+3. ~~Is the admin API (step 4) in scope?~~ Decided: yes (built, with a generic Foldkit page).
 4. Where does `ops/` live: in this repository (recommended, so the test can check it), or a separate one?
