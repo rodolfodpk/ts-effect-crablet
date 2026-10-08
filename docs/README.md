@@ -18,6 +18,7 @@ Where to start depends on what you want. If you are new, follow the path below i
 | Build a small service step by step | [Tutorial](./tutorial/README.md) (in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI) |
 | See a complete application | [`examples/wallet-example-app`](../examples/wallet-example-app) |
 | Change an event without breaking the log | [Evolving events](./evolving-events.md) |
+| Know what a package or example is for | the `README.md` in each folder under [`packages/`](../packages) and [`examples/`](../examples), also linked from the [reference](./reference.md#packages) |
 | Look up command options, delivery guarantees, operations, packages, build and test | [Reference](./reference.md) |
 | See the HTTP API | [`wallet-openapi.json`](./api/wallet-openapi.json), [`course-enrolment-openapi.json`](./api/course-enrolment-openapi.json) (generated; `bun run docs:api` regenerates the wallet's) |
 | Learn a word | [Glossary](./glossary.md) |

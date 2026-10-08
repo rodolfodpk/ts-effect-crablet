@@ -63,7 +63,9 @@ Decision: one file per step. Built: `docs/tutorial/README.md` (index, prerequisi
 
 Done when: no step file exceeds about 220 lines; the old URL still resolves (a stub that links to the new index); `bun run test:unit` passes.
 
-### 4. A README in each package and example (medium, mostly mechanical)
+### 4. A README in each package and example (medium, mostly mechanical) - DONE (2026-10-07)
+
+Built: 11 package READMEs and 4 example READMEs, each with what it is for, its entry points, what it depends on, where to read more and how to run its tests (or the example). The package table in `docs/reference.md` links to them. Written from each `package.json` `exports` and the source headers, and checked against the code.
 
 Each gets 15-30 lines: what it is for, the one example of use, its public entry points (the `exports` of its `package.json`), what it depends on, where its decision records are. Generated skeleton from `package.json`, written by hand after.
 

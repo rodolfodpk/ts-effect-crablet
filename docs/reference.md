@@ -54,20 +54,21 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 
 | Package | What it is |
 |---|---|
-| `packages/db-migrations` | The SQL migrations V1-V12 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
-| `packages/test-support` | A throwaway Postgres (Testcontainers) for integration tests |
-| `packages/eventstore` | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
-| `packages/commands` | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and BDD test helpers |
-| `packages/event-poller` | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, and automations modules build on |
-| `packages/views` | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
-| `packages/outbox` | Transactional outbox: per-topic publishers fed from the event stream by the poller |
-| `packages/automations` | Automations: react to an event by issuing a follow-up command |
-| `packages/commands-http` | A REST API over your commands, with RFC 7807 problem-detail errors |
-| `packages/views-http` | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
-| `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
-| `examples/course-enrolment-app` | The [tutorial](./tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
-| `examples/quickstart` | The [README example](../README.md) as a script that runs with no database |
-| `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
+| [`packages/db-migrations`](../packages/db-migrations/README.md) | The SQL migrations V1-V12 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
+| [`packages/test-support`](../packages/test-support/README.md) | A throwaway Postgres (Testcontainers) for integration tests |
+| [`packages/eventstore`](../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
+| [`packages/commands`](../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and BDD test helpers |
+| [`packages/event-poller`](../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, and automations modules build on |
+| [`packages/views`](../packages/views/README.md) | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
+| [`packages/outbox`](../packages/outbox/README.md) | Transactional outbox: per-topic publishers fed from the event stream by the poller |
+| [`packages/automations`](../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command |
+| [`packages/commands-http`](../packages/commands-http/README.md) | A REST API over your commands, with RFC 7807 problem-detail errors |
+| [`packages/views-http`](../packages/views-http/README.md) | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
+| [`packages/metrics-otel`](../packages/metrics-otel/README.md) | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
+| [`examples/course-enrolment-app`](../examples/course-enrolment-app/README.md) | The [tutorial](./tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
+| [`examples/course-enrolment-ui`](../examples/course-enrolment-ui/README.md) | A Foldkit page for that API: a typed client, marker reads, live updates ([tutorial step 5](./tutorial/05-a-page-that-uses-it.md)) |
+| [`examples/quickstart`](../examples/quickstart/README.md) | The [README example](../README.md) as a script that runs with no database |
+| [`examples/wallet-example-app`](../examples/wallet-example-app/README.md) | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 
 ## Build & test
 
