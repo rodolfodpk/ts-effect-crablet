@@ -29,9 +29,19 @@ flowchart LR
   api --> cmd["commands<br/>decide on a boundary"]
   cmd -- "append if nothing newer<br/>in the boundary" --> log[("One event log<br/>PostgreSQL")]
 
-  log -- "a poller per module,<br/>at-least-once" --> views["views<br/>projectors into your tables"]
-  log --> auto["automations<br/>an event in, a command out"]
-  log --> outbox["outbox<br/>publishers per topic"]
+  subgraph vm["views module (its own leader lock)"]
+    pv["poller<br/>own cursors"] --> views["views<br/>projectors into your tables"]
+  end
+  subgraph am["automations module (its own leader lock)"]
+    pa["poller<br/>own cursors"] --> auto["automations<br/>an event in, a command out"]
+  end
+  subgraph om["outbox module (its own leader lock)"]
+    po["poller<br/>own cursors"] --> outbox["outbox<br/>publishers per topic"]
+  end
+
+  log -- "at-least-once" --> pv
+  log -- "at-least-once" --> pa
+  log -- "at-least-once" --> po
 
   views --> read["views-http<br/>reads that wait for your write"]
   read --> client

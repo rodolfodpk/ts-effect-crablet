@@ -23,10 +23,15 @@ flowchart TB
     vhttp["views-http<br/>reads that wait for a marker"]
     phttp["processors-http<br/>list, pause, resume, reset<br/>(behind your authorization)"]
     cmd["commands<br/>defineEvent, defineModel, defineCommand<br/>CommandExecutor"]
-    views["views<br/>projectors into your tables"]
-    outbox["outbox<br/>publishers per topic"]
-    auto["automations<br/>event in, command out"]
-    poller["event-poller<br/>cursor, leader, fence"]
+    subgraph vm["views module: its own lock"]
+      pv["event-poller<br/>cursors, fence"] --> views["views<br/>projectors into your tables"]
+    end
+    subgraph am["automations module: its own lock"]
+      pa["event-poller<br/>cursors, fence"] --> auto["automations<br/>event in, command out"]
+    end
+    subgraph om["outbox module: its own lock"]
+      po["event-poller<br/>cursors, fence"] --> outbox["outbox<br/>publishers per topic"]
+    end
   end
 
   subgraph store["eventstore"]
@@ -41,27 +46,29 @@ flowchart TB
   client --> http
   client --> vhttp
   client --> phttp
-  phttp --> poller
+  phttp --> pv
+  phttp --> pa
+  phttp --> po
   http --> cmd
   cmd --> es
   es --> pg
   vhttp --> views
   views -. reads view tables .-> pg
 
-  pg -. new events .-> poller
-  poller --> views
-  poller --> outbox
-  poller --> auto
+  pg -. new events .-> pv
+  pg -. new events .-> pa
+  pg -. new events .-> po
   auto --> cmd
   outbox --> ext
-  poller --> listen
+  pv --> listen
+  pa --> listen
+  po --> listen
   listen --> pg
 
   metrics -. recorded by every package .- app
 ```
 
-Reading it: a **write** goes client → `commands-http` → `commands` → `eventstore` → Postgres. A **reaction** starts at the poller, which reads new events and hands them to views,
-the outbox or automations; an automation turns an event back into a command. A **read** of a view goes through `views-http`, which can wait until the view has caught up. An operator can list the processors and pause, resume or reset one through `processors-http`. Each package
+Reading it: a **write** goes client → `commands-http` → `commands` → `eventstore` → Postgres. A **reaction** starts at a module's poller (the views, the automations and the outbox each have their own, and their own leader lock), which reads new events and hands them to that module's processors; an automation turns an event back into a command. A **read** of a view goes through `views-http`, which can wait until the view has caught up. An operator can list the processors and pause, resume or reset one through `processors-http`. Each package
 is described in [the reference](./reference.md#packages).
 
 ## A command, from request to append
