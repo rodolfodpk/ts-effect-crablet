@@ -1,6 +1,6 @@
 # Plan: improve test coverage, starting by measuring it properly
 
-**Status:** steps 1-4 done (2026-10-08); steps 5-6 open, and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
+**Status:** all six steps done (2026-10-08). What remains is optional: mutation testing of the core packages (see "Limits of this check"), and watching the first weeks of CI for flapping., and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
 not counted); the ratchet is a hard gate that fails CI.
 
 ## Result of step 1 (2026-10-08): the real number is 98.5 %, not 67 %
@@ -171,22 +171,23 @@ See "Result of step 4" above.
 
 Done when: the table is empty or each remaining line has a recorded reason, and the sampled breaks are all caught.
 
-### 5. Targets
+### 5. Targets - DONE (2026-10-08)
 
-The proposed 85 % is below where we already are, so it is withdrawn. Instead:
+The proposed 85 % was below where we already were, so it was withdrawn and replaced by targets that are enforced, not wished for:
 
-| Measure | Target |
-|---|---|
-| Packages, merged line coverage | hold the baseline (99.6 % on CI) and ratchet up; nothing is left to close, so the aim is to keep it |
-| Any single file | 90 %, unless excluded with a reason |
-| Failures and edge cases | each of the failure paths in step 4 item 2 has a test that fails when the behaviour breaks |
+| Measure | Target | Enforced by |
+|---|---|---|
+| Packages, merged line coverage | hold the baseline (99.6 % on CI) | the ratchet per package and overall (step 3), 0.3-point tolerance |
+| Any single source file | **90 %**, unless listed with a reason | `fileFloor` in `coverage-baseline.json`; today the lowest is `ModelImpact.ts` at 94.5 % and the exclusion list is empty |
+| An exception to the file floor | must be current | a stale entry (file gone, or above the floor) fails the check, so the list cannot grow silently or outlive its reason |
+| Failures and edge cases | each failure path has a test that fails when the behaviour breaks | the 17 deliberate breaks of step 4 (14 caught at once, 3 found and closed) |
 
-The gate (step 3) enforces the baseline; it never has to be loosened.
+The gate never has to be loosened to reach these; it ratchets up. Raising a baseline: `bun run coverage:baseline`, then set `test-support` back to the CI number if the local one is higher (see the note in the file).
 
-### 6. Keep it honest
+### 6. Keep it honest - DONE (2026-10-08)
 
-- A short note in `CONTRIBUTING.md`: how to produce the merged report locally (`bun run test:coverage`, a script that runs both suites and merges), and the rule that a bug fix starts with a failing test.
-- Review the exclusions list once per quarter-sized plan, so it does not grow silently.
+- `CONTRIBUTING.md` explains `bun run test:coverage`, the gate, the file floor, the exclusions and where they are written, and keeps the rule that a bug fix starts with a failing test (it was already in "Making a change").
+- The exclusions, which used to live in two places that could drift, are now checked against each other: `scripts/coverage-exclusions.test.ts` fails if something the merge leaves out is not ignored by `codecov.yml`, or if a package source is ignored. The "review the list periodically" item became mechanical: stale exceptions fail the build.
 
 ## Risks and costs
 

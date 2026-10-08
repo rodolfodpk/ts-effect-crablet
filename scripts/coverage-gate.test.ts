@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { check, measure, raise, type Baseline } from "./coverage-gate.ts";
+import { check, checkFiles, measure, raise, type Baseline } from "./coverage-gate.ts";
 import { parseLcov } from "./merge-coverage.ts";
 
 const baseline: Baseline = { tolerancePoints: 0.3, overall: 85, packages: { a: 95, b: 80 } };
@@ -47,5 +47,39 @@ describe("coverage gate", () => {
 
   test("deleting code with its tests does not trip it: percentages, not line counts", () => {
     expect(check(measured([19, 20], [8, 10]), { ...baseline, overall: 85 })).toEqual([]);
+  });
+});
+
+describe("per-file floor", () => {
+  const floorBaseline: Baseline = { ...baseline, fileFloor: 90, fileExclusions: {} };
+  const files = (...entries: ReadonlyArray<readonly [string, number, number]>) => parseLcov(entries.map(([f, h, t]) => lcov(f, h, t)).join("\n"), "/repo");
+
+  test("a file below the floor fails by name; a file at or above it passes", () => {
+    const failures = checkFiles(files(["packages/a/src/ok.ts", 90, 100], ["packages/a/src/low.ts", 89, 100]), floorBaseline);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain("packages/a/src/low.ts");
+  });
+
+  test("an excluded file may be below the floor", () => {
+    const b = { ...floorBaseline, fileExclusions: { "packages/a/src/low.ts": "defensive branches that need a fake database" } };
+    expect(checkFiles(files(["packages/a/src/low.ts", 10, 100]), b)).toEqual([]);
+  });
+
+  test("a stale exclusion fails: the file is above the floor now, or is not measured any more", () => {
+    const b = { ...floorBaseline, fileExclusions: { "packages/a/src/was-low.ts": "old reason", "packages/a/src/gone.ts": "old reason" } };
+    const failures = checkFiles(files(["packages/a/src/was-low.ts", 99, 100]), b);
+    expect(failures.some((f) => f.includes("was-low.ts") && f.includes("stale"))).toBe(true);
+    expect(failures.some((f) => f.includes("gone.ts") && f.includes("no longer measured"))).toBe(true);
+  });
+
+  test("no floor in the baseline means no per-file check; examples are not checked", () => {
+    expect(checkFiles(files(["packages/a/src/low.ts", 1, 100]), baseline)).toEqual([]);
+    expect(checkFiles(files(["examples/e/src/low.ts", 1, 100]), floorBaseline)).toEqual([]);
+  });
+
+  test("raising keeps the floor and the exclusions", () => {
+    const next = raise(measure(parseLcov(lcov("packages/a/src/x.ts", 100, 100), "/repo")), { ...floorBaseline, fileExclusions: { "packages/a/src/y.ts": "why" } });
+    expect(next.fileFloor).toBe(90);
+    expect(next.fileExclusions).toEqual({ "packages/a/src/y.ts": "why" });
   });
 });

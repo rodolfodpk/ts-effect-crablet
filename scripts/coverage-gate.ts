@@ -1,5 +1,7 @@
-// The coverage ratchet (docs/plans/test-coverage.md, step 3): a package may not lose coverage. It compares the merged report (coverage/lcov.info, packages only) with the committed
-// baseline (coverage-baseline.json) and fails when a package, or the packages as a whole, falls below its baseline by more than the tolerance.
+// The coverage gate (docs/plans/test-coverage.md, steps 3 and 5). It compares the merged report (coverage/lcov.info, packages only) with the committed baseline (coverage-baseline.json) and fails when
+//   - a package, or the packages as a whole, falls below its baseline by more than the tolerance (the ratchet: coverage may not go down), or
+//   - a source file is below the per-file floor and is not listed in `fileExclusions` with a reason, or
+//   - an exclusion is stale (the file is gone, or is above the floor now): the list of exceptions cannot grow silently and cannot outlive its reason.
 //
 //   bun scripts/coverage-gate.ts                 # check: exit 1 on a regression
 //   bun scripts/coverage-gate.ts --update        # raise the baseline to the current numbers (it never lowers one)
@@ -11,6 +13,9 @@ import { packageOf, parseLcov, percent, totalsOf, type Coverage } from "./merge-
 
 export interface Baseline {
   readonly notes?: Readonly<Record<string, string>>;
+  // no file may be below this percentage, unless listed in fileExclusions (file -> the reason)
+  readonly fileFloor?: number;
+  readonly fileExclusions?: Readonly<Record<string, string>>;
   readonly tolerancePoints: number;
   readonly overall: number;
   readonly packages: Readonly<Record<string, number>>;
@@ -45,6 +50,25 @@ export const check = (measured: Measured, baseline: Baseline): ReadonlyArray<str
   return failures;
 };
 
+export const checkFiles = (coverage: Coverage, baseline: Baseline): ReadonlyArray<string> => {
+  const floor = baseline.fileFloor;
+  if (floor === undefined) return [];
+  const exclusions = baseline.fileExclusions ?? {};
+  const failures: Array<string> = [];
+  const seen = new Set<string>();
+  for (const [file, lines] of coverage) {
+    if (packageOf(file) === null) continue;
+    seen.add(file);
+    const t = totalsOf(new Map([[file, lines]]));
+    const now = t.total === 0 ? 100 : (100 * t.hit) / t.total;
+    const excluded = file in exclusions;
+    if (now < floor && !excluded) failures.push(`${file}: ${now.toFixed(1)}% is below the per-file floor of ${floor}% (add tests, or list it in fileExclusions with the reason)`);
+    if (now >= floor && excluded) failures.push(`${file}: ${now.toFixed(1)}% is above the floor now, so its exclusion is stale; remove it from fileExclusions`);
+  }
+  for (const file of Object.keys(exclusions)) if (!seen.has(file)) failures.push(`${file}: excluded in fileExclusions but no longer measured; remove the entry`);
+  return failures;
+};
+
 // A new baseline: every number is the larger of the old and the current (rounded down to a tenth), and packages that are new are added.
 export const raise = (measured: Measured, baseline: Baseline): Baseline => {
   const packages: Record<string, number> = { ...baseline.packages };
@@ -53,7 +77,7 @@ export const raise = (measured: Measured, baseline: Baseline): Baseline => {
     packages[name] = Math.max(packages[name] ?? 0, floor1(now));
   }
   const sorted = Object.fromEntries(Object.entries(packages).sort(([a], [b]) => a.localeCompare(b)));
-  return { ...(baseline.notes === undefined ? {} : { notes: baseline.notes }), tolerancePoints: baseline.tolerancePoints, overall: Math.max(baseline.overall, floor1(measured.get("(all packages)") ?? 0)), packages: sorted };
+  return { ...baseline, overall: Math.max(baseline.overall, floor1(measured.get("(all packages)") ?? 0)), packages: sorted };
 };
 
 if (import.meta.main) {
@@ -66,10 +90,12 @@ if (import.meta.main) {
     writeFileSync(baselineFile, JSON.stringify(next, null, 2) + "\n");
     console.log(`baseline raised: ${percent(totalsOf(coverage))} measured, overall baseline ${next.overall}%`);
   } else {
-    const failures = check(measured, baseline);
+    const failures = [...check(measured, baseline), ...checkFiles(coverage, baseline)];
     for (const [name, value] of measured) console.log(`${name.padEnd(18)} ${value.toFixed(1).padStart(6)}%  (baseline ${(name === "(all packages)" ? baseline.overall : baseline.packages[name])?.toFixed(1) ?? "none"}%)`);
+    const lowest = [...coverage].filter(([f]) => packageOf(f) !== null).map(([f, l]) => [f, totalsOf(new Map([[f, l]]))] as const).sort((a, b) => a[1].hit / a[1].total - b[1].hit / b[1].total).slice(0, 3);
+    console.log("\nlowest files: " + lowest.map(([f, t]) => `${f} ${percent(t)}`).join(", "));
     if (failures.length > 0) {
-      console.error("\nCoverage fell below its baseline:\n" + failures.map((f) => `  - ${f}`).join("\n"));
+      console.error("\nCoverage check failed:\n" + failures.map((f) => `  - ${f}`).join("\n"));
       console.error("\nAdd tests for the code you changed. If lines were removed on purpose, lower the baseline in coverage-baseline.json by hand and say why in the commit message.");
       process.exit(1);
     }

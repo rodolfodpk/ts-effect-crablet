@@ -1,8 +1,7 @@
 {
-  "notes": {
-    "test-support": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08."
-  },
   "tolerancePoints": 0.3,
+  "fileFloor": 90,
+  "fileExclusions": {},
   "overall": 99.6,
   "packages": {
     "automations": 100,
@@ -16,5 +15,8 @@
     "test-support": 96.4,
     "views": 100,
     "views-http": 100
+  },
+  "notes": {
+    "test-support": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08."
   }
 }

@@ -13,6 +13,6 @@ something is the way it is and what was measured; you do not need them to use th
 | [`shared-listener.md`](./shared-listener.md) | One LISTEN per process for view progress ([ADR-0016](../adr/0016-one-listen-per-process-for-view-progress.md)) | Done (phases 1-4) |
 | [`reliability-and-scale-diagnostic.md`](./reliability-and-scale-diagnostic.md) | What breaks at scale and under failure, measured, then fixed (six steps) | Done; snapshots were built and then dropped; retention not decided |
 | [`newcomer-accessibility.md`](./newcomer-accessibility.md) | Make the repository easy to enter | Done (all nine steps, 2026-10-07) |
-| [`test-coverage.md`](./test-coverage.md) | Improve test coverage, starting by measuring the integration tests too; packages only; a ratchet in CI | Steps 1-4 done (2026-10-08): the real merged coverage was 98.5 %, now 99.7 % locally, gated in CI; three of seventeen deliberate breaks survived and were closed; steps 5-6 open |
+| [`test-coverage.md`](./test-coverage.md) | Improve test coverage, starting by measuring the integration tests too; packages only; a ratchet in CI | Done (all six steps, 2026-10-08): the real merged coverage was 98.5 %, now 99.7 % locally, gated in CI; three of seventeen deliberate breaks survived and were closed; a 90 % per-file floor and checked exclusions |
 
 Several plans mention `?waitFor=<view>`, which [ADR-0015](../adr/0015-read-consistency-by-marker.md) replaced with markers; those plans keep it as it was.
