@@ -36,31 +36,32 @@ The event store, the command executor and the audit store all come from this lay
 
 ## 3. Start the processors, serve, and fail loudly
 
-Building a processor's layer does not process anything: `service.start` forks the fibers that do. `service.stop` interrupts them, and must run before the pool closes
-(the wallet's [`stopBackgroundProcessors`](../../examples/wallet-example-app/src/WalletApp.ts) does it for all three).
+Building a processor's layer does not process anything: `service.start` forks the fibers that do. Let a **Scope** own them: `service.startScoped` starts the processors and registers
+their stop, so closing the scope interrupts the fibers, releases the leader lock and announces it, and it does so even if the program fails or is interrupted. The entry point below
+is scoped and runs under `NodeRuntime.runMain`, which turns SIGINT and SIGTERM into an interrupt, so a deploy that stops the process stops the processors first, then closes the pool.
 
 <!-- file: examples/course-enrolment-app/src/index.ts#launch -->
 ```ts
 const program = Effect.gen(function* () {
-  yield* startCourseViews(undefined, { viewDelayMs });
+  yield* startCourseViewsScoped(undefined, { viewDelayMs });
   yield* Effect.log(`course-enrolment-app listening on :${port}`);
   yield* Layer.launch(server);
 });
 
-Effect.runPromise(Effect.provide(program, appLayer) as Effect.Effect<void, never, never>).catch((error) => {
-  console.error("FATAL", error);
-  process.exit(1);
-});
+// The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the view processor stops and releases its leader lock (another instance
+// takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
+NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer) as Effect.Effect<void, never, never>);
 ```
 
-<!-- file: examples/wallet-example-app/src/WalletApp.ts#stop-processors -->
+The wallet wraps its three processors the same way (`service.start` and `service.stop` stay available for tests, and for callers that manage the lifetime themselves):
+
+<!-- file: examples/wallet-example-app/src/WalletApp.ts#start-scoped -->
 ```ts
-export const stopBackgroundProcessors = (processors: BackgroundProcessors): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    yield* processors.viewsHandle.service.stop;
-    yield* processors.automationsHandle.service.stop;
-    yield* processors.outboxHandle.service.stop;
-  });
+export const startBackgroundProcessorsScoped = (
+  instanceId?: string,
+  outboxPublishers?: ReadonlyArray<OutboxPublisher>
+): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
+  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers), stopBackgroundProcessors);
 ```
 
 ## 4. Several instances

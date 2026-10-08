@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Metric } from "effect";
+import { Context, Effect, Layer, Metric, Schedule } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore } from "@crablet/eventstore";
@@ -93,15 +93,15 @@ export const withConflictRetry = <A, E, R>(
   retries: number,
   attempt: Effect.Effect<A, E, R>,
   onRetry: Effect.Effect<void> = Effect.void
-): Effect.Effect<A, E, R> => {
-  const loop = (retriesUsed: number): Effect.Effect<A, E, R> =>
-    Effect.catch(attempt, (error) =>
-      error instanceof Conflict && retriesUsed < retries
-        ? Effect.andThen(onRetry, loop(retriesUsed + 1))
-        : Effect.fail(error)
-    );
-  return loop(0);
-};
+): Effect.Effect<A, E, R> =>
+  Effect.retry(
+    attempt,
+    // at most `retries` more runs; only while the failure is a Conflict; `onRetry` runs once before each re-run (and never after the last failure)
+    Schedule.recurs(retries).pipe(
+      Schedule.while(({ input }) => input instanceof Conflict),
+      Schedule.tap(() => onRetry)
+    )
+  );
 
 // Two commands that each make several appends can acquire the append locks of different entities in
 // opposite order (V5 writer-side locking). Postgres aborts one of them (SQLSTATE 40P01, deadlock_detected)
@@ -175,7 +175,10 @@ export const CommandExecutorLive = Layer.effect(
       ).pipe(
         Effect.catchTag("Duplicate", (duplicate) =>
           command.duplicates === "fail" ? Effect.fail(duplicate) : Effect.die(duplicate)
-        )
+        ),
+        // One span for the whole execution, retries included: the attempts and the appends inside it are its children, and its failure is the command's outcome.
+        Effect.withSpan("crablet.command", { attributes: { "crablet.command.name": command.name, "crablet.command.max_retries": command.retries } }),
+        Effect.annotateLogs({ command: command.name })
       ) as Effect.Effect<
         ExecutionResult,
         Err | Conflict | SqlError,

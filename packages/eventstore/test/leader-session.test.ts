@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
-import { tryAcquireGlobalLeader } from "../src/Leader.ts";
+import { afterCheck, afterRelease, leading, tryAcquireGlobalLeader } from "../src/Leader.ts";
 
 const standIn = (answer: (query: string) => ReadonlyArray<unknown>) => {
   const queries: Array<string> = [];
@@ -69,5 +69,34 @@ describe("leader: does THIS session still hold the lock", () => {
     await Effect.runPromise(leader.release());
     expect(leader.isLeader()).toBe(false);
     expect(queries.filter((q) => q.includes("pg_advisory_unlock") && q.includes("pg_notify"))).toHaveLength(1);
+  });
+});
+
+describe("leader state: the pure transitions", () => {
+  test("a good check keeps leading and clears the count of failures", () => {
+    expect(afterCheck(leading, true, 2)).toEqual(leading);
+    expect(afterCheck({ status: "leading", failures: 1 }, true, 2)).toEqual(leading);
+  });
+
+  test("failures in a row make the leader lost, exactly at the threshold", () => {
+    const one = afterCheck(leading, false, 3);
+    expect(one).toEqual({ status: "leading", failures: 1 });
+    const two = afterCheck(one, false, 3);
+    expect(two).toEqual({ status: "leading", failures: 2 });
+    expect(afterCheck(two, false, 3).status).toBe("lost");
+    expect(afterCheck(leading, false, 1).status).toBe("lost");
+  });
+
+  test("a leader that is lost or closed does not come back to life, whatever the next check says", () => {
+    const lost = afterCheck(leading, false, 1);
+    expect(afterCheck(lost, true, 1)).toBe(lost);
+    const closed = afterRelease(leading);
+    expect(afterCheck(closed, true, 1)).toBe(closed);
+    expect(afterCheck(closed, false, 1)).toBe(closed);
+  });
+
+  test("releasing closes it from any state, including a lost one (the lost leader is released next)", () => {
+    expect(afterRelease(leading).status).toBe("closed");
+    expect(afterRelease(afterCheck(leading, false, 1)).status).toBe("closed");
   });
 });

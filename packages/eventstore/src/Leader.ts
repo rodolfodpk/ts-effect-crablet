@@ -46,6 +46,27 @@ export interface LeaderHandle {
   release(): Effect.Effect<void>;
 }
 
+// What a leader knows about itself, as a value, with pure transitions (the same "functional core, imperative shell" as the poller's BackoffState). `leading` until the
+// lock is released on purpose (`closed`) or the session is judged gone (`lost`); `failures` counts consecutive failed checks. A lost leader is released next, so
+// `lost` is passed through on the way to `closed`.
+export interface LeaderState {
+  readonly status: "leading" | "lost" | "closed";
+  readonly failures: number;
+}
+
+export const leading: LeaderState = { status: "leading", failures: 0 };
+
+// The state after one check of the lock. A good check resets the count; `failuresBeforeLost` bad ones in a row make the leader lost; a leader that is no longer leading
+// stays as it is.
+export const afterCheck = (state: LeaderState, alive: boolean, failuresBeforeLost: number): LeaderState => {
+  if (state.status !== "leading") return state;
+  if (alive) return state.failures === 0 ? state : { status: "leading", failures: 0 };
+  const failures = state.failures + 1;
+  return failures >= failuresBeforeLost ? { status: "lost", failures } : { status: "leading", failures };
+};
+
+export const afterRelease = (state: LeaderState): LeaderState => ({ status: "closed", failures: state.failures });
+
 // PATTERN PRIMER - `Scope`, Effect's resource-lifecycle primitive (scoped cleanup,
 // capability-based rather than syntax-based). A `Scope` is a
 // value that resources can register cleanup logic against (`Scope.addFinalizer`, used internally
@@ -88,16 +109,15 @@ export const tryAcquireGlobalLeader = (
     const verifyTimeout = Duration.fromInputUnsafe(options.verifyTimeout ?? "2 seconds");
     const failuresBeforeLost = Math.max(1, options.failuresBeforeLost ?? 2);
 
-    // `closed`: released on purpose. `lost`: the session died or stopped answering. Either way this handle no longer leads.
-    let closed = false;
-    let lost = false;
-    let failures = 0;
+    // `isLeader()` is synchronous (the poller asks it on every tick), so the state is one plain cell here, read and replaced only through the pure transitions above,
+    // never mutated in pieces; a `Ref` would make that read an Effect.
+    let state: LeaderState = leading;
     let monitor: Fiber.Fiber<void> | null = null;
 
     const release = (): Effect.Effect<void> =>
       Effect.gen(function* () {
-        if (closed) return;
-        closed = true;
+        if (state.status === "closed") return;
+        state = afterRelease(state);
         // Unlock and announce in ONE statement: the notification is delivered on commit, after the unlock took effect, so a follower that wakes
         // on it finds the lock free. It is a wildcard on `crablet_events`, the channel every poller already listens to, so followers try for
         // the lock now instead of when their retry timer fires. A session that died cannot announce: its followers wait for their timer.
@@ -127,32 +147,28 @@ export const tryAcquireGlobalLeader = (
       );
 
     const verify: Effect.Effect<boolean> = Effect.gen(function* () {
-      if (closed || lost) return false;
-      if (yield* alive) {
-        failures = 0;
-        return true;
-      }
-      failures++;
-      if (failures >= failuresBeforeLost) {
-        lost = true;
+      if (state.status !== "leading") return false;
+      const isAlive = yield* alive;
+      state = afterCheck(state, isAlive, failuresBeforeLost);
+      if (state.status === "lost") {
         // release from ANOTHER fiber: the caller may be the monitor itself, which release() interrupts
         yield* Effect.forkDetach(release());
       }
-      return false;
+      return isAlive;
     });
 
     const handle: LeaderHandle = {
       lockKey,
-      isLeader: () => !closed && !lost,
+      isLeader: () => state.status === "leading",
       verify,
       release
     };
 
     monitor = yield* Effect.forkDetach(
       Effect.gen(function* () {
-        while (!closed && !lost) {
+        while (state.status === "leading") {
           yield* Effect.sleep(heartbeat);
-          if (closed || lost) break;
+          if (state.status !== "leading") break;
           yield* verify;
         }
       })

@@ -1,10 +1,10 @@
 import { createServer } from "node:http";
 import { Effect, Layer, Redacted } from "effect";
 import { HttpRouter } from "effect/http";
-import { NodeHttpServer } from "@effect/platform-node";
+import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import { migrate } from "./migrate.ts";
-import { startBackgroundProcessors, makeWalletApiLayer } from "./WalletApp.ts";
+import { startBackgroundProcessorsScoped, makeWalletApiLayer } from "./WalletApp.ts";
 
 const connInfo = {
   host: process.env["WALLET_DB_HOST"] ?? "localhost",
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   });
 
   const program = Effect.gen(function* () {
-    yield* startBackgroundProcessors();
+    yield* startBackgroundProcessorsScoped();
     yield* Effect.log(`wallet-example-app listening on :${port}`);
     yield* Layer.launch(
       HttpRouter.serve(makeWalletApiLayer({ basePath: "/api/commands" })).pipe(
@@ -38,7 +38,9 @@ async function main(): Promise<void> {
     );
   });
 
-  await Effect.runPromise(Effect.provide(program, appLayer));
+  // The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the three processors stop and release their leader locks (another
+  // instance takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
+  NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer));
 }
 
 main().catch((error) => {

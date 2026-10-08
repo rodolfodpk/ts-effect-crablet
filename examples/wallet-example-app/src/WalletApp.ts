@@ -1,4 +1,4 @@
-import { Duration, Effect, Layer } from "effect";
+import { Duration, Effect, Layer, type Scope } from "effect";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
@@ -80,9 +80,8 @@ const defaultOutboxConfig: OutboxConfig = {
   maxErrors: 10
 };
 
-// The 3 EventProcessorHandles started by startBackgroundProcessors - callers that need a bounded
-// lifetime (every E2E test file; the real index.ts entry point never disposes, so it can ignore
-// this) must call `.service.stop` on each before tearing down the underlying connection pool.
+// The 3 EventProcessorHandles started by startBackgroundProcessors - a caller that uses it directly (every E2E test file) must call `.service.stop` on each
+// before tearing down the underlying connection pool. The entry point uses `startBackgroundProcessorsScoped` below instead, and the scope does that.
 // `.service.start` forks its daemon fibers via `Effect.forkDetach` (see EventProcessor.ts's own
 // primer), deliberately detached from any scope/parent fiber - so closing a Scope or disposing a
 // ManagedRuntime does NOT stop them on its own; only `.service.stop`'s explicit
@@ -157,6 +156,16 @@ export const startBackgroundProcessors = (
 
     return { viewsHandle, automationsHandle, outboxHandle };
   });
+
+// The same, owned by a Scope: closing the scope stops the three processors and releases their leader locks (the others take over at once). This is what an entry point
+// should use; `startBackgroundProcessors` and `stopBackgroundProcessors` are for tests and for callers that manage the lifetime themselves.
+// #region start-scoped
+export const startBackgroundProcessorsScoped = (
+  instanceId?: string,
+  outboxPublishers?: ReadonlyArray<OutboxPublisher>
+): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
+  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers), stopBackgroundProcessors);
+// #endregion start-scoped
 
 // The wallet's public write API is declared from the five CONTRACTS (domain/WalletContracts.ts), deliberately NOT SendWelcomeNotification (an
 // automation-triggered internal command, not a public write API). Each contract declares its domain errors, which the API presents by their

@@ -1,4 +1,4 @@
-import { Duration, Effect, Queue, type Scope, Stream } from "effect";
+import { Duration, Effect, Queue, Ref, type Scope, Stream } from "effect";
 import type { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
 import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
@@ -46,40 +46,48 @@ const WILDCARD: DecodedPayload = { wildcard: true, types: new Set(), tagKeys: ne
 export const wakeupStreamFrom = (listen: ListenSource, options: WakeupOptions = {}): Stream.Stream<WakeupBatch, SqlError> => {
   const retryBase = Duration.toMillis(Duration.fromInputUnsafe(options.retryBase ?? "500 millis"));
   const retryMax = Duration.toMillis(Duration.fromInputUnsafe(options.retryMax ?? "30 seconds"));
-  let delay = retryBase;
-  let connectedOnce = false;
-  let connected = false;
 
-  // One connection's life; ends, without failing, however it ended.
-  const connection: Stream.Stream<DecodedPayload> = Stream.unwrap(
-    Effect.map(listen, (queue) => {
-      connected = true;
-      const reconnect = connectedOnce;
-      connectedOnce = true;
-      const notifications = Stream.map(Stream.fromQueue(queue), (n) => decodePayload(n.payload));
-      return reconnect ? Stream.concat(Stream.make(WILDCARD), notifications) : notifications;
+  // The state of a run lives IN the run (created when the stream starts), not in the stream value: a stream is a recipe that can be run again, and each run is its own
+  // first connection. (Before, these were `let` variables captured by the stream value, so a second run of the same value thought it was reconnecting.)
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const delay = yield* Ref.make(retryBase);
+      const connectedOnce = yield* Ref.make(false);
+      const connected = yield* Ref.make(false);
+
+      // One connection's life; ends, without failing, however it ended.
+      const connection: Stream.Stream<DecodedPayload> = Stream.unwrap(
+        Effect.gen(function* () {
+          const queue = yield* listen;
+          yield* Ref.set(connected, true);
+          const reconnect = yield* Ref.getAndSet(connectedOnce, true);
+          const notifications = Stream.map(Stream.fromQueue(queue), (n) => decodePayload(n.payload));
+          return reconnect ? Stream.concat(Stream.make(WILDCARD), notifications) : notifications;
+        })
+      ).pipe(Stream.catchCause(() => Stream.empty));
+
+      // Wait before the next attempt: `retryBase` after a connection that was established and then lost; otherwise the current delay, which doubles up to `retryMax`.
+      const pause: Stream.Stream<never> = Stream.drain(
+        Stream.fromEffect(
+          Effect.gen(function* () {
+            const wasConnected = yield* Ref.getAndSet(connected, false);
+            const current = yield* Ref.get(delay);
+            yield* Ref.set(delay, wasConnected ? retryBase : Math.min(current * 2, retryMax));
+            yield* Effect.sleep(Duration.millis(wasConnected ? retryBase : current));
+          })
+        )
+      );
+
+      return Stream.forever(Stream.concat(connection, pause)).pipe(
+        // `Stream.groupedWithin(maxSize, duration)` is the debounce/coalesce technique: it buffers elements into an array and flushes the buffer
+        // whenever EITHER `maxSize` elements have arrived OR `duration` has elapsed since the last flush - whichever comes first. Passing
+        // `Number.MAX_SAFE_INTEGER` for size effectively disables the size trigger, leaving pure time-based batching: every NOTIFY that arrives
+        // within the same 20ms window gets merged into one `WakeupBatch` instead of dispatching N separate wakeups.
+        Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(DEBOUNCE_MS)),
+        Stream.filter((batch) => batch.length > 0),
+        Stream.map(mergeBatch)
+      );
     })
-  ).pipe(Stream.catchCause(() => Stream.empty));
-
-  const pause: Stream.Stream<never> = Stream.drain(
-    Stream.fromEffect(
-      Effect.suspend(() => {
-        const wait = connected ? retryBase : delay;
-        delay = connected ? retryBase : Math.min(delay * 2, retryMax);
-        connected = false;
-        return Effect.sleep(Duration.millis(wait));
-      })
-    )
-  );
-
-  return Stream.forever(Stream.concat(connection, pause)).pipe(
-    // `Stream.groupedWithin(maxSize, duration)` is the debounce/coalesce technique: it buffers elements into an array and flushes the buffer
-    // whenever EITHER `maxSize` elements have arrived OR `duration` has elapsed since the last flush - whichever comes first. Passing
-    // `Number.MAX_SAFE_INTEGER` for size effectively disables the size trigger, leaving pure time-based batching: every NOTIFY that arrives
-    // within the same 20ms window gets merged into one `WakeupBatch` instead of dispatching N separate wakeups.
-    Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(DEBOUNCE_MS)),
-    Stream.filter((batch) => batch.length > 0),
-    Stream.map(mergeBatch)
   );
 };
 

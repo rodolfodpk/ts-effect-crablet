@@ -233,7 +233,7 @@ export const EventStoreLive = Layer.effect(
             Effect.andThen(Metric.update(EventStoreMetrics.concurrencyViolations, 1), Effect.fail(e))
           )
         )
-      );
+      ).pipe(Effect.withSpan("crablet.eventstore.append", { attributes: { "crablet.append.events": events.length, "crablet.append.event_types": [...eventTypes].join(",") } }));
     };
 
     // With no condition (AppendCondition.empty(): empty concurrency and idempotency queries, which
@@ -242,7 +242,11 @@ export const EventStoreLive = Layer.effect(
     const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
       appendWith(events, condition ?? AppendConditionNS.empty())) as EventStoreService["append"];
 
-    const service: EventStoreService = { append, project, exists };
+    // A span around a read, so a slow command can be told apart: how long its boundary took to load, against how long its append took.
+    const tracedProject = (<T>(query: Query, after: LogPosition, projectors: ReadonlyArray<StateProjector<T>>) =>
+      project(query, after, projectors).pipe(Effect.withSpan("crablet.eventstore.project", { attributes: { "crablet.project.query_items": query.items.length } }))) as EventStoreService["project"];
+
+    const service: EventStoreService = { append, project: tracedProject, exists };
 
     return service;
   })

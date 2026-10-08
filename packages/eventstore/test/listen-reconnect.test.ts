@@ -52,6 +52,52 @@ describe("wakeupStream reconnects", () => {
     }));
   });
 
+  test("each run of the same stream value starts afresh: its first connection announces nothing, whatever an earlier run did", async () => {
+    await Effect.runPromise(Effect.gen(function* () {
+      const queues = [yield* Queue.unbounded<{ readonly payload: string }, SqlError>(), yield* Queue.unbounded<{ readonly payload: string }, SqlError>()];
+      const { listen } = yield* fakeListen([queues[0]!, queues[1]!]);
+      const stream = wakeupStreamFrom(listen, { retryBase: "10 millis" });
+
+      const firstRun = yield* collect(stream);
+      yield* Queue.offer(queues[0]!, payload("A"));
+      yield* next(firstRun.out);
+      yield* Fiber.interrupt(firstRun.fiber);
+
+      // the same stream value, run again: this is a first connection, not a reconnect
+      const secondRun = yield* collect(stream);
+      yield* Queue.offer(queues[1]!, payload("B"));
+      const batch = yield* next(secondRun.out);
+      expect(batch.wildcard).toBe(false);
+      expect([...batch.types]).toEqual(["B"]);
+      yield* Fiber.interrupt(secondRun.fiber);
+    }));
+  });
+
+  test("the delay before trying again doubles up to the maximum, and starts over after a connection that was established and lost", async () => {
+    await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();
+      const second = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();
+      const times: Array<number> = [];
+      const { listen: inner } = yield* fakeListen([first, "fail", "fail", "fail", second]);
+      const listen: typeof inner = Effect.suspend(() => { times.push(Date.now()); return inner; });
+      const { out, fiber } = yield* collect(wakeupStreamFrom(listen, { retryBase: "20 millis", retryMax: "80 millis" }));
+      yield* Queue.offer(first, payload("A"));
+      yield* next(out);
+      yield* Queue.fail(first, lost()); // established, then lost
+      const reconnect = yield* next(out);
+      expect(reconnect.wildcard).toBe(true);
+      // attempts: 0 first connect; 1..3 failures; 4 the reconnect. Gaps: base after the lost connection, then 20 -> 40 -> 80 (the cap) between failures.
+      const gaps = times.slice(1).map((t, i) => t - times[i]!);
+      expect(gaps).toHaveLength(4);
+      expect(gaps[0]!).toBeGreaterThanOrEqual(15);
+      expect(gaps[1]!).toBeGreaterThanOrEqual(15);
+      expect(gaps[2]!).toBeGreaterThanOrEqual(35);
+      expect(gaps[3]!).toBeGreaterThanOrEqual(70);
+      expect(gaps[3]!).toBeLessThan(400);
+      yield* Fiber.interrupt(fiber);
+    }));
+  });
+
   test("the first connection announces nothing", async () => {
     await Effect.runPromise(Effect.gen(function* () {
       const first = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();

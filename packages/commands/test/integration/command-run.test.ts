@@ -3,7 +3,7 @@
 // barrier AFTER the model has loaded, so that BOTH commands load before EITHER appends (no timing luck).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Deferred, Effect, Layer, Metric, Redacted, Ref } from "effect";
+import { Deferred, Effect, Layer, Metric, Redacted, Ref, Tracer } from "effect";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
@@ -289,5 +289,45 @@ describe("CommandExecutor.run: lifecycle guard", () => {
     await run(Effect.flatMap(CommandExecutor, (e) => e.run(closeSeat, { seatId: s })));
     const repeat = await run(Effect.flatMap(CommandExecutor, (e) => e.run(cmd, b)));
     assert.equal(repeat.wasIdempotent, true);
+  });
+});
+
+describe("CommandExecutor.run: tracing", () => {
+  it("one span for the command, with the append and the boundary read inside it", async () => {
+    const spans: Array<Tracer.Span> = [];
+    const tracer = Tracer.make({
+      span(this: Tracer.Tracer, options) {
+        const span = Tracer.nativeTracer.span.call(this, options);
+        spans.push(span);
+        return span;
+      }
+    });
+    const s = seat();
+    await run(Effect.withTracer(Effect.flatMap(CommandExecutor, (e) => e.run(bookSeat(), booking(s))), tracer));
+
+    const command = spans.find((x) => x.name === "crablet.command")!;
+    assert.ok(command, "a span for the command");
+    assert.equal(command.attributes.get("crablet.command.name"), "book_seat");
+    assert.equal(command.attributes.get("crablet.command.max_retries"), 3);
+
+    const append = spans.find((x) => x.name === "crablet.eventstore.append")!;
+    assert.ok(append, "a span for the append");
+    assert.equal(append.attributes.get("crablet.append.events"), 1);
+    assert.equal(append.attributes.get("crablet.append.event_types"), "SeatBooked");
+    const project = spans.find((x) => x.name === "crablet.eventstore.project")!;
+    assert.ok(project, "a span for the boundary read");
+
+    // both are inside the command's span, however many levels down
+    const ancestors = (span: Tracer.Span): ReadonlyArray<string> => {
+      const out: Array<string> = [];
+      let parent = span.parent;
+      while (parent._tag === "Some") {
+        out.push(parent.value.spanId);
+        parent = "parent" in parent.value ? (parent.value as Tracer.Span).parent : { _tag: "None" } as never;
+      }
+      return out;
+    };
+    assert.ok(ancestors(append).includes(command.spanId), "the append is inside the command span");
+    assert.ok(ancestors(project).includes(command.spanId), "the read is inside the command span");
   });
 });

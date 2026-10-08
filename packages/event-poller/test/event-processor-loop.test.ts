@@ -415,3 +415,59 @@ describe("EventProcessor leadership fence (scheduled loop)", () => {
     await Effect.runPromise(Effect.provide(program, TestClock.layer()));
   });
 });
+
+describe("EventProcessor.startScoped: the scope owns the processors", () => {
+  test("while the scope is open events are handled; closing it stops the loops and releases the leader lock, once", async () => {
+    const program = Effect.gen(function* () {
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([storedEvent(1n)]);
+      const { tracker } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>({});
+      const released = yield* Ref.make(0);
+      const leader: LeaderHandle = { lockKey: 0n, isLeader: () => true, verify: Effect.succeed(true), release: () => Ref.update(released, (n) => n + 1) };
+      const handle = yield* makeEventProcessor({
+        configs: [processorConfigOf(PROCESSOR_ID, { pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120, enabled: true })],
+        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf: () => EventSelection.empty(),
+        instanceId: "test-instance",
+        acquireLeader: Effect.succeed(leader),
+        wakeupStream: Stream.never
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* handle.service.startScoped;
+          yield* waitUntil(Effect.map(tracker.getCursor(PROCESSOR_ID), (c) => c.position), (p) => p === 1n);
+          expect(yield* handlerHandle.callCount).toBe(1);
+          expect(yield* Ref.get(released)).toBe(0);
+        })
+      ); // the scope closes here, with no call to stop
+
+      expect(yield* Ref.get(released)).toBe(1);
+      const before = yield* handlerHandle.callCount;
+      yield* Ref.set(eventsRef, [storedEvent(1n), storedEvent(2n)]);
+      yield* TestClock.adjust("10 seconds");
+      yield* Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow);
+      expect(yield* handlerHandle.callCount).toBe(before); // nothing is polling any more
+    });
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+
+  test("an error in the scope's body still stops them: this is what a hand-written start and stop could not promise", async () => {
+    const program = Effect.gen(function* () {
+      const { handle } = yield* makeHarness();
+      const exit = yield* Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* handle.service.startScoped;
+            return yield* Effect.fail("the body failed");
+          })
+        )
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(yield* handle.service.getStatus(PROCESSOR_ID)).toBe("ACTIVE"); // the processor is intact, and no fiber is left behind to poll against a closed pool
+    });
+    await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+});

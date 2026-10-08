@@ -1,4 +1,4 @@
-import { Effect, Layer, type Duration } from "effect";
+import { Effect, Layer, type Duration, type Scope } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { HttpApiBuilder } from "effect/http-api";
@@ -105,3 +105,10 @@ export const startCourseViews = (
     yield* handle.service.start;
     return handle;
   });
+
+// The same, owned by a Scope: closing the scope stops the view processor and releases its leader lock. What an entry point should use.
+export const startCourseViewsScoped = (
+  instanceId?: string,
+  options?: CourseViewsOptions
+): Effect.Effect<EventProcessorHandle<ProcessorConfig<string>, string>, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | Scope.Scope> =>
+  Effect.acquireRelease(startCourseViews(instanceId, options), (handle) => handle.service.stop);

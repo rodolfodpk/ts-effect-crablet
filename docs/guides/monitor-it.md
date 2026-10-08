@@ -33,6 +33,21 @@ Suggestions, by what each metric tells you:
 | `crablet.poller.backoff_active` | a processor has backed off after errors or empty polls |
 | `crablet.storage.*` | the size of the log and of each library table, and bytes per event |
 
+## Traces and log context
+
+The framework opens spans and annotates its logs, so a tracer and a log sink you wire in can answer "where did this command spend its time". As with metrics, **no exporter is shipped**: provide
+Effect's tracer for your backend (for example OpenTelemetry) and the spans appear.
+
+| Span | Opened by | Attributes |
+|---|---|---|
+| `crablet.command` | each command execution, retries included | `crablet.command.name`, `crablet.command.max_retries` |
+| `crablet.eventstore.project` | reading a boundary | `crablet.project.query_items` |
+| `crablet.eventstore.append` | the conditional append | `crablet.append.events`, `crablet.append.event_types` |
+| `crablet.poller.batch` | a poll that found events: handling the batch and moving the cursor | `crablet.processor`, `crablet.batch.events` |
+
+The read and the append are inside the command's span, so a slow command shows which of the two it waited for. An idle poll opens no span (it would be one a second per processor). Logs written
+by a processor's loop carry `processor` and `instance`, and logs written while a command runs carry `command`, so a log line can be tied to the processor or command that wrote it.
+
 ## Inspect and control processors
 
 Each module has a management service (`ViewManagementService`, `AutomationManagementService`, `OutboxManagementService`) on top of the poller's

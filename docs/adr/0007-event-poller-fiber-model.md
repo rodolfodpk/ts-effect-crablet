@@ -55,6 +55,11 @@ chance to run.
 - Decoupling the engine from concrete Postgres wiring (injecting `acquireLeader`/`wakeupStream`) is
   what let Bun unit tests use a fake always-leader stub and a manually-driven `PubSub` instead of a
   real database — a deliberate design choice made to keep the fast unit suite fast.
+- **Addendum (2026-10-08): let a Scope own the processors.** Detached fibers are still the right way to keep the loops running after `start` returns, but a lifetime managed only by hand
+  (`start`, then `stop`) is easy to get wrong: a scope that ends without `stop` (an error, an interrupt, a shutdown signal) leaves the loops running and the leader lock held, which
+  the wallet app's own comments had to warn about. `EventProcessorService.startScoped` is `start` with `stop` registered as the scope's finalizer (`Effect.acquireRelease(start, () => stop)`);
+  the entry points of the examples use it, under `NodeRuntime.runMain`, so that SIGINT and SIGTERM close the scope, stop the processors, release the lock and announce it. `start` and
+  `stop` remain, for tests and for callers that manage the lifetime themselves. Nothing about the fibers changed.
 - The generic `SqlEventFetcher` includes a `transaction_id < pg_snapshot_xmin(...)` visibility
   filter, verified by a dedicated two-transaction test (a higher position that commits first stays
   invisible until a still-open lower position also commits) — not explicit in the predecessor ground

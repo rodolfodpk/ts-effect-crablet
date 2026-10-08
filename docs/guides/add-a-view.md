@@ -68,8 +68,8 @@ A subscription can also filter by tag (`anyOfTags`), as the wallet's views do.
 
 ## 4. Register it with the views processor
 
-Projectors and their subscriptions go to one processor. This is the wallet's, with four views; `service.start` is what actually begins processing, and
-`service.stop` must be called before the connection pool is closed.
+Projectors and their subscriptions go to one processor. This is the wallet's, with four views; `service.start` is what actually begins processing. The entry point does not call it by hand: it uses `startBackgroundProcessorsScoped`, whose scope
+stops the processors before the connection pool closes ([Run it in production](run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
 
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
 ```ts

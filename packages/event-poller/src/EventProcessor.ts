@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Queue, Ref, Result, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Queue, Ref, Result, type Scope, Stream } from "effect";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
@@ -36,6 +36,10 @@ export interface EventProcessorService<C extends ProcessorConfig<I>, I> {
   readonly process: (processorId: I) => Effect.Effect<number, unknown>;
   readonly start: Effect.Effect<void>;
   readonly stop: Effect.Effect<void>;
+  // `start`, owned by a Scope: the processors run until the scope closes, and closing it runs `stop` (interrupts the fibers, releases the leader lock and announces it).
+  // Prefer this to calling `start` and `stop` by hand: a scope that ends without `stop` (an error, an interrupt, the process asked to shut down) cannot leave the loops running
+  // or the lock held. `start` and `stop` stay for tests and for callers that manage the lifetime themselves.
+  readonly startScoped: Effect.Effect<void, never, Scope.Scope>;
   readonly pause: (processorId: I) => Effect.Effect<void, unknown>;
   readonly resume: (processorId: I) => Effect.Effect<void, unknown>;
   readonly getStatus: (processorId: I) => Effect.Effect<ProcessorStatus, unknown>;
@@ -149,15 +153,18 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         const events = yield* deps.fetcher.fetchEvents(id, ready.cursor, config.batchSize);
         if (events.length === 0) return 0;
 
-        yield* fence;
-        const handled = yield* deps.handler.handle(id, events).pipe(
-          Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
-        );
+        // A span only for a poll that found something: an idle poll every second would be a span a second per processor, and says nothing.
+        return yield* Effect.gen(function* () {
+          yield* fence;
+          const handled = yield* deps.handler.handle(id, events).pipe(
+            Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
+          );
 
-        yield* fence;
-        yield* deps.progressTracker.updateCursor(id, ProgressCursorNS.after(events[events.length - 1]!));
-        yield* deps.progressTracker.resetErrorCount(id);
-        return handled;
+          yield* fence;
+          yield* deps.progressTracker.updateCursor(id, ProgressCursorNS.after(events[events.length - 1]!));
+          yield* deps.progressTracker.resetErrorCount(id);
+          return handled;
+        }).pipe(Effect.withSpan("crablet.poller.batch", { attributes: { "crablet.processor": String(id), "crablet.batch.events": events.length } }));
       });
 
     const process = (id: I): Effect.Effect<number, unknown> => processWith(id, Effect.void);
@@ -289,7 +296,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
           const filter = EventSelectionNS.toSubscriberFilter(deps.selectionOf(config));
           yield* Effect.forever(tick(config, dequeue, filter));
         })
-      );
+        // every log line this loop writes says which processor and which instance wrote it
+      ).pipe(Effect.annotateLogs({ processor: String(config.processorId), instance: deps.instanceId }));
 
     const leaderRetryIntervalMs =
       deps.leaderRetryIntervalMs ??
@@ -383,6 +391,8 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       }
     });
 
+    const startScoped: Effect.Effect<void, never, Scope.Scope> = Effect.acquireRelease(start, () => stop);
+
     const pause = (id: I): Effect.Effect<void, unknown> => deps.progressTracker.setStatus(id, "PAUSED");
     const resume = (id: I): Effect.Effect<void, unknown> => deps.progressTracker.setStatus(id, "ACTIVE");
     const getStatus = (id: I): Effect.Effect<ProcessorStatus, unknown> => deps.progressTracker.getStatus(id);
@@ -400,6 +410,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       process,
       start,
       stop,
+      startScoped,
       pause,
       resume,
       getStatus,
