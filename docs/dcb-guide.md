@@ -1,5 +1,7 @@
 # Dynamic Consistency Boundaries: one decision, several entities
 
+*An unfamiliar word? See the [glossary](./glossary.md). All documents: [docs/README.md](./README.md).*
+
 Most event-sourcing frameworks make you pick an *aggregate* up front: every event belongs to one stream, and
 a command may only decide on one stream. "Move money from account A to B" then needs a saga or a
 two-phase dance, because the decision reads two streams.

@@ -66,7 +66,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | `packages/views-http` | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
 | `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
 | `examples/course-enrolment-app` | The [tutorial](./tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
-| `examples/quickstart` | The [Quick start](#quick-start) as a script that runs with no database |
+| `examples/quickstart` | The [README example](../README.md) as a script that runs with no database |
 | `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 
 ## Build & test

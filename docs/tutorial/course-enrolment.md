@@ -1,5 +1,7 @@
 # Tutorial: course enrolment, from an in-memory test to an HTTP API
 
+*An unfamiliar word? See the [glossary](../glossary.md). All documents: [docs/README.md](../README.md).*
+
 You will build a small service where **a course holds at most N students** and **a student takes at most 3 courses**. Those two
 rules concern two different kinds of thing, yet they are decided together, atomically, without a saga and without picking an
 "aggregate" first. That is what *dynamic consistency boundaries* (DCB) are for.
