@@ -12,7 +12,7 @@ node src/migrate.ts         # once per fresh database
 node src/index.ts           # the API on :8080 (set PORT to change it; COURSES_DOCS=scalar also serves /docs)
 ```
 
-`docker compose down -v` removes the database. The tutorial explains each step and what to try with `curl`.
+`docker compose down -v` removes the database. `COURSES_DB_POOL` sets the most connections the pool may open (unset: the library's default of 10; [how to size it](../../docs/guides/run-in-production.md#size-the-pool)). The tutorial explains each step and what to try with `curl`.
 
 ## Where things are
 

@@ -3,7 +3,7 @@ import { Effect, Layer, Redacted } from "effect";
 import { HttpRouter } from "effect/http";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
-import { dbConnInfoFromEnv } from "./db.ts";
+import { dbConnInfoFromEnv, poolSizeFromEnv } from "./db.ts";
 import { makeCourseApiLayer, startCourseViewsScoped } from "./CourseApp.ts";
 
 // Serves the API on :8080 (PORT). The database must exist and be migrated (docker compose up -d; node src/migrate.ts).
@@ -13,6 +13,7 @@ import { makeCourseApiLayer, startCourseViewsScoped } from "./CourseApp.ts";
 // COURSES_VIEW_DELAY_MS=400 (a demo knob, default 0) makes the seats view lag that long behind a write, so a read right after
 // a write is stale (?consistency=eventual) and a read that carries the write's marker has something to wait for.
 const conn = dbConnInfoFromEnv();
+const poolSize = poolSizeFromEnv();
 const port = Number(process.env["PORT"] ?? 8080);
 const docsUi = process.env["COURSES_DOCS"];
 const viewDelayMs = Number(process.env["COURSES_VIEW_DELAY_MS"] ?? 0);
@@ -24,7 +25,9 @@ const appLayer = Crablet.layer({
   port: conn.port,
   database: conn.database,
   username: conn.username,
-  password: Redacted.make(conn.password)
+  password: Redacted.make(conn.password),
+  // COURSES_DB_POOL: at most this many connections. Unset, the library's default applies.
+  ...(poolSize === undefined ? {} : { maxConnections: poolSize })
 });
 // #endregion crablet-layer
 
@@ -39,7 +42,7 @@ const server = HttpRouter.serve(
 // #region launch
 const program = Effect.gen(function* () {
   yield* startCourseViewsScoped(undefined, { viewDelayMs });
-  yield* Effect.log(`course-enrolment-app listening on :${port}`);
+  yield* Effect.log(`course-enrolment-app listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
   yield* Layer.launch(server);
 });
 
