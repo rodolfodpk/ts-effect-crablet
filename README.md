@@ -140,6 +140,14 @@ Beyond `model` and `decide`, a command can declare (full list: [ADR-0010](./docs
   that the REST API maps to 404/400/409/403 and documents in the generated OpenAPI description, with no per-command HTTP code;
 - `retries` (default 3) - a `Conflict` re-runs the command with fresh state.
 
+A rule that spans several things combines models: `all({ from: AccountModel.of({ id: a }), to: AccountModel.of({ id: b }) })` decides on both and
+conditions the append on the union of their boundaries ([DCB guide](./docs/dcb-guide.md)).
+
+Events can change shape without rewriting the log: a compatible change (a defaulted or optional field) keeps the name, anything else is a new event.
+A stored event that cannot be read is a typed `EventDecodingError` (never skipped, never carrying the payload), and checks keep the models honest:
+fixtures, `verifyEvents`, and a change-impact report with a committed baseline ([ADR-0017](./docs/adr/0017-event-evolution-by-compatibility.md),
+[guide](./docs/evolving-events.md)).
+
 ## Views, the outbox and automations
 
 They are fed by pollers. Guarantees: **no event is skipped** (cursor is a `(transaction_id, position)` pair,
@@ -160,13 +168,23 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 [`docs/api/wallet-openapi.json`](./docs/api/wallet-openapi.json) so an API change is a visible diff. A browser can import the contracts without receiving
 `decide` or the models. Walkthrough: [tutorial step 3](./docs/tutorial/course-enrolment.md); why: [ADR-0011](./docs/adr/0011-http-api-from-the-domain-model.md).
 
+## Operating it
+
+- **Leadership.** Each poller runs on one process at a time, chosen by a session-level advisory lock. The heartbeat checks `pg_locks` for the session, a
+  fence runs before the handler and before the cursor moves, and the cursor can only move forward, so a stale leader cannot deliver or rewind.
+  A graceful release wakes the others at once; a crash is picked up on the next retry (5 s by default).
+- **Storage.** `storageReport()` and `monitorStorage()` (`@crablet/eventstore/Storage`) report the size of the log and its indexes, and `metrics-otel`
+  exposes them as `crablet.storage.*` gauges; `examples/wallet-example-app/scripts/report-storage.ts` prints the report. A tag-key table keeps the pollers'
+  tag filters cheap (about 1.2 KB per event in all). Nothing deletes events, and retention is not decided ([ADR-0019](./docs/adr/0019-storage-visibility-and-the-tag-table.md)).
+- **Evidence.** What was measured, what broke and what was fixed: [`docs/plans/reliability-and-scale-diagnostic.md`](./docs/plans/reliability-and-scale-diagnostic.md).
+
 ## Packages
 
 | Package | What it is |
 |---|---|
-| `packages/db-migrations` | The SQL migrations (event log, command audit, poller progress, conditional append), as a plain file bundle |
+| `packages/db-migrations` | The SQL migrations V1-V12 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
 | `packages/test-support` | A throwaway Postgres (Testcontainers) for integration tests |
-| `packages/eventstore` | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election; plus the spec and an in-memory store for tests |
+| `packages/eventstore` | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
 | `packages/commands` | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and BDD test helpers |
 | `packages/event-poller` | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, and automations modules build on |
 | `packages/views` | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
@@ -174,8 +192,9 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | `packages/automations` | Automations: react to an event by issuing a follow-up command |
 | `packages/commands-http` | A REST API over your commands, with RFC 7807 problem-detail errors |
 | `packages/views-http` | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
-| `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations) |
+| `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
 | `examples/course-enrolment-app` | The [tutorial](./docs/tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
+| `examples/quickstart` | The [Quick start](#quick-start) as a script that runs with no database |
 | `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 
 ## Build & test
@@ -199,5 +218,6 @@ concurrency (races, conflict retry) is tested against Postgres only.
 - [`examples/wallet-example-app`](./examples/wallet-example-app) - a complete application at full size: commands, views, an automation, an outbox and HTTP.
 - [`docs/dcb-guide.md`](./docs/dcb-guide.md) - what a dynamic consistency boundary is, through two runnable examples (a transfer between two accounts; course enrolment), with their tests.
 - [`docs/evolving-events.md`](./docs/evolving-events.md) - how to change an event without rewriting the log: compatible changes, new events, what happens when one cannot be read, and the checks (fixtures, `verify-events`, the change-impact report).
+- [`docs/plans/reliability-and-scale-diagnostic.md`](./docs/plans/reliability-and-scale-diagnostic.md) - the reliability and scale work: what was measured, fixed and dropped (snapshots), and what is left.
 - [`docs/adr/`](./docs/adr/README.md) - the lasting design decisions and why they were made. Start with [ADR-0010](./docs/adr/0010-declarative-command-api.md).
 - [`NOTES.md`](./NOTES.md) - a running log of findings, gotchas and phase-by-phase status.
