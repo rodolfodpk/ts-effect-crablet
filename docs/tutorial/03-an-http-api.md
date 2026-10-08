@@ -14,9 +14,13 @@ Exposing a command is one line each: you list its **contract**. Nothing else abo
 export const courseContracts = [DefineCourseContract, SubscribeContract];
 ```
 
+`DefineCourseContract` and `SubscribeContract` are the two contracts you wrote in [step 2](02-postgres-and-the-second-rule.md) (name, input Schema and errors; the source is
+[`enrolment.contract.ts`](../../examples/course-enrolment-app/src/domain/enrolment.contract.ts)); the whole file is
+[`CourseApi.ts`](../../examples/course-enrolment-app/src/CourseApi.ts), which imports only contracts.
+
 The route is the contract's `name`. Because the list keeps its contracts' literal names, the API's *type* has one endpoint per command: a client derived from it knows that
 `subscribe` takes `{ studentId, courseId }` and can fail with `CourseNotFound`, `CourseFull` or `StudentAtLimit`. Annotating the list as `ReadonlyArray<...>` still works, but it forgets the names and the
-client falls back to a single, loosely typed endpoint. The server hands the matching *commands* to the same API, one per contract:
+client falls back to a single, loosely typed endpoint. The server hands the matching *commands* (`DefineCourse` and `Subscribe`, the contracts plus their decisions, also from step 2 and defined in [`Enrolment.ts`](../../examples/course-enrolment-app/src/domain/Enrolment.ts)) to the same API, one per contract:
 
 <!-- file: examples/course-enrolment-app/src/CourseApp.ts#implementations -->
 ```ts
