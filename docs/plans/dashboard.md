@@ -6,45 +6,46 @@
 
 Do **not** build a web dashboard application. Crablet already emits OpenTelemetry metrics and spans; the gap is that the most important number for a poller, **how far behind each consumer is**, is not a metric
 at all (it is a database query behind `getLag`), and that nobody has told an operator which panels to build. So: (1) close the metric gaps, (2) ship a **Grafana dashboard as JSON, checked in and tested**
-(plus alert rules), with a Docker Compose stack to try it locally, and (3) only if a need remains that Grafana cannot meet (pause, resume, reset a processor), add a small **admin endpoint** in
-`packages/commands-http`-style, not a UI. The dashboard is a document in the repository, like the diagrams, not a service to run.
+(plus alert rules), with a one-image Docker Compose stack to try it locally, and (3) only if a need remains that Grafana cannot meet (pause, resume or reset a processor), add a small **admin API package**, and on top of it, optionally, a generic Foldkit example (step 4). The dashboard is a document in the repository, like the diagrams, not a service to run.
 
 ## Why not our own UI
 
 - Observability is a solved product category. Grafana gives time series, alerting, retention, auth and sharing; a hand-built page would give a snapshot and a maintenance bill.
 - Crablet is a library; each adopter already has (or will pick) a metrics stack. A dashboard they import fits that. A UI they must host does not.
-- The one thing Grafana cannot do is act (pause a processor, reset a cursor). That is a few endpoints over the existing `ProcessorManagementService`, which can be added without a front end.
+- The one thing Grafana cannot do is act (pause, resume or reset a processor). That is a few endpoints over the existing `ProcessorManagementService`; a front end on top is optional and comes last (step 4).
 
 ## What exists today
 
 | Source | What it gives | Gap |
 |---|---|---|
 | `@crablet/metrics-otel` | counters and timers per area: poller cycles, events fetched, empty polls, backoff, leadership gauge (`crablet.poller.leadership`), view/outbox/automation success, failure, duration, events processed; command and eventstore counters; `crablet.storage.*` gauges | **no lag, no cursor position, no processor status** |
-| `ProcessorManagementService` | `getStatus`, `getAllStatuses`, `getLag`, pause, resume, reset | read on demand, per processor; not exported as metrics |
+| `ProcessorManagementService` | `getStatus`, `getAllStatuses`, `getLag`, backoff info, pause, resume, reset | read on demand, per processor; not exported as metrics. `getLag` is `MAX(position) − last_position`: it ignores the cursor's transaction id, so it is an approximation of the true distance |
 | Spans (`crablet.command`, `crablet.poller.batch`, `crablet.eventstore.append`) and log annotations (`processor`, `instance`) | request and batch traces, logs filterable by processor | no trace backend wired in the examples |
-| Postgres progress tables | cursor `(transaction_id, position)`, status, error count, last error, per processor | only readable by SQL |
+| Postgres progress tables (separate ones for views, automations and outbox, keyed by view, automation, or topic plus publisher) | cursor, status (`ACTIVE`, `PAUSED`, `FAILED`), error count, last error; outbox rows also hold leader instance and heartbeat | only readable by SQL; the three kinds differ in shape |
 
-Labels already in use: `processor`, `instance_id`, `view`.
+Labels already in use: `processor` and `instance_id` on the poller metrics, `view` on view metrics, `publisher` on outbox metrics. The same consumer therefore has a different label in different metrics; the sampler's gauges and the dashboard's variables must map between them (a view's `processor` id versus its `view` name), which step 1 has to settle.
+
+`crablet.poller.leadership` is set to 1 on acquiring and 0 on losing leadership. A process that crashes never sets 0; its series simply stops being exported. So "no leader" cannot be read as "leadership == 0": the alert is "no series at 1 for this processor" (absent or sum equal to 0).
 
 ## What the dashboard would show
 
 Four rows, from the top of an operator's questions down.
 
 1. **Is everything healthy? (one glance)**
-   - Processors by status: running, paused, failed (stat panels, red when `failed > 0`).
+   - Processors by status: `ACTIVE`, `PAUSED`, `FAILED` (stat panels, red when `FAILED > 0`).
    - Leader per processor: which instance holds it (`crablet.poller.leadership` = 1), and a panel that goes red when a processor has **no leader** for more than a minute.
 2. **Are consumers keeping up?** *(the main panel; needs new metrics)*
    - **Lag in events** per processor: `head position − cursor position`, as a time series and a table sorted worst first.
    - **Lag in seconds** (age of the oldest unprocessed event), the number a person can reason about.
-   - Throughput: events fetched and processed per second per processor; empty-poll ratio; backoff active.
+   - Throughput: events fetched per second per processor, and events projected, published or processed per consumer (the metrics for those use `view`, `publisher` or no processor label, see above); empty-poll ratio; backoff active.
 3. **Is it failing?**
    - Failures per consumer (view project, outbox publish, automation decide), rate and total, with the last error text in a table (from the status row, not a metric label).
-   - Outbox publish failures and retries, separate from views, because they leave the process.
+   - Outbox publish failures and duration, separate from views, because they leave the process. (There is no retry metric today; adding one is optional in step 1.)
 4. **The write side and storage** (context, one row)
    - Appends per second, concurrency violations, command conflict retries, idempotent duplicates.
    - `crablet.storage.*`: table bytes, rows, bytes per event.
 
-Variables: `processor`, `instance_id`, `view`. Annotations: deploys and leader changes.
+Variables: `processor`, `instance_id`, `view`. Annotations: leader changes (from the leadership gauge); deploys only if the adopter's pipeline provides them.
 
 ## Steps
 
@@ -57,11 +58,13 @@ New gauges, in `metrics-otel` and recorded from the shared engine in `event-poll
 - `crablet.poller.lag_events` (processor): head position minus cursor position.
 - `crablet.poller.lag_seconds` (processor): age of the oldest unprocessed event, or 0 when caught up.
 - `crablet.poller.cursor_position` (processor), so lag can also be computed in the backend.
-- `crablet.poller.status` (processor, status): 1 for the current status label, so Grafana can count running, paused, failed. Low cardinality (3 values).
+- `crablet.poller.status` (processor, status): 1 for the current status label, so Grafana can count `ACTIVE`, `PAUSED`, `FAILED`. Low cardinality (3 values).
 - `crablet.poller.errors` counter (processor), if the failure counters per area do not already cover the engine itself.
 
 Decision to make here: **where lag is computed.** Options: (a) the leader refreshes it each poll (cheap: it already reads the cursor and fetched batch, the head costs one `MAX(position)`), but only the leader reports and a processor with no leader reports nothing, which is exactly when you want it; (b) every instance
-runs a low-frequency sampler (like `monitorStorage`), at the cost of one small query per instance per interval. Recommend **(b)**, as `monitorProcessors`, next to `monitorStorage`, default every 15 s: a dead leader must still show as growing lag.
+runs a low-frequency sampler (like `monitorStorage`), at the cost of one small query per instance per interval. Recommend **(b)**, as `monitorProcessors` in `event-poller` (the processor tables and `ProcessorManagementService` live there; `monitorStorage` is in `eventstore`, which does not depend on it), same shape and default every 15 s: a dead leader must still show as growing lag. Consequence: every instance reports the same value, so the dashboard uses `max by (processor)`, never `sum`.
+
+Lag in events uses `getLag`'s definition (position only) and says so; the true distance would need the cursor's transaction id, which the plan does not attempt. Lag in seconds reads `occurred_at` of the first event after the cursor; `occurred_at` can be supplied by the caller (it is a parameter of `append`), so it is the event's own time, not the time it was stored. For most adopters these are the same; the panel's description says what it measures.
 
 Done when: the metrics appear in an OTLP export from the wallet example, with a test that drives a processor behind the head and asserts the gauge.
 
@@ -69,15 +72,18 @@ Done when: the metrics appear in an OTLP export from the wallet example, with a 
 
 - `ops/grafana/crablet-dashboard.json`, provisioned, with the four rows above. Built against Prometheus metric names (Prometheus is the common OTel destination; the OTel names `crablet.x.y` become `crablet_x_y`). Say in the file's description that other backends need the query language swapped.
 - `ops/grafana/alerts.yaml`: processor failed; no leader for 1 min; lag above N for 5 min; outbox failures rising; storage growth. Thresholds as variables with documented defaults.
-- A test that keeps it honest, in the spirit of `guides-sync.test.ts`: every `crablet_*` metric a panel queries exists in `metrics-otel` (so a rename breaks CI instead of a panel), and the JSON parses and has unique panel ids.
+- A test that keeps it honest, in the spirit of `guides-sync.test.ts`: every `crablet_*` metric a panel queries exists in `metrics-otel` (so a rename breaks CI instead of a panel). The mapping is more than dots to underscores. Measured on the real export: a counter keeps its name (`crablet.poller.events_fetched` became `crablet_poller_events_fetched`, no `_total`), a gauge gained a unit suffix (`crablet.poller.backoff_active` became `crablet_poller_backoff_active_ratio`), and the series carry `job` and `service_name` labels from the resource. Timers (histograms) are not yet measured. The test therefore applies mapping rules taken from the spike, not from assumptions, and the dashboard queries use the measured names (including the gauge suffix, so `crablet_poller_leadership_ratio` is expected, to be confirmed), and the JSON parses and has unique panel ids.
 
 Done when: the test passes and a dashboard imported into a clean Grafana renders against live data from step 3.
 
 ### 3. A local stack to see it
 
-- `ops/compose.yaml` with two services: Postgres and `grafana/otel-lgtm` (one image holding the OpenTelemetry Collector, Prometheus, Tempo, Loki and Grafana). The dashboard and the alert rules are mounted into it as provisioning files. The wallet example sends OTLP to it, with a small load script (the ones the diagnostics used) so the panels move.
+- `ops/compose.yaml` with two services: Postgres and `grafana/otel-lgtm` (one image holding the OpenTelemetry Collector, Prometheus, Tempo, Loki and Grafana). The dashboard and the alert rules are mounted into it as provisioning files. The wallet example sends OTLP to it, with a small load script (to be written; `examples/course-enrolment-app/scripts/bench-reads.ts` is a starting point, not a fit as is) so the panels move.
 - No multi-container topology: we do not own anyone's production setup, and adopters bring their own Collector, Prometheus and Grafana. The guide has a short section on pointing the app at your own Collector instead.
-- First thing to verify: which Effect 4 package and exporter turn `Metric`s and spans into OTLP (not yet checked), and that the image accepts mounted provisioning. If the image cannot be pinned or provisioned well enough, revisit then.
+- **Verified in a spike (2026-10-08, nothing committed):**
+  - *Exporter:* no extra package. Effect 4.0.0 ships it: `import { Otlp } from "effect/observability"` and `Otlp.layerJson({ baseUrl, resource: { serviceName }, metricsExportInterval, tracerExportInterval })`, provided with `FetchHttpClient.layer` from `effect/http`. It exports metrics, spans and logs. (`layerProtobuf` and `layerFromConfig` also exist; `layerFromConfig` reads the standard `OTEL_EXPORTER_OTLP_*` variables, which suits the "off by default, on by environment" wiring.) The Crablet metrics and a span went through it to the `grafana/otel-lgtm` image on port 4318 with no changes to `metrics-otel`.
+  - *Provisioning:* the image accepts mounts. A provider file mounted into `/otel-lgtm/grafana/conf/provisioning/dashboards/`, a dashboard JSON in the folder that provider names, and an alert-rule file in `.../provisioning/alerting/` all loaded at start-up; the dashboard's own query returned the data through Grafana. The Prometheus datasource has uid `prometheus` (Tempo `tempo`, Loki `loki`), which the dashboard and alert JSON reference. Prometheus is not published on a host port in the image; Grafana (3000) and OTLP (4318, 4317) are.
+  - *Not verified:* the image's version pinning (the spike used `latest`; pin a digest or tag in the Compose file), a timer metric (`crablet.*.duration`) and the leadership gauge on the Prometheus side, and the image under CI.
 - A guide page, `docs/guides/dashboard.md`: run it, what each row means, what to do when a panel is red (links to run-in-production and monitor-it).
 - The wallet example gains the OTLP exporter behind an environment variable (`OTEL_EXPORTER_OTLP_ENDPOINT`), off by default.
 
@@ -87,12 +93,12 @@ Done when: `docker compose up` and one command give a populated dashboard, and t
 
 Only if step 3 leaves people wishing to act from the dashboard. Two parts, in this order.
 
-1. **An admin API package**, in the style of `views-http` (for example `@crablet/processors-http`): an `/admin/processors` API over `ProcessorManagementService` with list (status, lag, leader, last error), pause, resume and reset. The schema is exported, so any client can be typed against it. It needs authentication decisions the framework has so far left to the adopter (see ADR-0014 on what the HTTP layer assumes), so it ships as handlers the adopter mounts behind their own auth, never on by default. Processor ids are free-form, so the API carries an optional description to say what each processor is for. Grafana can link to it.
-2. **A generic Foldkit page**, an example in `examples/` (not a package, not coupled to the course or wallet example). It takes a base URL and is typed against the admin API's schema only: a table of processors, pause and resume, and reset behind a confirmation. It states that reset is destructive and that the API must be behind auth. Do it after the Foldkit upgrade from rc.118 is settled, so it is not built on a version we are leaving.
+1. **An admin API package**, in the style of `views-http` (for example `@crablet/processors-http`): an `/admin/processors` API over `ProcessorManagementService` with list (status, lag, leader, last error), pause, resume and reset. The schema is exported, so any client can be typed against it. It needs authentication decisions the framework has so far left to the adopter (the HTTP packages ship handlers and leave authentication to the adopter; no ADR states this as a rule, so write the sentence into the package README), so it ships as handlers the adopter mounts behind their own auth, never on by default. Processor ids are free-form, so the API carries an optional description to say what each processor is for. Grafana can link to it.
+2. **A generic Foldkit page**, an example in `examples/` (not a package, not coupled to the course or wallet example). It takes a base URL and is typed against the admin API's schema only: a table of processors, pause and resume, and reset behind a confirmation. Reset clears the error count, sets the status to `ACTIVE` and resumes the processor; it does **not** rewind the cursor (so it is not destructive to data, but it does restart a processor that was FAILED, which may fail again). The page says that, and that the API must be behind auth. Do it after the Foldkit upgrade from rc.118 is settled, so it is not built on a version we are leaving.
 
 Cost to note: once adopters type a client against the admin schema, changing it breaks them. This is the same evolution question `api-follow-ups.md` deferred (item B); decide the rules before publishing the package.
 
-Done when: the handlers have integration tests (including that reset needs the processor paused or says what it does otherwise), and the page runs against the wallet and the course example without a line of either in it.
+Done when: the handlers have integration tests (pause and resume on an unknown id return not-found, as the service returns `false` there; reset on a `FAILED` processor leaves it `ACTIVE` with a zero error count and the cursor unchanged), and the page runs against the wallet and the course example without a line of either in it.
 
 ### 5. Keep it honest
 
