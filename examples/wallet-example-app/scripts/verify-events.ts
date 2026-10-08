@@ -18,6 +18,7 @@ const arg = (name: string): string | undefined => {
 };
 const types = process.argv.flatMap((a, i) => (a === "--type" ? [process.argv[i + 1]!] : []));
 
+// #region verify-script
 const layer = Crablet.layer({
   host: process.env["WALLET_DB_HOST"] ?? "localhost",
   port: Number(process.env["WALLET_DB_PORT"] ?? 5432),
@@ -38,3 +39,4 @@ const program = verifyEvents({
 const report = await Effect.runPromise(Effect.provide(program, layer) as Effect.Effect<EventsReport, never, never>);
 console.log(formatEventsReport(report));
 process.exit(report.ok ? 0 : 1);
+// #endregion verify-script

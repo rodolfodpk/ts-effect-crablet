@@ -46,6 +46,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 - **Compatible change** - a change old events still decode under: a field with a decoding default, or an optional field. Anything else becomes a new event name. [Evolving events](./evolving-events.md)
 - **`EventDecodingError`** - a stored event the current definition cannot read. It is never skipped and never carries the payload.
+- **`verify-events`** - a script you run (not something the application runs): it decodes stored events with the current definitions and reports the ones that cannot be read, the tags a definition derives that the stored event lacks, and event types in the log that no definition accounts for. Read-only; meant for CI against a copy of production. [Evolving events](./evolving-events.md#the-checks)
 - **Change-impact report** - lists, for each model, which event types it handles, ignores or lacks, compared with a committed baseline whose entries need a reason. [Evolving events](./evolving-events.md#the-checks)
 - **Tag-key table** - `crablet_event_tag_keys`: one row per event and tag key, which keeps the pollers' tag filters cheap. [ADR-0019](./adr/0019-storage-visibility-and-the-tag-table.md)
 - **Storage report** - `storageReport()`: the sizes of the log and its indexes, also exposed as `crablet.storage.*` gauges. [Reference](./reference.md#operating-it)

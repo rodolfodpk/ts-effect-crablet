@@ -178,6 +178,36 @@ It reports, per event type, how many were checked, how many cannot be read, the 
 events lacking a tag the definition derives now. `examples/wallet-example-app/scripts/verify-events.ts` is a runnable script (`--all`, `--sample`, `--from`,
 `--to`, `--type`) that exits 1 on failure: run it in CI against a copy of production before a deploy that changes an event.
 
+**It is a tool you run, not something your application runs.** Nothing in the framework calls `verifyEvents` at run time. To use it in your own application, write a small script like the
+wallet's: list every event definition of your application in `definitions` (an event type in the log that none of them accounts for is reported), give it the connection to a copy of
+production, and exit with a non-zero code when the report is not `ok`, so a pipeline can stop the deploy. The wallet's script, in full:
+
+<!-- file: examples/wallet-example-app/scripts/verify-events.ts#verify-script -->
+```ts
+const layer = Crablet.layer({
+  host: process.env["WALLET_DB_HOST"] ?? "localhost",
+  port: Number(process.env["WALLET_DB_PORT"] ?? 5432),
+  database: process.env["WALLET_DB_NAME"] ?? "wallet_db",
+  username: process.env["WALLET_DB_USER"] ?? "postgres",
+  password: Redacted.make(process.env["WALLET_DB_PASSWORD"] ?? "postgres")
+});
+
+const program = verifyEvents({
+  definitions: [M.WalletOpened, M.WalletClosed, M.WalletStatementOpened, M.WalletStatementClosed, M.DepositMade, M.WithdrawalMade, M.MoneyTransferred, WelcomeNotificationSent],
+  all: process.argv.includes("--all"),
+  ...(arg("sample") === undefined ? {} : { sample: Number(arg("sample")) }),
+  ...(arg("from") === undefined ? {} : { fromPosition: BigInt(arg("from")!) }),
+  ...(arg("to") === undefined ? {} : { toPosition: BigInt(arg("to")!) }),
+  ...(types.length > 0 ? { types } : {})
+});
+
+const report = await Effect.runPromise(Effect.provide(program, layer) as Effect.Effect<EventsReport, never, never>);
+console.log(formatEventsReport(report));
+process.exit(report.ok ? 0 : 1);
+```
+
+Keep the `definitions` list next to your event definitions and add to it when you add an event; the report tells you when a type in the log is missing from it.
+
 ## New events and the models that read them
 
 A model that does not handle an event type does not see it in its fold **and its conflict check does not see it either**. When you add `DepositReversed`,
