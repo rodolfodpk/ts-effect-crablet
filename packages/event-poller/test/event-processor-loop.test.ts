@@ -118,6 +118,23 @@ describe("EventProcessor.process (direct call, no leadership gate)", () => {
     expect(handled).toBe(0);
   });
 
+  test("pause, resume and the status views: a paused processor handles nothing, a resumed one carries on, and getAllStatuses lists every configured processor", async () => {
+    const { handle, eventsRef } = await run(makeHarness());
+    await run(Ref.set(eventsRef, [storedEvent(1n)]));
+    await run(handle.service.process(PROCESSOR_ID)); // registers as ACTIVE and handles event 1
+    expect(await run(handle.service.getStatus(PROCESSOR_ID))).toBe("ACTIVE");
+
+    await run(handle.service.pause(PROCESSOR_ID));
+    expect(await run(handle.service.getStatus(PROCESSOR_ID))).toBe("PAUSED");
+    expect([...(await run(handle.service.getAllStatuses))]).toEqual([[PROCESSOR_ID, "PAUSED"]]);
+    await run(Ref.set(eventsRef, [storedEvent(1n), storedEvent(2n)]));
+    expect(await run(handle.service.process(PROCESSOR_ID))).toBe(0);
+
+    await run(handle.service.resume(PROCESSOR_ID));
+    expect([...(await run(handle.service.getAllStatuses))]).toEqual([[PROCESSOR_ID, "ACTIVE"]]);
+    expect(await run(handle.service.process(PROCESSOR_ID))).toBe(1); // event 2 was waiting
+  });
+
   test("FAILED status -> 0, no fetch performed", async () => {
     const { handle, tracker, eventsRef } = await run(makeHarness());
     await run(tracker.autoRegister(PROCESSOR_ID, "test-instance"));

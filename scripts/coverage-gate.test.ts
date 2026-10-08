@@ -40,6 +40,11 @@ describe("coverage gate", () => {
     expect(next.overall).toBe(97);
   });
 
+  test("raising keeps the notes that explain a baseline", () => {
+    const next = raise(measure(parseLcov(lcov("packages/a/src/x.ts", 100, 100), "/repo")), { ...baseline, notes: { a: "why" } });
+    expect(next.notes).toEqual({ a: "why" });
+  });
+
   test("deleting code with its tests does not trip it: percentages, not line counts", () => {
     expect(check(measured([19, 20], [8, 10]), { ...baseline, overall: 85 })).toEqual([]);
   });

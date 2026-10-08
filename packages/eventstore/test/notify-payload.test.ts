@@ -57,6 +57,12 @@ describe("notify payload codec", () => {
     expect(shouldWake({ wildcard: true, types: new Set<string>(), tagKeys: new Set<string>() }, {})).toBe(true);
   });
 
+  test("shouldWake: a subscriber that needs EVERY one of some tag keys is not woken by a batch missing one, and is by a batch with them all", () => {
+    const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set(["wallet_id", "deposit_id"]) };
+    expect(shouldWake(batch, { exactTagKeys: new Set(["wallet_id", "statement_id"]) })).toBe(false);
+    expect(shouldWake(batch, { exactTagKeys: new Set(["wallet_id", "deposit_id"]) })).toBe(true);
+  });
+
   test("shouldWake: disjoint event types does not wake", () => {
     const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set<string>() };
     expect(shouldWake(batch, { eventTypes: new Set(["B"]) })).toBe(false);

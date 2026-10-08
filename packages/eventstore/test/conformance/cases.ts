@@ -8,7 +8,8 @@
 // store, so each isolates itself with unique tag values / event types (`unique()`).
 import assert from "node:assert/strict";
 import { Cause, Effect, Exit } from "effect";
-import { EventStore } from "../../src/EventStore.ts";
+import { EventStore, type StoredEvent } from "../../src/EventStore.ts";
+import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
 import * as Query from "../../src/Query.ts";
@@ -230,6 +231,43 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     run: async (h) => {
       const exit = await h.run(Effect.flatMap(EventStore, (es) => Effect.exit(es.append([]))));
       assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "expected a Die");
+    }
+  },
+  {
+    name: "projecting with no projector at all is a defect, not a typed failure",
+    run: async (h) => {
+      const exit = await h.run(Effect.flatMap(EventStore, (es) => Effect.exit(es.project(Query.of([]), LogPosition.zero(), []))));
+      assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "expected a Die");
+    }
+  },
+  {
+    name: "an event the projector cannot read fails the projection with an EventDecodingError naming the event; it is never skipped",
+    run: async (h) => {
+      const id = uid();
+      await append(h, [ev("ConfReadable", [["k", id]]), ev("ConfUnreadable", [["k", id]])]);
+      const exit = await h.run(
+        Effect.flatMap(EventStore, (es) =>
+          Effect.exit(
+            es.project(Query.of(item([], [["k", id]])), LogPosition.zero(), [
+              {
+                eventTypes: [],
+                initialState: 0,
+                transition: (n: number, e: StoredEvent) => {
+                  if (e.type === "ConfUnreadable") throw new EventDecodingFailure(e.type, [{ path: ["amount"], message: "Missing key" }]);
+                  return n + 1;
+                }
+              }
+            ])
+          )
+        )
+      );
+      assert.ok(Exit.isFailure(exit), "the projection fails");
+      const failure = exit.cause.reasons.find(Cause.isFailReason);
+      assert.ok(failure !== undefined && failure.error instanceof EventDecodingError, "with an EventDecodingError");
+      const error = failure.error as EventDecodingError;
+      assert.equal(error.type, "ConfUnreadable");
+      assert.deepEqual(error.issues, [{ path: ["amount"], message: "Missing key" }]);
+      assert.ok(error.position > 0n);
     }
   },
   {

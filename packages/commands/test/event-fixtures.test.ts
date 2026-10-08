@@ -14,6 +14,21 @@ const V1 = Schema.Struct({ id: Schema.String, amount: Schema.Number });
 const V2 = Schema.Struct({ id: Schema.String, amount: Schema.Number, fee: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))) });
 const kinds = (definitions: ReadonlyArray<unknown>, fixtures: ReadonlyArray<EventFixture>) => checkEventFixtures({ definitions, fixtures }).problems.map((p) => p.kind);
 
+describe("checkEventFixtures: a payload that decodes but cannot be turned back into an event", () => {
+  test("is reported as cannot_build, with the reason, instead of throwing", () => {
+    const guarded = defineEvent("Deposit", {
+      schema: V1,
+      tags: (d) => {
+        if (d.amount < 10) throw new Error("amounts under 10 are not allowed to build");
+        return { deposit_id: d.id };
+      }
+    });
+    const report = checkEventFixtures({ definitions: [guarded], fixtures: [first] });
+    expect(report.problems.map((p) => p.kind)).toEqual(["cannot_build"]);
+    expect(report.problems[0]!.detail).toContain("amounts under 10");
+  });
+});
+
 describe("checkEventFixtures", () => {
   test("the shape an event is written in passes, and so does a compatible change (a field added with a default that no tag uses)", () => {
     const v1 = defineEvent("Deposit", { schema: V1, tags: (d) => ({ deposit_id: d.id }) });

@@ -258,4 +258,33 @@ describe("EventStore public API parity (Phase 1)", () => {
     assert.strictEqual((batch as WakeupBatch).wildcard, false);
     assert.ok((batch as WakeupBatch).types.has("SpikeNotifyWiringEvent"));
   });
+
+  it("the command audit store: storeCommand records a command, storeCommandIfAbsent refuses a repeat of the same id, and purge removes only what is older than the cutoff", async () => {
+    const marker = crypto.randomUUID();
+    const commandId = crypto.randomUUID();
+    const old = new Date("2001-01-01T00:00:00Z");
+    const recent = new Date();
+    const result = await run(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const audit = yield* CommandAuditStore;
+        const stored = yield* audit.storeCommand(JSON.stringify({ marker }), `AuditStoreCommand-${marker}`, recent);
+        const first = yield* audit.storeCommandIfAbsent(JSON.stringify({ marker }), `AuditIfAbsent-${marker}`, commandId, recent);
+        const repeat = yield* audit.storeCommandIfAbsent(JSON.stringify({ marker }), `AuditIfAbsent-${marker}`, commandId, recent);
+        yield* audit.storeCommand(JSON.stringify({ marker }), `AuditOld-${marker}`, old);
+        const rowsFor = (prefix: string) =>
+          sql.unsafe<{ n: string }>("SELECT count(*)::text AS n FROM crablet_commands WHERE type = $1", [`${prefix}-${marker}`]).pipe(Effect.map((r) => Number(r[0]!.n)));
+        const before = { stored: yield* rowsFor("AuditStoreCommand"), ifAbsent: yield* rowsFor("AuditIfAbsent"), old: yield* rowsFor("AuditOld") };
+        const purged = yield* audit.purge(new Date("2010-01-01T00:00:00Z"));
+        const after = { stored: yield* rowsFor("AuditStoreCommand"), old: yield* rowsFor("AuditOld") };
+        return { stored, first, repeat, before, purged, after };
+      })
+    );
+    assert.strictEqual(result.stored, true);
+    assert.strictEqual(result.first, true);
+    assert.strictEqual(result.repeat, false, "the same command id is not stored twice");
+    assert.deepStrictEqual(result.before, { stored: 1, ifAbsent: 1, old: 1 });
+    assert.ok(result.purged >= 1, "the old command was purged");
+    assert.deepStrictEqual(result.after, { stored: 1, old: 0 }, "the recent command stays");
+  });
 });

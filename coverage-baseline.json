@@ -10,8 +10,11 @@
     "eventstore": 97.2,
     "metrics-otel": 100,
     "outbox": 97.1,
-    "test-support": 100,
+    "test-support": 96.4,
     "views": 100,
     "views-http": 100
+  },
+  "notes": {
+    "test-support": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08."
   }
 }

@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { packageOf, parseLcov, percent, totalsOf, type Coverage } from "./merge-coverage.ts";
 
 export interface Baseline {
+  readonly notes?: Readonly<Record<string, string>>;
   readonly tolerancePoints: number;
   readonly overall: number;
   readonly packages: Readonly<Record<string, number>>;
@@ -52,7 +53,7 @@ export const raise = (measured: Measured, baseline: Baseline): Baseline => {
     packages[name] = Math.max(packages[name] ?? 0, floor1(now));
   }
   const sorted = Object.fromEntries(Object.entries(packages).sort(([a], [b]) => a.localeCompare(b)));
-  return { tolerancePoints: baseline.tolerancePoints, overall: Math.max(baseline.overall, floor1(measured.get("(all packages)") ?? 0)), packages: sorted };
+  return { ...(baseline.notes === undefined ? {} : { notes: baseline.notes }), tolerancePoints: baseline.tolerancePoints, overall: Math.max(baseline.overall, floor1(measured.get("(all packages)") ?? 0)), packages: sorted };
 };
 
 if (import.meta.main) {

@@ -86,3 +86,25 @@ describe("verifyEvents", () => {
     assert.strictEqual(ok.one.types[0]!.checked, 1);
   });
 });
+
+// A definition whose builder now refuses some payloads (a guard added after they were stored): the payload still decodes, but the event cannot be rebuilt to compare its tags.
+const Guarded = defineEvent("Guarded", {
+  schema: Schema.Struct({ id: Schema.String, amount: Schema.Number }),
+  tags: (d) => {
+    if (d.amount > 100) throw new Error("amounts over 100 are refused when building");
+    return { item_id: d.id };
+  }
+});
+
+describe("verifyEvents: an event that decodes but cannot be rebuilt", () => {
+  it("is not reported as unreadable and not counted as tag drift: its tags simply cannot be compared", { timeout: 60_000 }, async () => {
+    const r = await run(Effect.gen(function* () {
+      yield* insert("Guarded", ["item_id=big"], { id: "big", amount: 500 });
+      yield* insert("Guarded", ["item_id=small"], { id: "small", amount: 5 });
+      return yield* verifyEvents({ definitions: [Guarded], all: true, types: ["Guarded"] });
+    }));
+    const guarded = r.types.find((t) => t.type === "Guarded")!;
+    assert.deepStrictEqual({ total: guarded.total, checked: guarded.checked, failures: guarded.failures, inventedTags: guarded.inventedTags }, { total: 2, checked: 2, failures: 0, inventedTags: 0 });
+    assert.strictEqual(r.ok, true);
+  });
+});

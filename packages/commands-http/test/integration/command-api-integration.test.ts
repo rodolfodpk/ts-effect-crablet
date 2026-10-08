@@ -506,3 +506,41 @@ describe("a command over a boundary that contains an unreadable stored event (re
     });
   });
 });
+
+// A command that is refused because the boundary changed since it loaded: with no retries left the conflict reaches the client as a 409 with a code that says which kind.
+const Bumped = defineEvent("Bumped", { schema: Schema.Struct({ counterId: Schema.String }), tags: (d) => ({ counter_id: d.counterId }) });
+const CounterModel = defineModel({ by: "counter_id", initial: () => ({ n: 0 }) }).on(Bumped, (s) => ({ n: s.n + 1 }));
+const BumpContract = commandContract({ name: "bump", input: Schema.Struct({ counterId: Schema.String }) });
+const Bump = defineCommand({
+  ...BumpContract,
+  retries: 0,
+  model: (c) => CounterModel.of({ id: c.counterId }),
+  decide: (_, c) => emit(Bumped({ counterId: c.counterId }))
+});
+
+describe("commands-http: a conflict that is not retried away", () => {
+  it("is a 409 DCB_VIOLATION, and the events that were appended are exactly the requests that were accepted", { timeout: 60_000 }, async () => {
+    await serve(makeCommandApiLive([BumpContract], { bump: Bump }, {}), async (baseUrl) => {
+      const post = (counterId: string) =>
+        fetch(`${baseUrl}/api/commands/bump`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ counterId }) });
+      // Sixteen requests at once over one boundary, none allowed to retry: when two load the same state, one of them must lose. Repeat until that has happened.
+      for (let round = 0; round < 10; round++) {
+        const counterId = `counter-${crypto.randomUUID()}`;
+        const responses = await Promise.all(Array.from({ length: 16 }, () => post(counterId)));
+        const statuses = responses.map((r) => r.status);
+        const accepted = statuses.filter((s) => s === 201).length;
+        const refused = responses.filter((r) => r.status === 409);
+        assert.ok(statuses.every((s) => s === 201 || s === 409), `only 201 and 409 are expected, got ${statuses.join(",")}`);
+        const stored = await runtime.runPromise(
+          Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ n: string }>("SELECT count(*)::text AS n FROM crablet_events WHERE type = 'Bumped' AND tags @> ARRAY[$1]::text[]", [`counter_id=${counterId}`]))
+        );
+        assert.strictEqual(Number(stored[0]!.n), accepted, "an accepted request appended its event, and a refused one appended nothing");
+        if (refused.length > 0) {
+          assert.strictEqual((await jsonBody(refused[0]!))["violationCode"], "DCB_VIOLATION");
+          return;
+        }
+      }
+      assert.fail("no request lost in ten rounds of sixteen simultaneous requests");
+    });
+  });
+});

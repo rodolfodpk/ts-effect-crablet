@@ -154,3 +154,13 @@ describe("the baseline file and assertModelImpact", () => {
     expect(loadBaseline(file)[0]!.reason).toBe("A welcome message does not change the balance.");
   });
 });
+
+describe("eventFactsFromFixtures: a fixture that cannot be read is skipped here (the fixtures check reports it)", () => {
+  test("its tag keys are not counted, and nothing throws", () => {
+    const facts = eventFactsFromFixtures([Opened, Deposited], [
+      { type: "Opened", payload: { walletId: "w" }, tags: ["wallet_id=w"] },
+      { type: "Deposited", payload: { not: "a deposit" }, tags: [] }
+    ]);
+    expect(facts).toEqual([{ type: "Deposited", tagKeys: [] }, { type: "Opened", tagKeys: ["wallet_id"] }]);
+  });
+});
