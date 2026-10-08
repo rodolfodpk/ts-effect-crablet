@@ -25,14 +25,14 @@ The example sends nothing unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Its first
 
 | Row | Answers | From |
 |---|---|---|
-| Is everything healthy? | how many processors are `FAILED`, paused or without a leader; who leads each | `crablet.poller.status`, `crablet.poller.leadership` |
+| Is everything healthy? | how many processors are `FAILED` or paused; which instance leads each **module** (views, automations, outbox: one leader lock per module) and whether any module has lost its leader | `crablet.poller.status`, `crablet.poller.leadership` |
 | Are the consumers keeping up? | lag in events and in seconds per processor, throughput, idle polls, backoff | `crablet.poller.lag_*`, `cursor_position` |
 | Is it failing? | failures and times of views, automations and the outbox; stored events nobody can read | `crablet.view.*`, `crablet.automation.*`, `crablet.outbox.*`, `crablet.eventstore.decoding_failures` |
 | The write side | appends, contention, command and append times, reads that waited for views | `crablet.command.*`, `crablet.eventstore.*`, `crablet.read.consistency.*` |
 | Storage | table sizes, rows, bytes per event | `crablet.storage.*` |
 
 Lag is the events a processor **selects** that are waiting after its cursor, and the age of the first of them: it is zero for a consumer of a rare event type that has everything, however far
-the end of the log is ([Monitor it](monitor-it.md#are-the-consumers-keeping-up)). The six alert rules (a processor `FAILED`, a processor with no leader, a consumer more than five minutes behind, failing
+the end of the log is ([Monitor it](monitor-it.md#are-the-consumers-keeping-up)). The six alert rules (a processor `FAILED`, a module with no leader, a consumer more than five minutes behind, failing
 handlers, stored events that cannot be read, bytes per event) are in `ops/grafana/alerts.yaml`; their thresholds are constants there.
 
 ## Put it in your application
@@ -95,7 +95,7 @@ The dashboard only watches. To pause, resume or reset a processor over HTTP, mou
 | You see | Do |
 |---|---|
 | a processor `FAILED` | read its last error (the progress details of its management service, or the logs, filtered by the `processor` attribute), fix the cause, then reset it: [Monitor it](monitor-it.md#inspect-and-control-processors) |
-| a processor with no leader | no instance is running it, or a crashed leader's series has not gone stale yet (about five minutes); check the instances and [Run it in production](run-in-production.md) |
+| a module with no leader | no instance is running that module's processors (a leader that crashed is recognised after two minutes of silence; the alert fires about a minute later); check the instances and [Run it in production](run-in-production.md). [Why leadership is per module](../architecture.md#one-lock-per-module-one-leader-per-lock) |
 | a consumer behind and rising | the processor is slow or stuck: look at its failures and its backoff; the example's defaults (batch 100, one-second polling) fall behind at a few hundred commands a second, which `load.ts --rate 250` shows |
 | stored events that cannot be read | an unsafe event change: [Evolving events](../evolving-events.md) |
 

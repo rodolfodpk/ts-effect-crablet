@@ -7,12 +7,24 @@
 // (docs/plans/dashboard.md, step 2). scripts/dashboard.test.ts derives those names from @crablet/metrics-otel and fails when a panel or an alert
 // queries one that does not exist, or when a metric has neither a panel nor a stated reason for having none.
 import { resolve } from "node:path";
+import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
 
 type Target = { readonly expr: string; readonly legend?: string; readonly instant?: boolean };
 type Panel = Record<string, unknown>;
 
 const DS = { type: "prometheus", uid: "${ds}" };
 const P = 'processor=~"$processor"';
+
+// LEADERSHIP is per MODULE, not per processor: one advisory lock for all the views, one for the automations, one for the outbox publishers
+// (packages/eventstore/src/Leader.ts), so `crablet.poller.leadership` is tagged `lock_key` and `instance_id`. The lock keys are named here as modules.
+// A crashed leader never reports 0: its series stays at 1 until Prometheus drops it (about five minutes), but it stops being re-sent, so its sample gets old.
+// A leader is therefore a series at 1 that was written in the last `FRESH_SECONDS` (more than the export interval; the example exports every 5 s, the default is 60 s).
+export const MODULE_LOCKS: Readonly<Record<string, bigint>> = { outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY };
+export const FRESH_SECONDS = 120;
+const LEAD = "crablet_poller_leadership_ratio";
+const leadersNow = `(${LEAD} == 1 and (time() - timestamp(${LEAD}) < ${FRESH_SECONDS}))`;
+const withModule = (vector: string): string =>
+  Object.entries(MODULE_LOCKS).reduce((inner, [module, key]) => `label_replace(${inner}, "module", "${module}", "lock_key", "${key}")`, vector);
 const V = 'view=~"$view"';
 
 let nextId = 1;
@@ -60,11 +72,11 @@ const panels = (): ReadonlyArray<Panel> => {
   out.push(stat("Failed processors", "Processors whose status is FAILED: they stopped after too many errors and need a person (see Run it in production). Reported by every instance; counted once per processor.",
     `count(max by (processor) (crablet_poller_status_ratio{status="FAILED",${P}} == 1)) or vector(0)`, 1));
   out.push(stat("Paused processors", "Processors an operator paused.", `count(max by (processor) (crablet_poller_status_ratio{status="PAUSED",${P}} == 1)) or vector(0)`));
-  out.push(stat("Processors without a leader", "Processors no instance currently leads, so nothing is processing them. A leader that crashed never reports 0: its series stops, so the count rises once it goes stale (about five minutes in Prometheus).",
-    `count(max by (processor) (crablet_poller_status_ratio{status="ACTIVE",${P}})) - count(sum by (processor) (crablet_poller_leadership_ratio{${P}}) >= 1) or vector(0)`, 1));
+  out.push(stat("Modules without a leader", "Modules (views, automations, outbox) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
+    `(count(count by (lock_key) (${LEAD}) unless count by (lock_key) (${leadersNow})) or vector(0)) + (absent(${LEAD}) or vector(0))`, 1));
   out.push(stat("Processors reporting", "Processors known to the instances that are reporting. Zero means nothing is reporting at all.", `count(max by (processor) (crablet_poller_status_ratio{${P}}))`));
-  out.push(table("Leader of each processor", "The instance that last reported leadership (1) of each processor.",
-    [{ expr: `max by (processor, instance_id) (crablet_poller_leadership_ratio{${P}}) == 1`, legend: "" }]));
+  out.push(table("Leader of each module", "The instance that leads each module (views, automations, outbox): one advisory lock per module, so all of a module's processors run in the same instance. A crashed leader drops out after two minutes.",
+    [{ expr: `max by (module, instance_id) (${withModule(leadersNow)})`, legend: "" }]));
   out.push(table("Status of each processor", "Current status. Every instance reports the same value.",
     [{ expr: `max by (processor, status) (crablet_poller_status_ratio{${P}}) == 1`, legend: "" }]));
 
@@ -165,7 +177,7 @@ export const dashboard = (): Record<string, unknown> => ({
   annotations: {
     list: [{
       name: "Leader changes", enable: true, iconColor: "orange", datasource: DS,
-      expr: "changes(max by (processor) (crablet_poller_leadership_ratio == 1)[1m:]) > 0", titleFormat: "leader change", textFormat: "{{processor}}", step: "60s"
+      expr: `changes(max by (lock_key) (${LEAD} == 1)[1m:]) > 0`, titleFormat: "leader change", textFormat: "lock {{lock_key}}", step: "60s"
     }]
   },
   panels: panels()

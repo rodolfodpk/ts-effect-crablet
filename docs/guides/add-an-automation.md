@@ -49,5 +49,5 @@ const automationsHandle = yield* makeAutomationsProcessor({
 yield* automationsHandle.service.start;
 ```
 
-Only one process runs a given automation at a time (the leader); the others take over if it stops. Reference for the package:
+Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:
 [`@crablet/automations`](../../packages/automations/README.md).

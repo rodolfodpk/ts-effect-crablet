@@ -62,7 +62,7 @@ baseline (`test/fixtures/model-impact-baseline.json` in the wallet app) with a r
 
 **Add or rename a metric.** Define it in `packages/metrics-otel/src/`, then run `bun run test:unit`: [`scripts/dashboard.test.ts`](scripts/dashboard.test.ts) fails until the metric has a panel in the
 Grafana dashboard (or an alert), or an entry in `NO_PANEL` in that test with the reason it has none. It works out the name Prometheus gives the metric (a counter keeps its name, a gauge gains `_ratio`, a timer becomes `_milliseconds_bucket`, `_count`, `_sum`),
-so a rename that leaves a panel or an alert querying the old name fails the same test.
+so a rename that leaves a panel or an alert querying the old name fails the same test. Declare the metric's **labels** in `LABELS` in that test, from where it is recorded: a panel or an alert that groups or filters by a label its metric does not carry fails too (leadership is per module, tagged `lock_key`, not per processor; a query grouping by `processor` there "had data" and was wrong).
 
 **Change the dashboard or the alerts.** The dashboard JSON is generated: edit the definition in [`scripts/build-dashboard.ts`](scripts/build-dashboard.ts) and run `bun run dashboard:build`; the test fails if the committed
 `ops/grafana/crablet-dashboard.json` differs. The alert rules, `ops/grafana/alerts.yaml`, are written by hand and checked by the same test. Both were tried against the `grafana/otel-lgtm` image in [`ops/compose.yaml`](ops/compose.yaml)

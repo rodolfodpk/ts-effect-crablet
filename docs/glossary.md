@@ -23,8 +23,8 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Cursor** - how far a consumer has read: a `(transaction_id, position)` pair, not a bare position, so a late-committing transaction is never skipped. [ADR-0012](./adr/0012-transaction-position-cursors.md)
 - **Horizon** - a cursor placed before everything a read could have missed. `all(...)` uses the earliest horizon of its members as its cursor. [ADR-0018](./adr/0018-model-snapshots.md) (decision 8)
 - **Poller** - the loop that reads new events after a cursor and hands them to a handler. Views, the outbox and automations are pollers. [Reference](./reference.md#views-the-outbox-and-automations)
-- **Leader** - the one process that runs a given poller, chosen by a PostgreSQL advisory lock held for the session. [ADR-0006](./adr/0006-leader-election-via-sql-reserve.md)
-- **Fence** - the check, before a handler runs and before the cursor moves, that this process is still the leader, so a stale leader cannot deliver or rewind.
+- **Leader** - the one process that runs a **module**'s pollers (all the views, or all the automations, or all the outbox publishers), chosen by a PostgreSQL advisory lock held for the session: one lock per module, not per processor. [Architecture](./architecture.md#one-lock-per-module-one-leader-per-lock), [ADR-0006](./adr/0006-leader-election-via-sql-reserve.md)
+- **Fence** - the check, before a handler runs and before the cursor moves, that this process still holds its module's lock, so a stale leader cannot deliver or rewind.
 - **At-least-once** - an event may be delivered again after a crash, but is never skipped.
 - **LISTEN/NOTIFY** - PostgreSQL's wake-up channel; it tells pollers that something new exists. It only wakes them; the cursor is what guarantees nothing is missed. [ADR-0005](./adr/0005-listen-notify-implementation.md)
 

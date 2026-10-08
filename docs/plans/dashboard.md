@@ -25,7 +25,7 @@ at all (it is a database query behind `getLag`, and `getLag` is the wrong number
 
 Labels already in use: `processor` and `instance_id` on the poller metrics, `view` on view metrics, `publisher` on outbox metrics. The same consumer therefore has a different label in different metrics; the sampler's gauges and the dashboard's variables must map between them (a view's `processor` id versus its `view` name), which step 1 has to settle.
 
-`crablet.poller.leadership` is set to 1 on acquiring and 0 on losing leadership. A process that crashes never sets 0; its series simply stops being exported. So "no leader" cannot be read as "leadership == 0": the alert is "no series at 1 for this processor" (absent or sum equal to 0).
+`crablet.poller.leadership` is set to 1 on acquiring a **module's** lock and 0 on losing it. (Leadership is per module, not per processor: one advisory lock each for the views, the automations and the outbox, so the gauge is tagged `lock_key` and `instance_id`. This plan first said "per processor"; the crash test below found it wrong.) A process that crashes never sets 0; its series stays at 1 and simply stops being exported, so "no leader" cannot be read as "leadership == 0" or as "no series at 1" (the dead leader's series still says 1 for five minutes). See "The crash test" below for what the dashboard and the alert do about it.
 
 ## What the dashboard would show
 
@@ -33,7 +33,7 @@ Four rows, from the top of an operator's questions down.
 
 1. **Is everything healthy? (one glance)**
    - Processors by status: `ACTIVE`, `PAUSED`, `FAILED` (stat panels, red when `FAILED > 0`).
-   - Leader per processor: which instance holds it (`crablet.poller.leadership` = 1), and a panel that goes red when a processor has **no leader** for more than a minute.
+   - Leader per **module**: which instance holds each module's lock (`crablet.poller.leadership` = 1, and recent), and a panel that goes red when a module has lost its leader (see "The crash test").
 2. **Are consumers keeping up?** *(the main panel; needs new metrics)*
    - **Lag in events** per processor: the events it selects that are waiting after its cursor, as a time series and a table sorted worst first.
    - **Lag in seconds** (age of the first event waiting for it), the number a person can reason about.
@@ -75,7 +75,7 @@ Not covered: the lag in seconds on a very large table (measure in step 3 with th
 ### 2. The dashboard as code - done (2026-10-08)
 
 - `ops/grafana/crablet-dashboard.json`: 31 panels in five rows (healthy, keeping up, failing, the write side, storage), with `Data source`, `Processor` and `View` variables and a leader-change annotation. **Generated** by `scripts/build-dashboard.ts` (`bun run dashboard:build`), so panel ids and grid positions are not edited by hand. The `Instance` variable the plan listed is not there: every instance reports the same values and the queries take the `max`.
-- `ops/grafana/alerts.yaml`: six rules (a processor FAILED, a processor with no leader, a consumer behind more than 300 s for 5 min, handler failures, undecodable stored events, bytes per event above 3000). Thresholds are constants in the file: Grafana's rule files take no variables.
+- `ops/grafana/alerts.yaml`: six rules (a processor FAILED, a module with no leader, a consumer behind more than 300 s for 5 min, handler failures, undecodable stored events, bytes per event above 3000). Thresholds are constants in the file: Grafana's rule files take no variables.
 - `scripts/dashboard.test.ts` (in `test:unit`): the committed JSON equals the generator's output; panel ids and titles are unique and none overlaps; **every `crablet_*` name in a panel, variable, annotation or alert exists in `metrics-otel` under the Prometheus name it arrives with**, derived from each metric's `id` and `type`; every metric has a panel or alert or an entry in `NO_PANEL` with a reason (two do: the backoff's internal empty-poll count, and the per-event-type append count, an unbounded label). Three deliberate breaks (a renamed metric, a hand-edited JSON, a wrong name in an alert) each failed it.
 - `ops/grafana/README.md`: how to import or provision.
 
@@ -104,7 +104,7 @@ Checked end to end, with the wallet application running against the compose stac
 
 Found on the way, and fixed: the wallet example **crashed on its second start** against the same database (`relation "crablet_events" already exists`), because it applied every migration at every start. The docs say plainly that there is no migration runner; the example now applies the schema only to a fresh database (`migrateIfFresh`, with a Postgres test) and leaves one that has the event log alone. It does not detect an older or half-applied schema.
 
-Not done: the "no leader" alert and the stale-series behaviour of a crashed leader (about five minutes in Prometheus) were not exercised by killing a process; the alert's `noDataState` is the only mechanism and is untried. The compose stack was tried with Docker Desktop on one machine, not in CI.
+Not done at the time: the "no leader" alert and the stale-series behaviour of a crashed leader were not exercised by killing a process. **They were later, and both the alert and the panels were wrong; see "The crash test".** The compose stack was tried with Docker Desktop on one machine, not in CI.
 
 ### 4. Optional: operate, not only watch - done (2026-10-08)
 
@@ -138,7 +138,32 @@ Not done:
 
 ## What the plan leaves open
 
-Verified only in part, and said so where it came up: the page has not been seen in a browser; a crashed leader and the "no leader" alert were not exercised (the alert relies on Prometheus marking the series stale, about five minutes); the flush of the last metrics on shutdown was not checked; the admin API's evolution rules are not enforced by a test and it keeps no audit trail; the stack was tried on one machine with one image version.
+Verified only in part, and said so where it came up: the page has not been seen in a browser; the "no leader" alert was exercised by crashing leaders (see "The crash test"), but only on one machine, with two instances and `kill -9`; the flush of the last metrics on shutdown was not checked; the admin API's evolution rules are not enforced by a test and it keeps no audit trail; the stack was tried on one machine with one image version.
+
+## The crash test (2026-10-08)
+
+Done last, with the stack from `ops/compose.yaml` and **two real wallet instances**: A and B started, then `kill -9` of the leader (A), then of the survivor (B), polling Prometheus and Grafana's rule state throughout. It found three defects in what the earlier steps had shipped, one of them in the first fix.
+
+**What happens when a leader is killed** (also drawn in [Architecture](../architecture.md#one-lock-per-module-one-leader-per-lock)):
+
+- **Failover is fast.** B took over the views and the outbox within the first 5 s poll and the automations within 10 s (its retry interval is 5 s). A graceful stop is faster still (a wildcard NOTIFY).
+- **The dead leader's gauge keeps saying 1.** A never reported 0; its series stayed at 1, indistinguishable by value from B's, for the five minutes Prometheus keeps a series that is no longer pushed. Its *sample time* stops moving, though, and a live leader's keeps moving (the exporter re-sends every interval): `time() - timestamp(...)` was 125 s for A and 52 s for B at the moment both were dead, matching when each was killed.
+
+**The three defects:**
+
+1. **Leadership is per module, and the dashboard and the alert said per processor.** The gauge is tagged `lock_key` and `instance_id` (one advisory lock each for views, automations, outbox: `Leader.ts`). The leader table, the "without a leader" stat and the alert grouped `by (processor)`, a label the gauge never had, so they merged everything into one series and still "had data". The earlier check ("35 of 41 queries return data") could not see this. The doc comment in `LeaderMetrics.ts` and the monitor-it guide had the same mistake. Fixed: the panels group by `lock_key` and show a module name (`label_replace` from the lock keys, which a test checks against the constants in `Leader.ts`); the docs and diagrams say per module; and `scripts/dashboard.test.ts` now declares the labels of every metric and fails when a query groups or filters by a label its metric does not carry (it fails for `by (processor)` on the gauge), while a unit test pins the gauge's real labels.
+2. **The original alert worked only by accident, and slowly.** Its query (`sum by (processor) (leadership)`) stayed quiet while one instance died (correct) and fired **7.4 minutes** after the last instance was killed: five minutes for the dead series to go stale, then the no-data path, then its `for`.
+3. **My first fix was worse: it fired when nothing was wrong.** The new query returns nothing when all is well, and the rule treated no data as an alert, so it went to *firing* with three healthy leaders. Found by running the experiment again before killing anything. Fixed by making the query return nothing when healthy and setting `noDataState: OK`, with an `absent(...)` branch for the case where every series is gone.
+
+**The fixed rule, measured** (healthy for 76 s, then the kills): it stayed `inactive` through the leader kill and while the survivor was alive, B's leader samples dropped out of "fresh" at 126 s after A's kill, and after the survivor was killed the "Modules without a leader" stat read 3 at 125 s, the rule went `pending` at 146 s and `firing` at **209 s** (about 3.5 minutes: a 120 s freshness window, the 30 s evaluation, and `for: 1m`). It stayed firing through the point where the stale series expired (about 300 s).
+
+**What is still imperfect, and said so:**
+
+- **It cannot be faster than the freshness window** (120 s here, which must exceed the exporter's interval; the example exports every 5 s, the Effect default is 60 s). A crashed process cannot announce that it is gone. A lower window needs a faster exporter.
+- **The alert changes identity once.** While the dead leaders' series exist, the alert is "module X has no leader" (one per module); after they expire (about five minutes), it becomes one alert, "no leadership data at all". A notification channel sees the first resolve and the second fire; in the run the rule state showed `pending` for about one 20 s poll between them.
+- **A follower failing to take over is hidden for two minutes** while the dead leader's series are still fresh; the lag alert (five minutes behind) is the backstop.
+- **One machine, two instances, one signal (`kill -9`).** Not tried: a network partition, a paused process (SIGSTOP), a Postgres restart, a slow exporter.
+- The "behind" alert did not fire during the crash because the lag gauges come from the sampler in the same instances, which were dead: with no instance running, nothing reports lag. That is the case the leadership alert is for.
 
 ## Risks and costs
 
@@ -150,7 +175,7 @@ Verified only in part, and said so where it came up: the page has not been seen 
 
 ## How we will know
 
-- A stopped leader shows as growing lag and a "no leader" alert within a minute, in the local stack.
+- A stopped leader is noticed: a "no leader" alert fires about three and a half minutes after a total crash (measured, see "The crash test"; the original target of "a minute" was not met, because a crashed leader cannot say it has gone).
 - A deliberately failing view shows on the failed counter, the status panel and the last-error table.
 - Renaming a metric in `metrics-otel` fails CI.
 

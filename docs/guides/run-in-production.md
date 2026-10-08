@@ -66,7 +66,7 @@ export const startBackgroundProcessorsScoped = (
 
 ## 4. Several instances
 
-You can run more than one copy. Each view, automation and outbox runs in **one** process at a time, the leader, chosen by a PostgreSQL advisory lock; the others retry
+You can run more than one copy. Each **module** (the views, the automations, the outbox publishers) runs in **one** process at a time, the leader, chosen by a PostgreSQL advisory lock per module (all of a module's processors run together; [diagram](../architecture.md#one-lock-per-module-one-leader-per-lock)); the others retry
 every `leaderElectionRetryIntervalMs` (5 s here) and take over, immediately after a graceful stop. Reads and commands run on every instance.
 
 ## 5. Before a deploy that changes an event

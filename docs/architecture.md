@@ -6,7 +6,7 @@ each design, follow the links to the [decision records](./adr/README.md); for th
 The two example applications also have [C4 models](./c4-examples.md) (context, containers, components).
 
 Contents: [the whole system](#the-whole-system) · [a command, from request to append](#a-command-from-request-to-append) · [two commands that conflict](#two-commands-that-conflict) ·
-[from event to view](#from-event-to-view) · [a read that includes your write](#a-read-that-includes-your-write) · [one poller, one leader](#one-poller-one-leader) ·
+[from event to view](#from-event-to-view) · [a read that includes your write](#a-read-that-includes-your-write) · [one lock per module, one leader per lock](#one-lock-per-module-one-leader-per-lock) ·
 [changing an event](#changing-an-event) · [what is in the database](#what-is-in-the-database)
 
 ## The whole system
@@ -31,7 +31,7 @@ flowchart TB
 
   subgraph store["eventstore"]
     es["EventStore<br/>conditional append, tag queries"]
-    listen["Listen and Leader<br/>NOTIFY wake-ups, advisory lock"]
+    listen["Listen and Leader<br/>NOTIFY wake-ups,<br/>one advisory lock per module"]
   end
 
   pg[("PostgreSQL<br/>crablet_events and friends")]
@@ -200,13 +200,70 @@ A read with no marker waits for the head of the log. The modes are `strict` (rig
 A client that did not write learns that something changed from a **ping** over server-sent events and reads again. See [ADR-0015](./adr/0015-read-consistency-by-marker.md),
 [ADR-0014](./adr/0014-live-updates-by-ping.md) and [ADR-0016](./adr/0016-one-listen-per-process-for-view-progress.md).
 
-## One poller, one leader
+## One lock per module, one leader per lock
 
-Every instance of the application starts the same processors; a PostgreSQL advisory lock decides which instance runs each one. The loop below is one processor's tick.
+Every instance of the application starts the same processors. A PostgreSQL advisory lock decides which instance runs them, and **the lock is per module, not per processor**: there is one lock for
+the views, one for the automations and one for the outbox publishers (`VIEWS_LOCK_KEY`, `AUTOMATIONS_LOCK_KEY`, `OUTBOX_LOCK_KEY` in `eventstore`'s `Leader.ts`). The instance that holds a
+module's lock runs **all** of that module's processors (every view, every automation, every publisher); the others wait and retry. The three locks are independent, so a different instance may lead each
+module, though the first instance to start usually leads all three. The diagram shows one possible split, not the usual one.
+
+```mermaid
+flowchart LR
+  subgraph pg["PostgreSQL: three advisory locks, each held by one session"]
+    lv(("views lock"))
+    la(("automations lock"))
+    lo(("outbox lock"))
+  end
+
+  subgraph a["Instance A (leader of views and outbox)"]
+    av["views module<br/>all 4 view processors run here"]
+    aa["automations module<br/>waits"]
+    ao["outbox module<br/>every publisher runs here"]
+  end
+
+  subgraph b["Instance B (leader of automations)"]
+    bv["views module<br/>waits"]
+    ba["automations module<br/>every automation runs here"]
+    bo["outbox module<br/>waits"]
+  end
+
+  lv == "held by A" ==> av
+  lv -. "B retries every 5 s" .-> bv
+  la == "held by B" ==> ba
+  la -. "A retries every 5 s" .-> aa
+  lo == "held by A" ==> ao
+  lo -. "B retries every 5 s" .-> bo
+```
+
+Two consequences. **A processor's status is per processor** (you pause one view, not the module), but **who runs it is per module**: pausing a view does not move it to another instance, and a
+dead instance takes all of its modules' processors with it until another instance takes the locks. And **leadership is observed per module**: the `crablet.poller.leadership` gauge carries the lock's number
+(`lock_key`) and the instance, not a processor id.
+
+What happens when the leader dies, observed by killing the process (`kill -9`) in a two-instance run ([the crash test](./plans/dashboard.md)):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Instance A (leader)
+  participant PG as PostgreSQL (advisory locks)
+  participant B as Instance B (follower)
+  participant M as Metrics backend
+
+  A->>PG: holds the three locks, heartbeat
+  A->>M: leadership = 1 for each lock, re-sent every export interval
+  B->>PG: tries each lock every 5 s (fails)
+  Note over A: kill -9
+  PG-->>PG: A's session ends, its locks are released
+  B->>PG: next retry takes each lock
+  B->>M: leadership = 1 for each lock (first within about 5 s, all three within 10 s)
+  Note over M: A's series stays at 1 but is no longer re-sent.<br/>It is dropped about five minutes later.
+```
+
+The loop below is one processor's tick, inside the module that holds the lock.
 
 ```mermaid
 flowchart TD
-  start(["tick"]) --> lead{"Do I hold the lock<br/>for this processor?"}
+  start(["tick"]) --> lead{"Does my instance hold<br/>this module's lock?"}
   lead -- no --> wait["Sleep, or wake on a NOTIFY.<br/>A separate retry loop keeps trying<br/>to take the advisory lock"]
   wait --> start
   lead -- yes --> status{"Status paused<br/>or failed?"}

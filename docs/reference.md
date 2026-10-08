@@ -42,7 +42,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 
 ## Operating it
 
-- **Leadership.** Each poller runs on one process at a time, chosen by a session-level advisory lock. The heartbeat checks `pg_locks` for the session, a
+- **Leadership.** Each module (views, automations, outbox) is led by one process at a time, chosen by a session-level advisory lock: one lock per module, so all of a module's processors run in the same process ([diagram](./architecture.md#one-lock-per-module-one-leader-per-lock)). The heartbeat checks `pg_locks` for the session, a
   fence runs before the handler and before the cursor moves, and the cursor can only move forward, so a stale leader cannot deliver or rewind.
   A graceful release wakes the others at once; a crash is picked up on the next retry (5 s by default). Processors started with `startScoped` are released when their scope closes, so a shutdown signal
   under `NodeRuntime.runMain` is a graceful release ([Run it in production](./guides/run-in-production.md)).

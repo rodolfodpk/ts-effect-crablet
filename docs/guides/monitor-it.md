@@ -42,7 +42,7 @@ Suggestions, by what each metric tells you:
 
 | Metric | What it tells you |
 |---|---|
-| `crablet.poller.leadership` | 1 when this instance acquires leadership of a processor, 0 when it loses it (tagged by processor and instance); no instance at 1 means nothing is processing |
+| `crablet.poller.leadership` | 1 when this instance acquires a **module**'s leader lock (views, automations or outbox: leadership is per module), 0 when it loses it; tagged `lock_key` and `instance_id`. A crashed leader never reports 0: its series stays at 1 but stops being re-sent, so look for a recent sample. No fresh sample at 1 for a lock means nothing is processing that module |
 | `crablet.view.project.failures`, `crablet.automation.decide.failures`, `crablet.outbox.publish.failures` | a handler is failing; the error is recorded against the processor |
 | `crablet.eventstore.decoding_failures` | a stored event the current definitions cannot read (an unsafe event change) |
 | `crablet.command.conflict_retries`, `crablet.eventstore.concurrency_violations` | contention: commands whose boundaries overlap |

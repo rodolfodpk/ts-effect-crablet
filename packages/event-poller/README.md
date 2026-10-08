@@ -5,7 +5,7 @@ shared so the three modules get the same guarantees.
 
 ## What it gives you
 
-- **`makeEventProcessor`** - one processor per id: backoff, a wake-up on LISTEN/NOTIFY, and **leader-gated** (only the process holding the advisory lock runs it).
+- **`makeEventProcessor`** - one processor per id: backoff, a wake-up on LISTEN/NOTIFY, and **leader-gated** (only the process holding the module's advisory lock runs it; the lock is per module, shared by all the module's processors).
 - **Guarantees** - no event is skipped (the cursor is a `(transaction_id, position)` pair), **at-least-once** delivery, a fence before the handler and before the cursor moves,
   and a cursor that can only move forward.
 - **`EventSelection`**, **`SqlEventFetcher`** - which events a processor wants (types and tags) and the SQL that fetches them.

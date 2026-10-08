@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Exit, Queue, Ref, Stream } from "effect";
+import { Effect, Exit, Metric, Queue, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
+import * as LeaderMetrics from "@crablet/metrics-otel/LeaderMetrics";
 import { makeEventProcessor } from "../src/EventProcessor.ts";
 import { processorConfigOf } from "../src/ProcessorConfig.ts";
 import * as EventSelection from "../src/EventSelection.ts";
@@ -262,6 +263,48 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
     });
 
     await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+});
+
+// Leadership is per MODULE: one lock for all of a module's processors (VIEWS_LOCK_KEY, ...), so the gauge is tagged by that lock and the instance, not by processor. The dashboard and the
+// "no leader" alert are written against exactly these labels (scripts/dashboard.test.ts); they were once written against `processor`, which this gauge never carried.
+describe("the leadership gauge", () => {
+  test("is tagged lock_key and instance_id (not processor), is 1 while this instance leads, and goes to 0 when it stops being the leader", async () => {
+    const read = (labels: Record<string, string>) =>
+      Effect.map(Metric.value(Metric.withAttributes(LeaderMetrics.leadership, labels)), (s) => (s as unknown as { value: number }).value);
+    const program = Effect.gen(function* () {
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([]);
+      const { tracker } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>();
+      const config = processorConfigOf("gauge-proc", {
+        pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120, enabled: true
+      });
+      // alwaysLeader()'s lock is 0n, and this instance is "gauge-instance": the gauge must be found under those two labels
+      let leading = true;
+      const leader: LeaderHandle = { lockKey: 0n, isLeader: () => leading, verify: Effect.sync(() => leading), release: () => Effect.void };
+      const handle = yield* makeEventProcessor({
+        configs: [config],
+        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf: () => EventSelection.empty(),
+        instanceId: "gauge-instance",
+        // once leadership is lost another instance has it: this one cannot take it back
+        acquireLeader: Effect.sync(() => (leading ? leader : null)),
+        wakeupStream: Stream.never
+      });
+      yield* handle.service.start;
+      const tagged = { lock_key: "0", instance_id: "gauge-instance" };
+      const whileLeading = yield* waitUntil(read(tagged), (v) => v === 1);
+      const byProcessor = yield* read({ processor: "gauge-proc", instance_id: "gauge-instance" });
+      leading = false;
+      yield* TestClock.adjust("2 seconds");
+      const afterLosing = yield* waitUntil(read(tagged), (v) => v === 0);
+      yield* handle.service.stop;
+      return { whileLeading, byProcessor, afterLosing };
+    });
+    const result = await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+    expect(result).toEqual({ whileLeading: 1, byProcessor: 0, afterLosing: 0 });
   });
 });
 

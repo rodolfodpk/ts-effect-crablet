@@ -72,9 +72,9 @@
           "type": "prometheus",
           "uid": "${ds}"
         },
-        "expr": "changes(max by (processor) (crablet_poller_leadership_ratio == 1)[1m:]) > 0",
+        "expr": "changes(max by (lock_key) (crablet_poller_leadership_ratio == 1)[1m:]) > 0",
         "titleFormat": "leader change",
-        "textFormat": "{{processor}}",
+        "textFormat": "lock {{lock_key}}",
         "step": "60s"
       }
     ]
@@ -204,8 +204,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Processors without a leader",
-      "description": "Processors no instance currently leads, so nothing is processing them. A leader that crashed never reports 0: its series stops, so the count rises once it goes stale (about five minutes in Prometheus).",
+      "title": "Modules without a leader",
+      "description": "Modules (views, automations, outbox) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -223,7 +223,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "count(max by (processor) (crablet_poller_status_ratio{status=\"ACTIVE\",processor=~\"$processor\"})) - count(sum by (processor) (crablet_poller_leadership_ratio{processor=~\"$processor\"}) >= 1) or vector(0)",
+          "expr": "(count(count by (lock_key) (crablet_poller_leadership_ratio) unless count by (lock_key) ((crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)))) or vector(0)) + (absent(crablet_poller_leadership_ratio) or vector(0))",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -312,8 +312,8 @@
     {
       "id": 6,
       "type": "table",
-      "title": "Leader of each processor",
-      "description": "The instance that last reported leadership (1) of each processor.",
+      "title": "Leader of each module",
+      "description": "The instance that leads each module (views, automations, outbox): one advisory lock per module, so all of a module's processors run in the same instance. A crashed leader drops out after two minutes.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -331,7 +331,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "max by (processor, instance_id) (crablet_poller_leadership_ratio{processor=~\"$processor\"}) == 1",
+          "expr": "max by (module, instance_id) (label_replace(label_replace(label_replace((crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), \"module\", \"outbox\", \"lock_key\", \"4856221667890123456\"), \"module\", \"views\", \"lock_key\", \"4856221667890123457\"), \"module\", \"automations\", \"lock_key\", \"4856221667890123458\"))",
           "legendFormat": "",
           "instant": true,
           "range": false

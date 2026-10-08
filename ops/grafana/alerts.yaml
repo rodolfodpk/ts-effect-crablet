@@ -29,26 +29,35 @@ groups:
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
 
-      - uid: crablet-processor-no-leader
-        title: A processor has no leader
+      - uid: crablet-module-no-leader
+        title: A module has no leader
         condition: C
-        for: 2m
-        # A processor that no instance reports at all is the same problem as one nobody leads: nothing is processing it.
-        noDataState: Alerting
+        for: 1m
+        # Leadership is per MODULE (views, automations, outbox: one advisory lock each, packages/eventstore/src/Leader.ts), tagged `lock_key`. A crashed leader never reports 0: its
+        # series stays at 1 for about five minutes but stops being re-sent, so a leader is a series at 1 written in the last 120 seconds (keep in step with FRESH_SECONDS in
+        # scripts/build-dashboard.ts; the exporter must re-send more often than that).
+        # The query has two parts, joined with `or`, and returns NOTHING when all is well, so no data means healthy here (noDataState OK). Had it alerted on no data, a healthy system would
+        # fire (found by killing leaders: docs/plans/dashboard.md):
+        #   - a module that has reported but has no fresh leader (a leader that crashed, between two and five minutes after);
+        #   - `absent(...)`: no leadership series at all (everything that was reporting has been gone for five minutes: a total outage).
+        noDataState: OK
         execErrState: Error
         annotations:
-          summary: "No instance leads {{ $labels.processor }}, or nothing is reporting."
-          description: "A leader that crashed never reports 0; its series goes stale after about five minutes, so allow for that delay."
+          summary: "No instance leads the {{ $labels.module }} module."
+          description: "Nothing is running that module's processors (or, for 'no leadership data', nothing is reporting). A leader that crashed is recognised after two minutes of silence."
           runbook: docs/guides/run-in-production.md
         labels: { severity: critical }
         data:
           - refId: A
             datasourceUid: prometheus
-            relativeTimeRange: { from: 300, to: 0 }
-            model: { refId: A, instant: true, expr: "sum by (processor) (crablet_poller_leadership_ratio)" }
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              instant: true
+              expr: 'label_replace(label_replace(label_replace(count by (lock_key) (crablet_poller_leadership_ratio) unless count by (lock_key) (crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), "module", "outbox", "lock_key", "4856221667890123456"), "module", "views", "lock_key", "4856221667890123457"), "module", "automations", "lock_key", "4856221667890123458") or label_replace(absent(crablet_poller_leadership_ratio), "module", "(no leadership data at all)", "", "")'
           - refId: C
             datasourceUid: __expr__
-            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: lt, params: [1] } }] }
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
 
       - uid: crablet-consumer-behind
         title: A consumer is behind

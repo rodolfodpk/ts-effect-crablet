@@ -63,7 +63,7 @@ C4Component
     Component(feed, "Feed API", "server-sent events", "GET /api/views/changes: a ping when the seats view moves")
     Component(commands, "Commands and models", "commands", "DefineCourse and Subscribe; CourseModel and StudentModel; Subscribe decides on both with all(...)")
     Component(executor, "CommandExecutor and EventStore", "Crablet.layer", "Validates, loads the boundary, decides, appends if nothing newer, retries on a conflict")
-    Component(processor, "Views processor", "event-poller and views", "Leader-gated; reads new events, runs the projector, moves the cursor")
+    Component(processor, "Views processor", "event-poller and views", "Leader-gated by the views module's advisory lock (one lock for all views, not one per view); reads new events, runs the projector, moves the cursor")
     Component(projector, "CourseSeatsViewProjector", "ViewProjector", "Idempotent seat counter per course, using decodeStored")
     Component(hub, "ViewProgressHub", "views", "One LISTEN per process; wakes waiting reads and open feeds")
     Component(openapi, "OpenAPI and docs", "commands-http", "GET /openapi.json, optional /docs page")
