@@ -31,4 +31,4 @@ time runs left to right, and the declarations are the blueprint. Not checked by 
             └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The read model is not part of the quick start (it needs the poller); the [tutorial](./tutorial/course-enrolment.md) builds one.
+The read model is not part of the quick start (it needs the poller); the [tutorial](./tutorial/README.md) builds one.

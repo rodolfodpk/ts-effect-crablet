@@ -1,4 +1,4 @@
-# A local Postgres for the tutorial (docs/tutorial/course-enrolment.md):   docker compose up -d
+# A local Postgres for the tutorial (docs/tutorial/02-postgres-and-the-second-rule.md):   docker compose up -d
 services:
   postgres:
     image: postgres:18-alpine

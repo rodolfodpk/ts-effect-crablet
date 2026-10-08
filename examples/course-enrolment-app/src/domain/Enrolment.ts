@@ -1,4 +1,4 @@
-// The course-enrolment domain of the tutorial (docs/tutorial/course-enrolment.md). Two rules, two kinds of
+// The course-enrolment domain of the tutorial (docs/tutorial/). Two rules, two kinds of
 // entity, ONE decision:
 //   - a course holds at most `capacity` students,
 //   - a student takes at most 3 courses.

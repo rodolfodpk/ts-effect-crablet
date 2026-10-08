@@ -6,7 +6,7 @@ Where to start depends on what you want. If you are new, follow the path below i
 
 1. [The README](../README.md) - what this is, what it is good at, whether it fits (2 minutes).
 2. [The quick start](../examples/quickstart/src/quickstart.ts) - run a command with no database: `node examples/quickstart/src/quickstart.ts` (5 minutes).
-3. [The tutorial](./tutorial/course-enrolment.md), steps 1 and 2 - a rule in memory, then on Postgres (about an hour for the whole tutorial; Docker is needed from step 2).
+3. [The tutorial](./tutorial/README.md), steps 1 and 2 - a rule in memory, then on Postgres (Docker is needed from step 2). Each step is one page and ends with something that runs.
 4. [The DCB guide](./dcb-guide.md) - why a command picks its own boundary, with a transfer between two accounts.
 5. [The glossary](./glossary.md) - whenever a word is unfamiliar.
 
@@ -15,7 +15,7 @@ Where to start depends on what you want. If you are new, follow the path below i
 | I want to... | Read |
 |---|---|
 | Understand the idea | [DCB guide](./dcb-guide.md), [the seat booking as an Event Model](./event-model-seat-booking.md) |
-| Build a small service step by step | [Tutorial](./tutorial/course-enrolment.md) (in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI) |
+| Build a small service step by step | [Tutorial](./tutorial/README.md) (in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI) |
 | See a complete application | [`examples/wallet-example-app`](../examples/wallet-example-app) |
 | Change an event without breaking the log | [Evolving events](./evolving-events.md) |
 | Look up command options, delivery guarantees, operations, packages, build and test | [Reference](./reference.md) |

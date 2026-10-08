@@ -1,13 +1,17 @@
-// The tutorial (docs/tutorial/course-enrolment.md) cannot drift from the code it shows: every code block tagged
+// The tutorial (docs/tutorial/*.md, one page per step) cannot drift from the code it shows: every code block tagged
 // `<!-- file: path#region -->` must equal that file's `// #region name` ... `// #endregion name` (compared with the
 // common indentation removed), and the files, scripts and URLs the text mentions must exist.
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dir, "../../..");
-const docPath = path.join(root, "docs/tutorial/course-enrolment.md");
-const doc = readFileSync(docPath, "utf8");
+const tutorialDir = path.join(root, "docs/tutorial");
+const pages = readdirSync(tutorialDir)
+  .filter((f) => f.endsWith(".md"))
+  .sort()
+  .map((f) => ({ file: f, dir: tutorialDir, text: readFileSync(path.join(tutorialDir, f), "utf8") }));
+const doc = pages.map((p) => p.text).join("\n");
 const packageDir = path.join(root, "examples/course-enrolment-app");
 
 const dedent = (text: string): string => {
@@ -43,10 +47,27 @@ describe("tutorial: code blocks equal the files they come from", () => {
 });
 
 describe("tutorial: what the text points at exists", () => {
+  test("the pages are the index, the five steps and the closing page", () => {
+    expect(pages.map((p) => p.file)).toEqual(
+      expect.arrayContaining(["README.md", "01-the-rule-in-memory.md", "02-postgres-and-the-second-rule.md", "03-an-http-api.md", "04-read-your-own-writes.md", "05-a-page-that-uses-it.md", "where-next.md"])
+    );
+  });
+
   test("relative links resolve to files that exist", () => {
-    const links = [...doc.matchAll(/\]\((?!https?:)([^)#\s]+)(?:#[^)]*)?\)/gu)].map((m) => m[1]!);
-    expect(links.length).toBeGreaterThan(5);
-    for (const link of links) expect(existsSync(path.resolve(path.dirname(docPath), link)), `broken link: ${link}`).toBe(true);
+    let count = 0;
+    for (const page of pages) {
+      const links = [...page.text.matchAll(/\]\((?!https?:)([^)#\s]+)(?:#[^)]*)?\)/gu)].map((m) => m[1]!);
+      count += links.length;
+      for (const link of links) expect(existsSync(path.resolve(page.dir, link)), `broken link in ${page.file}: ${link}`).toBe(true);
+    }
+    expect(count).toBeGreaterThan(20);
+  });
+
+  test("each step links to the next one, and back to the index", () => {
+    for (const page of pages.filter((p) => /^0\d-/u.test(p.file))) {
+      expect(page.text, `${page.file}: no link to the index`).toContain("(README.md)");
+      expect(page.text, `${page.file}: no \"You now have\"`).toContain("**You now have**");
+    }
   });
 
   test("every `node <script>` runs a file that exists in the package; every `bun test <file>` a file that exists", () => {

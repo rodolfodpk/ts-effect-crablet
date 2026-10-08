@@ -31,14 +31,14 @@ Views update asynchronously. A command answers with a **marker** (where in the l
 (`?consistentWith=<marker>`) is answered only once the views it uses have that write, and a read with no marker waits for everything committed. The default is strict: the
 answer is right or a `503`, never stale ([ADR-0015](./adr/0015-read-consistency-by-marker.md)). A client that did not write learns of changes by a ping over server-sent
 events ([ADR-0014](./adr/0014-live-updates-by-ping.md)).
-Walkthrough: [tutorial step 4](./tutorial/course-enrolment.md).
+Walkthrough: [tutorial step 4](./tutorial/04-read-your-own-writes.md).
 
 ## HTTP API and OpenAPI
 
 List the commands' **contracts** (`commandContract({ name, input, errors })`) and you get `POST /api/commands/<name>` for each, validated against the
 `input` schema, with every failure documented as `application/problem+json`. `GET /openapi.json` serves the generated OpenAPI 3.1 description, checked in at
 [`docs/api/wallet-openapi.json`](./api/wallet-openapi.json) so an API change is a visible diff. A browser can import the contracts without receiving
-`decide` or the models. Walkthrough: [tutorial step 3](./tutorial/course-enrolment.md); why: [ADR-0011](./adr/0011-http-api-from-the-domain-model.md).
+`decide` or the models. Walkthrough: [tutorial step 3](./tutorial/03-an-http-api.md); why: [ADR-0011](./adr/0011-http-api-from-the-domain-model.md).
 
 ## Operating it
 
@@ -65,7 +65,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | `packages/commands-http` | A REST API over your commands, with RFC 7807 problem-detail errors |
 | `packages/views-http` | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
 | `packages/metrics-otel` | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
-| `examples/course-enrolment-app` | The [tutorial](./tutorial/course-enrolment.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
+| `examples/course-enrolment-app` | The [tutorial](./tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
 | `examples/quickstart` | The [README example](../README.md) as a script that runs with no database |
 | `examples/wallet-example-app` | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 

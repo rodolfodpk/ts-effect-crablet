@@ -4,11 +4,11 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 ## The idea
 
-- **Event** - a fact that happened, immutable, stored in one log shared by everything (`SeatBooked`, `DepositMade`). Defined with `defineEvent`: a name, a payload schema and the tags it can be found by. [Tutorial step 1](./tutorial/course-enrolment.md)
+- **Event** - a fact that happened, immutable, stored in one log shared by everything (`SeatBooked`, `DepositMade`). Defined with `defineEvent`: a name, a payload schema and the tags it can be found by. [Tutorial step 1](./tutorial/01-the-rule-in-memory.md)
 - **Tag** - a `key=value` label on an event saying what it is about (`seat_id=12A`). Events are found by their tags; there are no streams. [DCB guide](./dcb-guide.md)
 - **Query** - a set of "event types, with these tags" items that selects events from the log.
 - **Dynamic Consistency Boundary (DCB)** - the set of events a command's decision depends on, chosen by the command itself by querying, instead of fixed in advance as an aggregate. Two commands conflict only if one adds an event the other's boundary would have included. [DCB guide](./dcb-guide.md)
-- **Model** - what events mean for one entity or rule: a pure fold from events to state (`defineModel`). The same declaration gives the boundary, so the fold and the boundary cannot drift apart. [Tutorial step 1](./tutorial/course-enrolment.md)
+- **Model** - what events mean for one entity or rule: a pure fold from events to state (`defineModel`). The same declaration gives the boundary, so the fold and the boundary cannot drift apart. [Tutorial step 1](./tutorial/01-the-rule-in-memory.md)
 - **`all(...)`** - combines several models into one decision (both wallets of a transfer). Its boundary is the union of theirs. [DCB guide](./dcb-guide.md)
 - **Command** - a named, pure decision: from the loaded state and the input, it emits events, refuses with a domain error, or does nothing (`defineCommand`). [Reference](./reference.md#what-a-command-can-say)
 - **Domain error** - a refusal that belongs to the business (`SeatTaken`), declared on the command, with a `kind` the HTTP layer maps to a status code.
@@ -30,7 +30,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 ## Reading and reacting
 
-- **View** - a read model kept in a table by a projector. It updates asynchronously. [Tutorial step 2](./tutorial/course-enrolment.md)
+- **View** - a read model kept in a table by a projector. It updates asynchronously. [Tutorial step 4](./tutorial/04-read-your-own-writes.md)
 - **Projector** - the handler that turns events into view rows (`ViewProjector`).
 - **Marker** - a token a command returns saying where in the log its write ended. A read that carries it (`?consistentWith=<marker>`) waits until the views have that write. [ADR-0015](./adr/0015-read-consistency-by-marker.md)
 - **Strict read** - the default: the answer is right or a `503`, never stale.

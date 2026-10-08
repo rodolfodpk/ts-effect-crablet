@@ -52,7 +52,9 @@ Done when: every file under `docs/` is reachable from `docs/README.md` in one cl
 
 Done when: the README, the tutorial and the DCB guide link a term's first use to the glossary.
 
-### 3. Split the tutorial into pages (medium)
+### 3. Split the tutorial into pages (medium) - DONE (2026-10-07)
+
+Decision: one file per step. Built: `docs/tutorial/README.md` (index, prerequisites, "If something fails"), `01`-`05` step pages each ending with "You now have..." and previous/next links, `where-next.md`, and a stub at the old path. `tutorial-sync.test.ts` now reads every page. Step 5 is about 290 lines (a whole page, with its own sections), above the 220 target; the others are 104-171.
 
 `docs/tutorial/` becomes a folder with `README.md` (what you will build, prerequisites, time per step) and `01-the-rule-in-memory.md` ... `05-a-page-that-uses-it.md`, each ending with "you now have..." and a link to the next. The step files keep their code blocks tested; the sync tests that read the old file are updated in the same commit.
 

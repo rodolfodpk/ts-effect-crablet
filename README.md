@@ -108,7 +108,7 @@ Effect.runPromise(Effect.provide(program, AppLive));
 | You want to | Read |
 |---|---|
 | Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/glossary.md) for any unfamiliar word |
-| Build something, step by step | [Tutorial](./docs/tutorial/course-enrolment.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
+| Build something, step by step | [Tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
 | Understand the idea | [DCB guide](./docs/dcb-guide.md) |
 | See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app) |
 | Change an event safely | [Evolving events](./docs/evolving-events.md) |
