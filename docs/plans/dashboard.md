@@ -85,7 +85,14 @@ Done when: `docker compose up` and one command give a populated dashboard, and t
 
 ### 4. Optional: operate, not only watch
 
-Only if step 3 leaves people wishing to act from the dashboard. Add to `commands-http`-style packaging an `/admin/processors` API over `ProcessorManagementService`: list with status and lag, pause, resume, reset. It needs authentication decisions the framework has so far left to the adopter (see ADR-0014 on what the HTTP layer assumes), so it ships as handlers the adopter mounts behind their own auth, never on by default. Grafana can link to it. No front end.
+Only if step 3 leaves people wishing to act from the dashboard. Two parts, in this order.
+
+1. **An admin API package**, in the style of `views-http` (for example `@crablet/processors-http`): an `/admin/processors` API over `ProcessorManagementService` with list (status, lag, leader, last error), pause, resume and reset. The schema is exported, so any client can be typed against it. It needs authentication decisions the framework has so far left to the adopter (see ADR-0014 on what the HTTP layer assumes), so it ships as handlers the adopter mounts behind their own auth, never on by default. Processor ids are free-form, so the API carries an optional description to say what each processor is for. Grafana can link to it.
+2. **A generic Foldkit page**, an example in `examples/` (not a package, not coupled to the course or wallet example). It takes a base URL and is typed against the admin API's schema only: a table of processors, pause and resume, and reset behind a confirmation. It states that reset is destructive and that the API must be behind auth. Do it after the Foldkit upgrade from rc.118 is settled, so it is not built on a version we are leaving.
+
+Cost to note: once adopters type a client against the admin schema, changing it breaks them. This is the same evolution question `api-follow-ups.md` deferred (item B); decide the rules before publishing the package.
+
+Done when: the handlers have integration tests (including that reset needs the processor paused or says what it does otherwise), and the page runs against the wallet and the course example without a line of either in it.
 
 ### 5. Keep it honest
 
