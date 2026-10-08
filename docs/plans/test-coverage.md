@@ -1,6 +1,6 @@
 # Plan: improve test coverage, starting by measuring it properly
 
-**Status:** steps 1-3 done (2026-10-08); steps 4-6 open, and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
+**Status:** steps 1-4 done (2026-10-08); steps 5-6 open, and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
 not counted); the ratchet is a hard gate that fails CI.
 
 ## Result of step 1 (2026-10-08): the real number is 98.5 %, not 67 %
@@ -46,6 +46,33 @@ not executed counts as a miss, and the five files use a heuristic. The two alter
 **What it does not tell us.** Line coverage says a line ran, not that a test would fail if it were wrong. At 98.5 % the useful question is no longer "which lines are not run" but "which behaviour would a regression slip past"; see step 4.
 
 **Timings.** The integration suite with coverage took about 4½ minutes locally (Node 25.2.1, concurrency 4). My first attempt looked hung and was killed at 10 minutes; it was only slow, and I should have waited.
+
+## Result of step 4 (2026-10-08): 99.7 % locally, and the tests were put to the test
+
+**Part 1, the lines.** Tests were written for the behaviour behind the 56 lines (not to execute them): the odd-argument error of `Tag.ofPairs`, the unions of `EventSelection`, unsafe SQL identifiers, the exact-tag wake-up filter, an unreadable fixture in the change-impact report, a fixture that cannot be rebuilt, the migration list against the directory, processor pause/resume/status, the outbox progress tracker (pause, the error count, forward-only cursor, the table not migrated yet), the command audit store (`storeCommand`, `storeCommandIfAbsent`, `purge`), `verify-events` on an event that decodes but cannot be rebuilt, a 409 `DCB_VIOLATION` over HTTP when no retry is left, and two cases in the conformance suite that run against both stores (projecting with no projector is a defect; an unreadable event fails the projection with an `EventDecodingError` and is never skipped). Merged coverage of the packages went from 98.5 % to **99.7 %** (3,797 of 3,811 lines on CI, which also measures `test-support` at 96.4 %, see the note in `coverage-baseline.json`), and the baselines were raised to match.
+
+**What is left: 11 lines, none of them a gap.** Nine are lines the tools attribute wrongly, not code: closing braces and a comment that Node reports as not executed (`ModelImpact.ts` 87-88, `db-migrations/src/index.ts` 26, `InMemoryEventStore.ts` 97, the `}` after each defect below) and three parameter-type lines of `assertModelImpact` (168-170). Two are deliberate: `sql.ts` 114 and 126 are defects for "the SQL function returned no result" and "returned success without a transaction id", which `append_events_if` does not do; a test would need a fake database. They stay recorded here.
+
+**Part 2, would the tests notice a regression?** Seventeen deliberate breaks of the correctness core, one at a time, each run against the tests that could catch it (the unit suite, or the integration tests of the package for a database change); the source was restored after each.
+
+| Break | Caught by |
+|---|---|
+| Poller: no fence before the handler | the leadership fence tests |
+| Poller: no fence before the cursor moves | the leadership fence tests |
+| Poller (Postgres) and outbox cursor update no longer forward-only | the tracker integration tests (two mutants) |
+| Append condition cursor compared inclusively, in SQL (V7) and in the spec | conformance, append and cursor tests (two mutants) |
+| Idempotency reported as a conflict | the conformance suite |
+| Model query drops the scope tags | the model tests |
+| `all(...)` takes the later horizon by transaction id | the model and union-boundary tests |
+| Unreadable event skipped instead of failing, in the in-memory store and in Postgres | the new conformance case, and the event-decoding integration test (two mutants) |
+| Wake-up filter inverted, tag keys not lower-cased, marker range check removed | their unit tests |
+| **Conflicts never retried** | **survived** the unit suite; **now caught** by new `conflict-retry.test.ts` (it was covered only by Postgres concurrency tests) |
+| **`all(...)` takes the later horizon by position** | **survived**; **now caught** by new `log-position.test.ts` (the position branch of `earliest` was never exercised; both member horizons have position 0 in the Postgres path) |
+| **Leader heartbeat replaced by `SELECT 1`** (the original zombie-leader bug) | **survived** the integration tests, which kill the session; **now caught** by new `leader-session.test.ts`, which uses a stand-in connection that answers queries but holds no lock |
+
+Three of seventeen survived, all three now caught. The third is the important one: the test that was written for the zombie-leader bug killed the session, which `SELECT 1` also detects; the failure it was written for (a connection that comes back on a new session, answering but without the lock) was not reproduced. The new test reproduces it deterministically, with no database.
+
+**Limits of this check.** Seventeen breaks chosen by hand, not a systematic mutation run; a tool that generates mutants would find more. The surviving three were found because the sample was aimed at the riskiest code, which is the argument for a tool only if this sample keeps finding gaps. It did, so mutation testing of `eventstore`, `commands` and `event-poller` is a reasonable next decision, not made here.
 
 ## Where we were before step 1
 
@@ -133,7 +160,9 @@ Built: `coverage-baseline.json` (per package and overall, rounded down to a tent
 
 Done when: a pull request that deletes a test, or adds untested code to a package, fails.
 
-### 4. Close the 56 lines, then ask whether the tests would notice a regression
+### 4. Close the 56 lines, then ask whether the tests would notice a regression - DONE (2026-10-08)
+
+See "Result of step 4" above.
 
 1. **The 56 lines** in the table above. Most are small and some are real behaviour: the odd-argument error in `Tag.of`, the type union in `EventSelection`, a failure path in `CommandAuditStore`, the outbox `updateStatus` path,
    the `append_events_if` "no result" defect in `sql.ts`, parts of `ModelImpact`. Cover each with a test that asserts the behaviour, or record why it is deliberately not covered (for example `Effect.die` branches for "cannot happen").
@@ -148,7 +177,7 @@ The proposed 85 % is below where we already are, so it is withdrawn. Instead:
 
 | Measure | Target |
 |---|---|
-| Packages, merged line coverage | hold the baseline (98.5 %) and ratchet up as step 4 lands; aim for 99 % |
+| Packages, merged line coverage | hold the baseline (99.6 % on CI) and ratchet up; nothing is left to close, so the aim is to keep it |
 | Any single file | 90 %, unless excluded with a reason |
 | Failures and edge cases | each of the failure paths in step 4 item 2 has a test that fails when the behaviour breaks |
 

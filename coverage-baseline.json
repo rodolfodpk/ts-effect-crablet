@@ -1,20 +1,20 @@
 {
+  "notes": {
+    "test-support": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08."
+  },
   "tolerancePoints": 0.3,
-  "overall": 98.5,
+  "overall": 99.6,
   "packages": {
     "automations": 100,
-    "commands": 98.9,
-    "commands-http": 99.7,
-    "db-migrations": 89.4,
-    "event-poller": 97.9,
-    "eventstore": 97.2,
+    "commands": 99.4,
+    "commands-http": 100,
+    "db-migrations": 95.2,
+    "event-poller": 100,
+    "eventstore": 99.4,
     "metrics-otel": 100,
-    "outbox": 97.1,
+    "outbox": 100,
     "test-support": 96.4,
     "views": 100,
     "views-http": 100
-  },
-  "notes": {
-    "test-support": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08."
   }
 }
