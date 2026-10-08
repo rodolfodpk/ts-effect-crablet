@@ -87,18 +87,24 @@ What this step did not do:
 - **Live data from the wallet example.** The data came from a script that updated every metric, not from a running application; the wallet is wired in step 3.
 - **Another Grafana or Prometheus version.** Only the lgtm image was tried.
 
-### 3. A local stack to see it
+### 3. A local stack to see it - done (2026-10-08)
 
-- `ops/compose.yaml` with two services: Postgres and `grafana/otel-lgtm` (one image holding the OpenTelemetry Collector, Prometheus, Tempo, Loki and Grafana). The dashboard and the alert rules are mounted into it as provisioning files. The wallet example sends OTLP to it, with a small load script (to be written; `examples/course-enrolment-app/scripts/bench-reads.ts` is a starting point, not a fit as is) so the panels move.
-- No multi-container topology: we do not own anyone's production setup, and adopters bring their own Collector, Prometheus and Grafana. The guide has a short section on pointing the app at your own Collector instead.
-- **Verified in a spike (2026-10-08, nothing committed):**
-  - *Exporter:* no extra package. Effect 4.0.0 ships it: `import { Otlp } from "effect/observability"` and `Otlp.layerJson({ baseUrl, resource: { serviceName }, metricsExportInterval, tracerExportInterval })`, provided with `FetchHttpClient.layer` from `effect/http`. It exports metrics, spans and logs. (`layerProtobuf` and `layerFromConfig` also exist; `layerFromConfig` reads the standard `OTEL_EXPORTER_OTLP_*` variables, which suits the "off by default, on by environment" wiring.) The Crablet metrics and a span went through it to the `grafana/otel-lgtm` image on port 4318 with no changes to `metrics-otel`.
-  - *Provisioning:* the image accepts mounts. A provider file mounted into `/otel-lgtm/grafana/conf/provisioning/dashboards/`, a dashboard JSON in the folder that provider names, and an alert-rule file in `.../provisioning/alerting/` all loaded at start-up; the dashboard's own query returned the data through Grafana. The Prometheus datasource has uid `prometheus` (Tempo `tempo`, Loki `loki`), which the dashboard and alert JSON reference. Prometheus is not published on a host port in the image; Grafana (3000) and OTLP (4318, 4317) are.
-  - *Not verified:* the image's version pinning (the spike used `latest`; pin a digest or tag in the Compose file), a timer metric (`crablet.*.duration`) and the leadership gauge on the Prometheus side, and the image under CI.
-- A guide page, `docs/guides/dashboard.md`: run it, what each row means, what to do when a panel is red (links to run-in-production and monitor-it).
-- The wallet example gains the OTLP exporter behind an environment variable (`OTEL_EXPORTER_OTLP_ENDPOINT`), off by default.
+- `ops/compose.yaml` (two services: Postgres 18 and `grafana/otel-lgtm` pinned to `0.35.0` by version and digest, with the dashboard, a provider file and the alert rules mounted in) and `ops/grafana/provider.yaml`. No multi-container topology.
+- The wallet example exports over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (`src/Observability.ts`: `Otlp.layerJson` from `effect/observability`, nothing to install; off otherwise), runs `monitorProcessors` over its views, automation and outbox (`monitorBackgroundProcessors`), and `monitorStorage` every minute.
+- `examples/wallet-example-app/scripts/load.ts`: a steady mixed load (deposits, withdrawals, transfers, and some commands that fail on purpose), `--rate` and `--seconds`.
+- `docs/guides/dashboard.md`: try it, what each row shows, the three things to put in an application, using your own Collector and Grafana, what to do when a panel is red, what it costs.
 
-Done when: `docker compose up` and one command give a populated dashboard, and the guide is in the docs map.
+Checked end to end, with the wallet application running against the compose stack (not a script standing in for it):
+
+- All 41 panel queries were run through Grafana: 35 return data. The six empty ones are counters that never fired in the run (view, automation and outbox failures, undecodable events, contention, reads that waited).
+- Under `load.ts --rate 250` the consumer lag rose to 3,865 events and 34 s and drained to 0 after the load, on the lag panels' own gauges. At 20 commands a second the lag was 0 when sampled after the run (it was not watched during it). **The example's defaults (batch 100, one-second polling) fall behind at a few hundred commands a second**; the guide says so.
+- Spans (`crablet.command`, `crablet.eventstore.append`, `crablet.poller.batch`, plus the HTTP and SQL spans) reached Tempo, and logs reached Loki with `trace_id`.
+- SIGTERM stopped the application within seconds. (That the last buffered batch of metrics was flushed on the way out was not checked.)
+- The cost of the sampler's query on 2 million events: 0 to 14 ms for type and tag selections, 97 ms in the worst case (a new processor whose selection matches every event, stopped by the 100 000 cap), including the tag-key table. Nothing needed changing.
+
+Found on the way, and fixed: the wallet example **crashed on its second start** against the same database (`relation "crablet_events" already exists`), because it applied every migration at every start. The docs say plainly that there is no migration runner; the example now applies the schema only to a fresh database (`migrateIfFresh`, with a Postgres test) and leaves one that has the event log alone. It does not detect an older or half-applied schema.
+
+Not done: the "no leader" alert and the stale-series behaviour of a crashed leader (about five minutes in Prometheus) were not exercised by killing a process; the alert's `noDataState` is the only mechanism and is untried. The compose stack was tried with Docker Desktop on one machine, not in CI.
 
 ### 4. Optional: operate, not only watch
 

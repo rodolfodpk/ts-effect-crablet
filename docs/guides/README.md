@@ -11,6 +11,7 @@ Short pages for "how do I...?". Each one is a checklist with the code from a rea
 | Test a command's decisions without a database | [Test a command](test-a-command.md) |
 | Run it for real: migrations, the connection, the background processors | [Run it in production](run-in-production.md) |
 | See what it is doing and what it costs | [Monitor it](monitor-it.md) |
+| Watch the poller and its consumers on a Grafana dashboard, with alerts | [See it on a dashboard](dashboard.md) |
 | Change an event that is already stored | [Evolving events](../evolving-events.md) |
 
 The examples are the course-enrolment app (views, HTTP) and the wallet app (automation, background processors, tests).

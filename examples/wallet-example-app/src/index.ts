@@ -3,8 +3,10 @@ import { Effect, Layer, Redacted } from "effect";
 import { HttpRouter } from "effect/http";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
-import { migrate } from "./migrate.ts";
-import { startBackgroundProcessorsScoped, makeWalletApiLayer } from "./WalletApp.ts";
+import { monitorStorage } from "@crablet/eventstore/Storage";
+import { migrateIfFresh } from "./migrate.ts";
+import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, makeWalletApiLayer } from "./WalletApp.ts";
+import { observabilityLayer } from "./Observability.ts";
 
 const connInfo = {
   host: process.env["WALLET_DB_HOST"] ?? "localhost",
@@ -15,10 +17,10 @@ const connInfo = {
 };
 const port = Number(process.env["PORT"] ?? 8080);
 
-// Entry point: apply migrations, then start the app - views/
+// Entry point: apply migrations (to a fresh database only), then start the app - views/
 // automations/outbox background processors AND the HTTP server, all sharing one connection pool.
 async function main(): Promise<void> {
-  await migrate(connInfo);
+  console.log(`migrations: ${(await migrateIfFresh(connInfo)) === "applied" ? "applied to a fresh database" : "the schema is already there, left as it is"}`);
 
   const appLayer = Crablet.layer({
     host: connInfo.host,
@@ -29,7 +31,9 @@ async function main(): Promise<void> {
   });
 
   const program = Effect.gen(function* () {
-    yield* startBackgroundProcessorsScoped();
+    const processors = yield* startBackgroundProcessorsScoped();
+    yield* monitorBackgroundProcessors(processors);
+    yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
     yield* Effect.log(`wallet-example-app listening on :${port}`);
     yield* Layer.launch(
       HttpRouter.serve(makeWalletApiLayer({ basePath: "/api/commands" })).pipe(
@@ -38,9 +42,10 @@ async function main(): Promise<void> {
     );
   });
 
+  // Set OTEL_EXPORTER_OTLP_ENDPOINT to export metrics, spans and logs over OTLP (docs/guides/dashboard.md); unset, nothing is exported.
   // The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the three processors stop and release their leader locks (another
   // instance takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
-  NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer));
+  NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(appLayer, observabilityLayer())));
 }
 
 main().catch((error) => {

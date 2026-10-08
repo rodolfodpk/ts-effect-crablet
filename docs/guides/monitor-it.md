@@ -3,7 +3,7 @@
 What to watch, and how. The framework records its measurements as Effect `Metric`s ([`@crablet/metrics-otel`](../../packages/metrics-otel/README.md)); **this repository does not
 ship an exporter**, so wire Effect's OpenTelemetry (or another) metrics exporter in your application. Nothing below needs one except the gauges.
 
-[← Task guides](README.md)
+[← Task guides](README.md) · A ready-made Grafana dashboard for all of this: [See it on a dashboard](dashboard.md)
 
 ## Storage: how big, and what an event costs
 

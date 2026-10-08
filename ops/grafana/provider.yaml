@@ -1,0 +1,7 @@
+# Tells Grafana to load every dashboard JSON in /crablet/dashboards (ops/compose.yaml mounts ops/grafana/crablet-dashboard.json there).
+apiVersion: 1
+providers:
+  - name: crablet
+    type: file
+    options:
+      path: /crablet/dashboards

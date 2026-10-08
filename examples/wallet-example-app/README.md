@@ -5,7 +5,7 @@ all composed in one application sharing one connection pool. Start with the [tut
 
 ## Run it
 
-It needs a Postgres database (`wallet_db` by default); the app applies the framework's migrations and its own at start-up.
+It needs a Postgres database (`wallet_db` by default). On a **fresh** database the app applies the framework's migrations and its own at start-up; a database that already has the event log is left as it is, so the app can restart (there is no migration runner: [Run it in production](../../docs/guides/run-in-production.md#1-apply-the-migrations)).
 
 ```bash
 node examples/wallet-example-app/src/index.ts

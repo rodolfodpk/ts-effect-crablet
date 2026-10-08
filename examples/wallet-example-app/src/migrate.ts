@@ -47,6 +47,23 @@ export async function migrate(connInfo: MigrateConnInfo): Promise<void> {
   }
 }
 
+// The migrations are not idempotent and nothing records what was applied (docs/guides/run-in-production.md), so the entry point applies them only to a FRESH database:
+// one without the event log. A database that has them is left as it is, which is what lets the app restart. A schema change after the first start needs your own
+// deployment tooling; this does not detect a half-applied or an older schema.
+export async function migrateIfFresh(connInfo: MigrateConnInfo): Promise<"applied" | "present"> {
+  const client = new Client({ host: connInfo.host, port: connInfo.port, database: connInfo.database, user: connInfo.username, password: connInfo.password });
+  await client.connect();
+  let present: boolean;
+  try {
+    present = (await client.query("SELECT to_regclass('public.crablet_events') IS NOT NULL AS present")).rows[0].present === true;
+  } finally {
+    await client.end();
+  }
+  if (present) return "present";
+  await migrate(connInfo);
+  return "applied";
+}
+
 // `import.meta.main` is Bun/Deno-only - this app runs under Node (Testcontainers/pg driver
 // see NOTES.md), so the portable Node equivalent is comparing
 // this module's own URL against the script Node was actually invoked with.

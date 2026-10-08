@@ -9,12 +9,16 @@ import { CommandExecutor } from "@crablet/commands";
 import type { EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
+import { monitorProcessors } from "@crablet/event-poller/MonitorProcessors";
 import { makeViewsProcessor } from "@crablet/views";
+import { makeViewManagementService } from "@crablet/views/ViewManagementService";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";
 import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { makeAutomationsProcessor } from "@crablet/automations";
+import { makeAutomationManagementService } from "@crablet/automations/AutomationManagementService";
 import type { AutomationsConfig } from "@crablet/automations/AutomationsConfig";
 import { makeOutboxProcessor } from "@crablet/outbox";
+import { makeOutboxManagementService } from "@crablet/outbox/OutboxManagementService";
 import type { OutboxConfig } from "@crablet/outbox/OutboxConfig";
 import { topicConfigOf } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
@@ -166,6 +170,21 @@ export const startBackgroundProcessorsScoped = (
 ): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
   Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers), stopBackgroundProcessors);
 // #endregion start-scoped
+
+// Keeps the consumer gauges (lag, cursor, status) current for the three modules, for as long as the scope lives. Every instance runs it, so a processor
+// whose leader has died still shows its lag growing (docs/guides/monitor-it.md#are-the-consumers-keeping-up).
+// #region monitor-processors
+export const monitorBackgroundProcessors = (
+  processors: BackgroundProcessors,
+  instanceId: string = defaultInstanceId()
+): Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> =>
+  Effect.gen(function* () {
+    const views = yield* makeViewManagementService(processors.viewsHandle);
+    const automations = yield* makeAutomationManagementService(processors.automationsHandle);
+    const outbox = yield* makeOutboxManagementService(processors.outboxHandle);
+    yield* Effect.forkScoped(monitorProcessors([views, automations, outbox], { instanceId }));
+  });
+// #endregion monitor-processors
 
 // The wallet's public write API is declared from the five CONTRACTS (domain/WalletContracts.ts), deliberately NOT SendWelcomeNotification (an
 // automation-triggered internal command, not a public write API). Each contract declares its domain errors, which the API presents by their

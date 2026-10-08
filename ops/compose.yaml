@@ -1,0 +1,35 @@
+# A local stack to see the dashboard with a real application behind it: Postgres, and one image that holds an OpenTelemetry Collector, Prometheus, Tempo,
+# Loki and Grafana. Not a production topology: bring your own Collector, Prometheus and Grafana for that (docs/guides/dashboard.md).
+#
+#   docker compose -f ops/compose.yaml up -d
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 node examples/wallet-example-app/src/index.ts
+#   node examples/wallet-example-app/scripts/load.ts
+#   open http://localhost:3000   (admin / admin; the dashboard "Crablet" is in the list)
+name: crablet-ops
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: wallet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${WALLET_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wallet_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Pinned by version and digest: the dashboard and the alert rules are loaded from the files mounted below, and were tried against this image.
+  grafana:
+    image: grafana/otel-lgtm:0.35.0@sha256:2de1094c593c671cbfca878a28ffcd7e46ff5e32f2ce966c0cf33003f6cf4266
+    ports:
+      - "3000:3000" # Grafana
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP: what the example exports to
+    volumes:
+      - ./grafana/provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/crablet.yaml:ro
+      - ./grafana/crablet-dashboard.json:/crablet/dashboards/crablet-dashboard.json:ro
+      - ./grafana/alerts.yaml:/otel-lgtm/grafana/conf/provisioning/alerting/crablet.yaml:ro
