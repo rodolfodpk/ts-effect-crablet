@@ -2,9 +2,15 @@
 
 ## Status
 
-Accepted (2026-10-06), implemented: migrations V9 and V10, `SnapshotStore`, the load with snapshot + tail, the executor's write after the transaction, the `all(...)` horizon, `verify-snapshots`. Measured results are in Consequences and in docs/plans/reliability-and-scale-diagnostic.md (E5e).
+**Superseded (2026-10-07): the snapshot feature was implemented, measured, and then DROPPED.** Decision 8 below (a model over several entities takes its cursor from the members' read horizons) is **not** part of the snapshot feature, is built, and **remains in force**. The rest of this document is kept as the record of what was tried, why, and what it measured.
 
-Follow-ups that stay open (none blocks the decision): the tail read still walks other entities' newer events (point 2); the default `every` of 1,000 is a guess to tune (point 4); where `version` is declared for generated models (point 5); a tutorial and README note (done: [`docs/snapshots.md`](../snapshots.md), linked from the README and the tutorial). Not measured: payloads larger than about 40 bytes, a log of many small transactions, many entities snapshotting at once.
+## Removal (2026-10-07)
+
+- **Why.** The need is conditional: a command costs about 2 microseconds per event of an entity's history (19.5 ms at 10,000 events, 190 ms at 100,000, 1.1 s at 500,000), which many systems accept; the cheaper remedy is modelling (scope a model by period, as the wallet's statements do); the feature was opt-in, no example application or other code used it, and it carried a permanent cost (two migrations and a function installed everywhere, a `version` rule whose violation gives silently wrong state, a state copy that duplicates personal data, about 1,800 lines with their tests and docs, and a hook in the loader, the executor and `ProjectionResult`). Dropped at your request after an evaluation of those trade-offs.
+- **Recovery.** The last commit that contains the feature is `897f18c`. The commits that built it, in order: `1b09360` (the ADR and the tail-read measurement), `2bcdc46` (the spike on where to write), `5a25373` (V9), `a8cbb20` (the store, the collector), `e945a55` (the load), `31b683c` (the executor), `dcea1d9` (`verify-snapshots`, V10), `8fb121d` (accepted), `683bda0` (the guide). Re-adding it means reverting the removal commit and resolving whatever changed since.
+- **What was removed.** `SnapshotStore`, the collector and flush, `loadWithSnapshot` and `.snapshot(...)`, `settledState` on `ProjectionResult`, `verifySnapshots`, `checkSnapshotEquivalence`, the in-memory store, the snapshot metrics, the executor hook, `SnapshotStoreLive` in `Crablet.layer`, the guide and the experiments E5e and the write spike.
+- **Migrations.** V9 and V10 stay in the history, and **V12 drops the table and the function** (idempotent). A database that applied V9/V10 and one that never did end up the same. If it is known that no database outside tests applied V9/V10, the three can be squashed.
+- **What stays.** The `all(...)` read horizon (decision 8; a transfer from a 100,000-event account 403 → 218 ms), `.ignores` and the model metadata (the change-impact report), `startTestDb({ migrations })`, the storage report, and the measurements below. E5e (the snapshot effect: 185 → 19 ms at 100,000 events, 1,094 → 26 ms at 500,000, in the realistic case) is the evidence that the feature worked; it was not the question.
 
 ## Context
 

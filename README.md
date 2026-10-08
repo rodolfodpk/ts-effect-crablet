@@ -199,6 +199,5 @@ concurrency (races, conflict retry) is tested against Postgres only.
 - [`examples/wallet-example-app`](./examples/wallet-example-app) - a complete application at full size: commands, views, an automation, an outbox and HTTP.
 - [`docs/dcb-guide.md`](./docs/dcb-guide.md) - what a dynamic consistency boundary is, through two runnable examples (a transfer between two accounts; course enrolment), with their tests.
 - [`docs/evolving-events.md`](./docs/evolving-events.md) - how to change an event without rewriting the log: compatible changes, new events, what happens when one cannot be read, and the checks (fixtures, `verify-events`, the change-impact report).
-- [`docs/snapshots.md`](./docs/snapshots.md) - keeping a long-lived entity fast: opt-in snapshots, what you have to do, how to test and operate them, and the measured effect.
 - [`docs/adr/`](./docs/adr/README.md) - the lasting design decisions and why they were made. Start with [ADR-0010](./docs/adr/0010-declarative-command-api.md).
 - [`NOTES.md`](./NOTES.md) - a running log of findings, gotchas and phase-by-phase status.

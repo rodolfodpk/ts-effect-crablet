@@ -27,7 +27,7 @@ describe("storageReport", () => {
   it("an empty log: every table is listed, there are no events, and no cost per event", async () => {
     const r = await run(storageReport());
     const names = r.tables.map((t) => t.table);
-    for (const expected of ["crablet_events", "crablet_event_tag_keys", "crablet_commands", "crablet_model_snapshots", "crablet_view_progress", "crablet_outbox_topic_progress"]) assert.ok(names.includes(expected), `${expected} in ${names}`);
+    for (const expected of ["crablet_events", "crablet_event_tag_keys", "crablet_commands", "crablet_view_progress", "crablet_outbox_topic_progress"]) assert.ok(names.includes(expected), `${expected} in ${names}`);
     assert.strictEqual(r.events, 0);
     assert.strictEqual(r.bytesPerEvent, null);
     assert.ok(formatStorageReport(r).includes("events: none"));

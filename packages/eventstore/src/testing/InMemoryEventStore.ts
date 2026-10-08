@@ -99,7 +99,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         }
         last = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
       }
-      return { state: state as never, settledState: state as never, logPosition: last, horizon };
+      return { state: state as never, logPosition: last, horizon };
     });
 
   const service: EventStoreService = {

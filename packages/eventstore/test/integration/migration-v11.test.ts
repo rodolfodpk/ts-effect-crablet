@@ -20,8 +20,9 @@ const appendOn = (c: Client, type: string, tags: ReadonlyArray<string>) =>
 const append = (type: string, tags: ReadonlyArray<string>) => appendOn(client, type, tags);
 
 before(async () => {
-  assert.ok(migrationFiles.at(-1) === V11, "V11 is the last migration (update this test when another is added after it)");
-  db = await startTestDb({ migrations: migrationFiles.slice(0, -1) });
+  assert.ok(migrationFiles.includes(V11), "V11 is a migration");
+  // the schema as it was before V11 (a later migration is not applied: this test upgrades from there)
+  db = await startTestDb({ migrations: migrationFiles.slice(0, migrationFiles.indexOf(V11)) });
   client = await connect();
 }, { timeout: 60_000 });
 after(async () => { await client.end(); await db.stop(); });

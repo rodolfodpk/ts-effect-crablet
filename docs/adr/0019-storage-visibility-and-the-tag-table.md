@@ -110,7 +110,7 @@ Nothing here deletes events: the log is the source of truth, and **retention is 
 
 ## Consequences
 
-- Operators can see where the bytes are and how fast they grow (the report and the gauges); the snapshot table and the audit table are included.
+- Operators can see where the bytes are and how fast they grow (the report and the gauges); the audit table and the other `crablet_*` tables are included.
 - The log costs about 1,200 bytes per event for events of this shape (down from 1,650) and appends run about 2.7 times faster on a load; the pollers' reads are unchanged, rare keys included.
 - Upgrading a database means a pause of writers for the length of a full scan of the events table; reads continue.
 - Resetting a log means truncating `crablet_events` and `crablet_event_tag_keys` together.

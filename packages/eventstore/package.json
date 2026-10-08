@@ -6,7 +6,6 @@
   "exports": {
     ".": "./src/EventStore.ts",
     "./CommandAuditStore": "./src/CommandAuditStore.ts",
-    "./SnapshotStore": "./src/SnapshotStore.ts",
     "./Storage": "./src/Storage.ts",
     "./Tag": "./src/Tag.ts",
     "./Query": "./src/Query.ts",
@@ -22,8 +21,7 @@
     "./Leader": "./src/Leader.ts",
     "./NotifyPayload": "./src/NotifyPayload.ts",
     "./spec/Spec": "./src/spec/Spec.ts",
-    "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts",
-    "./testing/InMemorySnapshotStore": "./src/testing/InMemorySnapshotStore.ts"
+    "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "dependencies": {
     "effect": "4.0.0",

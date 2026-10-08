@@ -1,4 +1,4 @@
-// The guides (docs/evolving-events.md, docs/snapshots.md) cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
+// The guides (docs/evolving-events.md) cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
 // file's `// #region name` ... `// #endregion name` (compared with the common indentation removed), and the files, links and scripts the text mentions must exist.
 // (The tutorial has the same kind of test: examples/course-enrolment-app/test/tutorial-sync.test.ts.)
 import { describe, expect, test } from "bun:test";
@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dir, "../../..");
-const guides = ["docs/evolving-events.md", "docs/snapshots.md"];
+const guides = ["docs/evolving-events.md"];
 
 const dedent = (text: string): string => {
   const lines = text.replace(/\s+$/u, "").split("\n").map((l) => l.replace(/\s+$/u, ""));

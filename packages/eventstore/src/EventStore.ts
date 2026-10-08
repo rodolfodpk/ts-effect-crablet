@@ -53,10 +53,6 @@ export interface ProjectionResult<T> {
   // condition using it can never skip one. In Postgres: `(xmin of a snapshot taken before the read, 0)`: a read sees every event whose
   // transaction id is below its xmin. A model over several entities uses the earliest of its members' horizons (ADR-0018, decision 8).
   readonly horizon: LogPosition;
-  // The state as of `logPosition` only: events the read saw but that were not settled yet are folded into `state` (a command decides on them, and the
-  // append condition then reports them as a conflict), but they sit above the cursor, so a snapshot of `state` taken at `logPosition` would count them
-  // again on the next load. A snapshot stores this one.
-  readonly settledState: T;
 }
 
 // PATTERN PRIMER - `Effect.Effect<A, E, R>`, the type every function in this codebase returns
@@ -173,7 +169,6 @@ export const EventStoreLive = Layer.effect(
         const rows = yield* Sql.queryEvents(sql, query, after);
 
         let state = projectors[0]!.initialState;
-        let settledState = state;
         let lastLogPosition = after;
 
         for (const row of rows) {
@@ -195,11 +190,10 @@ export const EventStoreLive = Layer.effect(
           // cursor, so the append condition reports it as a conflict and the command is retried with it settled.
           if (row.settled !== false) {
             lastLogPosition = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
-            settledState = state;
           }
         }
 
-        return { state: state as T, settledState: settledState as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin } };
+        return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin } };
       });
 
     const exists = (query: Query): Effect.Effect<boolean, SqlError> =>

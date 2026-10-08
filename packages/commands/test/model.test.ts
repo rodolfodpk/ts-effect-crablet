@@ -159,12 +159,11 @@ describe("ignores and the metadata a model exposes (ADR-0017, DCB rule A)", () =
     expect([...m.bindings!].sort()).toEqual(["account_id", "from_id", "to_id"]);
   });
 
-  test("ignores and snapshot keep what was declared before them, whatever the order", () => {
-    const m = defineModel({ by: "account_id", initial: () => ({ n: 0 }) }).ignores(Closed).on(Deposited, (s) => s).snapshot({ name: "x", version: 1, schema: Schema.Struct({ n: Schema.Number }) });
+  test("ignores keeps what was declared before and after it, whatever the order", () => {
+    const m = defineModel({ by: "account_id", initial: () => ({ n: 0 }) }).ignores(Closed).on(Deposited, (s) => s).ignores(Unrelated);
     const instance = m.of({ id: "a" });
-    expect(instance.ignores).toEqual(["Closed"]);
+    expect(instance.ignores).toEqual(["Closed", "Unrelated"]);
     expect(instance.handles).toEqual(["Deposited"]);
-    expect(instance.snapshot?.name).toBe("x");
   });
 });
 

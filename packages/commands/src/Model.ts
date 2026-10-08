@@ -1,5 +1,4 @@
-import { Effect, Metric, Option } from "effect";
-import * as Schema from "effect/Schema";
+import { Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { EventStoreService, StateProjector, StoredEvent } from "@crablet/eventstore";
@@ -7,8 +6,6 @@ import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
-import { SnapshotCollector, SnapshotStore, canonicalQuery } from "@crablet/eventstore/SnapshotStore";
-import * as SnapshotMetrics from "@crablet/metrics-otel/SnapshotMetrics";
 
 // A model answers two questions about one entity (or a group of them):
 //
@@ -53,8 +50,6 @@ export interface Loaded<S> {
 
 export interface ModelInstance<S> {
   readonly query: Query.Query;
-  // Present when the model declared `.snapshot(...)`: what verify-snapshots needs to check its rows (name, version, state schema).
-  readonly snapshot?: { readonly name: string; readonly version: number; readonly schema: Schema.Schema<any> };
   // What the model accounts for, as data (for the change-impact report, DCB rule A: ModelImpact.ts): the event types it handles, the ones it declared with `.ignores(...)`,
   // and the tag keys it binds by.
   readonly handles?: ReadonlyArray<string>;
@@ -69,19 +64,6 @@ interface OnEntry<S> {
   readonly lifecycle: boolean;
   readonly by: ReadonlyArray<string> | null;
   readonly apply: (state: S, raw: unknown, ctx: HandlerCtx) => S;
-}
-
-// Opt-in snapshots of a model's state (ADR-0018): a load reads the stored state and only the events after its cursor, instead of the whole boundary.
-export interface SnapshotOptions<S> {
-  // Identifies the model's snapshots (1-64 characters). With the boundary query (so: the entity) and `version`, it is the key.
-  readonly name: string;
-  // Bump it when the fold changes what it does with events it already handled: the old snapshots are then never read. (A changed set of handled events
-  // changes the boundary query, so it changes the key by itself.)
-  readonly version: number;
-  // Describes the state. It must round-trip through JSON (no Map, Set, Date or bigint in the state). A stored state that no longer decodes is ignored.
-  readonly schema: Schema.Schema<S>;
-  // Write a snapshot after a load that folded at least this many events (default 1,000).
-  readonly every?: number;
 }
 
 export interface ModelBuilder<S, Scope extends object> {
@@ -99,8 +81,6 @@ export interface ModelBuilder<S, Scope extends object> {
   // Declare event types that carry this model's binding tags but are deliberately NOT part of its decision. Changes nothing at runtime (the boundary and the fold
   // are the same); it records the intent, which the change-impact report (ModelImpact.ts, ADR-0017 rule A) reads to tell "forgotten" from "not relevant".
   ignores(...events: ReadonlyArray<EventLike>): ModelBuilder<S, Scope>;
-  // Opt this model in to snapshots. Chain it last: the state type is already fixed by `initial`.
-  snapshot(options: SnapshotOptions<S>): ModelBuilder<S, Scope>;
   of(args: { readonly id: string } & Scope): ModelInstance<S>;
   // Just the lifecycle events' query: the natural "guard" for a command that is otherwise
   // commutative (see withLifecycleGuard in CommandDecision.ts).
@@ -114,7 +94,7 @@ export const defineModel = <S, Scope extends object = {}>(def: {
   // Extra tags that narrow the non-lifecycle events to a slice (e.g. a year/month period).
   readonly scope?: (scope: Scope) => Record<string, TagValue>;
 }): ModelBuilder<S, Scope> => {
-  const build = (entries: ReadonlyArray<OnEntry<S>>, snap: SnapshotOptions<S> | null, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope> => {
+  const build = (entries: ReadonlyArray<OnEntry<S>>, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope> => {
     // Group entries into query items by (lifecycle?, binding tag): events of several types that are
     // bound the same way share one item (type any-of, tags all-of).
     const queryFor = (id: string, scopeTags: ReadonlyArray<Tag.Tag>, lifecycleOnly: boolean): Query.Query => {
@@ -152,7 +132,6 @@ export const defineModel = <S, Scope extends object = {}>(def: {
             apply: (state, raw, ctx) => apply(state, event.decode(raw), ctx)
           }
         ],
-        snap,
         ignored
       );
 
@@ -160,9 +139,8 @@ export const defineModel = <S, Scope extends object = {}>(def: {
       on: (event, apply, opts) => add(event, apply, opts),
       lifecycle: (event, apply) => add(event, apply, { lifecycle: true }),
       lifecycleQuery: (id) => queryFor(id, [], true),
-      snapshot: (options) => build(entries, options, ignored),
       // a declaration only: the boundary and the fold are untouched
-      ignores: (...events) => build(entries, snap, [...new Set([...ignored, ...events.map((e) => e.type)])]),
+      ignores: (...events) => build(entries, [...new Set([...ignored, ...events.map((e) => e.type)])]),
       of: (args) => {
         const scopeTags = Object.entries(def.scope?.(args as never) ?? {}).map(([k, v]) => Tag.of(k, String(v)));
         const query = queryFor(args.id, scopeTags, false);
@@ -181,77 +159,16 @@ export const defineModel = <S, Scope extends object = {}>(def: {
         });
         return {
           query,
-          ...(snap === null ? {} : { snapshot: { name: snap.name, version: snap.version, schema: snap.schema } }),
           handles: eventTypes,
           ignores: ignored,
           bindings: [...new Set([def.by, ...entries.flatMap((e) => e.by ?? [])])],
-          load: (eventStore) =>
-            snap === null
-              ? Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), loaded)
-              : loadWithSnapshot(eventStore, query, projector, snap, def.initial, args)
+          load: (eventStore) => Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), loaded)
         };
       }
     };
   };
-  return build([], null);
+  return build([]);
 };
-
-const stateFromSnapshot = <S>(schema: Schema.Schema<S>, raw: unknown): { readonly state: S } | null => {
-  try {
-    return { state: Schema.decodeUnknownSync(schema as never)(raw) as S };
-  } catch {
-    return null;
-  }
-};
-
-// Load = the stored snapshot (if usable) + the events after its cursor. Everything about the snapshot FAILS OPEN to the full fold, except an error from the
-// database itself (a missing table, a dead connection), which is reported like any other: a model that opted in on a database without migration V9 is a
-// misconfiguration to see, not to paper over. After the load, a snapshot is RECORDED for the executor to write after the transaction, when the load folded
-// at least `every` events and the cursor moved.
-const loadWithSnapshot = <S>(
-  eventStore: EventStoreService,
-  query: Query.Query,
-  projector: StateProjector<S>,
-  snap: SnapshotOptions<S>,
-  initial: () => S,
-  entity: object
-): Effect.Effect<Loaded<S>, SqlError | EventDecodingError> =>
-  Effect.gen(function* () {
-    const count = (outcome: string) => Metric.update(Metric.withAttributes(SnapshotMetrics.loads, { model: snap.name, outcome }), 1);
-    const store = yield* Effect.serviceOption(SnapshotStore);
-    const key = { name: snap.name, version: snap.version, canonical: canonicalQuery(query) };
-    const stored = Option.isSome(store) ? yield* store.value.get(key) : null;
-    const start = stored === null ? null : stateFromSnapshot(snap.schema, stored.state);
-    const outcome = Option.isNone(store) ? "unavailable" : stored === null ? "miss" : start === null ? "invalid" : "hit";
-    yield* count(outcome);
-
-    const after = start === null ? LogPositionNS.zero() : stored!.cursor;
-    let folded = 0;
-    const counting: StateProjector<S> = {
-      eventTypes: projector.eventTypes,
-      initialState: start === null ? initial() : start.state,
-      transition: (state, event) => {
-        folded++;
-        return projector.transition(state, event);
-      }
-    };
-    const r = yield* eventStore.project(query, after, [counting]);
-    yield* Metric.update(Metric.withAttributes(SnapshotMetrics.foldedEvents, { model: snap.name }), folded);
-
-    const advanced = r.logPosition.position !== after.position || r.logPosition.transactionId !== after.transactionId;
-    if (Option.isSome(store) && folded >= (snap.every ?? 1_000) && advanced && r.logPosition.position > 0n && r.logPosition.transactionId !== null) {
-      const collector = yield* Effect.serviceOption(SnapshotCollector);
-      if (Option.isSome(collector)) {
-        try {
-          const encoded = (Schema.encodeSync(snap.schema as never) as unknown as (state: S) => unknown)(r.settledState);
-          yield* collector.value.add({ ...key, cursor: r.logPosition, state: encoded, entity });
-        } catch (error) {
-          yield* Effect.logWarning(`snapshot ${snap.name}: the state does not encode with its schema, no snapshot recorded: ${String(error)}`);
-        }
-      }
-    }
-    return { state: r.state, logPosition: r.logPosition, horizon: r.horizon };
-  });
 
 // A model over SEVERAL entities at once (e.g. both wallets of a transfer): one boundary - the union
 // of the members' queries - one cursor, and each member's own state.
