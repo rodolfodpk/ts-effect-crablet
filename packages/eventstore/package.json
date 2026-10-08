@@ -7,6 +7,7 @@
     ".": "./src/EventStore.ts",
     "./CommandAuditStore": "./src/CommandAuditStore.ts",
     "./SnapshotStore": "./src/SnapshotStore.ts",
+    "./Storage": "./src/Storage.ts",
     "./Tag": "./src/Tag.ts",
     "./Query": "./src/Query.ts",
     "./LogPosition": "./src/LogPosition.ts",

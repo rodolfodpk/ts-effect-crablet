@@ -12,7 +12,8 @@
     "./OutboxMetrics": "./src/OutboxMetrics.ts",
     "./AutomationMetrics": "./src/AutomationMetrics.ts",
     "./ReadConsistencyMetrics": "./src/ReadConsistencyMetrics.ts",
-    "./SnapshotMetrics": "./src/SnapshotMetrics.ts"
+    "./SnapshotMetrics": "./src/SnapshotMetrics.ts",
+    "./StorageMetrics": "./src/StorageMetrics.ts"
   },
   "dependencies": {
     "effect": "4.0.0"
