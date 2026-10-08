@@ -13,6 +13,7 @@ import {
 // (idempotent per wallet_id, so a redelivered WalletOpened just re-triggers a no-op notification send,
 // not a duplicate). The command is bound directly here, not exposed via commands-http (see
 // WalletApp.ts's own note on why).
+// #region automation
 export const walletOpenedAutomation: AutomationHandler<SendWelcomeNotificationCommand, EventDecodingError, never> = automationHandlerOf(
   "wallet-opened-welcome-notification",
   SendWelcomeNotification,
@@ -21,3 +22,4 @@ export const walletOpenedAutomation: AutomationHandler<SendWelcomeNotificationCo
     Effect.map(Wallet.WalletOpened.decodeStored(event), (data) => [executeCommand({ walletId: data.walletId, owner: data.owner })]),
   { eventTypes: new Set([WalletEvents.WALLET_OPENED]) }
 );
+// #endregion automation

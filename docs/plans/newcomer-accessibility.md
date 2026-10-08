@@ -87,7 +87,9 @@ Done when: a newcomer can find the "start here" four without reading the others.
 
 Done when: no plan reads as open work unless it is.
 
-### 7. Task guides for what people ask first (medium, optional order)
+### 7. Task guides for what people ask first (medium, optional order) - DONE (2026-10-07)
+
+Built in `docs/guides/`: add a view, add an automation, expose a command over HTTP, test a command, run it in production, monitor it, plus an index. All six were written (the plan asked for two first; the owner asked for step 7 whole). Code blocks come from `// #region` markers added to the example sources and are checked by `guides-sync.test.ts`. The monitoring guide says the repository ships no metrics exporter.
 
 Short "how do I..." pages, each from tested code: add a view; add an automation; add an HTTP endpoint for a command; run against Postgres in production (migrations, pool, the poller layers); monitor it (the storage gauges, the leader gauges); test a command. Most content exists, spread over the tutorial, the wallet app and the reference; the work is to gather it and link it from `docs/README.md`.
 

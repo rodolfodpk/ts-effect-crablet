@@ -12,6 +12,6 @@ something is the way it is and what was measured; you do not need them to use th
 | [`read-consistency.md`](./read-consistency.md) | Reads that wait for a write's marker ([ADR-0015](../adr/0015-read-consistency-by-marker.md)) | Done, phases 0-7, except phase 1b (a marker on idempotent repeats), which was not built (a client that retries after a lost response reads with `consistentWith=latest`) |
 | [`shared-listener.md`](./shared-listener.md) | One LISTEN per process for view progress ([ADR-0016](../adr/0016-one-listen-per-process-for-view-progress.md)) | Done (phases 1-4) |
 | [`reliability-and-scale-diagnostic.md`](./reliability-and-scale-diagnostic.md) | What breaks at scale and under failure, measured, then fixed (six steps) | Done; snapshots were built and then dropped; retention not decided |
-| [`newcomer-accessibility.md`](./newcomer-accessibility.md) | Make the repository easy to enter | **In progress** (steps 1-6 done; 7, 8, 9 open) - the only open plan |
+| [`newcomer-accessibility.md`](./newcomer-accessibility.md) | Make the repository easy to enter | **In progress** (steps 1-7 done; 8, 9 open) - the only open plan |
 
 Several plans mention `?waitFor=<view>`, which [ADR-0015](../adr/0015-read-consistency-by-marker.md) replaced with markers; those plans keep it as it was.

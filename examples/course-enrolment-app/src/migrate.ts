@@ -23,8 +23,10 @@ export async function migrate(connInfo: DbConnInfo): Promise<void> {
   });
   await client.connect();
   try {
+    // #region apply-migrations
     for (const file of coreMigrationFiles) await client.query(readFileSync(path.join(coreSqlDir, file), "utf-8"));
     for (const file of appMigrationFiles) await client.query(readFileSync(path.join(appMigrationDir, file), "utf-8"));
+    // #endregion apply-migrations
   } finally {
     await client.end();
   }

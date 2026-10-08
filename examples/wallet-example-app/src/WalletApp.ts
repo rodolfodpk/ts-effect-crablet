@@ -94,12 +94,14 @@ export interface BackgroundProcessors {
   readonly outboxHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
 }
 
+// #region stop-processors
 export const stopBackgroundProcessors = (processors: BackgroundProcessors): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* processors.viewsHandle.service.stop;
     yield* processors.automationsHandle.service.stop;
     yield* processors.outboxHandle.service.stop;
   });
+// #endregion stop-processors
 
 // Builds and starts the 3 background processors (views/automations/outbox). Building/providing
 // their Layers alone would NOT process any events - each EventProcessorHandle's own `.service.start`
@@ -116,6 +118,7 @@ export const startBackgroundProcessors = (
   SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor
 > =>
   Effect.gen(function* () {
+    // #region views-processor
     const viewsHandle = yield* makeViewsProcessor({
       config: defaultViewsConfig,
       projectors: [
@@ -128,13 +131,16 @@ export const startBackgroundProcessors = (
       instanceId
     });
     yield* viewsHandle.service.start;
+    // #endregion views-processor
 
+    // #region automations-processor
     const automationsHandle = yield* makeAutomationsProcessor({
       config: defaultAutomationsConfig,
       handlers: [walletOpenedAutomation],
       instanceId
     });
     yield* automationsHandle.service.start;
+    // #endregion automations-processor
 
     const outboxHandle = yield* makeOutboxProcessor({
       config: defaultOutboxConfig,

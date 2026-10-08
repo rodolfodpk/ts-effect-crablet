@@ -1,12 +1,12 @@
-// The guides (docs/evolving-events.md) cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
+// The guides (docs/evolving-events.md and docs/guides/*.md) cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
 // file's `// #region name` ... `// #endregion name` (compared with the common indentation removed), and the files, links and scripts the text mentions must exist.
 // (The tutorial has the same kind of test: examples/course-enrolment-app/test/tutorial-sync.test.ts.)
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dir, "../../..");
-const guides = ["docs/evolving-events.md"];
+const guides = ["docs/evolving-events.md", ...readdirSync(path.join(root, "docs/guides")).sort().map((f) => `docs/guides/${f}`)];
 
 const dedent = (text: string): string => {
   const lines = text.replace(/\s+$/u, "").split("\n").map((l) => l.replace(/\s+$/u, ""));
@@ -28,7 +28,9 @@ for (const guide of guides) {
 
   describe(`${guide}: code blocks equal the files they come from`, () => {
     test("there are tagged blocks (so removing the tags cannot make this test pass vacuously)", () => {
-      expect(blocks.length).toBeGreaterThanOrEqual(3);
+      // the index of the task guides has no code of its own
+      if (guide.endsWith("guides/README.md")) return expect(blocks.length).toBe(0);
+      expect(blocks.length).toBeGreaterThanOrEqual(guide.endsWith("evolving-events.md") ? 3 : 1);
     });
     for (const block of blocks) {
       test(`${block.file}#${block.name}`, () => {
@@ -46,7 +48,7 @@ for (const guide of guides) {
 
     test("every repository path written in backticks exists (patterns with * are skipped)", () => {
       const paths = [...doc.matchAll(/`((?:packages|examples|docs)\/[^`\s]+)`/gu)].map((m) => m[1]!.replace(/[.,;:]+$/u, "")).filter((p) => !p.includes("*"));
-      expect(paths.length).toBeGreaterThan(0);
+      if (guide === "docs/evolving-events.md") expect(paths.length).toBeGreaterThan(0);
       for (const p of paths) expect(existsSync(path.join(root, p)), `missing: ${p}`).toBe(true);
     });
   });

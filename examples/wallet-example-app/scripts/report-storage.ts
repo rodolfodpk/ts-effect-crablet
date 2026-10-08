@@ -17,6 +17,8 @@ const layer = Crablet.layer({
   password: Redacted.make(process.env["WALLET_DB_PASSWORD"] ?? "postgres")
 });
 
+// #region report
 const report = await Effect.runPromise(Effect.provide(storageReport({ exact: process.argv.includes("--exact") }), layer) as Effect.Effect<StorageReport, never, never>);
 console.log(formatStorageReport(report));
+// #endregion report
 process.exit(0);

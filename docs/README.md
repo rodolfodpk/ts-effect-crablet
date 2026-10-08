@@ -17,6 +17,7 @@ Where to start depends on what you want. If you are new, follow the path below i
 | Understand the idea | [DCB guide](./dcb-guide.md), [the seat booking as an Event Model](./event-model-seat-booking.md) |
 | Build a small service step by step | [Tutorial](./tutorial/README.md) (in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI) |
 | See a complete application | [`examples/wallet-example-app`](../examples/wallet-example-app) |
+| Do a specific task (add a view, add an automation, expose a command, test, run, monitor) | [Task guides](./guides/README.md) |
 | Change an event without breaking the log | [Evolving events](./evolving-events.md) |
 | Know what a package or example is for | the `README.md` in each folder under [`packages/`](../packages) and [`examples/`](../examples), also linked from the [reference](./reference.md#packages) |
 | Look up command options, delivery guarantees, operations, packages, build and test | [Reference](./reference.md) |
@@ -29,7 +30,7 @@ Where to start depends on what you want. If you are new, follow the path below i
 
 | Kind | Where | Meant to be |
 |---|---|---|
-| Teaching | `tutorial/`, `dcb-guide.md`, `evolving-events.md` | Read in order or by task. Their code comes from tested files, so it runs. |
+| Teaching | `tutorial/`, `guides/`, `dcb-guide.md`, `evolving-events.md` | Read in order or by task. Their code comes from tested files, so it runs. |
 | Reference | `reference.md`, `api/`, `glossary.md` | Looked up. |
 | Decisions | `adr/` | The lasting "why". One file per decision; read the ones you need. |
 | History | `plans/`, [`NOTES.md`](../NOTES.md) | Records of how the work went, with the measurements. Not a roadmap, and not needed to use the project. |

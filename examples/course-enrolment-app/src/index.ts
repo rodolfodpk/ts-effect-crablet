@@ -18,6 +18,7 @@ const docsUi = process.env["COURSES_DOCS"];
 const viewDelayMs = Number(process.env["COURSES_VIEW_DELAY_MS"] ?? 0);
 const corsOrigins = (process.env["COURSES_CORS_ORIGINS"] ?? "").split(",").map((o) => o.trim()).filter((o) => o !== "");
 
+// #region crablet-layer
 const appLayer = Crablet.layer({
   host: conn.host,
   port: conn.port,
@@ -25,6 +26,7 @@ const appLayer = Crablet.layer({
   username: conn.username,
   password: Redacted.make(conn.password)
 });
+// #endregion crablet-layer
 
 // gracefulShutdownTimeout: a live-update connection stays open, and shutting down waits for open responses up to this long (default 20 s).
 const server = HttpRouter.serve(
@@ -34,6 +36,7 @@ const server = HttpRouter.serve(
   })
 ).pipe(Layer.provide(NodeHttpServer.layer(createServer, { port, gracefulShutdownTimeout: "2 seconds" })));
 
+// #region launch
 const program = Effect.gen(function* () {
   yield* startCourseViews(undefined, { viewDelayMs });
   yield* Effect.log(`course-enrolment-app listening on :${port}`);
@@ -44,3 +47,4 @@ Effect.runPromise(Effect.provide(program, appLayer) as Effect.Effect<void, never
   console.error("FATAL", error);
   process.exit(1);
 });
+// #endregion launch

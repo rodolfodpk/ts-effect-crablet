@@ -40,6 +40,7 @@ describe("OpenWallet", () => {
 });
 
 describe("Deposit", () => {
+  // #region scenarios
   test("lazily opens this month's statement, then records the deposit on it", async () => {
     const r = await given(opened("w1", 100)).when(Deposit, dep("w1", "d1", 25));
     expect(r.outcome).toBe("created");
@@ -72,6 +73,7 @@ describe("Deposit", () => {
     expect(repeat.outcome).toBe("idempotent");
     expect(repeat.events).toEqual([]);
   });
+  // #endregion scenarios
 
   test("a deposit must be positive", async () => {
     expect((await given(opened("w1", 0)).when(Deposit, dep("w1", "d1", 0))).error).toBeInstanceOf(InvalidInput);

@@ -12,9 +12,11 @@ import { COURSE_SEATS_VIEW } from "../CourseApi.ts";
 export { COURSE_SEATS_VIEW };
 
 // What the view listens to: the two event types that change a course's seats.
+// #region subscription
 export const courseSeatsViewSubscription: ViewSubscription = viewSubscriptionOf(COURSE_SEATS_VIEW, {
   eventTypes: new Set([CourseDefined.type, StudentSubscribed.type])
 });
+// #endregion subscription
 
 // #region projector
 // Seats per course. Each event is applied once even if it is delivered again: the row remembers the position of the

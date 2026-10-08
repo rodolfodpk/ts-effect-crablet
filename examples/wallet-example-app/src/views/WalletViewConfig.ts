@@ -18,10 +18,12 @@ export const walletBalanceViewSubscription: ViewSubscription = viewSubscriptionO
   anyOfTags: SHARED_ANY_OF_TAGS
 });
 
+// #region subscription
 export const walletTransactionViewSubscription: ViewSubscription = viewSubscriptionOf("wallet-transaction-view", {
   eventTypes: new Set([WalletEvents.DEPOSIT_MADE, WalletEvents.WITHDRAWAL_MADE, WalletEvents.MONEY_TRANSFERRED]),
   anyOfTags: SHARED_ANY_OF_TAGS
 });
+// #endregion subscription
 
 export const walletSummaryViewSubscription: ViewSubscription = viewSubscriptionOf("wallet-summary-view", {
   eventTypes: new Set([

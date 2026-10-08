@@ -64,6 +64,7 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));
 };
 
+// #region views-config
 const viewsConfig: ViewsConfig = {
   enabled: true,
   pollingIntervalMs: 1000,
@@ -75,6 +76,7 @@ const viewsConfig: ViewsConfig = {
   leaderElectionRetryIntervalMs: 5_000,
   maxErrors: 10
 };
+// #endregion views-config
 
 // Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback).
 // Building its Layer alone would NOT process anything: `.service.start` forks the long-lived fibers that do the work, and
