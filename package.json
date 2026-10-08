@@ -16,6 +16,7 @@
     "test:unit:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage/unit packages/*/test/*.test.ts examples/*/test/*.test.ts examples/*/tutorial/*.test.ts scripts/*.test.ts",
     "test:integration": "node --test --test-concurrency=4 \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
     "test:integration:coverage": "mkdir -p coverage/integration && node --test --test-concurrency=4 --experimental-test-coverage --test-coverage-include=\"packages/*/src/**/*.ts\" --test-reporter=lcov --test-reporter-destination=coverage/integration/lcov.info \"packages/*/test/integration/*.test.ts\" \"examples/*/test/integration/*.test.ts\"",
+    "dashboard:build": "bun scripts/build-dashboard.ts",
     "coverage:merge": "bun scripts/merge-coverage.ts --unit coverage/unit/lcov.info --integration coverage/integration/lcov.info --out coverage/lcov.info",
     "coverage:check": "bun scripts/coverage-gate.ts",
     "coverage:baseline": "bun scripts/coverage-gate.ts --update",

@@ -72,13 +72,20 @@ Tests: unit (the sampler, the gauges, a failing round, the service's reading of 
 
 Not covered: the lag in seconds on a very large table (measure in step 3 with the load script), and the sampler against a real views processor end to end (step 3).
 
-### 2. The dashboard as code
+### 2. The dashboard as code - done (2026-10-08)
 
-- `ops/grafana/crablet-dashboard.json`, provisioned, with the four rows above. Built against Prometheus metric names (Prometheus is the common OTel destination; the OTel names `crablet.x.y` become `crablet_x_y`). Say in the file's description that other backends need the query language swapped.
-- `ops/grafana/alerts.yaml`: processor failed; no leader for 1 min; lag above N for 5 min; outbox failures rising; storage growth. Thresholds as variables with documented defaults.
-- A test that keeps it honest, in the spirit of `guides-sync.test.ts`: every `crablet_*` metric a panel queries exists in `metrics-otel` (so a rename breaks CI instead of a panel). The mapping is more than dots to underscores. Measured on the real export: a counter keeps its name (`crablet.poller.events_fetched` became `crablet_poller_events_fetched`, no `_total`), a gauge gained a unit suffix (`crablet.poller.backoff_active` became `crablet_poller_backoff_active_ratio`), and the series carry `job` and `service_name` labels from the resource. Timers (histograms) are not yet measured. The test therefore applies mapping rules taken from the spike, not from assumptions, and the dashboard queries use the measured names (including the gauge suffix, so `crablet_poller_leadership_ratio` is expected, to be confirmed), and the JSON parses and has unique panel ids.
+- `ops/grafana/crablet-dashboard.json`: 31 panels in five rows (healthy, keeping up, failing, the write side, storage), with `Data source`, `Processor` and `View` variables and a leader-change annotation. **Generated** by `scripts/build-dashboard.ts` (`bun run dashboard:build`), so panel ids and grid positions are not edited by hand. The `Instance` variable the plan listed is not there: every instance reports the same values and the queries take the `max`.
+- `ops/grafana/alerts.yaml`: six rules (a processor FAILED, a processor with no leader, a consumer behind more than 300 s for 5 min, handler failures, undecodable stored events, bytes per event above 3000). Thresholds are constants in the file: Grafana's rule files take no variables.
+- `scripts/dashboard.test.ts` (in `test:unit`): the committed JSON equals the generator's output; panel ids and titles are unique and none overlaps; **every `crablet_*` name in a panel, variable, annotation or alert exists in `metrics-otel` under the Prometheus name it arrives with**, derived from each metric's `id` and `type`; every metric has a panel or alert or an entry in `NO_PANEL` with a reason (two do: the backoff's internal empty-poll count, and the per-event-type append count, an unbounded label). Three deliberate breaks (a renamed metric, a hand-edited JSON, a wrong name in an alert) each failed it.
+- `ops/grafana/README.md`: how to import or provision.
 
-Done when: the test passes and a dashboard imported into a clean Grafana renders against live data from step 3.
+Measured, not assumed: all 39 metrics were exported by the Effect exporter to a `grafana/otel-lgtm` container and their names read back from Prometheus. Counters keep their name (no `_total`), gauges gain `_ratio`, timers become `<name>_milliseconds_bucket|count|sum`. The dashboard and the alert file were then mounted into a fresh container: both loaded, all 42 panel queries returned data through Grafana's query API, and the six rules evaluated with health `ok` (the two the spike's data should trip, undecodable events and handler failures, fired and went pending).
+
+What this step did not do:
+
+- **The last error text.** The plan wanted a table of each processor's last error. A metric cannot carry free text, so it is not on the dashboard; it comes from the progress tables, so it belongs to the admin API (step 4) or a Postgres data source an adopter adds. Logs, which do carry the error, are a Loki query away in the lgtm stack.
+- **Live data from the wallet example.** The data came from a script that updated every metric, not from a running application; the wallet is wired in step 3.
+- **Another Grafana or Prometheus version.** Only the lgtm image was tried.
 
 ### 3. A local stack to see it
 

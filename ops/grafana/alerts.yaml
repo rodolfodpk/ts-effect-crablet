@@ -1,0 +1,131 @@
+# Alert rules for a Crablet application, in Grafana's file provisioning format (Alerting > Alert rules). The queries are PromQL over the Prometheus names of the
+# OTLP metrics, like the dashboard. Thresholds are defaults: edit them here (Grafana's rule files take no variables). The datasource uid `prometheus` is the one
+# the grafana/otel-lgtm image uses; change `datasourceUid` for another Grafana.
+#
+# scripts/dashboard.test.ts checks that every metric named below exists in @crablet/metrics-otel.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: crablet
+    folder: Crablet
+    interval: 30s
+    rules:
+      - uid: crablet-processor-failed
+        title: A processor has FAILED
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.processor }} is FAILED: it stopped after too many errors."
+          runbook: docs/guides/run-in-production.md
+        labels: { severity: critical }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: 'max by (processor) (crablet_poller_status_ratio{status="FAILED"}) == 1' }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
+
+      - uid: crablet-processor-no-leader
+        title: A processor has no leader
+        condition: C
+        for: 2m
+        # A processor that no instance reports at all is the same problem as one nobody leads: nothing is processing it.
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: "No instance leads {{ $labels.processor }}, or nothing is reporting."
+          description: "A leader that crashed never reports 0; its series goes stale after about five minutes, so allow for that delay."
+          runbook: docs/guides/run-in-production.md
+        labels: { severity: critical }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: "sum by (processor) (crablet_poller_leadership_ratio)" }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: lt, params: [1] } }] }
+
+      - uid: crablet-consumer-behind
+        title: A consumer is behind
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.processor }} has had events waiting for more than five minutes."
+          description: "Lag in seconds is the age of the first event waiting for the processor. Edit the threshold (300 s) for a consumer that may legitimately lag."
+        labels: { severity: warning }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: "max by (processor) (crablet_poller_lag_seconds_ratio)" }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [300] } }] }
+
+      - uid: crablet-handler-failures
+        title: Handlers are failing
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "Projections, automations or outbox publishers failed in the last five minutes."
+          description: "The dashboard's failure panels say which. Failures retry until the processor reaches its error limit and becomes FAILED."
+        labels: { severity: warning }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model:
+              refId: A
+              instant: true
+              expr: "(sum(increase(crablet_view_project_failures[5m])) or vector(0)) + (sum(increase(crablet_automation_decide_failures[5m])) or vector(0)) + (sum(increase(crablet_outbox_publish_failures[5m])) or vector(0))"
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
+
+      - uid: crablet-undecodable-events
+        title: Stored events cannot be read
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "A stored event could not be decoded by the current definitions."
+          description: "An unsafe event change (rename, retype, remove, or a changed meaning). See docs/evolving-events.md."
+          runbook: docs/evolving-events.md
+        labels: { severity: critical }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: "sum(increase(crablet_eventstore_decoding_failures[5m])) or vector(0)" }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
+
+      - uid: crablet-storage-per-event
+        title: Events cost more storage than expected
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "Bytes per event are above 3000 (about 1200 at the time of writing)."
+          description: "The events table plus the tag table with their indexes, per event. Nothing deletes events, so growth is the thing to plan for. See ADR-0019."
+        labels: { severity: warning }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: "max(crablet_storage_bytes_per_event_ratio)" }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [3000] } }] }
