@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import * as StorageMetrics from "@crablet/metrics-otel/StorageMetrics";
 
-// Storage visibility (docs/adr/0019-storage-visibility-and-retention.md): how much space each `crablet_*` table takes, split into heap, indexes and TOAST, with a
+// Storage visibility (docs/adr/0019-storage-visibility-and-the-tag-table.md): how much space each `crablet_*` table takes, split into heap, indexes and TOAST, with a
 // row estimate, read from the catalog. Cheap (no table scan) and read-only. The numbers say where the bytes go; they do not decide anything.
 //
 //   const report = yield* storageReport();

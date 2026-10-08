@@ -57,7 +57,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | [`packages/db-migrations`](../packages/db-migrations/README.md) | The SQL migrations V1-V12 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
 | [`packages/test-support`](../packages/test-support/README.md) | A throwaway Postgres (Testcontainers) for integration tests |
 | [`packages/eventstore`](../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
-| [`packages/commands`](../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and BDD test helpers |
+| [`packages/commands`](../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and Given/When/Then test helpers |
 | [`packages/event-poller`](../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, and automations modules build on |
 | [`packages/views`](../packages/views/README.md) | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
 | [`packages/outbox`](../packages/outbox/README.md) | Transactional outbox: per-topic publishers fed from the event stream by the poller |

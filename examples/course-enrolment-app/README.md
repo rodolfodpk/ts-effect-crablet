@@ -25,4 +25,6 @@ node src/index.ts           # the API on :8080 (set PORT to change it; COURSES_D
 | `tutorial/` | the step 1 test the tutorial shows |
 | `test/` | unit tests, including the one that keeps the tutorial's code equal to these files; `test/integration/` needs Docker |
 
+Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/c4-examples.md#course-enrolment).
+
 The page for this API is [`course-enrolment-ui`](../course-enrolment-ui/README.md).

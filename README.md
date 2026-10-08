@@ -6,7 +6,7 @@
 ![Effect](https://img.shields.io/badge/Effect-4.0-DE3163)
 ![Bun](https://img.shields.io/badge/Bun-1.4-000000?logo=bun&logoColor=white)
 
-Event sourcing for TypeScript with **Dynamic Consistency Boundaries**, built on [Effect](https://effect.website) and PostgreSQL.
+Event sourcing for TypeScript with **Dynamic Consistency Boundaries** (DCB), built on [Effect](https://effect.website) and PostgreSQL.
 
 There are no aggregates and no streams. Events go into one log, each tagged with what it is about, and every command chooses its own consistency
 boundary by *querying* the events its decision depends on. Two commands conflict only if one changes something the other relied on.
@@ -23,8 +23,21 @@ boundary by *querying* the events its decision depends on. Two commands conflict
 - **Built to be operated.** Fenced leader election, no skipped events, event evolution checks and storage metrics, each measured
   ([reliability report](./docs/plans/reliability-and-scale-diagnostic.md)).
 
+```mermaid
+flowchart LR
+  client["Client"] --> api["commands-http"]
+  api --> cmd["commands<br/>decide on a boundary"]
+  cmd -- "append if nothing newer<br/>in the boundary" --> log[("One event log<br/>PostgreSQL")]
+  log -- "poller, at-least-once" --> react["views, outbox, automations"]
+  react -- "a command, from an automation" --> cmd
+  react --> read["views-http<br/>reads that wait for your write"]
+  read --> client
+```
+
+More diagrams (a command's path, two commands conflicting, event to view, leadership, changing an event, the tables): [Architecture](./docs/architecture.md).
+
 > **Status: experimental, pre-release.** The API changes often, packages are not published to npm
-> ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md)). Not a fit if you are not on PostgreSQL or need a stable library today.
+> ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). Not a fit if you are not on PostgreSQL or need a stable library today.
 
 ## A command in 30 lines
 
@@ -109,12 +122,14 @@ Effect.runPromise(Effect.provide(program, AppLive));
 |---|---|
 | Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/glossary.md) for any unfamiliar word |
 | Build something, step by step | [Tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
+| See how it fits together | [Architecture](./docs/architecture.md): diagrams of the system and the core flows |
 | Understand the idea | [DCB guide](./docs/dcb-guide.md) |
 | See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app) |
 | Do one task (add a view, an automation, test, run, monitor) | [Task guides](./docs/guides/README.md) |
 | Change an event safely | [Evolving events](./docs/evolving-events.md) |
 | Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference.md) |
 | Know why it is built this way | [Design decisions](./docs/adr/README.md) (start with [ADR-0010](./docs/adr/0010-declarative-command-api.md)) |
+| Contribute | [`CONTRIBUTING.md`](./CONTRIBUTING.md): set up, run one test, common tasks |
 | Follow the work log | [`NOTES.md`](./NOTES.md) |
 
 Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference.md#build--test).

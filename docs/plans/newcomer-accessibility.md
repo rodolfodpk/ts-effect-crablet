@@ -1,5 +1,7 @@
 # Plan: make the repository accessible to a newcomer
 
+**Status:** all nine steps are built (2026-10-07). The stopwatch walk-through in "How we will know" has **not** been done by someone who did not write the documents; it is the open check, and any step that misses its target goes back into this plan.
+
 ## Goal
 
 A developer who has never seen the project should, without asking anyone:
@@ -95,13 +97,19 @@ Short "how do I..." pages, each from tested code: add a view; add an automation;
 
 Done when: the six questions have a page of one screen with a link to the code that proves it.
 
-### 8. CONTRIBUTING and a developer page (small)
+### 8. CONTRIBUTING and a developer page (small) - DONE (2026-10-07)
+
+Built: `CONTRIBUTING.md` at the root (set up, the three checks CI runs, running one test, where things are, schema/API/event/diagnostic tasks, documentation rules, making a change), linked from the README and `docs/README.md`.
 
 `CONTRIBUTING.md`: set up, run one test file, run unit and integration, regenerate `docs/api/wallet-openapi.json` (`bun run docs:api`), run a diagnostic (and that they are outside CI), the commit and decision-record conventions (the ADR process, when a change needs one).
 
 Done when: a contributor can run one integration test from the page alone.
 
-### 9. Consistency pass (small, last)
+### 9. Consistency pass (small, last) - DONE (2026-10-07)
+
+Done: `docs-links.test.ts` (runs in `test:unit` and so in CI) fails on a broken relative link or `#anchor` in any markdown file and on a `docs/...md` path in a source comment that does not exist; it found and fixed four stale paths (three comments naming ADR-0019 by an old file name, and ADR-0011 naming a renamed type test). Acronyms (DCB, ADR) are defined at first use in the README and the glossary; "BDD" became "Given/When/Then". Em dashes and heading style were already consistent in the new documents. Not done: a spelling check (no cheap tool is configured).
+
+Added afterwards at the owner's request: [`docs/architecture.md`](../architecture.md) (eight Mermaid diagrams: the whole system, a command's path, two commands conflicting, event to view, a read that includes a write, one poller and one leader, changing an event, the tables) and a small overview diagram in the README. Their syntax was checked with Mermaid's parser; they are not checked against the code. Then [`docs/c4-examples.md`](../c4-examples.md): C4 context, container and component diagrams of the course-enrolment and wallet applications, linked from their READMEs.
 
 Same heading style, "you" voice, no unexplained abbreviation on first use, the same example domain where possible (seat booking in README and quickstart; course enrolment in tutorial; wallet in the full app), a link check and a spelling pass added to CI if cheap.
 

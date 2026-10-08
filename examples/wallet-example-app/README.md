@@ -13,6 +13,8 @@ node examples/wallet-example-app/src/index.ts
 
 Connection (all optional): `WALLET_DB_HOST`, `WALLET_DB_PORT`, `WALLET_DB_NAME`, `WALLET_DB_USER`, `WALLET_DB_PASSWORD`; the API listens on `PORT` (8080).
 
+Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/c4-examples.md#wallet).
+
 ## Where things are
 
 | Path | What |

@@ -1,4 +1,4 @@
-// DIAGNOSTIC EXPERIMENTS (docs/adr/0019-storage-visibility-and-retention.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
+// DIAGNOSTIC EXPERIMENTS (docs/adr/0019-storage-visibility-and-the-tag-table.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/eventstore/diagnostics/storage.diagnostic.ts   and read the `DIAG` lines.   N=200000 node --test ... for a quicker, smaller run.
 // By default it runs on the schema as it was BEFORE migration V11 (the tag table with key, value, position and three indexes), which is what ADR-0019 measured and
 // decided about. SCHEMA=current runs E9a and E9c on the shipped schema (V11: crablet_event_tag_keys) to measure the result of the change.

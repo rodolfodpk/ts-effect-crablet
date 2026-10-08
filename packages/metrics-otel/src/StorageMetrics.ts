@@ -1,6 +1,6 @@
 import { Metric } from "effect";
 
-// crablet.storage.* : how much space the library's tables take, so growth is seen before it is a problem (docs/adr/0019-storage-visibility-and-retention.md).
+// crablet.storage.* : how much space the library's tables take, so growth is seen before it is a problem (docs/adr/0019-storage-visibility-and-the-tag-table.md).
 // Updated by `monitorStorage` (@crablet/eventstore/Storage) from the catalog, not on the write path.
 
 // Bytes per table. Tag with ("table", name) and ("part", total | heap | indexes | toast).

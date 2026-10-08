@@ -69,7 +69,7 @@ type (`Command<In, Err, I, Es>`, the new parameters defaulting to the erased typ
 Consequences: a registry must be an object literal WITHOUT a `Record<string, ...>` annotation (that forgets the command names; the client then falls back to a single
 loosely typed endpoint); callers still pass `query: {}` (the endpoint's request type requires the key); `title` and `status` of a domain problem are typed as
 `string` and `number` (a class carries its `kind` as a union), while `errorType` and `fields` are exact. The Foldkit page (tutorial step 5) calls the typed methods with no cast and
-matches exhaustively on the declared errors. Types are pinned by `packages/commands-http/test/typed-client.types.ts` and `packages/commands/test/command-types.types.ts`.
+matches exhaustively on the declared errors. Types are pinned by `packages/commands-http/test/contract-api.types.ts` and `packages/commands/test/command-types.types.ts`.
 
 ## Addendum 2 (2026-10-02): the API is declared from contracts, not from commands
 

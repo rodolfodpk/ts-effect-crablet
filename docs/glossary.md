@@ -38,6 +38,10 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Automation** - a reaction: when an event appears, issue a follow-up command.
 - **Ping** - the small server-sent event that tells a client "something changed, read again". [ADR-0014](./adr/0014-live-updates-by-ping.md)
 
+## The project
+
+- **ADR** - architecture decision record: one file per lasting design decision, with its context, the decision and its consequences. [Index](./adr/README.md)
+
 ## Evolving and operating
 
 - **Compatible change** - a change old events still decode under: a field with a decoding default, or an optional field. Anything else becomes a new event name. [Evolving events](./evolving-events.md)
