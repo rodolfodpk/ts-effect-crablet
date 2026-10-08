@@ -1,6 +1,6 @@
 # Plan: a dashboard for the poller and its consumers
 
-**Status:** steps 1 to 4 done (2026-10-08); step 5 (keeping it honest in CONTRIBUTING) not done.
+**Status:** all five steps done (2026-10-08). What the work did not settle is listed under each step ("Not done") and in the closing section.
 
 ## Recommendation in one paragraph
 
@@ -131,10 +131,14 @@ Not done:
 - The **admin API has no audit trail**: who paused what is not recorded.
 - Grafana does not link to the page; the dashboard guide does.
 
-### 5. Keep it honest
+### 5. Keep it honest - done (2026-10-08)
 
-- CONTRIBUTING: adding a metric means adding it to the dashboard test's expectations or saying why it has no panel.
-- Update `docs/reference.md#operating-it` and the `metrics-otel` README with the new metrics.
+- CONTRIBUTING has three new tasks: add or rename a metric (the dashboard test fails until it has a panel, an alert, or a `NO_PANEL` reason), change the dashboard or the alerts (edit the generator, run `bun run dashboard:build`), and change the processors admin API (add, never remove or retype; ADR-0020). The typecheck line now says the two pages.
+- The `metrics-otel` README says which gauges `monitorProcessors` keeps current and how the names look at the backend; `docs/reference.md#operating-it` has a bullet for the dashboard and the admin API.
+
+## What the plan leaves open
+
+Verified only in part, and said so where it came up: the page has not been seen in a browser; a crashed leader and the "no leader" alert were not exercised (the alert relies on Prometheus marking the series stale, about five minutes); the flush of the last metrics on shutdown was not checked; the admin API's evolution rules are not enforced by a test and it keeps no audit trail; the stack was tried on one machine with one image version.
 
 ## Risks and costs
 

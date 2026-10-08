@@ -16,7 +16,7 @@ bun install
 ## Run the checks
 
 ```bash
-bun run typecheck          # tsc --noEmit across the workspace, and the course UI
+bun run typecheck          # tsc --noEmit across the workspace, and the two Foldkit pages
 bun run test:unit          # fast, no database, runs under Bun
 bun run test:unit:coverage # the same with an lcov report at coverage/lcov.info
 bun run test:integration   # real Postgres through Testcontainers (Docker), runs under Node
@@ -59,6 +59,17 @@ database at a chosen migration with `startTestDb({ migrations })`. A migration t
 
 **Change an event.** Follow [Evolving events](docs/evolving-events.md). Run the wallet's `verify-events.ts` against representative data, and update the committed change-impact
 baseline (`test/fixtures/model-impact-baseline.json` in the wallet app) with a reason for each entry.
+
+**Add or rename a metric.** Define it in `packages/metrics-otel/src/`, then run `bun run test:unit`: [`scripts/dashboard.test.ts`](scripts/dashboard.test.ts) fails until the metric has a panel in the
+Grafana dashboard (or an alert), or an entry in `NO_PANEL` in that test with the reason it has none. It works out the name Prometheus gives the metric (a counter keeps its name, a gauge gains `_ratio`, a timer becomes `_milliseconds_bucket`, `_count`, `_sum`),
+so a rename that leaves a panel or an alert querying the old name fails the same test.
+
+**Change the dashboard or the alerts.** The dashboard JSON is generated: edit the definition in [`scripts/build-dashboard.ts`](scripts/build-dashboard.ts) and run `bun run dashboard:build`; the test fails if the committed
+`ops/grafana/crablet-dashboard.json` differs. The alert rules, `ops/grafana/alerts.yaml`, are written by hand and checked by the same test. Both were tried against the `grafana/otel-lgtm` image in [`ops/compose.yaml`](ops/compose.yaml)
+([See it on a dashboard](docs/guides/dashboard.md)).
+
+**Change the processors admin API.** [`@crablet/processors-http`](packages/processors-http/README.md) is a contract a client is typed against: add fields, never remove or retype one, and give a changed meaning a new path
+([ADR-0020](docs/adr/0020-processors-admin-api.md)). Every endpoint stays behind `ProcessorsAuthorization`.
 
 **Run a diagnostic.** `packages/*/diagnostics/` holds experiments that measure rather than assert (real Postgres, Docker). CI does not run them. For example:
 
