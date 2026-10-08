@@ -1,9 +1,53 @@
 # Plan: improve test coverage, starting by measuring it properly
 
-**Status:** proposed (2026-10-08). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
+**Status:** step 1 done (2026-10-08); steps 2-6 open, and re-scoped by what step 1 found (below). Decisions taken by the owner: CI collects coverage from the integration tests too; the headline number is **the packages only** (the examples are
 not counted); the ratchet is a hard gate that fails CI.
 
-## Where we are
+## Result of step 1 (2026-10-08): the real number is 98.5 %, not 67 %
+
+Measured over the whole suite: the Bun unit tests (624) and the Node integration tests (322, against real Postgres), merged by `scripts/merge-coverage.ts`.
+
+| Package | Lines covered | % |
+|---|---|---|
+| `automations`, `metrics-otel`, `test-support`, `views`, `views-http` | all | 100 % |
+| `commands-http` | 353 / 354 | 99.7 % |
+| `commands` | 827 / 836 | 98.9 % |
+| `event-poller` | 581 / 593 | 98.0 % |
+| `eventstore` | 835 / 859 | 97.2 % |
+| `outbox` | 271 / 279 | 97.1 % |
+| `db-migrations` | 17 / 19 | 89.5 % |
+| **All packages** | **3752 / 3808** | **98.5 %** |
+
+So the 67 % was an artefact of what was measured, as suspected, and most of this plan's original premise (large untested areas) was wrong. What is left is **56 lines**:
+
+| File | Uncovered lines | Count |
+|---|---|---|
+| `packages/event-poller/src/EventSelection.ts` | 27-28,33-34,39-40,45-46 | 8 |
+| `packages/eventstore/src/CommandAuditStore.ts` | 61-68 | 8 |
+| `packages/outbox/src/internal/OutboxProgressTracker.ts` | 30,109-115 | 8 |
+| `packages/eventstore/src/Tag.ts` | 25-31 | 7 |
+| `packages/commands/src/ModelImpact.ts` | 87-88,168-170 | 5 |
+| `packages/eventstore/src/internal/sql.ts` | 114-115,126-127 | 4 |
+| `packages/commands/src/VerifyEvents.ts` | 133-134 | 2 |
+| `packages/commands/src/testing/EventFixtures.ts` | 73-74 | 2 |
+| `packages/db-migrations/src/index.ts` | 25-26 | 2 |
+| `packages/event-poller/src/EventProcessor.ts` | 391-392 | 2 |
+| `packages/event-poller/src/internal/identifiers.ts` | 8-9 | 2 |
+| `packages/eventstore/src/EventStore.ts` | 165-166 | 2 |
+| `packages/eventstore/src/NotifyPayload.ts` | 80-81 | 2 |
+| `packages/commands-http/src/CommandApiLive.ts` | 104 | 1 |
+| `packages/eventstore/src/testing/InMemoryEventStore.ts` | 97 | 1 |
+
+**How the merged number is defined**, because it is easy to get wrong. Node (V8) reports whole ranges, so adding its report to Bun's naively marks imports, comments and blank lines as covered and gives 99.2 % with 7,032 lines instead of 3,808. The
+merge therefore counts a line as executable if Bun reports it (Bun reports statements) or Node reports it as *not executed*; a line only Node reports, as executed, is not counted. A file Bun never loaded (five small ones) is judged
+by its code lines, taken from the source. A line is covered if either suite ran it. Test code, diagnostics, tutorial tests and scripts are left out. Two imprecisions remain, both small: a comment inside a block Node reports as
+not executed counts as a miss, and the five files use a heuristic. The two alternatives tried (Bun's lines plus Node's misses, and a pure source heuristic) gave 98.6 % and 98.8 %.
+
+**What it does not tell us.** Line coverage says a line ran, not that a test would fail if it were wrong. At 98.5 % the useful question is no longer "which lines are not run" but "which behaviour would a regression slip past"; see step 4.
+
+**Timings.** The integration suite with coverage took about 4½ minutes locally (Node 25.2.1, concurrency 4). My first attempt looked hung and was killed at 10 minutes; it was only slow, and I should have waited.
+
+## Where we were before step 1
 
 CI uploads one number: the line coverage of the Bun **unit** suite, which is **66.6 %** of lines (80.5 % of functions) over all 143 source files. That number is misleading in two ways.
 
@@ -57,7 +101,9 @@ Packages only, unit suite only, today:
 
 Each is its own commit.
 
-### 1. Measure the whole suite (the largest effect)
+### 1. Measure the whole suite (the largest effect) - DONE (2026-10-08)
+
+Built: `bun run test:coverage` (unit with coverage, integration with coverage, merge) and `scripts/merge-coverage.ts` with tests; CI runs the same and uploads the merged `coverage/lcov.info`. The baseline is in "Result of step 1" above. CI itself is the first run of the Node coverage flags on Node 24; if it misbehaves, revert the workflow to the plain integration step.
 
 - Run the integration tests with `node --test --experimental-test-coverage` and the lcov reporter, including only `packages/*/src/**/*.ts`; run the unit suite with Bun's lcov as now.
 - Merge the two lcov files by line (a line is covered if either suite hit it) with a small script in the repository (`scripts/merge-coverage.ts`), and write one `coverage/lcov.info`.
@@ -81,33 +127,26 @@ Done when: the badge and the Codecov page show packages only, and a comment in `
 
 Done when: a pull request that deletes a test, or adds untested code to a package, fails.
 
-### 4. Fill the gaps that remain after the merge (risk first)
+### 4. Close the 56 lines, then ask whether the tests would notice a regression
 
-To be sharpened with the real list after step 1. The candidates from the unit data, ordered by risk:
+1. **The 56 lines** in the table above. Most are small and some are real behaviour: the odd-argument error in `Tag.of`, the type union in `EventSelection`, a failure path in `CommandAuditStore`, the outbox `updateStatus` path,
+   the `append_events_if` "no result" defect in `sql.ts`, parts of `ModelImpact`. Cover each with a test that asserts the behaviour, or record why it is deliberately not covered (for example `Effect.die` branches for "cannot happen").
+2. **Would a regression be noticed?** A line that ran can still be unasserted. Sample the correctness core (`eventstore`, `commands`, `event-poller`): break a line on purpose (flip a condition in the append condition check, drop the fence,
+   let the cursor move backwards) and see whether a test fails. Where none does, add the test. If this finds gaps in the sample, a mutation-testing tool is the systematic version; that is a separate, optional decision.
 
-1. **Failure paths of the pollers:** leadership lost between the two fences, the cursor update refused, the handler failing until `maxErrors`, backoff, pause and reset
-   (`event-poller`, `views`, `outbox`, `automations`). Many have integration tests for the happy path only.
-2. **The command audit:** `CommandAuditStore` (18 % unit) and `CommandAudit` (32 %): what is recorded, the personal-data guard, what a failed command leaves behind.
-3. **The append's error mapping:** `AppendErrors` (16 %), deadlock and serialization failures turning into a retry (`CommandExecutor`).
-4. **Module wiring:** `ViewsModule`, `AutomationsModule`, `OutboxModule` start, stop, and a disabled processor.
-5. **`VerifyEvents`** (5 % unit): the sampling modes and the exit conditions, against a database with a known unreadable event.
-6. **`WaitUntilProcessed` and the hub** under timeouts and reconnects.
-
-For each: write the test that fails if the behaviour breaks (mutate the code once to see it fail), not the test that merely executes the lines.
-
-Done when: every file in the packages is above 60 % merged, and the items above are each covered or recorded as deliberately not.
+Done when: the table is empty or each remaining line has a recorded reason, and the sampled breaks are all caught.
 
 ### 5. Targets
 
-Proposed, to confirm after step 1 with the real baseline:
+The proposed 85 % is below where we already are, so it is withdrawn. Instead:
 
 | Measure | Target |
 |---|---|
-| Packages, merged line coverage | 85 % |
-| Any single file | 60 %, unless excluded with a reason |
-| The correctness core (`eventstore`, `commands`, `event-poller`) | 90 % |
+| Packages, merged line coverage | hold the baseline (98.5 %) and ratchet up as step 4 lands; aim for 99 % |
+| Any single file | 90 %, unless excluded with a reason |
+| Failures and edge cases | each of the failure paths in step 4 item 2 has a test that fails when the behaviour breaks |
 
-The gate (step 3) ratchets up to these; it never has to be loosened to reach them.
+The gate (step 3) enforces the baseline; it never has to be loosened.
 
 ### 6. Keep it honest
 

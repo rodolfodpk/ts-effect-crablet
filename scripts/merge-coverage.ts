@@ -1,10 +1,19 @@
-// Merges line coverage from several lcov files (the Bun unit suite and the Node integration suite) into one: a line is covered if ANY suite executed it, and its hit count is
-// the sum. Only lines (SF, DA, LF, LH) are written: function and branch records are named differently by Bun and Node, so merging them would mislead.
+// Merges line coverage from the Bun unit suite and the Node integration suite into one lcov file, with one definition of "an executable line", so the number is the same
+// locally and on Codecov (docs/plans/test-coverage.md).
 //
-//   bun scripts/merge-coverage.ts --out coverage/lcov.info coverage/unit/lcov.info coverage/integration/lcov.info
+//   bun scripts/merge-coverage.ts --unit coverage/unit/lcov.info --integration coverage/integration/lcov.info --out coverage/lcov.info
 //
-// It also prints the totals, for all files and for the packages only (the number the project is judged by: docs/plans/test-coverage.md).
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+// Why not just add the two reports: Node (V8) reports whole ranges, so it marks nearly every line of a function that ran as covered, including imports, comments, blank lines and
+// signatures. Adding that to Bun's statement-level report would inflate the percentage. So:
+//
+//   - A line is EXECUTABLE if Bun reports it (Bun reports statements), or if Node reports it as NOT executed (a miss is a miss). A line only Node reports, as executed, is not counted.
+//   - A file Bun never loaded has no statement report; for it, Node's lines are filtered to those that look like code (not blank, not a comment, not a lone brace or an import or type line).
+//   - A line is COVERED if either suite executed it. Hit counts add up.
+//   - Only lines are written (SF, DA, LF, LH): function and branch records are named differently by the two tools, so merging them would mislead.
+//
+// The known imprecision: a comment inside a block Node reports as not executed counts as a miss, and a file Bun never loaded is judged by a heuristic. Both are small
+// (a few lines in about a hundred files); the aim is a stable, honest number to ratchet on, not an exact one.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export type LineHits = Map<number, number>;
@@ -35,14 +44,50 @@ export const parseLcov = (text: string, root: string = process.cwd()): Coverage 
   return coverage;
 };
 
-export const mergeCoverage = (parts: ReadonlyArray<Coverage>): Coverage => {
-  const merged: Coverage = new Map();
-  for (const part of parts) {
-    for (const [file, lines] of part) {
-      const into = merged.get(file) ?? new Map<number, number>();
-      for (const [n, hits] of lines) into.set(n, (into.get(n) ?? 0) + hits);
-      merged.set(file, into);
+// The lines of a TypeScript source that can execute: not blank, not inside or starting a comment, not a lone closing brace, not an import or export-from, not an interface or type.
+export const codeLines = (source: string): Set<number> => {
+  const out = new Set<number>();
+  let inBlockComment = false;
+  source.split("\n").forEach((raw, index) => {
+    const line = raw.trim();
+    if (inBlockComment) {
+      if (line.includes("*/")) inBlockComment = false;
+      return;
     }
+    if (line.startsWith("/*")) {
+      if (!line.includes("*/")) inBlockComment = true;
+      return;
+    }
+    if (line === "" || line.startsWith("//")) return;
+    if (/^[)\]}]+[;,]?\)*;?$/u.test(line) || line === "{" || line === "});") return;
+    if (/^(import|export)\b[^=]*\bfrom\b/u.test(line) || /^import\s+["']/u.test(line)) return;
+    if (/^(export\s+)?(interface|type)\s/u.test(line)) return;
+    out.add(index + 1);
+  });
+  return out;
+};
+
+// Test code, diagnostics, tutorial tests and scripts are not what coverage is about (Node's include pattern lets some of them through).
+export const isMeasured = (file: string): boolean => !/(^|\/)(test|diagnostics|tutorial|scripts)\//u.test(file);
+
+export const mergeSuites = (unit: Coverage, integration: Coverage, readSource: (file: string) => string | null = () => null): Coverage => {
+  const merged: Coverage = new Map();
+  for (const file of new Set([...unit.keys(), ...integration.keys()])) {
+    if (!isMeasured(file)) continue;
+    const a = unit.get(file);
+    const b = integration.get(file);
+    let executable: Set<number>;
+    if (a !== undefined) {
+      executable = new Set(a.keys());
+      for (const [n, hits] of b ?? []) if (hits === 0) executable.add(n);
+    } else {
+      const source = readSource(file);
+      const code = source === null ? null : codeLines(source);
+      executable = new Set([...(b ?? new Map<number, number>())].filter(([n, hits]) => hits === 0 || code === null || code.has(n)).map(([n]) => n));
+    }
+    const lines: LineHits = new Map();
+    for (const n of executable) lines.set(n, (a?.get(n) ?? 0) + (b?.get(n) ?? 0));
+    merged.set(file, lines);
   }
   return merged;
 };
@@ -77,18 +122,13 @@ export const totalsOf = (coverage: Coverage, include: (file: string) => boolean 
 
 export const percent = ({ hit, total }: Totals): string => (total === 0 ? "n/a" : `${((100 * hit) / total).toFixed(1)}%`);
 
-const packageOf = (file: string): string | null => {
-  const m = /^packages\/([^/]+)\/src\//u.exec(file);
-  return m ? m[1]! : null;
-};
+const packageOf = (file: string): string | null => /^packages\/([^/]+)\/src\//u.exec(file)?.[1] ?? null;
 
 export const summary = (coverage: Coverage): string => {
   const packages = [...new Set([...coverage.keys()].map(packageOf).filter((p): p is string => p !== null))].sort();
-  const lines = [
-    `all measured files        ${percent(totalsOf(coverage))}  (${totalsOf(coverage).hit}/${totalsOf(coverage).total} lines)`,
-    `packages only             ${percent(totalsOf(coverage, (f) => packageOf(f) !== null))}  (${totalsOf(coverage, (f) => packageOf(f) !== null).hit}/${totalsOf(coverage, (f) => packageOf(f) !== null).total} lines)`,
-    ""
-  ];
+  const all = totalsOf(coverage);
+  const pkgs = totalsOf(coverage, (f) => packageOf(f) !== null);
+  const lines = [`all measured files   ${percent(all).padStart(6)}  ${all.hit}/${all.total} lines`, `packages only        ${percent(pkgs).padStart(6)}  ${pkgs.hit}/${pkgs.total} lines`, ""];
   for (const p of packages) {
     const t = totalsOf(coverage, (f) => packageOf(f) === p);
     lines.push(`  ${p.padEnd(18)} ${percent(t).padStart(6)}  ${t.hit}/${t.total}`);
@@ -97,13 +137,15 @@ export const summary = (coverage: Coverage): string => {
 };
 
 if (import.meta.main) {
-  const args = process.argv.slice(2);
-  const outIndex = args.indexOf("--out");
-  if (outIndex < 0 || args[outIndex + 1] === undefined) throw new Error("usage: merge-coverage.ts --out <file> <lcov>...");
-  const out = args[outIndex + 1]!;
-  const inputs = args.filter((_, i) => i !== outIndex && i !== outIndex + 1);
-  if (inputs.length === 0) throw new Error("no input lcov files");
-  const merged = mergeCoverage(inputs.map((file) => parseLcov(readFileSync(file, "utf8"))));
+  const arg = (name: string): string => {
+    const i = process.argv.indexOf(`--${name}`);
+    const value = i >= 0 ? process.argv[i + 1] : undefined;
+    if (value === undefined) throw new Error(`usage: merge-coverage.ts --unit <lcov> --integration <lcov> --out <lcov> (missing --${name})`);
+    return value;
+  };
+  const read = (file: string): Coverage => parseLcov(readFileSync(file, "utf8"));
+  const merged = mergeSuites(read(arg("unit")), read(arg("integration")), (file) => (existsSync(file) ? readFileSync(file, "utf8") : null));
+  const out = arg("out");
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, toLcov(merged));
   console.log(summary(merged));

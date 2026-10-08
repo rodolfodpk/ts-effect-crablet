@@ -22,6 +22,8 @@ bun run test:unit:coverage # the same with an lcov report at coverage/lcov.info
 bun run test:integration   # real Postgres through Testcontainers (Docker), runs under Node
 ```
 
+Coverage of both suites, merged into one report (`coverage/lcov.info`; takes about 5 minutes, Docker needed): `bun run test:coverage`. How the merge counts lines, and why: [the coverage plan](docs/plans/test-coverage.md).
+
 CI runs exactly these three (typecheck, unit with coverage, integration) on every push and pull request to `main`. There is no linter or formatter configured; match the
 style of the file you are in.
 
