@@ -39,7 +39,7 @@ More diagrams (a command's path, two commands conflicting, event to view, leader
 > **Status: experimental, pre-release.** The API changes often, packages are not published to npm
 > ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). Not a fit if you are not on PostgreSQL or need a stable library today.
 
-## A command in 30 lines
+## A command, end to end
 
 A seat must be added before it can be booked. Imports come from the workspace, e.g. `@crablet/commands/Command`.
 
@@ -96,9 +96,6 @@ The boundary is derived from the events the model handles, so `BookSeat` is cons
 writing a query. Two concurrent bookings of one seat cannot both succeed: the loser is retried and gets `SeatTaken`. Bookings of different seats never
 contend. ([The same thing as an Event Model](./docs/event-model-seat-booking.md).)
 
-`BookSeat` is consistent with "anything that could change this seat" without a query written by you. Two concurrent bookings of one seat cannot both
-succeed: the loser is retried and gets `SeatTaken`; other seats never contend.
-
 **Run it, no database needed** ([`examples/quickstart`](./examples/quickstart/src/quickstart.ts)):
 
 ```bash
@@ -122,9 +119,9 @@ Effect.runPromise(Effect.provide(program, AppLive));
 |---|---|
 | Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/glossary.md) for any unfamiliar word |
 | Build something, step by step | [Tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
-| See how it fits together | [Architecture](./docs/architecture.md): diagrams of the system and the core flows |
+| See how it fits together | [Architecture](./docs/architecture.md): diagrams of the system and the core flows; [C4 models](./docs/c4-examples.md) of the two example applications |
 | Understand the idea | [DCB guide](./docs/dcb-guide.md) |
-| See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app) |
+| See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app/README.md): five commands, four views, an automation, an outbox |
 | Do one task (add a view, an automation, test, run, monitor) | [Task guides](./docs/guides/README.md) |
 | Change an event safely | [Evolving events](./docs/evolving-events.md) |
 | Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference.md) |
