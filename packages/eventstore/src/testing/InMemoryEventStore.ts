@@ -108,7 +108,8 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const service: EventStoreService = {
     append,
     project,
-    exists: (query) => Effect.map(Effect.catchTag(project(query, LogPositionNS.zero(), [existsProjector()]), "EventDecodingError", (e) => Effect.die(e)), (r) => r.state)
+    exists: (query) => Effect.map(Effect.catchTag(project(query, LogPositionNS.zero(), [existsProjector()]), "EventDecodingError", (e) => Effect.die(e)), (r) => r.state),
+    withWakeups: (effect) => effect // nothing to wake in memory
   };
 
   const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>

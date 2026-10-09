@@ -73,6 +73,12 @@ One append is one transaction that takes the writer lock and sends one wake-up, 
 with a typed `AppendTooLarge` before any SQL runs (over HTTP it is a 500: the batch size is the code's choice, not the caller's). To write more, split it into several appends; each is atomic on its own, so decide
 whether the rule you protect needs them in one command.
 
+### Wake-ups
+
+Pollers sleep between polls, and a `NOTIFY` wakes them early. Appends do not notify themselves: the event store collects what a transaction appended and sends **one** notification per 50 ms window, **after the commit** (`EventStoreConfig.wakeupWindowMs`; `wakeupMode: "inline"` brings back one `pg_notify` inside every append). This is what lifts the write ceiling from about 3 000 to about 5 800 appends a second on the laptop measured ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). `CommandExecutor` does it for you. If you call `EventStore.append` inside a transaction of your own, wrap that transaction: `eventStore.withWakeups(sql.withTransaction(...))`; without it the wake-up goes out before your commit and a poller may wake, find nothing and sleep.
+
+A wake-up is only a hint, and the one place it can now be lost is a process that dies between the commit and the send. The pollers' idle backoff (`backoffMaxSeconds`, 120 in the examples) is then the worst-case delay; lower it if that matters more to you than idle polling.
+
 ## 3. Start the processors, serve, and fail loudly
 
 Building a processor's layer does not process anything: `service.start` forks the fibers that do. Let a **Scope** own them: `service.startScoped` starts the processors and registers

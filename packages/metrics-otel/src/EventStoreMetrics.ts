@@ -22,3 +22,9 @@ export const concurrencyViolations = Metric.counter("crablet.eventstore.concurre
 
 // A stored event that its definition could not decode (ADR-0017): one count each time a read stopped because of it. Tag with ("event_type", type).
 export const decodingFailures = Metric.counter("crablet.eventstore.decoding_failures");
+
+// Wake-up notifications (ADR-0021). Recorded: one per append (or per committed transaction). Sent: one `pg_notify` actually issued. Saved: signals folded into another notification
+// by coalescing (recorded - sent, once everything pending has gone out).
+export const wakeupsRecorded = Metric.counter("crablet.eventstore.wakeups_recorded");
+export const wakeupsSent = Metric.counter("crablet.eventstore.wakeups_sent");
+export const wakeupsSaved = Metric.counter("crablet.eventstore.wakeups_saved");

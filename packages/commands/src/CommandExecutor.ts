@@ -141,7 +141,8 @@ export const CommandExecutorLive = Layer.effect(
       // dedicated idempotentDuplicates increment when the result comes back idempotent.
       CommandMetrics.observe(
         CommandMetrics.handle,
-        sql.withTransaction(
+        // The wake-up for what the attempt appended goes out only after this transaction has committed (ADR-0021).
+        Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(
           Effect.gen(function* () {
             const result = yield* runHandler(handler, command);
             // A command that appended events leaves an audit row IN THE SAME transaction (see CommandAudit.ts):
@@ -159,7 +160,7 @@ export const CommandExecutorLive = Layer.effect(
             );
             return Metric.update(taggedCounter, 1);
           })
-        ),
+        ))),
         [["command_type", definition.name]]
       );
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** (2026-10-08). Nothing is built. The evidence below comes from `pgbench` runs against `postgres:18.6-alpine`, with a prototype that is a separate notifier connection, not code in this repository. The decision is to be accepted when the tests in "Before accepting" exist and pass.
+**Accepted** (2026-10-08). Built. The evidence in "Context" comes from `pgbench` runs against `postgres:18.6-alpine` with a prototype; the figures for the implementation are in "Result of the implementation". Decision 6 (a bounded idle backoff) is a documented trade, not a changed default (see Follow-ups).
 
 ## Context
 
@@ -65,6 +65,21 @@ The view-progress pings (ADR-0014, ADR-0016) use the same mechanism in the same 
 - The existing wake-up and listener tests (`listen-reconnect`, `notify-payload`, `event-processor-loop`, `view-progress-hub`) pass unchanged in the compatibility mode.
 - The `pgbench` comparison of the prototype above is repeated against the implementation, with the scripts committed under `packages/eventstore/diagnostics/`, and the result written back into this ADR.
 - The dashboard has panels for the three new counters, and `scripts/dashboard.test.ts` declares their labels.
+
+## Result of the implementation
+
+Built as `internal/WakeupNotifier.ts` (the leading/trailing window, with its metrics) plus `EventStoreConfig` (`wakeupMode`, `wakeupWindowMs`) on `makeEventStoreLayer`; `EventStoreLive` is the default (coalesced, 50 ms). One refinement over the text of decision 3: a flush must send **what its own transaction appended**, not whatever is pending, or a command could send another command's uncommitted types and then find nothing left to send for its own commit (a lost wake-up). So each `withWakeups` gives its transaction a private set that is signalled to the notifier only if the transaction succeeded, and `CommandExecutor` wraps every attempt (a rolled-back attempt signals nothing).
+
+Tests: `wakeup-notifier.test.ts` (TestClock: leading edge, union, no send when nothing was signalled, a signal after the trailing send is not lost, window 0, a failed send is swallowed); `integration/wakeups.test.ts` (200 concurrent commands, every type announced, in fewer than half as many notifications; the event is already visible when the notification is heard, with the commit delayed 500 ms; a rolled-back transaction announces nothing; an append outside a transaction announces itself; inline mode still notifies). The whole existing suite passes with the new default.
+
+**Throughput** (`diagnostics/wakeup-throughput.diagnostic.ts`: the same workload through the real `EventStore`, 32 clients, one event per `withWakeups(withTransaction(append))`, 15 s per run, modes alternated, one laptop under Docker):
+
+| mode | run 1 | run 2 |
+|---|---|---|
+| inline (`pg_notify` in every append) | 2 935/s, p50 10.2 ms, p95 13.9 ms | 3 043/s, p50 9.9 ms, p95 12.7 ms |
+| coalesced, 50 ms | 5 800/s, p50 5.2 ms, p95 8.2 ms | 5 858/s, p50 5.1 ms, p95 8.1 ms |
+
+About **1.95 times** the appends per second and half the latency. That is less than the prototype's ratio (about 9 000 a second against 2 000 to 4 000) because the prototype measured one SQL call per append, and the real path also pays the transaction's round trips (begin, the append, commit) from Node. The ceiling that remains is no longer the notification queue; it was not profiled further here.
 
 ## Follow-ups (not decided here)
 

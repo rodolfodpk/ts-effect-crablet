@@ -75,6 +75,7 @@ const LABELS: Record<string, ReadonlyArray<string>> = {
   "crablet.command.idempotent_duplicates": ["command_type"], "crablet.command.conflict_retries": ["command_type"],
   "crablet.eventstore.append.duration": [], "crablet.eventstore.append.successes": [], "crablet.eventstore.append.failures": [],
   "crablet.eventstore.events_appended": [], "crablet.eventstore.event_type_appended": ["event_type"], "crablet.eventstore.concurrency_violations": [], "crablet.eventstore.decoding_failures": ["event_type"],
+  "crablet.eventstore.wakeups_recorded": [], "crablet.eventstore.wakeups_sent": [], "crablet.eventstore.wakeups_saved": [],
   "crablet.read.consistency.reads": ["mode", "outcome"], "crablet.read.consistency.wait.duration": ["mode"],
   "crablet.storage.table_bytes": ["table", "part"], "crablet.storage.table_rows": ["table"], "crablet.storage.bytes_per_event": []
 };

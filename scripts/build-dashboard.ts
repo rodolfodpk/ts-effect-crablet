@@ -126,6 +126,11 @@ const panels = (): ReadonlyArray<Panel> => {
     { expr: `sum(${rate("crablet_eventstore_append_successes")})`, legend: "append calls that succeeded" },
     { expr: `sum(${rate("crablet_eventstore_append_failures")})`, legend: "append calls that failed" }
   ]));
+  out.push(series("Wake-ups per second", "Notifications that tell pollers events were appended (ADR-0021): recorded per commit, actually sent, and saved by coalescing. Sent should stay near 1 / window per process.", "ops", [
+    { expr: `sum(${rate("crablet_eventstore_wakeups_recorded")})`, legend: "recorded" },
+    { expr: `sum(${rate("crablet_eventstore_wakeups_sent")})`, legend: "sent" },
+    { expr: `sum(${rate("crablet_eventstore_wakeups_saved")})`, legend: "saved by coalescing" }
+  ]));
   out.push(series("Contention", "Commands that retried after a conflict, appends the DCB condition refused, and commands recognised as repeats.", "ops", [
     { expr: `sum(${rate("crablet_command_conflict_retries")})`, legend: "conflict retries" },
     { expr: `sum(${rate("crablet_eventstore_concurrency_violations")})`, legend: "concurrency violations" },

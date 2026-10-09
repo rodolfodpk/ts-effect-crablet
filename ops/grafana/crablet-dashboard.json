@@ -1318,8 +1318,8 @@
     {
       "id": 27,
       "type": "timeseries",
-      "title": "Contention",
-      "description": "Commands that retried after a conflict, appends the DCB condition refused, and commands recognised as repeats.",
+      "title": "Wake-ups per second",
+      "description": "Notifications that tell pollers events were appended (ADR-0021): recorded per commit, actually sent, and saved by coalescing. Sent should stay near 1 / window per process.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -1327,6 +1327,77 @@
       "gridPos": {
         "x": 12,
         "y": 84,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(rate(crablet_eventstore_wakeups_recorded[$__rate_interval]))",
+          "legendFormat": "recorded",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(rate(crablet_eventstore_wakeups_sent[$__rate_interval]))",
+          "legendFormat": "sent",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(rate(crablet_eventstore_wakeups_saved[$__rate_interval]))",
+          "legendFormat": "saved by coalescing",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Contention",
+      "description": "Commands that retried after a conflict, appends the DCB condition refused, and commands recognised as repeats.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 92,
         "w": 12,
         "h": 8
       },
@@ -1387,7 +1458,7 @@
       }
     },
     {
-      "id": 28,
+      "id": 29,
       "type": "timeseries",
       "title": "Command time (p95)",
       "description": "95th percentile of handling one command, by command type, retries included.",
@@ -1396,7 +1467,7 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 92,
         "w": 12,
         "h": 8
@@ -1436,7 +1507,7 @@
       }
     },
     {
-      "id": 29,
+      "id": 30,
       "type": "timeseries",
       "title": "Commands per second",
       "description": "Commands that succeeded, and commands that failed (rejected by their rules or by an error) by command type.",
@@ -1445,8 +1516,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 92,
+        "x": 0,
+        "y": 100,
         "w": 12,
         "h": 8
       },
@@ -1496,7 +1567,7 @@
       }
     },
     {
-      "id": 30,
+      "id": 31,
       "type": "timeseries",
       "title": "Append time (p95)",
       "description": "95th percentile of the conditional append.",
@@ -1505,7 +1576,7 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 100,
         "w": 12,
         "h": 8
@@ -1545,7 +1616,7 @@
       }
     },
     {
-      "id": 31,
+      "id": 32,
       "type": "timeseries",
       "title": "Reads that waited for views",
       "description": "Reads that carried a consistency marker, per second by mode, and how long the waiting ones waited (p95).",
@@ -1554,8 +1625,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 100,
+        "x": 0,
+        "y": 108,
         "w": 12,
         "h": 8
       },
@@ -1594,7 +1665,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 33,
       "type": "timeseries",
       "title": "Time reads waited (p95)",
       "description": "How long reads spent waiting for views to catch up (only reads that waited).",
@@ -1603,7 +1674,7 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 108,
         "w": 12,
         "h": 8
@@ -1643,7 +1714,7 @@
       }
     },
     {
-      "id": 33,
+      "id": 34,
       "type": "row",
       "title": "Storage",
       "collapsed": false,
@@ -1656,7 +1727,7 @@
       "panels": []
     },
     {
-      "id": 34,
+      "id": 35,
       "type": "timeseries",
       "title": "Table size",
       "description": "Total bytes (heap, indexes and TOAST) of each library table. Nothing deletes events, so watch the growth.",
@@ -1705,7 +1776,7 @@
       }
     },
     {
-      "id": 35,
+      "id": 36,
       "type": "timeseries",
       "title": "Rows",
       "description": "The planner's estimate, as fresh as the last autovacuum or ANALYZE.",
@@ -1754,7 +1825,7 @@
       }
     },
     {
-      "id": 36,
+      "id": 37,
       "type": "timeseries",
       "title": "Bytes per event",
       "description": "The events table and the tag table with their indexes, divided by events (about 1.2 KB at the time of writing).",
