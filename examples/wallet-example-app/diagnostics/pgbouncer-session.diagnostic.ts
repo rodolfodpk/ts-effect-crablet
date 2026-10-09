@@ -28,7 +28,9 @@ before(async () => {
   await applyAppMigrations(db.connInfo);
   const id = execFileSync("docker", [
     "run", "-d", "--rm", "-p", "127.0.0.1::5432", "--add-host", "host.docker.internal:host-gateway",
-    "-e", "DB_HOST=host.docker.internal", "-e", `DB_PORT=${db.connInfo.port}`, "-e", `DB_USER=${db.connInfo.username}`, "-e", `DB_PASSWORD=${db.connInfo.password}`, "-e", `DB_NAME=${db.connInfo.database}`,
+    // the database's address as an IPv4 literal: host.docker.internal also resolves to an IPv6 address that PgBouncer tries first and then waits 15 s (server_login_retry) to leave
+    "-e", `DB_HOST=${execFileSync("docker", ["run", "--rm", "--add-host", "host.docker.internal:host-gateway", "--entrypoint", "sh", "edoburu/pgbouncer:latest", "-c", "getent ahostsv4 host.docker.internal | awk 'NR==1{print $1}'"]).toString().trim()}`,
+    "-e", `DB_PORT=${db.connInfo.port}`, "-e", `DB_USER=${db.connInfo.username}`, "-e", `DB_PASSWORD=${db.connInfo.password}`, "-e", `DB_NAME=${db.connInfo.database}`,
     "-e", "POOL_MODE=transaction", "-e", "AUTH_TYPE=scram-sha-256", "-e", "DEFAULT_POOL_SIZE=4", "-e", "MAX_CLIENT_CONN=200", "-e", `ADMIN_USERS=${db.connInfo.username}`, "edoburu/pgbouncer:latest"
   ]).toString().trim();
   const port = Number(execFileSync("docker", ["port", id, "5432/tcp"]).toString().trim().split("\n")[0]!.split(":").pop());
@@ -76,7 +78,7 @@ const run = async (label: string, withSession: boolean) => {
       const s = performance.now();
       const post = await fetch(`${app.baseUrl}/api/commands/open_wallet`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ walletId, owner: "x", initialBalance: 1 }) });
       const read = await fetch(`${app.baseUrl}/api/wallets/${walletId}`);
-      if (post.status !== 201 || read.status !== 200) failures++;
+      if (post.status !== 201 || read.status !== 200) { failures++; if (failures === 1) console.log(`DIAG first failure: POST ${post.status}, GET ${read.status} ${(await read.clone().text()).slice(0, 200)}`); }
       latencies.push(performance.now() - s);
       await sleep(100);
     }

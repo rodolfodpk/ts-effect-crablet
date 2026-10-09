@@ -10,14 +10,14 @@ and, once, against PgBouncer 1.26 in Docker. Not tested against RDS Proxy or on 
 Two things in Crablet live on one connection for as long as a process holds a role: a module's **leader**, a session-level advisory lock taken on a connection reserved from the application's pool
 (`Leader.ts`, ADR-0006), and **LISTEN**, on a connection `PgClient.listen` opens with the pool's own options (ADR-0005, ADR-0016). Everything else takes transaction-level locks and lives inside a transaction.
 
-A connection pooler in transaction mode lends a server connection for one transaction. **Measured** (PgBouncer 1.26.0, `edoburu/pgbouncer`, `POOL_MODE=transaction`, a pool of 4 servers, Postgres 18 in Docker; one
+A connection pooler in transaction mode lends a server connection for one transaction. **Measured** (PgBouncer 1.26.0, `edoburu/pgbouncer` given the database's IPv4 address, `POOL_MODE=transaction`, a pool of 4 servers, Postgres 18 in Docker; one
 run each, with a session-mode and a direct control that behaved as expected):
 
 | | direct | PgBouncer, transaction mode |
 |---|---|---|
 | 40 concurrent commands through the real `CommandExecutor` | 0 failed | 0 failed |
 | a view's batch and cursor in one transaction | works | works |
-| leader: A holds the lock 6 s while a workload cycles server connections and B keeps trying (40 tries) | B never gets it | **B got it 24 times**; A's check said "lost" 38 of 40 times |
+| leader: A holds the lock 6 s while a workload cycles server connections and B keeps trying (40 tries) | B never gets it | **B got it 11 times**; A's check said "lost" 40 of 40 times (and A no longer led at the end) |
 | 20 notifications sent from a direct connection to a LISTEN | 20 of 20 | **0 of 20**, no error |
 
 Both failures are silent: LISTEN reports success and hears nothing, and the leader flips between thinking it leads and not, while a second instance can take the same lock. The whole wallet with everything through
@@ -42,8 +42,8 @@ Name the connection those two need, and let the application point it at the data
   backend belong to the session client, and the application's backends hold none; a control without the session client finds all of it on the application's. Moving either the hub or one module's leader
   back to the application's client makes the first test fail.
 - `pgbouncer-e2e.test.ts` (Docker and the `edoburu/pgbouncer` image; in the integration suite): two wallet instances behind PgBouncer in transaction mode (a server pool of 8), the application's connection through it and the leader locks and LISTEN direct. 190 commands through both (opens, deposits, withdrawals, transfers, a deposit id sent twice at once through both instances), the session connection of every leader killed in the middle, then instance A stopped gracefully under load. Required: one leader per role each time, always on a `session-*` connection and never on a pooled one; B takes all three roles after A stops; no 5xx; and the chaos page's consistency checks (`examples/chaos-ui/server/checks.ts`: views equal the sum of the log, no duplicate deposits, one welcome notification per wallet, audit and transaction view agree), with every processor caught up. It passed three runs in a row (about 11 s each); it fails with a session pool of 5 (the leaders do not come back) and with no session split (a leader lock held by a pooled connection).
-- `pgbouncer-session.diagnostic.ts` (needs Docker; not in CI): the wallet through PgBouncer in transaction mode, 15 commands each followed by a consistent read. With the split: 15 of 15 worked, p50 61 ms,
-  p95 154 ms, the three leader locks each held by one backend throughout. Everything pooled: 15 of 15 failed, p50 5.0 s (the wait's limit). Note that in this control the lock's holder looked stable
+- `pgbouncer-session.diagnostic.ts` (needs Docker; not in CI): the wallet through PgBouncer in transaction mode, 15 commands each followed by a consistent read. With the split: 15 of 15 worked, p50 47 ms,
+  p95 88 ms, the three leader locks each held by one backend throughout. Everything pooled: 15 of 15 failed, p50 5.0 s (the wait's limit). Note that in this control the lock's holder looked stable
   (one backend each), so a stable holder does not show that the leader works; the failure here showed in the views never catching up.
 
 ## Consequences
@@ -69,4 +69,10 @@ The first version of this ADR, the guide and the wallet's default said the sessi
 Found by the end-to-end test behind PgBouncer (`pgbouncer-e2e.test.ts`): two instances, the session connection of every leader killed under load. In the three runs of the first version, one role never got a leader back (the outbox, then the automations, then the outbox again, with 60 s observed): with a pool of 5, 4 slots went to LISTENs and the other roles' `reserve` waited for ever, silently, without even logging. The same run with no pooler and no split, or with the split and a pool of 12, recovered all three roles in 1.5 to 4.6 s (2 runs each at 5 and 12; the low-level test, three leaders on one client with the pool at 5 and at 10, 16 rounds, recovered 48 of 48).
 
 What changed: the wallet's default is 10, the layer warns below 7, and `tryAcquireGlobalLeader` no longer waits for ever for a connection: after `reserveTimeout` (10 s) it fails with a message that names the pool (`leader-pool-exhausted.test.ts`), and it now gives the connection back when its first statement fails or when it is interrupted (before, either left the pool one connection short for good).
+
+## Correction (2026-10-09): the first measurements ran on a PgBouncer that had one server connection
+
+The numbers above (and the first ones in the guide and NOTES) were taken with `host.docker.internal` as the database's address. On Docker Desktop that name resolves to an IPv6 address as well; PgBouncer tries it first, gets "Network unreachable", and waits `server_login_retry` (15 s) before the next attempt, so it opened one server connection every 15 s and ran every transaction through the first, one at a time (20 transactions of 300 ms took 6.1 s, not 1). The earlier results were therefore measured with the pooler's concurrency switched off, and no command ever competed with another at the database. Redone with the IPv4 literal: the commands (0 failed of 40), the views' atomic batch and LISTEN (0 of 20) came out the same; the leader row changed, **11 acquisitions by the second candidate in 40 tries instead of 24, and the first leader's check false 40 of 40 instead of 38** (still the same finding: the lock is not kept). The diagnostic and the end-to-end test now use the IPv4 literal, and the end-to-end test requires that the pooler really did run transactions side by side.
+
+That in turn made the end-to-end test contend for real (240 debits on 3 wallets, 16 at once: about 80 answered 409, about 420 conflicts retried, 9 sessions in a transaction at once, 8 waiting on a lock), and that found a bug in the wallet that has nothing to do with pooling: see NOTES.md ("the statement opening").
 

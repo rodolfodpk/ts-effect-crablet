@@ -1,10 +1,18 @@
 // Runs under Node (Testcontainers + the docker CLI, and the image edoburu/pgbouncer) - see NOTES.md. The whole wallet behind PgBouncer in TRANSACTION mode, the way a deployment with a pooler runs it
-// (docs/guides/run-in-production.md, "Behind a pooler"; ADR-0024): TWO instances, each with the application's connection going through the pooler (a server pool of 8) and the leader locks
-// and LISTEN on a direct session connection. Mixed load through both (opens, deposits, withdrawals, transfers that conflict, repeated deposit ids), the leader of each role killed in the
-// middle of it, and at the end the data must be consistent: the same checks the kind lab's chaos page runs (examples/chaos-ui/server/checks.ts), plus who held what.
+// (docs/guides/run-in-production.md, "Behind a pooler"; ADR-0024): TWO instances, each with the application's connection going through the pooler (a server pool of 8) and the leader locks and LISTEN
+// on a direct session connection (a pool of 10: it holds 3 leader locks and 4 LISTEN for good).
+//
+// The load, through both instances: opens, deposits, withdrawals, transfers and a deposit id sent twice at once; then a CONTENTION phase, 240 debits (withdrawals and transfers, which are strict over a
+// wallet's boundary) on just 3 wallets, 16 at once, which conflicts for real: the test requires that the database ran transactions side by side, that the conflicts were retried, and that the ones that
+// ran out of retries answered 409 and nothing else went wrong. In the middle of more load the session connection of every leader is killed, and then one instance is stopped gracefully.
+//
+// At the end: one leader per role each time, always on a session connection and never on a pooled one; the other instance takes over; no 5xx; and the data is consistent: the same checks the kind lab's
+// chaos page runs (examples/chaos-ui/server/checks.ts: the views equal the sum of the log, no duplicate deposits, one welcome notification per wallet, every transaction of events audited).
+//
+// Two things this test taught, both in NOTES.md: the session pool must hold what the process keeps for good (7), and PgBouncer must be given the database's IPv4 address, or it serialises everything.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Metric, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { execFileSync } from "node:child_process";
@@ -12,6 +20,8 @@ import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
+// (the wallet does not depend on the metrics package; these are the very files the framework counts with)
+import * as CommandMetrics from "../../../../packages/metrics-otel/src/CommandMetrics.ts";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { dataChecks } from "../../../chaos-ui/server/checks.ts";
@@ -30,13 +40,19 @@ const connect = async (port: number, host: string, user: string, database: strin
   return c;
 };
 
+// The database's address as the PgBouncer container sees it, as an IPv4 LITERAL. `host.docker.internal` (Docker Desktop) resolves to an IPv6 address as well, PgBouncer tries it first, gets
+// "Network unreachable", and waits `server_login_retry` (15 s) before the next attempt: it then opens one server connection every 15 s and runs everything on that one, serialised. The
+// earlier version of this test, and of the diagnostic, ran like that without anyone noticing (20 transactions of 300 ms took 6 s instead of 1).
+const hostIPv4 = (): string =>
+  execFileSync("docker", ["run", "--rm", "--add-host", "host.docker.internal:host-gateway", "--entrypoint", "sh", "edoburu/pgbouncer:latest", "-c", "getent ahostsv4 host.docker.internal | awk 'NR==1{print $1}'"]).toString().trim();
+
 before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   const id = execFileSync("docker", [
     "run", "-d", "--rm", "-p", "127.0.0.1::5432", "--add-host", "host.docker.internal:host-gateway",
-    "-e", "DB_HOST=host.docker.internal", "-e", `DB_PORT=${db.connInfo.port}`, "-e", `DB_USER=${db.connInfo.username}`, "-e", `DB_PASSWORD=${db.connInfo.password}`, "-e", `DB_NAME=${db.connInfo.database}`,
-    "-e", "POOL_MODE=transaction", "-e", "AUTH_TYPE=scram-sha-256", "-e", "DEFAULT_POOL_SIZE=8", "-e", "MAX_CLIENT_CONN=200", "-e", `ADMIN_USERS=${db.connInfo.username}`, "edoburu/pgbouncer:latest"
+    "-e", `DB_HOST=${hostIPv4()}`, "-e", `DB_PORT=${db.connInfo.port}`, "-e", `DB_USER=${db.connInfo.username}`, "-e", `DB_PASSWORD=${db.connInfo.password}`, "-e", `DB_NAME=${db.connInfo.database}`,
+    "-e", "POOL_MODE=transaction", "-e", "AUTH_TYPE=scram-sha-256", "-e", "DEFAULT_POOL_SIZE=8", "-e", "MIN_POOL_SIZE=8", "-e", "MAX_CLIENT_CONN=200", "-e", `ADMIN_USERS=${db.connInfo.username}`, "edoburu/pgbouncer:latest"
   ]).toString().trim();
   const port = Number(execFileSync("docker", ["port", id, "5432/tcp"]).toString().trim().split("\n")[0]!.split(":").pop());
   bouncer = { id, port };
@@ -101,11 +117,14 @@ describe("the wallet behind PgBouncer in transaction mode, two instances, leader
 
       // 2. mixed load through both instances
       const statuses = new Map<number, number>();
+      let inflight = 0, maxInflight = 0;
       const call = async (i: number, command: string, body: unknown) => {
+        inflight++; maxInflight = Math.max(maxInflight, inflight);
         const target = live[i % live.length]!;
         const res = await fetch(`${target.app.baseUrl}/api/commands/${command}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         statuses.set(res.status, (statuses.get(res.status) ?? 0) + 1);
         await res.text();
+        inflight--;
         return res.status;
       };
       const wallets = Array.from({ length: 12 }, () => `wallet-${crypto.randomUUID()}`);
@@ -137,6 +156,68 @@ describe("the wallet behind PgBouncer in transaction mode, two instances, leader
       };
 
       await burst(60);
+
+      // 2b. contention: debits (withdrawals, transfers) are strict over the wallet's boundary, so many of them at once on a FEW wallets conflict. They retry (3 times), and what still
+      // conflicts is a 409. Counted two ways, because the retries hide conflicts that then succeed: the 409s, and the transactions the database rolled back.
+      const HOT = 3, WORKERS = 16;
+      const hot = Array.from({ length: HOT }, () => `hot-${crypto.randomUUID()}`);
+      await Promise.all(hot.map((id, i) => call(i, "open_wallet", { walletId: id, owner: "Hot", initialBalance: 10_000_000 })));
+      const rollbacks = async () => {
+        await sleep(1_500); // the database publishes its counters about once a second
+        return Number((await probe.query("SELECT xact_rollback::text AS n FROM pg_stat_database WHERE datname = current_database()")).rows[0].n);
+      };
+      const contend = async (count: number) => {
+        let issued = 0;
+        const workers = Array.from({ length: WORKERS }, async () => {
+          while (issued < count) {
+            const n = issued++;
+            const from = hot[n % hot.length]!;
+            if (n % 5 < 3) await call(n, "withdraw", { withdrawalId: crypto.randomUUID(), walletId: from, amount: 1 + (n % 3), description: "hot" });
+            else await call(n, "transfer_money", { transferId: crypto.randomUUID(), fromWalletId: from, toWalletId: hot[(n + 1) % hot.length]!, amount: 1 + (n % 3), description: "hot" });
+          }
+        });
+        await Promise.all(workers);
+      };
+      const rolledBackBefore = await rollbacks();
+      const conflictsBefore = statuses.get(409) ?? 0;
+      let sampling = true, maxActive = 0, maxWaitingOnLock = 0;
+      const sampler = (async () => {
+        while (sampling) {
+          const r = await probe.query<{ active: string; locks: string }>(
+            `SELECT count(*) FILTER (WHERE state IN ('active', 'idle in transaction'))::text AS active, count(*) FILTER (WHERE wait_event_type = 'Lock')::text AS locks FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND backend_type = 'client backend'`
+          );
+          maxActive = Math.max(maxActive, Number(r.rows[0]!.active));
+          maxWaitingOnLock = Math.max(maxWaitingOnLock, Number(r.rows[0]!.locks));
+          await sleep(10);
+        }
+      })();
+      const admin0 = await connect(bouncer.port, "127.0.0.1", db.connInfo.username, "pgbouncer", "admin-pool");
+      let maxClWaiting = 0, maxSvActive = 0;
+      const poolSampler = (async () => {
+        while (sampling) {
+          const pools = await admin0.query("SHOW POOLS");
+          const row = pools.rows.find((r: { database: string }) => r.database === db.connInfo.database) as { cl_active: number; cl_waiting: number; sv_active: number } | undefined;
+          if (row) { maxClWaiting = Math.max(maxClWaiting, Number(row.cl_waiting)); maxSvActive = Math.max(maxSvActive, Number(row.sv_active)); }
+          await sleep(20);
+        }
+      })();
+      const contentionStarted = Date.now();
+      await contend(240);
+      const contentionMs = Date.now() - contentionStarted;
+      sampling = false;
+      await sampler;
+      await poolSampler;
+      await admin0.end();
+      console.log(`DIAG pgbouncer e2e contention load: ${contentionMs} ms for 240 debits; at most ${maxInflight} requests in flight; at most ${maxActive} active database sessions and ${maxWaitingOnLock} waiting on a lock; PgBouncer: at most ${maxSvActive} server connections active, ${maxClWaiting} clients waiting for one`);
+      const conflicts = (statuses.get(409) ?? 0) - conflictsBefore;
+      const rolledBack = (await rollbacks()) - rolledBackBefore;
+      const retriesOf = async (inst: Instance, command: string) =>
+        (await inst.runtime.runPromise(Effect.map(Metric.value(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command })), (m) => (m as unknown as { count: number }).count) as Effect.Effect<number, never, CoreServices>)) as number;
+      // (the metrics are the process's, shared by both instances: read once)
+      const retries = (await retriesOf(a, "withdraw")) + (await retriesOf(a, "transfer_money"));
+      console.log(`DIAG pgbouncer e2e contention: 240 debits on ${HOT} wallets, ${WORKERS} at once, took ${contentionMs} ms: ${conflicts} answered 409, ${retries} conflicts were retried, ${rolledBack} transactions rolled back by the database; at most ${maxActive} database sessions in a transaction at once and ${maxWaitingOnLock} waiting on a lock; PgBouncer: at most ${maxSvActive} server connections active, ${maxClWaiting} clients waiting for one`);
+      assert.ok(maxSvActive >= 2 && maxActive >= 2, `PgBouncer ran transactions side by side (server connections active at once: ${maxSvActive}, sessions in a transaction: ${maxActive}); one at a time would mean the load never contended`);
+      assert.ok(retries >= 10, `the debits conflicted for real and were retried (${retries} retries, ${conflicts} answered 409)`);
 
       // 3. kill the session connection of each role's leader, in the middle of the load
       const leadersBefore = await holders();

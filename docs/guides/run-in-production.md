@@ -131,10 +131,10 @@ one: the appends, the commands, the pollers' queries, and a view's batch with it
 - **a module's leader**, a session-level advisory lock on a reserved connection (`pg_try_advisory_lock`);
 - **LISTEN**, the pollers' wake-ups and the views' progress pings.
 
-Behind PgBouncer in transaction mode **neither fails loudly**. Measured (PgBouncer 1.26, a server pool of 4, Postgres in Docker): while one instance held a leader lock, a second took it in 24 of
-40 tries and the first saw its own lock as lost in 38 of 40 checks; 0 of 20 notifications reached a LISTEN, with no error. The whole wallet with everything through the pooler
+Behind PgBouncer in transaction mode **neither fails loudly**. Measured (PgBouncer 1.26, a server pool of 4, Postgres in Docker): while one instance held a leader lock, a second took it in 11 of
+40 tries and the first saw its own lock as lost in 40 of 40 checks; 0 of 20 notifications reached a LISTEN, with no error. The whole wallet with everything through the pooler
 (`examples/wallet-example-app/diagnostics/pgbouncer-session.diagnostic.ts`): 15 of 15 commands followed by a consistent read failed with a 503 after the 5 s wait, because the views never caught up;
-with the split below, 15 of 15 worked, p50 61 ms.
+with the split below, 15 of 15 worked, p50 47 ms. (Run PgBouncer against the database's IPv4 address in Docker Desktop: with `host.docker.internal` it waits 15 s between server logins and runs everything one transaction at a time.)
 
 **Give the leader and LISTEN a direct connection**, to the database's own endpoint (the writer, not a reader, not the pooler), and keep the pooler for the rest:
 

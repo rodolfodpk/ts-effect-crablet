@@ -7,7 +7,7 @@ import { PgClient } from "@effect/sql-pg";
 //
 // Behind a connection pooler in transaction mode (PgBouncer, or RDS Proxy, which pins instead) neither survives: the pooler hands the server connection to another client
 // between transactions, so the lock is lost (or another instance gets it too) and a LISTEN hears nothing, without an error. Measured behind PgBouncer 1.26, transaction
-// mode: a second instance took the lock 24 times in 40 tries while the first held it, and 0 of 20 notifications arrived. The commands, the appends and the views'
+// mode: a second instance took the lock 11 times in 40 tries while the first held it, and the first one's own check said it had lost it every time, and 0 of 20 notifications arrived. The commands, the appends and the views'
 // transactions are not affected: they take only transaction-level locks. So only these two need a direct connection to the database.
 //
 // `SessionClients` names that direct connection. It is optional: when it is not provided, the leader and the LISTEN use the application's own `SqlClient` and

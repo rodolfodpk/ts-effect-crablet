@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventStoreService } from "@crablet/eventstore";
 import * as AppendCondition from "@crablet/eventstore/AppendCondition";
+import * as LogPosition from "@crablet/eventstore/LogPosition";
 import type { AppendTooLarge, Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
@@ -84,13 +85,17 @@ export const resolveActivePeriod = (
 
     // Otherwise lazily close the previous period's statement (if any, and only if it had transactions)
     // and open this one, carrying the balance forward.
+    // Where the opening below must still hold: nothing about this wallet's statements changed since `tracking` was read. The opening used to be appended with NO condition, so commands
+    // racing on a wallet with no open statement each opened their own (three for three racers), and a racer that then ended as an idempotent repeat left its opening committed with no
+    // audit row. A racer now conflicts, the executor runs it again, and its `prepare` finds the statement open.
+    let holdsAfter = tracking.logPosition;
     let carryForwardBalance: number;
     if (open.openStatementId !== null && open.openYear !== null && open.openMonth !== null) {
       const oldPeriod = yield* WalletModel.of({ id: walletId, year: open.openYear, month: open.openMonth }).load(eventStore);
       carryForwardBalance = oldPeriod.state.balance;
 
       if (yield* eventStore.exists(periodTransactionsQuery(walletId, open.openYear, open.openMonth))) {
-        yield* eventStore.append(
+        const closed = yield* eventStore.append(
           [
             WalletStatementClosed({
               walletId,
@@ -105,6 +110,7 @@ export const resolveActivePeriod = (
           // refuse if another statement event landed since we read the old period
           AppendCondition.of(oldPeriod.logPosition, StatementTracking.of({ id: walletId }).query)
         );
+        holdsAfter = LogPosition.of(closed.lastPosition, now, closed.transactionId); // this command's own closing is not a change to guard against
       }
     } else {
       // This wallet's very first statement ever - the opening balance is WalletOpened's initial balance.
@@ -112,8 +118,9 @@ export const resolveActivePeriod = (
     }
 
     const statementId = toStatementId(walletId, year, month);
-    yield* eventStore.append([
-      WalletStatementOpened({ walletId, statementId, year, month, openingBalance: carryForwardBalance, openedAt: now.toISOString() })
-    ]);
+    yield* eventStore.append(
+      [WalletStatementOpened({ walletId, statementId, year, month, openingBalance: carryForwardBalance, openedAt: now.toISOString() })],
+      AppendCondition.of(holdsAfter, StatementTracking.of({ id: walletId }).query)
+    );
     return { year, month, statementId };
   });
