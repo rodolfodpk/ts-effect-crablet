@@ -8,7 +8,7 @@ import { migrateIfFresh } from "./migrate.ts";
 import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
-import { hasWorkers, rolesFromEnv } from "./roles.ts";
+import { hasWorkers, rolesFromEnv, sessionConnectionsHeld } from "./roles.ts";
 import { serveHealth } from "./health.ts";
 import { pollingFromEnv, wakeupModeFromEnv } from "./polling.ts";
 
@@ -19,7 +19,7 @@ const connInfo = {
   username: process.env["WALLET_DB_USER"] ?? "postgres",
   password: process.env["WALLET_DB_PASSWORD"] ?? "postgres"
 };
-// WALLET_DB_SESSION_HOST (and _PORT, _NAME, _USER, _PASSWORD, _POOL, each defaulting to the main one, the pool to 10; it must be at least 7: 3 leader locks and 4 LISTEN are held for good): a DIRECT connection to the database for the leader locks and LISTEN, while
+// WALLET_DB_SESSION_HOST (and _PORT, _NAME, _USER, _PASSWORD, _POOL, each defaulting to the main one, the pool to 10; it must cover what the roles keep for good: 2 per worker role, 1 for the api): a DIRECT connection to the database for the leader locks and LISTEN, while
 // WALLET_DB_HOST points at a pooler in transaction mode (PgBouncer). Unset, they share the main connection. See docs/guides/run-in-production.md.
 const sessionHost = process.env["WALLET_DB_SESSION_HOST"];
 const sessionInfo = sessionHost === undefined || sessionHost === "" ? undefined : {
@@ -35,6 +35,7 @@ const poolSize = poolSizeFromEnv();
 const wakeupMode = wakeupModeFromEnv(); // WALLET_WAKEUPS
 const polling = { ...pollingFromEnv(), listenForWakeups: wakeupMode !== "off" }; // WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS
 const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (ADR-0022)
+const sessionHolds = sessionConnectionsHeld(roles); // what this process's roles keep in the session pool for good
 
 // Entry point: apply migrations (to a fresh database only), then start the app - views/
 // automations/outbox background processors AND the HTTP server, all sharing one connection pool.
@@ -53,7 +54,7 @@ async function main(): Promise<void> {
     ...(poolSize === undefined ? {} : { maxConnections: poolSize })
   }, {
     eventStore: { wakeupMode },
-    ...(sessionInfo === undefined ? {} : { session: { ...sessionInfo, password: Redacted.make(sessionInfo.password) } })
+    ...(sessionInfo === undefined ? {} : { session: { ...sessionInfo, password: Redacted.make(sessionInfo.password) }, sessionHolds })
   });
 
   const program = Effect.gen(function* () {

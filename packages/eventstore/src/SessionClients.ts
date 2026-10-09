@@ -33,24 +33,27 @@ export const sessionPg: Effect.Effect<PgClient.PgClient, never, PgClient.PgClien
   return session !== null ? session.pg : yield* PgClient.PgClient;
 });
 
+// What a process keeps in the session pool for good: one reserved connection per module that leads (3 locks at most), and one per LISTEN, which with @effect/sql-pg takes a pooled
+// connection for as long as it lasts (one for each module's wake-ups, and one for the views' progress hub where the api runs). It depends on the roles the process runs, so whoever
+// builds the layer says how many (`holds`); the layer does not guess. Measured, idle: a process with views + automations + outbox + api keeps 7; the three workers without api, 6; views
+// alone, 2; api alone, 1. A pool smaller than that does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after `reserveTimeout` and says so;
+// a LISTEN that does not fit just waits, and its process falls back to polling).
+export const sessionPoolWarning = (maxConnections: number | undefined, holds: number | undefined): string | null =>
+  maxConnections === undefined || holds === undefined || maxConnections >= holds
+    ? null
+    : `session connections: maxConnections is ${maxConnections}, but this process keeps ${holds} of them for good (leader locks and LISTENs); the rest wait. Use ${holds} or more (the library's default is 10).`;
+
 // A second client, for the session connections, over `config` (the same shape as the application's: host, port, database, username, password, maxConnections).
 //
-// Its pool must hold what the process keeps for good: one connection per module that leads (a reserved one, at most three), and one per LISTEN, which with @effect/sql-pg takes a pooled
-// connection for as long as it lasts (the three modules' wake-ups and the views' progress hub: four). Seven for a process that runs everything, the default of 10 leaves room for the
-// attempts of the modules that do not lead. Too small a pool does not fail: the connections that do not fit wait, and a module can stay without a leader (the first version of this advice
-// said 5, and a wallet behind PgBouncer never got its outbox leader back after its connection was killed). A leader now gives up waiting after `reserveTimeout` and says so.
-const MIN_POOL = 7;
-
+// Its pool must hold what the process keeps for good (see `sessionPoolWarning`), plus room for the attempts of the modules that do not lead (one each). The first version of this advice
+// said 5 for every process, and a wallet behind PgBouncer never got its outbox leader back after its connection was killed.
 // (A `Reference` is not tracked in a layer's output type, hence `Layer<never, ...>`.)
-export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0]): Layer.Layer<never, SqlError> =>
+export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0], options: { readonly holds?: number } = {}): Layer.Layer<never, SqlError> =>
   Layer.effect(
     SessionClients,
     Effect.gen(function* () {
-      if (config.maxConnections !== undefined && config.maxConnections < MIN_POOL) {
-        yield* Effect.logWarning(
-          `session connections: maxConnections is ${config.maxConnections}; a process that runs the three modules keeps ${MIN_POOL} for good (3 leader locks, 4 LISTEN) and the rest wait. Use ${MIN_POOL} or more (10 is the default).`
-        )
-      }
+      const warning = sessionPoolWarning(config.maxConnections, options.holds);
+      if (warning !== null) yield* Effect.logWarning(warning);
       const context = yield* Layer.build(PgClient.layer(config));
       return { pg: Context.get(context, PgClient.PgClient), sql: Context.get(context, SqlClient.SqlClient) };
     })

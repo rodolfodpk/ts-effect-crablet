@@ -36,9 +36,12 @@ export interface CrabletOptions {
   readonly eventStore?: EventStoreConfig;
   readonly audit?: Partial<AuditConfig>;
   // A direct connection to the database for what cannot go through a pooler in transaction mode (PgBouncer): a module's leader (a session-level advisory lock) and LISTEN.
-  // Give it the database's own endpoint (same shape as `pg`) while `pg` points at the pooler. Omitted, they use `pg`, as before. Its `maxConnections` must be at least 7 (the default 10 is
-  // fine): a process that runs the three modules keeps 3 leader locks and 4 LISTEN connections in that pool for good. See docs/guides/run-in-production.md.
+  // Give it the database's own endpoint (same shape as `pg`) while `pg` points at the pooler. Omitted, they use `pg`, as before. What its `maxConnections` must be depends on the
+  // roles the process runs (`sessionHolds` below): 7 for the three modules and the api, 1 for the api alone. See docs/guides/run-in-production.md.
   readonly session?: PgConfig;
+  // How many connections this process keeps in the `session` pool for good (3 leader locks at most, and one per LISTEN): 7 for all the modules and the api, 6 for the three modules without
+  // the api, 2 for one module, 1 for the api alone. Given, the layer warns when `session.maxConnections` is smaller. See `sessionPoolWarning`.
+  readonly sessionHolds?: number;
 }
 
 export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<Services, SqlError> =>
@@ -48,7 +51,7 @@ export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<S
       makeEventStoreLayer(options.eventStore),
       CommandAuditStoreLive,
       Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" }),
-      options.session === undefined ? Layer.empty : sessionClientsLayer(options.session)
+      options.session === undefined ? Layer.empty : sessionClientsLayer(options.session, options.sessionHolds === undefined ? {} : { holds: options.sessionHolds })
     ),
     PgClient.layer(pg)
   );

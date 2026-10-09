@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { allRoles, hasWorkers, rolesFromEnv } from "../src/roles.ts";
+import { allRoles, hasWorkers, rolesFromEnv, sessionConnectionsHeld } from "../src/roles.ts";
 
 describe("WALLET_ROLES", () => {
   test("unset or blank means every role, so nothing changes for a deployment that never sets it", () => {
@@ -27,3 +27,17 @@ describe("WALLET_ROLES", () => {
     expect(hasWorkers(allRoles)).toBe(true);
   });
 });
+
+// What a process keeps in the session pool for good (docs/guides/run-in-production.md), measured idle with a pool large enough not to be the limit: the three workers and the api, 7 (3 leader
+// locks, 4 LISTEN); the three workers alone, 6; views alone, 2; the api alone, 1.
+describe("sessionConnectionsHeld", () => {
+  test("is what the roles keep for good: 2 per worker role (its leader lock and its LISTEN) and 1 for the api (the views' progress hub)", () => {
+    expect(sessionConnectionsHeld(allRoles)).toBe(7);
+    expect(sessionConnectionsHeld(rolesFromEnv("views,automations,outbox"))).toBe(6);
+    expect(sessionConnectionsHeld(rolesFromEnv("views"))).toBe(2);
+    expect(sessionConnectionsHeld(rolesFromEnv("outbox"))).toBe(2);
+    expect(sessionConnectionsHeld(rolesFromEnv("api"))).toBe(1);
+    expect(sessionConnectionsHeld(rolesFromEnv("api,views"))).toBe(3);
+  });
+});
+

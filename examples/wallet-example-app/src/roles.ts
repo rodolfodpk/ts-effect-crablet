@@ -7,6 +7,10 @@ export type Roles = ReadonlySet<Role>;
 export const allRoles: Roles = new Set(ROLES);
 export const workerRoles = ["views", "automations", "outbox"] as const satisfies ReadonlyArray<Role>;
 
+// What a process with these roles keeps in its session pool for good (docs/guides/run-in-production.md, "Behind a pooler"): each worker role holds its leader lock and one LISTEN for wake-ups,
+// and the api holds one LISTEN for the views' progress hub. Measured idle: all four roles 7, the three workers 6, one worker 2, the api 1.
+export const sessionConnectionsHeld = (roles: Roles): number => 2 * [...roles].filter((r) => r !== "api").length + (roles.has("api") ? 1 : 0);
+
 export const rolesFromEnv = (value: string | undefined = process.env["WALLET_ROLES"]): Roles => {
   if (value === undefined || value.trim() === "") return allRoles;
   const roles = new Set<Role>();

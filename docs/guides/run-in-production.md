@@ -145,15 +145,42 @@ Crablet.layer(
 );
 ```
 
-`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. Its pool holds what a process keeps for good (the table under "Size the pool"):
-**7 connections for a process that runs the three modules** (3 leader locks, 3 `LISTEN` for event wake-ups, 1 for view progress), and the default of 10 leaves room for the attempts of the
-modules that do not lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a leader (a leader now gives up after 10 s and logs why; the layer warns below 7). The wallet reads it from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`,
-`_PASSWORD`, `_POOL`, each defaulting to the main one). The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
+`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. Its pool holds what the process keeps for good, which depends on the
+roles it runs (measured idle): **all three workers and the api, 7** (3 leader locks, 3 `LISTEN` for event wake-ups, 1 for view progress); **the three workers, 6**; **one worker, 2** (its lock and its
+`LISTEN`); **the api alone, 1**. The default of 10 leaves room for the attempts of the modules that do not lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a
+leader (a leader gives up after 10 s and logs why; a `LISTEN` that does not fit just waits and the process falls back to polling). Say how many your process keeps with `sessionHolds` and the layer warns when the pool is
+smaller; the wallet works it out from its roles (`sessionConnectionsHeld`) and reads the connection from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`, `_PASSWORD`, `_POOL`, each defaulting to the main one).
+The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
 Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it.
 
 **RDS Proxy** does not break these but pins them: per the AWS documentation, LISTEN and session-level advisory locks pin a connection to the proxy, and transaction-level locks do not. `session` keeps
 those few connections off the proxy. Not tested against a real RDS Proxy. Aurora Limitless supports neither LISTEN nor RDS Proxy. After a failover of the direct endpoint the leader notices through its heartbeat
 and LISTEN reconnects with a wake-up for what it missed (tested locally, not against Aurora).
+
+### A pod per role
+
+The roles (`WALLET_ROLES`: `api`, `views`, `automations`, `outbox`, [ADR-0022](../adr/0022-runtime-roles.md)) can run as separate pods of the same image. Measured with one pod each for `views`, `automations` and
+`outbox` and one `api` (plain Postgres, a pool of 30 each, 600 commands from 12 clients at once, the four in one Node process so the CPU was shared; the data came out consistent, and ten consistent reads through the
+api pod, waiting for views that run in another pod, took 109 ms in all):
+
+| Pod | Connections held for good | Peak connections | Peak busy |
+|---|---|---|---|
+| `views` | 2 (its leader lock, a `LISTEN`) | 6 | 5 |
+| `automations` | 2 | 4 | 1 |
+| `outbox` | 2 | 3 | 1 |
+| `api` | 1 (the progress hub's `LISTEN`) | 30 (the pool's limit) | 12 to 13 (see below) |
+
+- **The workers need no pooler.** One process with its own pool does not gain from multiplexing: point it straight at the database, and leader and `LISTEN` behave as on any Postgres. The default pool of 10 is enough for
+  each (the busiest, `views`, peaked at 6). That is 13 connections at the peak for the three.
+- **The api pods are where connections add up.** A command holds one connection for its whole transaction, **including the time it waits for the append's advisory lock**: with 12 requests in flight the pod had 12 to 13
+  connections busy, and most of them were `active (waiting: Lock)` inside `append_events_if` (8 of 12 with deposits only, 12 of 12 with withdrawals and transfers, on 30 wallets). So a pod needs a pool as big as the
+  commands it runs at once, and N pods ask the database for N times that. (A pool keeps its idle connections for 10 s: the 28 to 31 connections seen at the peak were 12 busy and the rest waiting to expire.) If N times the pool
+  nears the database's `max_connections`, that is the reason for a pooler in front of the api pods only, with `session` giving each of them the 1 connection its `LISTEN` needs (without it that `LISTEN` is lost in silence, and by the code a read
+  then waits for the safety interval instead of a ping; not measured).
+- **RDS Proxy** would pin 2 connections per worker pod and 1 per api pod, which is nothing: with this layout it needs no `session` at all (from the AWS documentation; not tested against a real RDS Proxy).
+- **A pod down delays only what is its own.** `views` down: strict reads wait 5 s and answer 503 with `Retry-After` (commands carry on); `automations` or `outbox` down: notifications and publications are late, nothing
+  is lost. Each role's leader lock is then a safety net (one candidate) that still covers the overlap of a rolling update. A graceful stop hands the lock over in about 0.1 s; after a crash the new pod takes it at its next
+  retry (5 s in the wallet).
 
 ## 3. Start the processors, serve, and fail loudly
 
