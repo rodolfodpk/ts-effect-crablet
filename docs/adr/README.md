@@ -36,6 +36,7 @@ The four that explain the shape of what you use.
 - [ADR-0014: Live updates are a ping, sent after the commit, delivered at most once](0014-live-updates-by-ping.md)
 - [ADR-0016: One LISTEN per process for view progress; a hub fans the pings out in memory](0016-one-listen-per-process-for-view-progress.md)
 - [ADR-0021: Wake-ups are sent after the commit and coalesced, not inside every append](0021-wakeups-after-commit-and-coalesced.md) - **accepted**: built (coalesced wake-ups after the commit, with an `off` mode); 1.95 times the appends per second measured
+- [ADR-0023: A view's batch and its cursor commit in one transaction, so a repeated batch is applied once](0023-view-batch-and-cursor-in-one-transaction.md) - **accepted**: built for views; automations and the outbox excluded, with the reasons
 
 ## Storage and operation
 

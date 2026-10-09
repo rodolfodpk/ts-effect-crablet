@@ -14,7 +14,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Domain error** - a refusal that belongs to the business (`SeatTaken`), declared on the command, with a `kind` the HTTP layer maps to a status code.
 - **Append condition** - "append these events only if nothing matching this query is newer than this position". It makes the check and the write one atomic step. [ADR-0003](./adr/0003-non-commutative-append-concurrency-protection.md)
 - **Conflict** - the append condition failed because the boundary changed. The command is re-run with fresh state (`retries`, default 3).
-- **Idempotent** - repeating the operation has no further effect. A command can declare `idempotentBy`; handlers fed by the pollers must be idempotent because delivery is at-least-once.
+- **Idempotent** - repeating the operation has no further effect. A command can declare `idempotentBy`; delivery by the pollers is at-least-once, so an automation's command must declare it (`automationHandlerOf` refuses one that does not), an outbox publisher should deduplicate on `event.position`, and a view's projector is covered when it writes through the `sql` it is given (its batch and cursor commit together, ADR-0023).
 - **Commutative command** - one that is safe to run in parallel with itself (deposits). It declares `concurrent({ guard })`; only the guard events can conflict.
 
 ## Positions and delivery

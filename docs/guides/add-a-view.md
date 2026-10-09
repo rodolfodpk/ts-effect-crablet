@@ -1,14 +1,16 @@
 # Add a view
 
-A view is a table kept up to date from events by a **projector**. It updates asynchronously, and a projector must be **idempotent**, because delivery is
-at-least-once ([reference](../reference.md#views-the-outbox-and-automations)). The example is the course app's seat counter.
+A view is a table kept up to date from events by a **projector**. It updates asynchronously. Delivery is at-least-once ([reference](../reference.md#views-the-outbox-and-automations)),
+but a projector's writes commit in the same transaction as the view's cursor, so a batch handled twice is applied once, **as long as the writes go through the `sql` the
+projector is given** ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md)). A projector that writes anywhere else (another database, a service) must still be
+**idempotent**. The example is the course app's seat counter.
 
 [← Task guides](README.md)
 
 ## 1. Create the table
 
 A migration of your own, numbered from `V100` so it cannot clash with the framework's: [`V100__course_seats_view.sql`](../../examples/course-enrolment-app/db/migration/V100__course_seats_view.sql).
-Keep a column for the position of the last event applied; that is what makes the projector idempotent. List the file in `appMigrationFiles` in
+Keep a column for the position of the last event applied if the projector must be idempotent by itself (a write outside the given `sql`, or a view also fed by other code). List the file in `appMigrationFiles` in
 [`migrate.ts`](../../examples/course-enrolment-app/src/migrate.ts).
 
 ## 2. Write the projector

@@ -7,9 +7,9 @@ shared so the three modules get the same guarantees.
 
 - **`makeEventProcessor`** - one processor per id: backoff, a wake-up on LISTEN/NOTIFY, and **leader-gated** (only the process holding the module's advisory lock runs it; the lock is per module, shared by all the module's processors).
 - **Guarantees** - no event is skipped (the cursor is a `(transaction_id, position)` pair), **at-least-once** delivery, a fence before the handler and before the cursor moves,
-  and a cursor that can only move forward.
+  and a cursor that can only move forward. With `atomically` (views use it) the handler's writes and the cursor commit in one transaction, and a batch whose cursor move matches no row (another processor took it first) is rolled back, so it is applied once ([ADR-0023](../../docs/adr/0023-view-batch-and-cursor-in-one-transaction.md)).
 - **`EventSelection`**, **`SqlEventFetcher`** - which events a processor wants (types and tags) and the SQL that fetches them.
-- **`ProgressTracker`** / **`PostgresProgressTracker`**, **`ProgressCursor`**, **`ProgressPing`** - where a processor has got to.
+- **`ProgressTracker`** / **`PostgresProgressTracker`**, **`ProgressCursor`**, **`ProgressPing`** - where a processor has got to. `advanceCursor` is `updateCursor` that says whether the cursor moved.
 - **`monitorProcessors`** (`@crablet/event-poller/MonitorProcessors`) - keeps the `crablet.poller.lag_*`, cursor and status gauges current.
 - **`ProcessorManagementService`**, **`ProcessorStatus`**, **`ProcessorConfig`** - inspect and control processors (pause, reset, status).
 

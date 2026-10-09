@@ -23,7 +23,8 @@ fixtures, `verifyEvents`, and a change-impact report with a committed baseline (
 ## Views, the outbox and automations
 
 They are fed by pollers. Guarantees: **no event is skipped** (cursor is a `(transaction_id, position)` pair,
-[ADR-0012](./adr/0012-transaction-position-cursors.md)); **at-least-once**, so handlers must be idempotent; delivery is ordered by transaction,
+[ADR-0012](./adr/0012-transaction-position-cursors.md)); **at-least-once**; a view's writes made through the `sql` its projector receives commit in the same transaction as its cursor, so a repeated batch is applied once
+([ADR-0023](./adr/0023-view-batch-and-cursor-in-one-transaction.md)), and anything else must be idempotent (a projector's write outside that `sql`, an automation's command, an outbox publisher); delivery is ordered by transaction,
 then position, so do not use "position is bigger than the last one I saw" as a general idempotency check; and a long-running transaction anywhere in
 the database delays delivery until it ends.
 

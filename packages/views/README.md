@@ -11,7 +11,7 @@ so a read can wait for a write.
 - **`ViewProgress`**, **`ViewProgressHub`**, **`ViewProgressFeed`** - view progress announced with one LISTEN per process, fanned out in memory, and the server-sent "ping" feed.
 - **`ViewManagementService`** - inspect and control views.
 
-A projector must be **idempotent** (delivery is at-least-once); the wallet's statement projector is the worked example.
+Delivery is at-least-once, but a projector's writes commit in the same transaction as the view's cursor, so a batch handled twice is applied once, **provided the writes go through the `sql` the projector is given** ([ADR-0023](../../docs/adr/0023-view-batch-and-cursor-in-one-transaction.md)). A projector that writes elsewhere must be **idempotent**; the wallet's statement projector is the worked example.
 
 ## Depends on
 
