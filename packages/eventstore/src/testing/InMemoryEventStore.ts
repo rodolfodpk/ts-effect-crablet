@@ -4,7 +4,7 @@ import { EventStore, existsProjector, type EventStoreService, type StoredEvent }
 import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
-import { Conflict, Duplicate } from "../AppendErrors.ts";
+import { AppendTooLarge, Conflict, Duplicate, MAX_APPEND_EVENTS } from "../AppendErrors.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 import * as LogPositionNS from "../LogPosition.ts";
 import { checkAppend, queryMatches } from "../spec/Spec.ts";
@@ -63,6 +63,9 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
     Effect.gen(function* () {
       if (events.length === 0) return yield* Effect.die("Cannot append empty events list");
+      if (events.length > MAX_APPEND_EVENTS) {
+        return yield* new AppendTooLarge({ message: `Cannot append ${events.length} events in one call; the limit is ${MAX_APPEND_EVENTS}. Split them into several appends.`, count: events.length, max: MAX_APPEND_EVENTS });
+      }
       const verdict = condition ? checkAppend(log, condition) : "ok";
       if (verdict === "duplicate") {
         return yield* new Duplicate({ message: "Duplicate operation: duplicate operation detected" });

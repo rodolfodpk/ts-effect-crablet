@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Cause, Effect, Exit } from "effect";
 import { EventStore } from "../src/EventStore.ts";
+import { MAX_APPEND_EVENTS } from "../src/AppendErrors.ts";
 import * as AppendCondition from "../src/AppendCondition.ts";
 import * as AppendEvent from "../src/AppendEvent.ts";
 import * as CorrelationContext from "../src/CorrelationContext.ts";
@@ -123,4 +124,17 @@ test("appending no events is a defect, like Postgres", async () => {
   const store = makeInMemoryEventStore();
   const exit = await Effect.runPromiseExit(provide(store, Effect.flatMap(EventStore, (es) => es.append([]))));
   expect(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason)).toBe(true);
+});
+
+describe("InMemoryEventStore: batch size limit", () => {
+  test("an append of more than MAX_APPEND_EVENTS fails with AppendTooLarge and stores nothing; exactly the limit is accepted", async () => {
+    const store = makeInMemoryEventStore();
+    const batch = (n: number) => Array.from({ length: n }, (_, i) => ev("E", "k", String(i)));
+    const tooMany = await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => Effect.flip(es.append(batch(MAX_APPEND_EVENTS + 1))))));
+    expect(tooMany._tag).toBe("AppendTooLarge");
+    expect(tooMany).toMatchObject({ count: MAX_APPEND_EVENTS + 1, max: MAX_APPEND_EVENTS });
+    expect(store.log).toHaveLength(0);
+    await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => es.append(batch(MAX_APPEND_EVENTS)))));
+    expect(store.log).toHaveLength(MAX_APPEND_EVENTS);
+  });
 });

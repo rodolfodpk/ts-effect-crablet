@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
-import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import { type AppendTooLarge, Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command } from "./Command.ts";
 import { recordCommand } from "./CommandAudit.ts";
@@ -32,7 +32,7 @@ export interface CommandExecutorService {
     input: unknown
   ) => Effect.Effect<
     ExecutionResult,
-    Err | InvalidInput | Conflict | SqlError,
+    Err | InvalidInput | AppendTooLarge | Conflict | SqlError,
     EventStore | CommandAuditStore | SqlClient.SqlClient
   >;
   readonly runDecoded: <In, Err>(
@@ -40,7 +40,7 @@ export interface CommandExecutorService {
     input: In
   ) => Effect.Effect<
     ExecutionResult,
-    Err | Conflict | SqlError,
+    Err | AppendTooLarge | Conflict | SqlError,
     EventStore | CommandAuditStore | SqlClient.SqlClient
   >;
 }
@@ -56,7 +56,7 @@ export class CommandExecutor extends Context.Service<CommandExecutor, CommandExe
 export const runHandler = <T, E>(
   handler: CommandHandler<T, E>,
   command: T
-): Effect.Effect<ExecutionResult, E | Conflict | Duplicate | SqlError, EventStore> =>
+): Effect.Effect<ExecutionResult, E | AppendTooLarge | Conflict | Duplicate | SqlError, EventStore> =>
   Effect.gen(function* () {
     const eventStore = yield* EventStore;
     const decision = yield* handler(command);
@@ -128,7 +128,7 @@ export const CommandExecutorLive = Layer.effect(
       handler: CommandHandler<T, E>
     ): Effect.Effect<
       ExecutionResult,
-      E | Conflict | Duplicate | SqlError,
+      E | AppendTooLarge | Conflict | Duplicate | SqlError,
       EventStore | CommandAuditStore | SqlClient.SqlClient
     > =>
       // sql.withTransaction(effect) runs `effect` inside one Postgres transaction, committing on
@@ -181,7 +181,7 @@ export const CommandExecutorLive = Layer.effect(
         Effect.annotateLogs({ command: command.name })
       ) as Effect.Effect<
         ExecutionResult,
-        Err | Conflict | SqlError,
+        Err | AppendTooLarge | Conflict | SqlError,
         EventStore | CommandAuditStore | SqlClient.SqlClient
       >;
 

@@ -12,7 +12,7 @@ import * as QueryNS from "./Query.ts";
 import type { Query } from "./Query.ts";
 import * as LogPositionNS from "./LogPosition.ts";
 import type { LogPosition } from "./LogPosition.ts";
-import { Conflict, Duplicate } from "./AppendErrors.ts";
+import { AppendTooLarge, Conflict, Duplicate, MAX_APPEND_EVENTS } from "./AppendErrors.ts";
 import { encodePayload } from "./NotifyPayload.ts";
 import * as Sql from "./internal/sql.ts";
 
@@ -78,11 +78,11 @@ export interface EventStoreService {
   // the append can also be refused with `Conflict` (something matching the concurrency query is newer
   // than the position the decision was made at) or `Duplicate` (the idempotency query already matches).
   readonly append: {
-    (events: ReadonlyArray<AppendEvent>): Effect.Effect<AppendResult, SqlError>;
+    (events: ReadonlyArray<AppendEvent>): Effect.Effect<AppendResult, AppendTooLarge | SqlError>;
     (
       events: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
-    ): Effect.Effect<AppendResult, Conflict | Duplicate | SqlError>;
+    ): Effect.Effect<AppendResult, AppendTooLarge | Conflict | Duplicate | SqlError>;
   };
 
   readonly project: <T>(
@@ -207,9 +207,12 @@ export const EventStoreLive = Layer.effect(
     const appendWith = (
       events: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
-    ): Effect.Effect<AppendResult, Conflict | Duplicate | SqlError> => {
+    ): Effect.Effect<AppendResult, AppendTooLarge | Conflict | Duplicate | SqlError> => {
       if (events.length === 0) {
         return Effect.die("Cannot append empty events list");
+      }
+      if (events.length > MAX_APPEND_EVENTS) {
+        return Effect.fail(new AppendTooLarge({ message: `Cannot append ${events.length} events in one call; the limit is ${MAX_APPEND_EVENTS}. Split them into several appends.`, count: events.length, max: MAX_APPEND_EVENTS }));
       }
       const eventTypes = new Set(events.map((e) => e.type));
       const tagKeys = new Set(events.flatMap((e) => e.tags.map((t) => t.key)));

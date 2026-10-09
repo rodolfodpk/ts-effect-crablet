@@ -27,3 +27,13 @@ export class Conflict extends Data.TaggedError("Conflict")<{
 export class Duplicate extends Data.TaggedError("Duplicate")<{
   readonly message: string;
 }> {}
+
+// An append of more events than `MAX_APPEND_EVENTS`. One append is one transaction that takes the writer lock and notifies once, so a very large batch holds
+// every other writer back for as long as it takes. It is refused before any SQL runs; split the work into several appends (each is atomic on its own).
+export const MAX_APPEND_EVENTS = 50;
+
+export class AppendTooLarge extends Data.TaggedError("AppendTooLarge")<{
+  readonly message: string;
+  readonly count: number;
+  readonly max: number;
+}> {}

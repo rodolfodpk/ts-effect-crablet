@@ -6,7 +6,7 @@ import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { Command } from "@crablet/commands/Command";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
 import type { InvalidInput, KindedError } from "@crablet/commands/Errors";
-import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import type { AppendTooLarge, Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
@@ -67,7 +67,7 @@ export const executeEndpointName = (commandType: string) => `execute_${commandTy
 // registers its commands (`Implementations` below): it could only ever surface as a generic 500.
 // `EventDecodingError`: a stored event its definition cannot read (ADR-0017). It is presented as the generic 500 (the response does not say which event: the
 // log line written where it was found does, with its position and type).
-export type Presentable = KindedError | Conflict | Duplicate | SqlError | EventDecodingError | InvalidInput;
+export type Presentable = KindedError | AppendTooLarge | Conflict | Duplicate | SqlError | EventDecodingError | InvalidInput;
 
 // ---- the group's STATIC type (the loop in `makeCommandApiGroup` builds exactly this) ----
 //

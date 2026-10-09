@@ -11,7 +11,7 @@ import { CommandAuditStore, CommandAuditStoreLive } from "../../src/CommandAudit
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as Query from "../../src/Query.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
-import { Conflict, Duplicate } from "../../src/AppendErrors.ts";
+import { Conflict, Duplicate, MAX_APPEND_EVENTS } from "../../src/AppendErrors.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
 
@@ -286,5 +286,15 @@ describe("EventStore public API parity (Phase 1)", () => {
     assert.deepStrictEqual(result.before, { stored: 1, ifAbsent: 1, old: 1 });
     assert.ok(result.purged >= 1, "the old command was purged");
     assert.deepStrictEqual(result.after, { stored: 1, old: 0 }, "the recent command stays");
+  });
+});
+
+describe("append size limit", () => {
+  it("refuses more than MAX_APPEND_EVENTS with AppendTooLarge before any SQL runs, and accepts exactly the limit", async () => {
+    const batch = (n: number) => Array.from({ length: n }, (_, i) => AppendEvent.of("SizeLimitEvent", "batch", `b${i}`, {}));
+    const error = await run(Effect.flatMap(EventStore, (store) => Effect.flip(store.append(batch(MAX_APPEND_EVENTS + 1)))));
+    assert.strictEqual(error._tag, "AppendTooLarge");
+    const ok = await run(Effect.flatMap(EventStore, (store) => store.append(batch(MAX_APPEND_EVENTS))));
+    assert.strictEqual(typeof ok.transactionId, "string");
   });
 });

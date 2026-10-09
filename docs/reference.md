@@ -59,7 +59,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 
 | Package | What it is |
 |---|---|
-| [`packages/db-migrations`](../packages/db-migrations/README.md) | The SQL migrations V1-V12 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
+| [`packages/db-migrations`](../packages/db-migrations/README.md) | The SQL migrations V1-V13 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
 | [`packages/test-support`](../packages/test-support/README.md) | A throwaway Postgres (Testcontainers) for integration tests |
 | [`packages/eventstore`](../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
 | [`packages/commands`](../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and Given/When/Then test helpers |

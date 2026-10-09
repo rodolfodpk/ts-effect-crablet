@@ -36,8 +36,8 @@ describe("storageReport", () => {
   it("with events: rows, bytes split into heap/indexes/toast, the cost per event, and an exact count on request", { timeout: 60_000 }, async () => {
     const r = await run(Effect.gen(function* () {
       const es = yield* EventStore;
-      for (let batch = 0; batch < 30; batch++) {
-        yield* es.append(Array.from({ length: 100 }, (_, i) => AppendEvent.of("Ticked", "entity_id", `e${batch}-${i}`, { n: i, text: "x".repeat(40) })));
+      for (let batch = 0; batch < 60; batch++) {
+        yield* es.append(Array.from({ length: 50 }, (_, i) => AppendEvent.of("Ticked", "entity_id", `e${batch}-${i}`, { n: i, text: "x".repeat(40) })));
       }
       const sql = yield* SqlClient.SqlClient;
       yield* sql.unsafe("ANALYZE crablet_events");
@@ -66,7 +66,7 @@ describe("storageReport", () => {
       const recorded = { total: yield* gauge(StorageMetrics.tableBytes, { table: "crablet_events", part: "total" }), rows: yield* gauge(StorageMetrics.tableRows, { table: "crablet_events" }) };
       // the monitor refreshes after more events arrive
       const es = yield* EventStore;
-      yield* es.append(Array.from({ length: 100 }, (_, i) => AppendEvent.of("Ticked", "entity_id", `m${i}`, { n: i })));
+      yield* es.append(Array.from({ length: 50 }, (_, i) => AppendEvent.of("Ticked", "entity_id", `m${i}`, { n: i })));
       const sql = yield* SqlClient.SqlClient;
       yield* sql.unsafe("ANALYZE crablet_events");
       const fiber = yield* Effect.forkChild(monitorStorage({ every: "50 millis" }));

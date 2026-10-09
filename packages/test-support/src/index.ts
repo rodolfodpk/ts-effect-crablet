@@ -64,7 +64,7 @@ async function withContainerStartLock<T>(fn: () => Promise<T>): Promise<T> {
 async function startContainerWithRetry(attempts = 3): Promise<StartedPostgreSqlContainer> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await new PostgreSqlContainer("postgres:18-alpine").start();
+      return await new PostgreSqlContainer("postgres:18.6-alpine").start();
     } catch (e) {
       const transient = e instanceof Error && e.message.includes("waiting for container ports to be bound");
       if (!transient || attempt >= attempts) throw e;

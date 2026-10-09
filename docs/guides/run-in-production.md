@@ -97,6 +97,12 @@ export const startBackgroundProcessorsScoped = (
   Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers), stopBackgroundProcessors);
 ```
 
+### Keep an append small
+
+One append is one transaction that takes the writer lock and sends one wake-up, so a very large batch holds every other writer back for as long as it takes. `append` refuses more than `MAX_APPEND_EVENTS` (50) events
+with a typed `AppendTooLarge` before any SQL runs (over HTTP it is a 500: the batch size is the code's choice, not the caller's). To write more, split it into several appends; each is atomic on its own, so decide
+whether the rule you protect needs them in one command.
+
 ## 4. Several instances
 
 You can run more than one copy. Each **module** (the views, the automations, the outbox publishers) runs in **one** process at a time, the leader, chosen by a PostgreSQL advisory lock per module (all of a module's processors run together; [diagram](../architecture.md#one-lock-per-module-one-leader-per-lock)); the others retry

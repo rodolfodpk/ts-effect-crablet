@@ -5,7 +5,7 @@ owns the schema; applications apply it, they do not write it.
 
 ## What it gives you
 
-- **`migrationFiles`** - the migrations V1-V12 in the order to apply them.
+- **`migrationFiles`** - the migrations V1-V13 in the order to apply them.
 - **`sqlDir`** - the directory holding the `.sql` files.
 
 An application applies them with its own tool (the examples use a small `migrate.ts`, and keep their own tables in a separate `db/migration` folder numbered from V100).

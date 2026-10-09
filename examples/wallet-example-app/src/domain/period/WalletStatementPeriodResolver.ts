@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventStoreService } from "@crablet/eventstore";
 import * as AppendCondition from "@crablet/eventstore/AppendCondition";
-import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import type { AppendTooLarge, Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import { defineModel } from "@crablet/commands/Model";
@@ -69,7 +69,7 @@ export const resolveActivePeriod = (
   eventStore: EventStoreService,
   walletId: string,
   now: Date = new Date()
-): Effect.Effect<ActivePeriod, SqlError | Conflict | Duplicate | EventDecodingError, never> =>
+): Effect.Effect<ActivePeriod, AppendTooLarge | SqlError | Conflict | Duplicate | EventDecodingError, never> =>
   Effect.gen(function* () {
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth() + 1;
