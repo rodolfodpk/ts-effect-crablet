@@ -126,12 +126,24 @@ describe("the wallet's admin API", () => {
   });
 
   it("the outbox's failure details are found under its JSON-pair id, and a publisher can be paused through the percent-encoded id", async () => {
-    await sql("UPDATE crablet_outbox_topic_progress SET error_count = 3, last_error = 'broker down' WHERE topic = 'wallet-events'");
-    const outbox = await one("outbox", OUTBOX_ID);
+    // Pause first. The outbox zeroes error_count after every batch it publishes, which is right, and the previous tests' wallets may still be on their way out: written straight
+    // after a command, the count was zeroed by the outbox in 8 of 40 tries (this test failed once in a full run for that reason). A paused processor starts nothing new.
+    const paused = await admin("POST", `/admin/processors/outbox/${encodeURIComponent(OUTBOX_ID)}/pause`);
+    assert.deepStrictEqual(await paused.json(), { kind: "outbox", id: OUTBOX_ID, status: "PAUSED" });
+    // A batch already under way may still zero the count once when it ends, so write until it reads 3 twice, 150 ms apart, with no write in between.
+    let outbox: Info | undefined;
+    for (let attempt = 0; attempt < 20 && outbox === undefined; attempt++) {
+      await sql("UPDATE crablet_outbox_topic_progress SET error_count = 3, last_error = 'broker down' WHERE topic = 'wallet-events'");
+      await new Promise((r) => setTimeout(r, 150));
+      const first = await one("outbox", OUTBOX_ID);
+      if (first.errorCount !== 3) continue;
+      await new Promise((r) => setTimeout(r, 150));
+      if ((await one("outbox", OUTBOX_ID)).errorCount === 3) outbox = first;
+    }
+    assert.ok(outbox !== undefined, "the outbox's error count stayed at 3 while it was paused");
     assert.strictEqual(outbox.errorCount, 3);
     assert.strictEqual(outbox.lastError, "broker down");
-    const res = await admin("POST", `/admin/processors/outbox/${encodeURIComponent(OUTBOX_ID)}/pause`);
-    assert.deepStrictEqual(await res.json(), { kind: "outbox", id: OUTBOX_ID, status: "PAUSED" });
+    assert.strictEqual(outbox.status, "PAUSED");
     await admin("POST", `/admin/processors/outbox/${encodeURIComponent(OUTBOX_ID)}/resume`);
     assert.strictEqual((await one("outbox", OUTBOX_ID)).status, "ACTIVE");
   });
