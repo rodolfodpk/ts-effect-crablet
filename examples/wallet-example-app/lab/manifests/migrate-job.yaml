@@ -1,0 +1,19 @@
+# The pre-deploy job (ADR-0022, decision 6): the schema is applied once, by this, never by the pods. ${MIGRATE_NAME}, ${MIGRATE_PARALLELISM} and ${MIGRATE_MODE} let the migration-race scenario start several at once.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: ${MIGRATE_NAME} }
+spec:
+  completions: ${MIGRATE_PARALLELISM}
+  parallelism: ${MIGRATE_PARALLELISM}
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: crablet-wallet:lab
+          imagePullPolicy: Never
+          command: ["node", "src/migrate.ts"]
+          env:
+            - { name: WALLET_DB_HOST, value: postgres }
+            - { name: WALLET_MIGRATE_MODE, value: ${MIGRATE_MODE} }

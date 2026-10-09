@@ -68,12 +68,18 @@ export async function migrateIfFresh(connInfo: MigrateConnInfo): Promise<"applie
 // see NOTES.md), so the portable Node equivalent is comparing
 // this module's own URL against the script Node was actually invoked with.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await migrate({
+  const connInfo = {
     host: process.env["WALLET_DB_HOST"] ?? "localhost",
     port: Number(process.env["WALLET_DB_PORT"] ?? 5432),
     database: process.env["WALLET_DB_NAME"] ?? "wallet_db",
     username: process.env["WALLET_DB_USER"] ?? "postgres",
     password: process.env["WALLET_DB_PASSWORD"] ?? "postgres"
-  });
-  console.log("Migrations applied.");
+  };
+  // As a pre-deploy job: `node src/migrate.ts` applies everything (run it once, on an empty database). WALLET_MIGRATE_MODE=if-fresh does what the entry point does at start-up
+  // (several of these started together are the race the kind lab measures).
+  if (process.env["WALLET_MIGRATE_MODE"] === "if-fresh") console.log(`migrations: ${await migrateIfFresh(connInfo)}`);
+  else {
+    await migrate(connInfo);
+    console.log("Migrations applied.");
+  }
 }

@@ -28,7 +28,9 @@ const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (
 // Entry point: apply migrations (to a fresh database only), then start the app - views/
 // automations/outbox background processors AND the HTTP server, all sharing one connection pool.
 async function main(): Promise<void> {
-  console.log(`migrations: ${(await migrateIfFresh(connInfo)) === "applied" ? "applied to a fresh database" : "the schema is already there, left as it is"}`);
+  // WALLET_MIGRATE=off: the schema is applied by a pre-deploy job (`node src/migrate.ts`), as it must be when several instances start together (ADR-0022, decision 6).
+  if (process.env["WALLET_MIGRATE"] === "off") console.log("migrations: not applied by this process (WALLET_MIGRATE=off)");
+  else console.log(`migrations: ${(await migrateIfFresh(connInfo)) === "applied" ? "applied to a fresh database" : "the schema is already there, left as it is"}`);
 
   const appLayer = Crablet.layer({
     host: connInfo.host,

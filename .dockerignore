@@ -1,0 +1,7 @@
+.git
+coverage
+**/dist
+docs
+ops
+*.log
+**/node_modules

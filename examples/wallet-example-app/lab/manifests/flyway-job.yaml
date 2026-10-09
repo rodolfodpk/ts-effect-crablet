@@ -1,0 +1,22 @@
+# The same pre-deploy job with Flyway instead of our script: a history table, and a lock while it migrates, so several of these started together serialise. ${FLYWAY_NAME} and ${FLYWAY_PARALLELISM} let the
+# race scenario start five at once.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: ${FLYWAY_NAME} }
+spec:
+  completions: ${FLYWAY_PARALLELISM}
+  parallelism: ${FLYWAY_PARALLELISM}
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flyway
+          image: crablet-migrations:lab
+          imagePullPolicy: Never
+          args: ["migrate"]
+          env:
+            - { name: FLYWAY_URL, value: "jdbc:postgresql://postgres:5432/wallet_db" }
+            - { name: FLYWAY_USER, value: postgres }
+            - { name: FLYWAY_PASSWORD, value: postgres }
+            - { name: FLYWAY_LOCATIONS, value: "filesystem:/flyway/sql" }

@@ -1,0 +1,13 @@
+# Three nodes: the control plane (Postgres lives there, so losing a worker node never takes the database with it), and two workers (one wallet worker pod and one API pod each).
+# The host reaches Postgres on localhost:5433 and the API on localhost:8081.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    labels:
+      lab/role: database
+    extraPortMappings:
+      - { containerPort: 30432, hostPort: 5433, listenAddress: "127.0.0.1" }
+      - { containerPort: 30080, hostPort: 8081, listenAddress: "127.0.0.1" }
+  - role: worker
+  - role: worker
