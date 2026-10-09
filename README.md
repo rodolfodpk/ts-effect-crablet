@@ -138,6 +138,7 @@ Effect.runPromise(Effect.provide(program, AppLive));
 | Understand the idea | [DCB guide](./docs/dcb-guide.md) |
 | See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app/README.md): five commands, four views, an automation, an outbox |
 | Do one task (add a view, an automation, test, run, monitor) | [Task guides](./docs/guides/README.md) |
+| Run the wallet on a local Kubernetes cluster, watch it on a dashboard, and break it on purpose | [Run the kind lab](./docs/guides/run-the-kind-lab.md) |
 | Change an event safely | [Evolving events](./docs/evolving-events.md) |
 | Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference.md) |
 | Know why it is built this way | [Design decisions](./docs/adr/README.md) (start with [ADR-0010](./docs/adr/0010-declarative-command-api.md)) |
