@@ -5,6 +5,8 @@ It is a **lab tool**, not part of the framework or of an application: it can del
 
 ## Run it
 
+The whole walk-through, from starting the cluster to a first test, is in [Run the kind lab](../../docs/guides/run-the-kind-lab.md). In short:
+
 The lab has to be up (`node examples/wallet-example-app/lab/lab.ts observe`). Then, in two terminals:
 
 ```bash

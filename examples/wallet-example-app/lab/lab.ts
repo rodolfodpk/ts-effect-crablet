@@ -1,9 +1,11 @@
 // The kind lab (ADR-0022, arrangement C). Not a test: it measures and prints `LAB` lines, with a verdict where there is a criterion.
+// #region usage
 //   node examples/wallet-example-app/lab/lab.ts up             create the cluster (3 nodes), build and load the image
 //   node examples/wallet-example-app/lab/lab.ts run <name>...  run scenarios (each starts from an empty database and a fresh deployment); no names = all
 //   node examples/wallet-example-app/lab/lab.ts observe       up, then a deployment you can watch: Grafana, a load of 10 to 1000 commands every 5 s, the admin API (prints the addresses)
 //   node examples/wallet-example-app/lab/lab.ts down           delete the cluster
 // Needs Docker, kind and kubectl (1.30 or later: `kubectl debug --profile=netadmin`). BUILD=0 reuses the image already built.
+// #endregion usage
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";

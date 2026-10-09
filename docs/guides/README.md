@@ -12,6 +12,7 @@ Short pages for "how do I...?". Each one is a checklist with the code from a rea
 | Run it for real: migrations, the connection, the background processors | [Run it in production](run-in-production.md) |
 | See what it is doing and what it costs | [Monitor it](monitor-it.md) |
 | Watch the poller and its consumers on a Grafana dashboard, with alerts | [See it on a dashboard](dashboard.md) |
+| Run the wallet on a local Kubernetes cluster, watch it, and break it on purpose | [Run the kind lab](run-the-kind-lab.md) |
 | Change an event that is already stored | [Evolving events](../evolving-events.md) |
 
 The examples are the course-enrolment app (views, HTTP) and the wallet app (automation, background processors, tests).

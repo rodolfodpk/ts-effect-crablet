@@ -5,6 +5,8 @@ scenario at a time, each starting from an empty database. It is a **baseline**: 
 
 ## What it is
 
+To run it, see the guide [Run the kind lab](../guides/run-the-kind-lab.md); this page is the record of what it is and what it found.
+
 - **Cluster:** kind v0.33.0, three nodes (Kubernetes 1.37.0): the control plane (Postgres runs there, so losing a worker node never takes the database with it) and two workers. Docker Desktop, 8 CPUs, 11.7 GiB, one laptop.
 - **Deployments** (`examples/wallet-example-app/lab/manifests/`): Postgres 18.6 with no volume; the API (`WALLET_ROLES=api`, 2 replicas, pool 10); the workers (`WALLET_ROLES=views,automations,outbox`, 2 replicas, pool 10, rolling update with `maxSurge: 1, maxUnavailable: 0`). One image for every role
   (`examples/wallet-example-app/Dockerfile`: Bun installs, Node 24 runs the TypeScript). The schema is applied by a **pre-deploy Job**, never by the pods (`WALLET_MIGRATE=off`).
