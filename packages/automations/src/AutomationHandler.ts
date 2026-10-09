@@ -30,15 +30,24 @@ export const automationHandlerOf = <T, E = never, HE = never>(
   command: Command<T, HE>,
   decide: (event: StoredEvent) => Effect.Effect<ReadonlyArray<AutomationDecision<T>>, E, never>,
   fields: Partial<EventSelection> & ProcessorRuntimeOverrides = {}
-): AutomationHandler<T, E, HE> => ({
-  automationName,
-  command,
-  decide,
-  ...EventSelectionNS.of(fields),
-  pollingIntervalMs: fields.pollingIntervalMs,
-  batchSize: fields.batchSize,
-  backoffEnabled: fields.backoffEnabled,
-  backoffThreshold: fields.backoffThreshold,
-  backoffMultiplier: fields.backoffMultiplier,
-  backoffMaxSeconds: fields.backoffMaxSeconds
-});
+): AutomationHandler<T, E, HE> => {
+  // An automation runs at least once, not exactly once: its batch is handled again after a crash between the command and the cursor, or by a
+  // zombie leader and its successor. A command without `idempotentBy` would then do its work twice, so it is refused when the automation is defined.
+  if (!command.idempotent) {
+    throw new Error(
+      `automation "${automationName}": command "${command.name}" has no idempotentBy. An automation can run the same batch twice, so its command must say how to tell that the work is already done.`
+    );
+  }
+  return {
+    automationName,
+    command,
+    decide,
+    ...EventSelectionNS.of(fields),
+    pollingIntervalMs: fields.pollingIntervalMs,
+    batchSize: fields.batchSize,
+    backoffEnabled: fields.backoffEnabled,
+    backoffThreshold: fields.backoffThreshold,
+    backoffMultiplier: fields.backoffMultiplier,
+    backoffMaxSeconds: fields.backoffMaxSeconds
+  };
+};

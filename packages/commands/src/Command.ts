@@ -110,6 +110,9 @@ export interface Command<
   readonly retries: number;
   // Whether a repeat of an already-done operation is reported as success or as `Duplicate`.
   readonly duplicates: "return" | "fail";
+  // Whether the command declared `idempotentBy`. An automation requires it: its batch can be handled twice (a crash, a zombie leader), and only an
+  // idempotent command makes that harmless.
+  readonly idempotent: boolean;
 }
 
 export const defaultRetries = 3;
@@ -210,5 +213,5 @@ export const defineCommand = <
         : append;
     })) as CommandHandler<In, ErrorOf<D> | PE | SqlError | (OD extends "fail" ? Duplicate : never)>;
 
-  return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates };
+  return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates, idempotent: def.idempotentBy !== undefined };
 };

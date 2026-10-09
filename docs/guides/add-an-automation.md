@@ -1,7 +1,8 @@
 # Add an automation
 
 An automation reacts to an event by issuing a **command**. It runs on the same poller as views, so delivery is at-least-once: the command it issues must be
-**idempotent**, or a redelivered event runs it twice. The example is the wallet's welcome notification.
+**idempotent**, or a redelivered event runs it twice. The framework enforces it: `automationHandlerOf` throws, when the automation is defined, for a command
+that declares no `idempotentBy`. The example is the wallet's welcome notification.
 
 [← Task guides](README.md)
 

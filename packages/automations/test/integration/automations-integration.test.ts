@@ -116,6 +116,7 @@ describe("automations module integration (real Postgres)", () => {
     const sendConfirmation = defineCommand({
       name: "SendConfirmationCommand",
       input: Schema.Struct({ orderId: Schema.String }),
+      idempotentBy: (c) => ConfirmationSent.where({ order_id: c.orderId }),
       decide: (_, c) => emit(ConfirmationSent(c))
     });
 
@@ -182,7 +183,8 @@ describe("automations module integration (real Postgres)", () => {
     const automationName = `noop-automation-${runId}`;
     const triggerType = `NoopTrigger-${runId}`;
 
-    const noopCommand = defineCommand({ name: "NoopCommand", input: Schema.Unknown, decide: () => noop() });
+    const NoopDone = defineEvent(`NoopDone-${runId}`, { schema: Schema.Struct({}), tags: () => ({ noop: "x" }) });
+    const noopCommand = defineCommand({ name: "NoopCommand", input: Schema.Unknown, idempotentBy: () => NoopDone.where({ noop: "x" }), decide: () => noop() });
     const automation = automationHandlerOf(automationName, noopCommand, () => Effect.succeed([noOp()]), {
       eventTypes: new Set([triggerType])
     });
