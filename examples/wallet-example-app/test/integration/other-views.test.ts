@@ -167,6 +167,40 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
     assert.strictEqual(Number(row.current_balance), 40);
   });
 
+  it("the balance and the summary are the SUM of the moves, not a copy of the balance an event recorded (a stale newBalance, as concurrent deposits record, loses nothing)", async () => {
+    const walletId = `wallet-${crypto.randomUUID()}`;
+    const other = `wallet-${crypto.randomUUID()}`;
+    const at = () => new Date().toISOString();
+    // Two deposits decided at the same moment, both from a balance of 100: each records newBalance 110 / 120, but the wallet ends with 100 + 10 + 20. The transfer in then records
+    // a toBalance that knows only about the second deposit, and the withdrawal one that knows about neither.
+    const events = () => [
+      fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: walletId }, { walletId, owner: "Ana", initialBalance: 100, openedAt: at() }),
+      fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: other }, { walletId: other, owner: "Bo", initialBalance: 500, openedAt: at() }),
+      fakeEvent(WalletEvents.DEPOSIT_MADE, { wallet_id: walletId }, { depositId: "d1", walletId, amount: 10, newBalance: 110, depositedAt: at(), description: "x" }),
+      fakeEvent(WalletEvents.DEPOSIT_MADE, { wallet_id: walletId }, { depositId: "d2", walletId, amount: 20, newBalance: 120, depositedAt: at(), description: "x" }),
+      fakeEvent(WalletEvents.MONEY_TRANSFERRED, { from_wallet_id: other, to_wallet_id: walletId }, { transferId: "t1", fromWalletId: other, toWalletId: walletId, amount: 5, fromBalance: 495, toBalance: 125, transferredAt: at(), description: "x" }),
+      fakeEvent(WalletEvents.WITHDRAWAL_MADE, { wallet_id: walletId }, { withdrawalId: "w1", walletId, amount: 15, newBalance: 105, withdrawnAt: at(), description: "x" })
+    ];
+    await run(Effect.gen(function* () {
+      const balance = yield* makeWalletBalanceViewProjector();
+      const summary = yield* makeWalletSummaryViewProjector();
+      const batch = events();
+      yield* balance.handle(batch);
+      yield* summary.handle(batch);
+    }));
+    const rows = await run(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      return {
+        balance: yield* sql.unsafe<{ wallet_id: string; balance: string }>("SELECT wallet_id, balance FROM wallet_balance_view WHERE wallet_id IN ($1, $2)", [walletId, other]),
+        summary: yield* sql.unsafe<{ wallet_id: string; current_balance: string }>("SELECT wallet_id, current_balance FROM wallet_summary_view WHERE wallet_id IN ($1, $2)", [walletId, other])
+      };
+    }));
+    const by = (xs: ReadonlyArray<{ wallet_id: string } & Record<string, string>>, key: string) => Object.fromEntries(xs.map((r) => [r.wallet_id, Number(r[key])]));
+    // 100 + 10 + 20 + 5 (the transfer in) - 15 (the withdrawal) = 120; and 500 - 5 = 495
+    assert.deepStrictEqual(by(rows.balance, "balance"), { [walletId]: 120, [other]: 495 });
+    assert.deepStrictEqual(by(rows.summary, "current_balance"), { [walletId]: 120, [other]: 495 });
+  });
+
   it("an unreadable event fails the batch with a typed EventDecodingError naming it, and nothing of the batch is projected (balance, transaction and summary views)", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const good = (): StoredEvent => fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: walletId }, { walletId, owner: "Alice", initialBalance: 100, openedAt: new Date().toISOString() });

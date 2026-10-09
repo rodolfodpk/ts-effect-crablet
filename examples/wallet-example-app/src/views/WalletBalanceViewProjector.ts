@@ -14,6 +14,8 @@ import * as WalletEvents from "../domain/events/WalletEvents.ts";
 //
 // WalletClosed deletes the row - the ViewSubscription (WalletViewConfig.ts) deliberately subscribes
 // to WalletClosed for this view.
+// The balance is the SUM of the changes, not a copy of the `newBalance` in the event. Deposits are concurrent: the number a deposit records is the balance of the moment it was decided, and a credit
+// that committed in between makes it stale. Copying it overwrote the right balance with an old one (the kind lab's consistency check found 22 to 28 wallets of several hundred wrong that way).
 const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
   Effect.gen(function* () {
   switch (event.type) {
@@ -31,8 +33,8 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
     case WalletEvents.DEPOSIT_MADE: {
       const data = yield* Wallet.DepositMade.decodeStored(event);
       return yield* Effect.asVoid(
-        sql.unsafe("UPDATE wallet_balance_view SET balance = $1, last_updated_at = $2 WHERE wallet_id = $3", [
-          data.newBalance,
+        sql.unsafe("UPDATE wallet_balance_view SET balance = balance + $1, last_updated_at = $2 WHERE wallet_id = $3", [
+          data.amount,
           data.depositedAt,
           data.walletId
         ])
@@ -41,8 +43,8 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
     case WalletEvents.WITHDRAWAL_MADE: {
       const data = yield* Wallet.WithdrawalMade.decodeStored(event);
       return yield* Effect.asVoid(
-        sql.unsafe("UPDATE wallet_balance_view SET balance = $1, last_updated_at = $2 WHERE wallet_id = $3", [
-          data.newBalance,
+        sql.unsafe("UPDATE wallet_balance_view SET balance = balance - $1, last_updated_at = $2 WHERE wallet_id = $3", [
+          data.amount,
           data.withdrawnAt,
           data.walletId
         ])
@@ -51,13 +53,13 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
     case WalletEvents.MONEY_TRANSFERRED: {
       const data = yield* Wallet.MoneyTransferred.decodeStored(event);
       return yield* Effect.gen(function* () {
-        yield* sql.unsafe("UPDATE wallet_balance_view SET balance = $1, last_updated_at = $2 WHERE wallet_id = $3", [
-          data.fromBalance,
+        yield* sql.unsafe("UPDATE wallet_balance_view SET balance = balance - $1, last_updated_at = $2 WHERE wallet_id = $3", [
+          data.amount,
           data.transferredAt,
           data.fromWalletId
         ]);
-        yield* sql.unsafe("UPDATE wallet_balance_view SET balance = $1, last_updated_at = $2 WHERE wallet_id = $3", [
-          data.toBalance,
+        yield* sql.unsafe("UPDATE wallet_balance_view SET balance = balance + $1, last_updated_at = $2 WHERE wallet_id = $3", [
+          data.amount,
           data.transferredAt,
           data.toWalletId
         ]);

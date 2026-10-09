@@ -28,7 +28,7 @@ cd examples/chaos-ui && bun run dev          # the page, on http://localhost:517
 
 The first thing the consistency check found was in the wallet, not in the lab. Deposits are `concurrent` (they commute), so the `newBalance` a deposit records is the balance of the moment it was decided and can be stale when another
 credit commits meanwhile. The wallet's balance and summary projections **copy** that number instead of applying the amount, so after concurrent credits 22 to 28 of 425 to 625 wallets showed a balance other than the sum of their events.
-The log was right and the views were wrong. Reported as FAIL on the page until the projectors apply the amount (`balance + amount`).
+The log was right and the views were wrong. Fixed: the projectors now apply the amount (`balance + amount`), and the check passes.
 
 ## Where things are
 

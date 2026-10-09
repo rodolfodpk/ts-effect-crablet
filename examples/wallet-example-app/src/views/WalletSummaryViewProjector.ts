@@ -34,7 +34,9 @@ const incrementColumn = (
   column: "total_deposits" | "total_withdrawals" | "total_transfers_in" | "total_transfers_out",
   walletId: string,
   amount: number,
-  balance: number,
+  // the change to the balance, with its sign: the balance is the sum of these. NOT the `newBalance` recorded in the event: that is the balance of the moment the command was decided, and a credit that
+  // committed in between makes it stale (deposits are concurrent), so copying it loses updates.
+  balanceChange: number,
   occurredAt: string
 ): Effect.Effect<void, SqlError, never> =>
   Effect.asVoid(
@@ -43,9 +45,9 @@ const incrementColumn = (
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (wallet_id) DO UPDATE SET
          ${column} = wallet_summary_view.${column} + EXCLUDED.${column},
-         current_balance = EXCLUDED.current_balance,
+         current_balance = wallet_summary_view.current_balance + EXCLUDED.current_balance,
          last_transaction_at = GREATEST(wallet_summary_view.last_transaction_at, EXCLUDED.last_transaction_at)`,
-      [walletId, amount, balance, occurredAt]
+      [walletId, amount, balanceChange, occurredAt]
     )
   );
 
@@ -58,17 +60,17 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
     }
     case WalletEvents.DEPOSIT_MADE: {
       const data = yield* Wallet.DepositMade.decodeStored(event);
-      return yield* incrementColumn(sql, "total_deposits", data.walletId, data.amount, data.newBalance, data.depositedAt);
+      return yield* incrementColumn(sql, "total_deposits", data.walletId, data.amount, data.amount, data.depositedAt);
     }
     case WalletEvents.WITHDRAWAL_MADE: {
       const data = yield* Wallet.WithdrawalMade.decodeStored(event);
-      return yield* incrementColumn(sql, "total_withdrawals", data.walletId, data.amount, data.newBalance, data.withdrawnAt);
+      return yield* incrementColumn(sql, "total_withdrawals", data.walletId, data.amount, -data.amount, data.withdrawnAt);
     }
     case WalletEvents.MONEY_TRANSFERRED: {
       const data = yield* Wallet.MoneyTransferred.decodeStored(event);
       return yield* Effect.gen(function* () {
-        yield* incrementColumn(sql, "total_transfers_out", data.fromWalletId, data.amount, data.fromBalance, data.transferredAt);
-        yield* incrementColumn(sql, "total_transfers_in", data.toWalletId, data.amount, data.toBalance, data.transferredAt);
+        yield* incrementColumn(sql, "total_transfers_out", data.fromWalletId, data.amount, -data.amount, data.transferredAt);
+        yield* incrementColumn(sql, "total_transfers_in", data.toWalletId, data.amount, data.amount, data.transferredAt);
       });
     }
     case WalletEvents.WALLET_CLOSED: {
