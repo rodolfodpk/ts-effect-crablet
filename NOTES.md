@@ -1,7 +1,7 @@
 # Phase 0 Spike — Findings
 
 Status: all acceptance criteria from the plan (`/Users/rodolfo/Documents/ts-effect-crablet-phase0-plan.md`)
-met except where noted. (That was the state after Phase 0: 22/22 tests. On 2026-10-09: 834 unit tests under Bun and 384 integration tests under Node pass (they were 578 and 322 on 2026-10-07); the reliability and scale work is summarized in [`docs/plans/reliability-and-scale-diagnostic.md`](docs/plans/reliability-and-scale-diagnostic.md), and later entries below are in order.)
+met except where noted. (That was the state after Phase 0: 22/22 tests. On 2026-10-09: 834 unit tests under Bun and 389 integration tests under Node pass (they were 578 and 322 on 2026-10-07); the reliability and scale work is summarized in [`docs/plans/reliability-and-scale-diagnostic.md`](docs/plans/reliability-and-scale-diagnostic.md), and later entries below are in order.)
 
 **This is the working journal**, not documentation: findings, gotchas and what changed against each plan, in the order they happened. To learn the project start at
 [`docs/README.md`](docs/README.md); the lasting decisions are in [`docs/adr/`](docs/adr/README.md).
@@ -1552,3 +1552,10 @@ asserts the model directly (queries, fold, both regressions).
 - Slips: `Effect.zipRight` does not exist in this Effect (used `andThen`); a test of mine used a "behind" cursor with a higher transaction id than the marker, which the cursor order (transaction id first) counts as ahead; a diagnostic hung because a failure before `dispose` left the pool open and my filtered output only appears at the end.
 - One integration test failed once in a full run (the wallet's admin API, the outbox failure details under a percent-encoded id) and passed in the next full run and alone three times; I did not keep its message, so its cause is unknown. Not an area this change touches.
 - Metric: `crablet.read.consistency.wait.duration` now includes the first look, so its p95 on the dashboard drops when this is deployed (ADR-0015, monitor-it guide).
+
+## The pending query that the wait runs, fixed (2026-10-09)
+- It is the side finding of the entry above: `buildPendingSelectionQuery` had no `ORDER BY`, so on 100,000 events the planner took a Seq Scan for it (4 to 8 ms for a typical view selection 5,000 to 50,000 events behind, 3 to 7 ms for one event type or no restriction, 45 ms for a required key present on every event, there a Seq Scan of `crablet_event_tag_keys` and one probe of the log per row). It runs on every turn of a consistent read's wait while the view is behind. Pushed `09d5a05` and `6a04f96` first.
+- Measured before changing it (ten selection shapes, four distances, both `tagKeys` strategies, standalone query as it is against the same query with `ORDER BY e.transaction_id, e.position LIMIT 1`): 0.4 to 0.6 ms in every slow case with `table`, and nothing measurably worse; with `scan` the same for selections with a type, and a key that never occurs is an inherent scan (4 to 76 ms) either way.
+- Test first: `pending-query-plan.test.ts` (100,000 events, reads `EXPLAIN` and fails on a Seq Scan of `crablet_events` or `crablet_event_tag_keys`; it also checks the query finds a match and finds none at the end of the log). My first version of it checked only `crablet_events` and so passed the required-key case, which is slow because of a Seq Scan on the OTHER table; I read the plan to see why and widened it. Four of four failed before the change, five of five pass after. The change is one line in `internal/sql.ts` plus a comment.
+- Not re-measured: the million-event E9d diagnostic (ADR-0019), whose p95 tail of 170 to 370 ms for "the pending check for a view that has matches" may be the same cause; I only say it may.
+- Verified: `tsc`, 834 unit, 389 integration.

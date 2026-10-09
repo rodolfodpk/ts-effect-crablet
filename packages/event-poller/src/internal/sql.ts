@@ -100,6 +100,10 @@ export const buildEventSelectionQuery = (
 // Is there any COMMITTED event the selection matches in `(after, upTo]`, in (transaction_id, position) order?
 // Unlike the poller's fetch this has no visibility cut-off: it asks about events that exist, not about what the
 // poller may safely read yet, so a view whose cursor is behind `upTo` only counts as caught up when none remain.
+//
+// `ORDER BY e.transaction_id, e.position LIMIT 1` is what keeps it cheap. Without the ORDER BY the planner has no reason to walk the (transaction_id, position) index and stop at the first
+// match, and on a log of 100,000 events it took a Seq Scan of crablet_events for a typical view selection (4 to 8 ms, growing with the log) and, for a key present on every event, a Seq Scan
+// of crablet_event_tag_keys with one probe of the log per row (45 ms). With it: 0.4 to 0.6 ms in the same cases, and no case measurably worse (`pending-query-plan.test.ts` reads the plan).
 export const buildPendingSelectionQuery = (
   selection: EventSelection,
   after: ProgressCursor,
@@ -113,7 +117,7 @@ export const buildPendingSelectionQuery = (
   clauses.push(`(e.transaction_id, e.position) <= ($${params.length + 1}::xid8, $${params.length + 2}::bigint)`);
   params.push(upTo.transactionId, upTo.position.toString());
   pushSelectionClauses(selection, clauses, params, options.tagKeys);
-  return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} LIMIT 1`, params };
+  return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.transaction_id, e.position LIMIT 1`, params };
 };
 
 // The first look of a consistent read, in ONE statement: where the log ends, and for each view where it is and whether anything it handles is pending between its cursor and the
