@@ -160,6 +160,9 @@ export const startBackgroundProcessorsScoped = (
 You can run more than one copy. Each **module** (the views, the automations, the outbox publishers) runs in **one** process at a time, the leader, chosen by a PostgreSQL advisory lock per module (all of a module's processors run together; [diagram](../architecture.md#one-lock-per-module-one-leader-per-lock)); the others retry
 every `leaderElectionRetryIntervalMs` (5 s here) and take over, immediately after a graceful stop. Reads and commands run on every instance.
 
+The same image can also run as **separate roles**, chosen at start-up (the wallet's `WALLET_ROLES`: `api`, `views`, `automations`, `outbox`, or `all`, the default): the API scales with load and holds no leader lock, and the workers keep each module's lock and its standby. They talk only through
+Postgres. The schema is then applied by one job, not by the pods (`WALLET_MIGRATE=off`). The lab that runs this on a local cluster is [Run the kind lab](run-the-kind-lab.md); the design is [ADR-0022](../adr/0022-runtime-roles.md).
+
 ## 5. Before a deploy that changes an event
 
 Run the wallet's [`verify-events.ts`](../../examples/wallet-example-app/scripts/verify-events.ts) against a copy of production data; it exits with 1 if any stored event can no longer be

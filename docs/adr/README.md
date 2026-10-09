@@ -35,11 +35,11 @@ The four that explain the shape of what you use.
 - [ADR-0007: Event-poller fiber model - one daemon fiber per processorId, one shared leader-retry fiber](0007-event-poller-fiber-model.md)
 - [ADR-0014: Live updates are a ping, sent after the commit, delivered at most once](0014-live-updates-by-ping.md)
 - [ADR-0016: One LISTEN per process for view progress; a hub fans the pings out in memory](0016-one-listen-per-process-for-view-progress.md)
-- [ADR-0021: Wake-ups are sent after the commit and coalesced, not inside every append](0021-wakeups-after-commit-and-coalesced.md) - **proposed**: measured, not built
+- [ADR-0021: Wake-ups are sent after the commit and coalesced, not inside every append](0021-wakeups-after-commit-and-coalesced.md) - **accepted**: built (coalesced wake-ups after the commit, with an `off` mode); 1.95 times the appends per second measured
 
 ## Storage and operation
 
-- [ADR-0022: One image, several runtime roles: the same code runs as one process or as separate deployments](0022-runtime-roles.md) - **proposed**: designed, not built
+- [ADR-0022: One image, several runtime roles: the same code runs as one process or as separate deployments](0022-runtime-roles.md) - **proposed**: partly built and run (`WALLET_ROLES` in the wallet, a suite with several instances, the kind lab); the migration job and the health endpoint of the workers are in the lab, not yet decided as a whole
 - [ADR-0020: The processors admin API is a description plus handlers, closed until the application says who may call it](0020-processors-admin-api.md)
 - [ADR-0019: Storage is visible, and the tag table is heavier than its reads need](0019-storage-visibility-and-the-tag-table.md)
 - [ADR-0018: A model's state can be snapshotted at a settled cursor; a snapshot is a cache, never a fact](0018-model-snapshots.md) - **superseded: the feature was dropped; its decision 8 (the read horizon of `all`) stays**

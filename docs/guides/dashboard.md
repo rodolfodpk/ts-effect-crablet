@@ -25,11 +25,16 @@ The example sends nothing unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Its first
 
 | Row | Answers | From |
 |---|---|---|
-| Is everything healthy? | how many processors are `FAILED` or paused; which instance leads each **module** (views, automations, outbox: one leader lock per module) and whether any module has lost its leader | `crablet.poller.status`, `crablet.poller.leadership` |
+| Is everything healthy? | how many processors are `FAILED` or paused, how many modules have lost their leader, how many processors report | `crablet.poller.status`, `crablet.poller.leadership` |
+| How is it doing right now? | throughput, command p95, how far behind the slowest processor is, events waiting, conflict retries, failed attempts, coloured where to look | `crablet.command.*`, `crablet.poller.lag_*` |
+| Who leads, and who is behind? | a tile with the pod that leads each **module** (views, automations, outbox: one leader lock per module; red when none does), how many times a module changed hands in the range, and a **timeline of who led what**, so the history of the leaders is on the screen, not only the present one; then the status of each processor | `crablet.poller.leadership`, `crablet.poller.status` |
 | Are the consumers keeping up? | lag in events and in seconds per processor, throughput, idle polls, backoff | `crablet.poller.lag_*`, `cursor_position` |
 | Is it failing? | failures and times of views, automations and the outbox; stored events nobody can read | `crablet.view.*`, `crablet.automation.*`, `crablet.outbox.*`, `crablet.eventstore.decoding_failures` |
 | The write side | appends, contention, command and append times, reads that waited for views | `crablet.command.*`, `crablet.eventstore.*`, `crablet.read.consistency.*` |
 | Storage | table sizes, rows, bytes per event | `crablet.storage.*` |
+
+A gauge keeps its last value after its pod is gone (Prometheus holds it for about five minutes), so the panels that read the current state ignore samples older than the variable **A gauge is stale after (s)** (120 by default, more than the OTLP
+export interval of 60 s; with an exporter that sends every 5 s, 20 drops a dead pod's values at once). Annotations draw on every graph the leader changes and, in the lab, each fault the chaos page makes (tagged `chaos`).
 
 Lag is the events a processor **selects** that are waiting after its cursor, and the age of the first of them: it is zero for a consumer of a rare event type that has everything, however far
 the end of the log is ([Monitor it](monitor-it.md#are-the-consumers-keeping-up)). The six alert rules (a processor `FAILED`, a module with no leader, a consumer more than five minutes behind, failing

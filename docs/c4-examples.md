@@ -167,3 +167,68 @@ C4Component
 
 Where to read the code: the domain in `src/domain/` (one file per command), the composition in `src/WalletApp.ts` (`startBackgroundProcessors` starts the three processors),
 the views in `src/views/`, the automation in `src/automations/`, the read endpoints in `src/api/`. The statement view is written but this example has no read endpoint for it.
+
+### Level 2 again: deployed as separate roles
+
+The same image, started with different roles ([ADR-0022](./adr/0022-runtime-roles.md)). The diagram above is the default, `WALLET_ROLES=all`, one process.
+
+```mermaid
+C4Container
+  title Wallet: containers, deployed as separate roles
+
+  Person(client, "Wallet client")
+  Person(ops, "Operator")
+  System_Ext(broker, "Event consumer", "stands in as a logging publisher")
+
+  System_Boundary(sys, "Wallet service") {
+    Container(api, "wallet-api, two or more pods", "WALLET_ROLES=api", "The HTTP API, the reads and the admin API. Scales with load; holds no leader lock and no LISTEN for events")
+    Container(workers, "wallet-workers, two or more pods", "WALLET_ROLES=views,automations,outbox", "Each module leads in one pod at a time, by an advisory lock per module; the others are warm standbys")
+    Container(job, "Schema job", "Flyway, run before a deploy", "The only thing that applies migrations: V1 to V13 (the framework) and V100 and up (the wallet), in one history")
+    ContainerDb(db, "PostgreSQL", "wallet_db", "The event log, the view tables, the processors' progress and the leader locks")
+  }
+
+  Rel(client, api, "POST /api/commands/name, GET /api/wallets/...", "HTTP")
+  Rel(ops, api, "Pause, resume, reset a processor", "admin API, bearer token")
+  Rel(api, db, "Appends events, reads views; LISTEN for view progress", "SQL")
+  Rel(workers, db, "Polls the log by cursor, projects views, holds the module locks, LISTEN for wake-ups", "SQL")
+  Rel(workers, broker, "publishBatch per topic wallet-events", "outbox publisher")
+  Rel(job, db, "Applies the schema, once", "SQL")
+```
+
+### The kind lab
+
+What runs where when the wallet is run on a local Kubernetes cluster and broken on purpose ([Run the kind lab](./guides/run-the-kind-lab.md)). The pages and the server behind the chaos page run on your computer, because a browser cannot run `kubectl`.
+
+```mermaid
+C4Container
+  title The kind lab: containers
+
+  Person(user, "You")
+
+  System_Boundary(laptop, "Your computer") {
+    Container(chaosui, "Chaos page", "Foldkit, port 5175", "Leaders, pods, faults for N minutes, the load, a consistency check, a reset")
+    Container(chaossrv, "Lab server", "Node, 127.0.0.1:5174", "Runs kubectl, reads Postgres, steers the load generator, marks Grafana")
+    Container(procui, "Processors page", "Foldkit, port 5173", "Status of each processor; pause, resume, reset")
+  }
+
+  System_Boundary(cluster, "kind cluster crablet-lab, three nodes") {
+    Container(api, "wallet-api, two pods", "WALLET_ROLES=api", "HTTP API and admin API")
+    Container(workers, "wallet-workers, two pods", "WALLET_ROLES=views,automations,outbox", "The processors; one leader per module")
+    ContainerDb(db, "PostgreSQL", "no volume", "Emptied by the reset, and by deleting its pod")
+    Container(load, "Load generator", "node scripts/load.ts, control port 9090", "Bursts of commands; start, pause and settings change while it runs")
+    Container(grafana, "Grafana", "otel-lgtm, port 3000", "Receives the pods' metrics, traces and logs over OTLP and shows the Crablet dashboard; no volume, so no history across a restart")
+  }
+
+  Rel(user, chaosui, "Opens, chooses faults, reads results", "browser")
+  Rel(user, procui, "Opens", "browser")
+  Rel(chaosui, chaossrv, "State, run, kill, load, verify, reset", "HTTP /api")
+  Rel(chaossrv, workers, "delete pod, rollout, debug (a network cut)", "kubectl")
+  Rel(chaossrv, api, "delete pod", "kubectl")
+  Rel(chaossrv, db, "Leaders, counts, the consistency checks", "SQL")
+  Rel(chaossrv, load, "Start, pause, set the range", "HTTP, by a port-forward")
+  Rel(chaossrv, grafana, "A mark for every fault", "annotations API")
+  Rel(procui, api, "Lists and acts on the processors", "admin API")
+  Rel(load, api, "Sends commands", "HTTP")
+  Rel(api, db, "Appends, reads", "SQL")
+  Rel(workers, db, "Polls, projects, holds the locks", "SQL")
+```

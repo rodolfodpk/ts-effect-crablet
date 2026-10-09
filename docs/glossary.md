@@ -27,6 +27,9 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Fence** - the check, before a handler runs and before the cursor moves, that this process still holds its module's lock, so a stale leader cannot deliver or rewind.
 - **At-least-once** - an event may be delivered again after a crash, but is never skipped.
 - **LISTEN/NOTIFY** - PostgreSQL's wake-up channel; it tells pollers that something new exists. It only wakes them; the cursor is what guarantees nothing is missed. [ADR-0005](./adr/0005-listen-notify-implementation.md)
+- **Wake-up window** - how the event store sends the wake-up: not inside every append, but once per window (50 ms by default) after the commit, carrying the union of what was appended; the first one after an idle spell goes at once. `wakeupMode: "off"` sends none. [ADR-0021](./adr/0021-wakeups-after-commit-and-coalesced.md)
+- **Role** - what one process of an application does, chosen at start-up: the wallet's `api`, `views`, `automations`, `outbox` (or `all`, one process). Roles talk only through Postgres, so the same image runs as one process or as separate deployments. [ADR-0022](./adr/0022-runtime-roles.md)
+- **Kind lab** - the wallet run as separate deployments on a local Kubernetes cluster and broken on purpose, with a dashboard and a chaos page. [Run the kind lab](./guides/run-the-kind-lab.md)
 
 ## Reading and reacting
 

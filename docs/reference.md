@@ -74,6 +74,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 | [`examples/course-enrolment-app`](../examples/course-enrolment-app/README.md) | The [tutorial](./tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
 | [`examples/course-enrolment-ui`](../examples/course-enrolment-ui/README.md) | A Foldkit page for that API: a typed client, marker reads, live updates ([tutorial step 5](./tutorial/05-a-page-that-uses-it.md)) |
 | [`examples/processors-admin-ui`](../examples/processors-admin-ui/README.md) | A generic Foldkit page for the processors admin API: a table of processors with Pause, Resume and Reset (with a confirmation); works against any application that mounts the API |
+| [`examples/chaos-ui`](../examples/chaos-ui/README.md) | A Foldkit page and a local server for the kind lab: who leads each module, the load generator, the pods, faults chosen to run for N minutes, a consistency check of the data, and a reset ([the guide](./guides/run-the-kind-lab.md)) |
 | [`examples/quickstart`](../examples/quickstart/README.md) | The [README example](../README.md) as a script that runs with no database |
 | [`examples/wallet-example-app`](../examples/wallet-example-app/README.md) | End-to-end example: wallet commands, views, an automation, an outbox, and HTTP composed together |
 

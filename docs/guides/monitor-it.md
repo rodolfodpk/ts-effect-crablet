@@ -46,11 +46,15 @@ Suggestions, by what each metric tells you:
 | `crablet.view.project.failures`, `crablet.automation.decide.failures`, `crablet.outbox.publish.failures` | a handler is failing; the error is recorded against the processor |
 | `crablet.eventstore.decoding_failures` | a stored event the current definitions cannot read (an unsafe event change) |
 | `crablet.command.conflict_retries`, `crablet.eventstore.concurrency_violations` | contention: commands whose boundaries overlap |
+| `crablet.eventstore.wakeups_recorded`, `_sent`, `_saved` | the wake-up notifications ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)): recorded per committed transaction, sent to Postgres, and saved by merging them. `sent` should stay near 1 / window per process |
 | `crablet.read.consistency.wait.duration` | how long reads wait for views to catch up |
 | `crablet.poller.backoff_active` | a processor has backed off after errors or empty polls |
 | `crablet.poller.lag_events`, `crablet.poller.lag_seconds` | a consumer is behind (see above); `lag_seconds` rising while the processor is `ACTIVE` means it is stuck or slow |
 | `crablet.poller.status` | a processor is `FAILED` (too many errors) or `PAUSED` |
 | `crablet.storage.*` | the size of the log and of each library table, and bytes per event |
+
+**With more than one instance, each must export with its own identity** (`service.instance.id`; the wallet uses `OTEL_SERVICE_INSTANCE_ID`, by default the host name, which is the pod name on Kubernetes). Without it two instances write the same series, Prometheus sees a counter that keeps
+dropping and adds the whole value at each drop: on the kind lab, `rate()` came out 20 to 30 times too high ([the lab](../plans/kind-lab.md)).
 
 ## Traces and log context
 

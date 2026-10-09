@@ -1,7 +1,7 @@
 # Phase 0 Spike — Findings
 
 Status: all acceptance criteria from the plan (`/Users/rodolfo/Documents/ts-effect-crablet-phase0-plan.md`)
-met except where noted. (That was the state after Phase 0: 22/22 tests. Today, 2026-10-07: 578 unit tests under Bun and 322 integration tests under Node pass; the reliability and scale work is summarized in [`docs/plans/reliability-and-scale-diagnostic.md`](docs/plans/reliability-and-scale-diagnostic.md), and later entries below are in order.)
+met except where noted. (That was the state after Phase 0: 22/22 tests. On 2026-10-09: 803 unit tests under Bun and 368 integration tests under Node pass (they were 578 and 322 on 2026-10-07); the reliability and scale work is summarized in [`docs/plans/reliability-and-scale-diagnostic.md`](docs/plans/reliability-and-scale-diagnostic.md), and later entries below are in order.)
 
 **This is the working journal**, not documentation: findings, gotchas and what changed against each plan, in the order they happened. To learn the project start at
 [`docs/README.md`](docs/README.md); the lasting decisions are in [`docs/adr/`](docs/adr/README.md).
