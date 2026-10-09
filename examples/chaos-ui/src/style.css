@@ -58,8 +58,8 @@ p { margin: 0.4rem 0; }
 .notice.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
 
 /* the three leaders */
-.leaders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(9rem, auto); gap: 1.1rem; }
-@media (max-width: 52rem) { .leaders { grid-template-columns: 1fr 1fr; } }
+.leaders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.1rem; }
+@media (max-width: 52rem) { .leaders { grid-template-columns: 1fr; } }
 .leader { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--ok); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
 .leader.none { border-top-color: var(--bad); }
 .leader-module { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; font-weight: 700; color: var(--muted); }
@@ -84,7 +84,7 @@ p { margin: 0.4rem 0; }
 @keyframes pulse { 50% { opacity: 0.25; } }
 
 /* forms */
-.grid { display: grid; gap: 0.9rem; align-items: end; }
+.grid { display: grid; gap: 0.9rem; align-items: start; }
 .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0.9rem; }
 .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 52rem) { .grid.four, .grid.three { grid-template-columns: 1fr 1fr; } }
@@ -164,3 +164,36 @@ table.pods { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 
 .confirm { margin-top: 1rem; padding: 0.9rem 1rem; border: 1px solid var(--bad); border-radius: 10px; background: var(--bad-soft); }
 .confirm p { margin: 0; font-weight: 600; color: var(--bad); }
+
+/* links to the rest of the lab */
+.links { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+.links a { color: var(--accent); text-decoration: none; font-size: 0.86rem; font-weight: 600; padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--accent-soft); }
+.links a:hover { text-decoration: underline; }
+
+/* is it healthy: one line, with the reasons */
+.banner { padding: 0.75rem 1.1rem; border-radius: 12px; margin: 0 0 1.1rem; font-size: 0.93rem; border: 1px solid transparent; }
+.banner strong { margin-right: 0.15rem; }
+.banner.ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+.banner.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+.banner.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+
+/* a leader that has just changed */
+.leader-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.leader.fresh { border-top-color: var(--warn); box-shadow: 0 0 0 1px var(--warn), var(--shadow); }
+.took-over { font-size: 0.72rem; font-weight: 700; color: var(--warn); background: var(--warn-soft); border-radius: 999px; padding: 0.1rem 0.55rem; white-space: nowrap; }
+
+/* what is happening right now */
+.pulse { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.8rem; }
+@media (max-width: 62rem) { .pulse { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.pulse-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem 0.9rem; box-shadow: var(--shadow); }
+.pulse-value { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.pulse-label { font-size: 0.74rem; color: var(--muted); margin-top: 0.1rem; }
+.pulse-tile.ok .pulse-value { color: var(--ok); }
+.pulse-tile.warn { border-color: var(--warn); } .pulse-tile.warn .pulse-value { color: var(--warn); }
+.pulse-tile.bad { border-color: var(--bad); background: var(--bad-soft); } .pulse-tile.bad .pulse-value { color: var(--bad); }
+
+/* the log: what was done to the system stands out from what it answered */
+.log-line.fault .time + span { font-weight: 600; }
+.log-line.fault { border-left: 3px solid var(--bad); padding-left: 0.6rem; }
+.log-line.heal { border-left: 3px solid var(--ok); padding-left: 0.6rem; }
+.time { white-space: nowrap; }

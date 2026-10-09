@@ -26,6 +26,16 @@ const NETSHOOT = "nicolaka/netshoot:v0.14";
 const LOCKS = { outbox: "4856221667890123456", views: "4856221667890123457", automations: "4856221667890123458" } as const;
 type ModuleName = keyof typeof LOCKS;
 
+const GRAFANA = process.env["GRAFANA_URL"] ?? "http://localhost:3000";
+const GRAFANA_AUTH = `Basic ${Buffer.from(process.env["GRAFANA_AUTH"] ?? "admin:admin").toString("base64")}`;
+let grafanaWarned = false;
+// A mark on every Grafana graph at this moment ("Chaos faults" annotations on the dashboard), so a dip or a spike can be read against what was done. Best effort: no Grafana, no mark.
+const annotate = (text: string, tags: ReadonlyArray<string> = []): void => {
+  void fetch(`${GRAFANA}/api/annotations`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: GRAFANA_AUTH }, body: JSON.stringify({ text, tags: ["chaos", ...tags], time: Date.now() }), signal: AbortSignal.timeout(3000) })
+    .then((res) => { if (!res.ok && !grafanaWarned) { grafanaWarned = true; console.warn(`Grafana annotations: ${res.status} (the marks on the graphs are off)`); } })
+    .catch(() => { if (!grafanaWarned) { grafanaWarned = true; console.warn("Grafana is not reachable: the marks on its graphs are off"); } });
+};
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const now = () => new Date().toISOString();
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\n")[0]!.slice(0, 240);
@@ -160,7 +170,7 @@ const loadStatus = async (): Promise<Load> => {
 type LogEntry = { at: string; text: string; ok: boolean };
 const run = { running: false, scenarios: [] as string[], minutes: 0, intervalSeconds: 0, holdSeconds: 0, startedAt: null as string | null, endsAt: null as string | null, faults: 0, log: [] as LogEntry[] };
 let stopRequested = false;
-const note = (text: string, ok = true) => { run.log.push({ at: now(), text, ok }); if (run.log.length > 200) run.log.shift(); };
+const note = (text: string, ok = true) => { run.log.push({ at: now(), text, ok }); if (run.log.length > 200) run.log.shift(); annotate(text, [ok ? "ok" : "problem"]); };
 
 const pickRandom = <T>(xs: ReadonlyArray<T>): T | undefined => xs[Math.floor(Math.random() * xs.length)];
 const deletePod = (name: string) => kubectl(["delete", "pod", name, "--grace-period=0", "--force", "--wait=false"]);
@@ -351,6 +361,25 @@ const resetDatabase = (): string | null => {
 
 // ---- the HTTP surface ---------------------------------------------------------------------------------------------------------------------------------------
 
+// The pulse: commands and events per second over the last few seconds (from the counts in the database), and how far behind the processors are (read from the admin API in the background,
+// so a saturated API slows this page's state by nothing).
+const samples: Array<{ at: number; commands: number; events: number }> = [];
+let behind: { pending: number | null; seconds: number | null } = { pending: null, seconds: null };
+setInterval(() => {
+  void (admin("GET", "/admin/processors") as Promise<{ processors: Array<{ pendingEvents: number | null; oldestPendingSeconds: number | null }> }>)
+    .then((r) => { behind = { pending: r.processors.reduce((n, p) => n + (p.pendingEvents ?? 0), 0), seconds: r.processors.reduce((m, p) => Math.max(m, p.oldestPendingSeconds ?? 0), 0) }; })
+    .catch(() => { behind = { pending: null, seconds: null }; });
+}, 4000);
+const pulseOf = (commands: number, events: number) => {
+  const at = Date.now();
+  samples.push({ at, commands, events });
+  while (samples.length > 2 && at - samples[0]!.at > 12_000) samples.shift();
+  const first = samples[0]!;
+  const seconds = (at - first.at) / 1000;
+  const rate = (now_: number, then: number) => (seconds >= 1.5 ? Math.max(0, (now_ - then) / seconds) : 0);
+  return { commandsPerSecond: rate(commands, first.commands), eventsPerSecond: rate(events, first.events), pendingEvents: behind.pending, behindSeconds: behind.seconds };
+};
+
 const snapshot = async (): Promise<typeof State.Type> => {
   const pods = await listPods();
   const [leaders, load, counts] = await Promise.all([
@@ -366,6 +395,7 @@ const snapshot = async (): Promise<typeof State.Type> => {
     run: { ...run, scenarios: [...run.scenarios], log: [...run.log] },
     verify: { running: verify.running || resetting, step: resetting ? "emptying the database" : verify.step, result: verify.result },
     load,
+    pulse: pulseOf(counts.commands, counts.events),
     commands: counts.commands,
     events: counts.events
   };

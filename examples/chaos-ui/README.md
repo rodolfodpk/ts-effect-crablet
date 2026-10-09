@@ -14,11 +14,15 @@ cd examples/chaos-ui && bun run dev          # the page, on http://localhost:517
 
 ## What is on the page
 
-- **Leaders**: the pod that leads views, automations and outbox, and the changes since you opened the page.
+- **Health banner**: one line, with the reasons: nobody leads a module, a pod is not ready, a processor is far behind (a warning from 5 s, a problem from 30 s), pods restarted, the load is paused.
+- **Leaders**: the pod that leads views, automations and outbox, with a "took over N s ago" mark when it changed hands lately. **Right now**: commands and events per second, events waiting, how far behind the slowest processor is.
+- **Links** to the Grafana dashboard (opened on the last 15 minutes), the Processors page and the list of wallets.
 - **Load**: start and pause the load generator, and set the seconds between bursts, the fewest and the most commands in a burst, and the number of wallets. It changes while the generator runs, with no restart
   (the generator serves `POST /config` on its control port; the server reaches it with a port-forward).
 - **Chaos run**: choose the faults, how many minutes, how often, and how long a cut or a pause lasts. Each fault is one of the chosen ones, at random, and each is logged with how long another pod took to lead.
   The faults: kill the leader of a module, kill a worker or an API pod, a rolling update of the workers, cut the views leader from Postgres (packets dropped, then healed), pause a view.
+- **What happened**: what was done to the system (red) and what was undone (green), each with its time and how long ago. Every line is also posted to Grafana as an annotation tagged `chaos`, so the dashboard
+  shows a vertical mark at each fault.
 - **Pods**: every pod, with a Kill button for the API and worker pods (never Postgres, Grafana or the load).
 - **Is the data consistent?**: pauses the load, waits for the processors to catch up, then checks the event log against what was built from it: the balance and summary views against the sum of the moves, no overdraft,
   nothing applied twice, one welcome notification per wallet, the audit, one leader per module. A run can do it by itself when it ends.

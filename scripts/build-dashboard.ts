@@ -9,7 +9,7 @@
 import { resolve } from "node:path";
 import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
 
-type Target = { readonly expr: string; readonly legend?: string; readonly instant?: boolean };
+type Target = { readonly expr: string; readonly legend?: string; readonly instant?: boolean; readonly format?: "table" };
 type Panel = Record<string, unknown>;
 
 const DS = { type: "prometheus", uid: "${ds}" };
@@ -23,6 +23,10 @@ export const MODULE_LOCKS: Readonly<Record<string, bigint>> = { outbox: OUTBOX_L
 export const FRESH_SECONDS = 120;
 const LEAD = "crablet_poller_leadership_ratio";
 const leadersNow = `(${LEAD} == 1 and (time() - timestamp(${LEAD}) < ${FRESH_SECONDS}))`;
+// A gauge keeps its last value after the pod that reported it is gone (Prometheus holds it for about five minutes), so a pod killed while a processor was PAUSED, or 38 s behind, would go on
+// counting. Anything that reads the CURRENT state keeps only samples written in the last `FRESH_SECONDS`.
+// `$fresh` is a dashboard variable (default FRESH_SECONDS, more than the export interval: the OTLP default is 60 s, so 120): with an exporter that sends every 5 s, 20 drops a dead pod's values at once.
+const fresh = (vector: string): string => `(${vector} and (time() - timestamp(${vector}) < $fresh))`;
 const withModule = (vector: string): string =>
   Object.entries(MODULE_LOCKS).reduce((inner, [module, key]) => `label_replace(${inner}, "module", "${module}", "lock_key", "${key}")`, vector);
 const V = 'view=~"$view"';
@@ -31,16 +35,19 @@ let nextId = 1;
 let y = 0;
 let x = 0;
 
+// Panels are laid out left to right and wrap at 24 columns; a line is as tall as its tallest panel (stats are 4 high, the timeline 9, graphs and tables 8).
+let rowHeight = 0;
 const place = (w: number, h: number) => {
-  if (x + w > 24) { x = 0; y += h; }
+  if (x + w > 24) { x = 0; y += rowHeight; rowHeight = 0; }
   const pos = { x, y, w, h };
   x += w;
+  rowHeight = Math.max(rowHeight, h);
   return pos;
 };
-const endLine = () => { if (x !== 0) { x = 0; y += 8; } };
+const endLine = () => { if (x !== 0) { x = 0; y += rowHeight; rowHeight = 0; } };
 
 const targets = (ts: ReadonlyArray<Target>) =>
-  ts.map((t, i) => ({ refId: String.fromCharCode(65 + i), datasource: DS, expr: t.expr, legendFormat: t.legend ?? "{{processor}}", instant: t.instant === true, range: t.instant !== true }));
+  ts.map((t, i) => ({ refId: String.fromCharCode(65 + i), datasource: DS, expr: t.expr, legendFormat: t.legend ?? "{{processor}}", instant: t.instant === true, range: t.instant !== true, ...(t.format === undefined ? {} : { format: t.format }) }));
 
 const row = (title: string): Panel => { endLine(); const p = { id: nextId++, type: "row", title, collapsed: false, gridPos: { x: 0, y, w: 24, h: 1 }, panels: [] }; y += 1; return p; };
 
@@ -50,45 +57,90 @@ const series = (title: string, description: string, unit: string, ts: ReadonlyAr
   options: { legend: { displayMode: "list", placement: "bottom" }, tooltip: { mode: "multi", sort: "desc" } }
 });
 
-const stat = (title: string, description: string, expr: string, redAbove?: number): Panel => ({
-  id: nextId++, type: "stat", title, description, datasource: DS, gridPos: place(6, 4), targets: targets([{ expr, legend: "", instant: true }]),
-  fieldConfig: { defaults: { unit: "short", thresholds: { mode: "absolute", steps: redAbove === undefined ? [{ color: "green", value: null }] : [{ color: "green", value: null }, { color: "red", value: redAbove }] } }, overrides: [] },
-  options: { reduceOptions: { calcs: ["lastNotNull"] }, colorMode: redAbove === undefined ? "none" : "background" }
+type StatOptions = { readonly unit?: string; readonly w?: number; readonly steps?: ReadonlyArray<{ readonly color: string; readonly value: number | null }>; readonly text?: "value" | "name"; readonly decimals?: number };
+const stat = (title: string, description: string, expr: string, redAbove?: number, options: StatOptions = {}): Panel => {
+  const steps = options.steps ?? (redAbove === undefined ? [{ color: "green", value: null }] : [{ color: "green", value: null }, { color: "red", value: redAbove }]);
+  return {
+    id: nextId++, type: "stat", title, description, datasource: DS, gridPos: place(options.w ?? 6, 4), targets: targets([{ expr, legend: options.text === "name" ? "{{instance_id}}" : "", instant: true }]),
+    fieldConfig: { defaults: { unit: options.unit ?? "short", ...(options.decimals === undefined ? {} : { decimals: options.decimals }), noValue: "-", thresholds: { mode: "absolute", steps } }, overrides: [] },
+    options: { reduceOptions: { calcs: ["lastNotNull"] }, colorMode: steps.length > 1 ? "background" : "none", graphMode: "none", textMode: options.text ?? "auto", wideLayout: true }
+  };
+};
+
+// What a stat shows when a series has no value for a while. Green below the first step, then each step's colour.
+const lagSteps = [{ color: "green", value: null }, { color: "yellow", value: 5 }, { color: "red", value: 30 }] as const;
+
+// A table of instant queries: one row per series, the label values as columns. `rename` gives the columns their words; `hide` drops the ones that say nothing (the timestamp of an instant query, and a Value that is always 1).
+const table = (title: string, description: string, ts: ReadonlyArray<Target>, w = 12, options: { readonly rename?: Record<string, string>; readonly hide?: ReadonlyArray<string>; readonly sort?: string } = {}): Panel => ({
+  id: nextId++, type: "table", title, description, datasource: DS, gridPos: place(w, 8),
+  targets: targets(ts.map((t) => ({ ...t, instant: true, format: "table" as const }))),
+  transformations: [
+    { id: "merge", options: {} },
+    { id: "organize", options: { excludeByName: Object.fromEntries(["Time", ...(options.hide ?? [])].map((name) => [name, true])), renameByName: options.rename ?? {} } }
+  ],
+  fieldConfig: { defaults: {}, overrides: [] }, options: { showHeader: true, cellHeight: "sm", sortBy: [{ displayName: options.sort ?? "Value", desc: options.sort === undefined }] }
 });
 
-const table = (title: string, description: string, ts: ReadonlyArray<Target>, w = 12): Panel => ({
-  id: nextId++, type: "table", title, description, datasource: DS, gridPos: place(w, 8),
-  targets: targets(ts.map((t) => ({ ...t, instant: true }))),
-  transformations: [{ id: "merge", options: {} }],
-  fieldConfig: { defaults: {}, overrides: [] }, options: { showHeader: true, sortBy: [{ displayName: "Value", desc: true }] }
+// A timeline of states, one row per series: when each thing was in its state (here, which pod led which module).
+const timeline = (title: string, description: string, ts: ReadonlyArray<Target>, w = 24): Panel => ({
+  id: nextId++, type: "state-timeline", title, description, datasource: DS, gridPos: place(w, 9), targets: targets(ts),
+  fieldConfig: { defaults: { color: { mode: "thresholds" }, thresholds: { mode: "absolute", steps: [{ color: "green", value: null }] }, custom: { fillOpacity: 70, lineWidth: 0 } }, overrides: [] },
+  options: { mergeValues: true, showValue: "never", rowHeight: 0.8, legend: { showLegend: false }, tooltip: { mode: "single" } }
 });
 
 const rate = (m: string, sel = "") => `rate(${m}${sel}[$__rate_interval])`;
 
 const panels = (): ReadonlyArray<Panel> => {
-  nextId = 1; y = 0; x = 0;
+  nextId = 1; y = 0; x = 0; rowHeight = 0;
   const out: Array<Panel> = [];
   out.push(row("Is everything healthy?"));
   out.push(stat("Failed processors", "Processors whose status is FAILED: they stopped after too many errors and need a person (see Run it in production). Reported by every instance; counted once per processor.",
-    `count(max by (processor) (crablet_poller_status_ratio{status="FAILED",${P}} == 1)) or vector(0)`, 1));
-  out.push(stat("Paused processors", "Processors an operator paused.", `count(max by (processor) (crablet_poller_status_ratio{status="PAUSED",${P}} == 1)) or vector(0)`));
+    `count(max by (processor) (${fresh(`crablet_poller_status_ratio{status="FAILED",${P}} == 1`)})) or vector(0)`, 1));
+  out.push(stat("Paused processors", "Processors an operator paused.", `count(max by (processor) (${fresh(`crablet_poller_status_ratio{status="PAUSED",${P}} == 1`)})) or vector(0)`));
   out.push(stat("Modules without a leader", "Modules (views, automations, outbox) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
     `(count(count by (lock_key) (${LEAD}) unless count by (lock_key) (${leadersNow})) or vector(0)) + (absent(${LEAD}) or vector(0))`, 1));
-  out.push(stat("Processors reporting", "Processors known to the instances that are reporting. Zero means nothing is reporting at all.", `count(max by (processor) (crablet_poller_status_ratio{${P}}))`));
-  out.push(table("Leader of each module", "The instance that leads each module (views, automations, outbox): one advisory lock per module, so all of a module's processors run in the same instance. A crashed leader drops out after two minutes.",
-    [{ expr: `max by (module, instance_id) (${withModule(leadersNow)})`, legend: "" }]));
+  out.push(stat("Processors reporting", "Processors known to the instances that are reporting. Zero means nothing is reporting at all.", `count(max by (processor) (${fresh(`crablet_poller_status_ratio{${P}}`)}))`));
+  // WHO LEADS, now and over time. A tile per module names the pod (red "NO LEADER" when none reports); the timeline under them is the history: one bar per pod and module, from when it took the lock to when it lost it.
+  endLine();
+  // The signals an on-call person reads first: how much work, how slow, how far behind, how much contention. Colours say when to look.
+  out.push(row("How is it doing right now?"));
+  out.push(stat("Throughput", "Commands that succeeded, per second (each attempt of a retried command counts).", `sum(${rate("crablet_command_handle_successes")})`, undefined, { w: 4, unit: "ops", decimals: 1 }));
+  out.push(stat("Command p95", "95th percentile of handling a command, retries included. Yellow above half a second, red above two.",
+    `histogram_quantile(0.95, sum by (le) (${rate("crablet_command_handle_duration_milliseconds_bucket")}))`, undefined,
+    { w: 4, unit: "ms", decimals: 0, steps: [{ color: "green", value: null }, { color: "yellow", value: 500 }, { color: "red", value: 2000 }] }));
+  out.push(stat("Slowest behind", "Age of the oldest event any processor has not handled yet; 0 when all are caught up. Yellow above 5 s, red above 30 s.", `max(${fresh(`crablet_poller_lag_seconds_ratio{${P}}`)}) or vector(0)`, undefined,
+    { w: 4, unit: "s", decimals: 0, steps: lagSteps }));
+  out.push(stat("Events waiting", "Events the processors have not handled yet, summed over processors (each counted up to 100 000).", `sum(max by (processor) (${fresh(`crablet_poller_lag_events_ratio{${P}}`)})) or vector(0)`, undefined,
+    { w: 4, unit: "short", steps: [{ color: "green", value: null }, { color: "yellow", value: 500 }, { color: "red", value: 5000 }] }));
+  out.push(stat("Conflict retries/s", "Commands that found their boundary changed and ran again. Some are normal under concurrency; a lot means contention. Yellow above 1, red above 10.", `sum(${rate("crablet_command_conflict_retries")}) or vector(0)`, undefined,
+    { w: 4, unit: "ops", decimals: 1, steps: [{ color: "green", value: null }, { color: "yellow", value: 1 }, { color: "red", value: 10 }] }));
+  out.push(stat("Failed attempts/s", "Command attempts that failed, a retried conflict included (so this is not the number of commands that gave up: read it against the conflict retries beside it).", `sum(${rate("crablet_command_handle_failures")}) or vector(0)`, undefined,
+    { w: 4, unit: "ops", decimals: 1, steps: [{ color: "green", value: null }, { color: "yellow", value: 1 }, { color: "red", value: 10 }] }));
+  out.push(row("Who leads, and who is behind?"));
+  for (const [module, key] of Object.entries(MODULE_LOCKS)) {
+    const mine = `(${LEAD}{lock_key="${key}"} == 1 and (time() - timestamp(${LEAD}{lock_key="${key}"}) < ${FRESH_SECONDS}))`;
+    out.push(stat(`${module[0]!.toUpperCase()}${module.slice(1)} leader`, `The pod that leads the ${module} module now: one advisory lock per module, so all of its processors run in that pod. Red when no pod does (a crashed leader drops out after two minutes).`,
+      `max by (instance_id) (topk(1, timestamp(${mine}))) or label_replace(absent(${mine}) * 0, "instance_id", "NO LEADER", "", "")`, undefined,
+      { w: 6, text: "name", steps: [{ color: "red", value: null }, { color: "green", value: 1 }] }));
+  }
+  out.push(stat("Leader changes in this range", "How many times a module changed hands in the time range selected above (a pod took a lock another had held). A deploy or a crash is one or more; a steady system is zero.",
+    // each pod that led a module in the range is one series; the first leader of a module is not a change, every other one is
+    `clamp_min(count(max by (lock_key, instance_id) (max_over_time((${LEAD} == 1)[$__range:1m]))) - count(count by (lock_key) (max_over_time(${LEAD}[$__range:1m]))), 0) or vector(0)`, undefined,
+    { w: 6, steps: [{ color: "green", value: null }, { color: "yellow", value: 1 }, { color: "orange", value: 4 }] }));
+  out.push(timeline("Who led what, over time", "One bar per pod and module, from when the pod took the module's lock to when it stopped reporting as leader. A handover is one bar ending and another starting; a gap between them is the time with no leader. The vertical marks on the other graphs are the same changes.",
+    [{ expr: `max by (module, instance_id) (${withModule(leadersNow)})`, legend: "{{module}} · {{instance_id}}" }]));
   out.push(table("Status of each processor", "Current status. Every instance reports the same value.",
-    [{ expr: `max by (processor, status) (crablet_poller_status_ratio{${P}}) == 1`, legend: "" }]));
+    [{ expr: `max by (processor, status) (${fresh(`crablet_poller_status_ratio{${P}} == 1`)})`, legend: "" }], 24, { hide: ["Value"], rename: { processor: "Processor", status: "Status" }, sort: "Processor" }));
 
   out.push(row("Are the consumers keeping up?"));
   out.push(series("Lag in events", "Events the processor selects that are committed and after its cursor, counted up to 100 000. Counted against the processor's own selection, not the end of the log. Every instance reports it, so the query takes the max.",
     "short", [{ expr: `max by (processor) (crablet_poller_lag_events_ratio{${P}})` }]));
   out.push(series("Lag in seconds", "Age, by the events' own occurred_at, of the first event waiting for the processor; 0 when it is caught up. Rising while the processor is ACTIVE means it is stuck or slow.",
     "s", [{ expr: `max by (processor) (crablet_poller_lag_seconds_ratio{${P}})` }]));
-  out.push(table("Worst first", "Lag now, per processor.", [
-    { expr: `max by (processor) (crablet_poller_lag_seconds_ratio{${P}})`, legend: "seconds" },
-    { expr: `max by (processor) (crablet_poller_lag_events_ratio{${P}})`, legend: "events" }
-  ]));
+  out.push(table("Worst first", "Lag now, per processor, the slowest first.", [
+    { expr: `max by (processor) (${fresh(`crablet_poller_lag_seconds_ratio{${P}}`)})`, legend: "seconds" },
+    { expr: `max by (processor) (${fresh(`crablet_poller_lag_events_ratio{${P}}`)})`, legend: "events" }
+  ], 12, { rename: { processor: "Processor", "Value #A": "Seconds behind", "Value #B": "Events behind" }, sort: "Seconds behind" }));
   out.push(series("Events fetched per second", "Events the processor's loop fetched (the leader's work).", "ops", [{ expr: `sum by (processor) (${rate("crablet_poller_events_fetched", `{${P}}`)})` }]));
   out.push(series("Idle polls", "The share of polls that found nothing. High and steady is normal for a quiet system.", "percentunit",
     [{ expr: `sum by (processor) (${rate("crablet_poller_empty_polls", `{${P}}`)}) / sum by (processor) (${rate("crablet_poller_processing_cycles", `{${P}}`)})` }]));
@@ -169,21 +221,26 @@ export const dashboard = (): Record<string, unknown> => ({
   schemaVersion: 39,
   version: 1,
   editable: true,
-  refresh: "30s",
-  time: { from: "now-1h", to: "now" },
+  refresh: "10s",
+  time: { from: "now-30m", to: "now" },
   timezone: "browser",
   templating: {
     list: [
+      { name: "fresh", label: "A gauge is stale after (s)", type: "textbox", query: String(FRESH_SECONDS), current: { text: String(FRESH_SECONDS), value: String(FRESH_SECONDS) }, hide: 0 },
       { name: "ds", label: "Data source", type: "datasource", query: "prometheus", current: {}, hide: 0 },
       { name: "processor", label: "Processor", type: "query", datasource: DS, query: { query: "label_values(crablet_poller_status_ratio, processor)", refId: "p" }, refresh: 2, includeAll: true, allValue: ".*", multi: true, current: {} },
       { name: "view", label: "View", type: "query", datasource: DS, query: { query: "label_values(crablet_view_project_successes, view)", refId: "v" }, refresh: 2, includeAll: true, allValue: ".*", multi: true, current: {} }
     ]
   },
   annotations: {
-    list: [{
-      name: "Leader changes", enable: true, iconColor: "orange", datasource: DS,
-      expr: `changes(max by (lock_key) (${LEAD} == 1)[1m:]) > 0`, titleFormat: "leader change", textFormat: "lock {{lock_key}}", step: "60s"
-    }]
+    list: [
+      // what was done to the system on purpose (the lab's chaos page posts each fault here, tagged "chaos")
+      { builtIn: 0, datasource: { type: "grafana", uid: "-- Grafana --" }, enable: true, iconColor: "red", name: "Chaos faults", target: { limit: 200, matchAny: false, tags: ["chaos"], type: "tags" } },
+      {
+        name: "Leader changes", enable: true, iconColor: "orange", datasource: DS,
+        expr: `changes(max by (lock_key) (${LEAD} == 1)[1m:]) > 0`, titleFormat: "leader change", textFormat: "lock {{lock_key}}", step: "60s"
+      }
+    ]
   },
   panels: panels()
 });

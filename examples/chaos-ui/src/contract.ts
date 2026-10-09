@@ -72,6 +72,15 @@ export const Load = Schema.Struct({
 });
 export type Load = typeof Load.Type;
 
+// How much is happening and how far behind the processors are, as of the last look (null when the admin API did not answer).
+export const Pulse = Schema.Struct({
+  commandsPerSecond: Schema.Finite,
+  eventsPerSecond: Schema.Finite,
+  pendingEvents: Schema.NullOr(Schema.Finite),
+  behindSeconds: Schema.NullOr(Schema.Finite)
+});
+export type Pulse = typeof Pulse.Type;
+
 export const State = Schema.Struct({
   // the server's clock (ISO): the page dates what it sees with it, and measures a run's progress against it
   now: Schema.String,
@@ -81,6 +90,7 @@ export const State = Schema.Struct({
   run: Run,
   verify: Verify,
   load: Load,
+  pulse: Pulse,
   commands: Schema.Finite,
   events: Schema.Finite
 });

@@ -225,13 +225,43 @@ export const clock = (iso: string): string => iso.slice(11, 19);
 
 type State_ = typeof State.Type;
 
+// IS IT HEALTHY? One look, with the reasons: what an on-call person needs before reading anything else. "bad" is something that is broken now; "warn" is something to watch.
+export type Health = { readonly level: "ok" | "warn" | "bad"; readonly reasons: ReadonlyArray<string> };
+export const healthOf = (s: State_): Health => {
+  const bad: string[] = [];
+  const warn: string[] = [];
+  for (const [module, pod] of Object.entries(s.leaders)) if (pod === null) bad.push(`nobody leads ${module}`);
+  const notReady = s.pods.filter((p) => (p.role === "api" || p.role === "workers") && p.phase !== "Terminating" && !p.ready);
+  if (notReady.length > 0) bad.push(`${notReady.length === 1 ? "a pod is" : `${notReady.length} pods are`} not ready (${notReady.map((p) => p.name.replace(/^wallet-/, "")).join(", ")})`);
+  if (s.pulse.behindSeconds !== null && s.pulse.behindSeconds >= 30) bad.push(`a processor is ${formatDuration(s.pulse.behindSeconds)} behind`);
+  else if (s.pulse.behindSeconds !== null && s.pulse.behindSeconds >= 5) warn.push(`a processor is ${formatDuration(s.pulse.behindSeconds)} behind`);
+  if (s.pulse.behindSeconds === null) warn.push("the admin API did not answer (it may be busy)");
+  const restarted = s.pods.filter((p) => (p.role === "api" || p.role === "workers") && p.restarts > 0);
+  if (restarted.length > 0) warn.push(`${restarted.length === 1 ? "a pod has" : `${restarted.length} pods have`} restarted`);
+  if (!s.load.running) warn.push("the load is paused");
+  return bad.length > 0 ? { level: "bad", reasons: [...bad, ...warn] } : warn.length > 0 ? { level: "warn", reasons: warn } : { level: "ok", reasons: [] };
+};
+
+// How long ago, from the server's clock.
+export const ago = (now: string, at: string): string => `${formatDuration((Date.parse(now) - Date.parse(at)) / 1000)} ago`;
+
+// What kind of line a log entry is, for its colour: what was done to the system, what was undone, or the system's answer.
+export const logKind = (text: string): "fault" | "heal" | "info" => (/^(fault:|killed|cut |paused|rolling)/.test(text) ? "fault" : /^(healed|resumed|run (finished|stopped|started)|reset)/.test(text) ? "heal" : "info");
+
 const chip = (h: HtmlBuilder<Message>, kind: string, text: string) => h.span([h.Class(`chip ${kind}`)], [h.span([h.Class("dot")], []), text]);
 
-const leaderCard = (h: HtmlBuilder<Message>, module: string, pod: string | null, hint: string) =>
+const leaderCard = (h: HtmlBuilder<Message>, module: string, pod: string | null, hint: string, tookOver: string | null) =>
   h.div(
-    [h.Class(pod === null ? "leader none" : "leader")],
-    [h.div([h.Class("leader-module")], [module]), h.div([h.Class("leader-pod")], [pod ?? "nobody leads"]), h.div([h.Class("leader-hint")], [hint])]
+    [h.Class(pod === null ? "leader none" : tookOver === null ? "leader" : "leader fresh")],
+    [
+      h.div([h.Class("leader-head")], [h.span([h.Class("leader-module")], [module]), ...(tookOver === null ? [] : [h.span([h.Class("took-over")], [`took over ${tookOver}`])])]),
+      h.div([h.Class("leader-pod")], [pod ?? "nobody leads"]),
+      h.div([h.Class("leader-hint")], [hint])
+    ]
   );
+
+const pulseTile = (h: HtmlBuilder<Message>, label: string, value: string, level: "ok" | "warn" | "bad" | "plain" = "plain") =>
+  h.div([h.Class(`pulse-tile ${level}`)], [h.div([h.Class("pulse-value")], [value]), h.div([h.Class("pulse-label")], [label])]);
 
 const field = (h: HtmlBuilder<Message>, label: string, input: ReturnType<HtmlBuilder<Message>["input"]>, hint?: string) =>
   h.label([h.Class("field")], [h.span([h.Class("field-label")], [label]), input, ...(hint === undefined ? [] : [h.span([h.Class("field-hint")], [hint])])]);
@@ -371,7 +401,10 @@ const logCard = (s: State_, model: Model, h: HtmlBuilder<Message>) =>
         : [h.div([h.Class("changes")], [h.div([h.Class("changes-title")], ["Leader changes"]), ...model.changes.map((c) => h.div([h.Class("change")], [h.span([h.Class("time")], [clock(c.at)]), h.span([], [c.text])]))])]),
       s.run.log.length === 0
         ? h.p([h.Class("muted")], ["Nothing yet. Start a run, or kill a pod above."])
-        : h.ul([h.Class("log"), h.AriaLabel("Log")], [...s.run.log].reverse().map((entry) => h.li([h.Class(entry.ok ? "log-line" : "log-line bad")], [h.span([h.Class("time")], [clock(entry.at)]), h.span([], [entry.text])])))
+        : h.ul(
+            [h.Class("log"), h.AriaLabel("Log")],
+            [...s.run.log].reverse().map((entry) => h.li([h.Class(`log-line ${logKind(entry.text)}${entry.ok ? "" : " bad"}`)], [h.span([h.Class("time"), h.Title(entry.at)], [`${clock(entry.at)} · ${ago(s.now, entry.at)}`]), h.span([], [entry.text])]))
+          )
     ]
   );
 
@@ -383,14 +416,21 @@ const verifyCard = (s: State_, h: HtmlBuilder<Message>) => {
     "Is the data consistent?",
     [
       h.p([h.Class("note")], ["Pauses the load, waits for every processor to catch up, then compares the event log with what was built from it: balances, duplicates, overdrafts, notifications, the audit, the leaders."]),
-      h.div([h.Class("actions")], [h.button([h.Class("btn primary"), h.Disabled(v.running), h.OnClick(Message.ClickedVerify())], [v.running ? "Working..." : "Verify now"]), ...(v.running ? [h.span([h.Class("muted")], [v.step])] : [])]),
+      h.div([h.Class("actions")], [h.button([h.Class("btn primary"), h.Disabled(v.running), h.OnClick(Message.ClickedVerify())], [v.running ? "Working..." : result === null ? "Verify now" : "Verify again"]), ...(v.running ? [h.span([h.Class("muted")], [v.step])] : [])]),
       ...(result === null
         ? []
         : [
-            h.div([h.Class(result.ok ? "verdict ok" : "verdict bad")], [result.ok ? "Everything that must hold, holds." : "Something does not hold.", h.span([h.Class("verdict-time")], [`checked at ${clock(result.at)}, after ${formatDuration(result.waitedSeconds)}`])]),
+            h.div(
+              [h.Class(result.ok ? "verdict ok" : "verdict bad")],
+              [
+                h.span([], [result.ok ? "Everything that must hold, holds." : `${result.checks.filter((c) => !c.info && !c.ok).length} of ${result.checks.filter((c) => !c.info).length} checks do not hold.`]),
+                h.span([h.Class("verdict-time")], [`checked at ${clock(result.at)} (${ago(s.now, result.at)}), after ${formatDuration(result.waitedSeconds)}`])
+              ]
+            ),
             h.ul(
               [h.Class("checks"), h.AriaLabel("Checks")],
-              result.checks.map((check) =>
+              // what does not hold first, then what does, then what is only information
+              [...result.checks].sort((a, b) => Number(a.info) - Number(b.info) || Number(a.ok) - Number(b.ok)).map((check) =>
                 h.li([h.Class(check.info ? "check-row info" : check.ok ? "check-row ok" : "check-row bad")], [h.span([h.Class("badge")], [check.info ? "INFO" : check.ok ? "PASS" : "FAIL"]), h.span([h.Class("check-text")], [h.span([h.Class("check-name")], [check.name]), h.span([h.Class("check-detail")], [check.detail])])])
               )
             )
@@ -416,8 +456,27 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
   body: h.main(
     [],
     [
-      h.header([h.Class("page-head")], [h.div([], [h.h1([], ["Chaos lab"]), h.p([h.Class("muted")], ["Break the wallet's pods on purpose and see who takes over, whether anything is lost, and that the data is still consistent."])]),
-        AsyncData.isSuccess(model.state) ? h.span([h.Class("context")], [model.state.data.context]) : h.span([], [])]),
+      h.header(
+        [h.Class("page-head")],
+        [
+          h.div([], [h.h1([], ["Chaos lab"]), h.p([h.Class("muted")], ["Break the wallet's pods on purpose and see who takes over, whether anything is lost, and that the data is still consistent."])]),
+          h.nav(
+            [h.Class("links"), h.AriaLabel("Other pages of the lab")],
+            [
+              h.a([h.Href("http://localhost:3000/d/crablet-overview/crablet?orgId=1&from=now-15m&to=now&refresh=5s&var-fresh=20"), h.Target("_blank"), h.Rel("noreferrer")], ["Grafana ↗"]),
+              h.a([h.Href("http://localhost:5173"), h.Target("_blank"), h.Rel("noreferrer")], ["Processors ↗"]),
+              h.a([h.Href("http://localhost:8081/api/wallets"), h.Target("_blank"), h.Rel("noreferrer")], ["Wallets ↗"]),
+              ...(AsyncData.isSuccess(model.state) ? [h.span([h.Class("context")], [model.state.data.context])] : [])
+            ]
+          )
+        ]
+      ),
+      ...(AsyncData.isSuccess(model.state)
+        ? (() => {
+            const health = healthOf(model.state.data);
+            return [h.div([h.Class(`banner ${health.level}`), h.Role("status")], [h.strong([], [health.level === "ok" ? "Healthy" : health.level === "warn" ? "Worth watching" : "Needs attention"]), health.reasons.length === 0 ? " every module has a leader, every pod is ready, the processors are caught up" : `: ${health.reasons.join("; ")}`])];
+          })()
+        : []),
       ...(model.notice === null ? [] : [h.p([h.Class(model.notice.ok ? "notice" : "notice bad"), h.Role("status")], [model.notice.text])]),
       AsyncData.match(model.state, {
         onIdle: () => h.p([h.Class("muted")], [""]),
@@ -435,8 +494,27 @@ const content = (model: Model, s: State_, h: HtmlBuilder<Message>) =>
   h.div(
     [h.Class("stack")],
     [
-      h.div([h.Class("leaders"), h.AriaLabel("Leaders")], [leaderCard(h, "Views", s.leaders.views, "builds the read tables"), leaderCard(h, "Automations", s.leaders.automations, "reacts to events"), leaderCard(h, "Outbox", s.leaders.outbox, "publishes events"),
-        h.div([h.Class("totals")], [h.div([h.Class("total")], [h.strong([], [s.commands.toLocaleString("en")]), " commands"]), h.div([h.Class("total")], [h.strong([], [s.events.toLocaleString("en")]), " events"])])]),
+      h.div(
+        [h.Class("leaders"), h.AriaLabel("Leaders")],
+        (
+          [["views", "Views", "builds the read tables"], ["automations", "Automations", "reacts to events"], ["outbox", "Outbox", "publishes events"]] as const
+        ).map(([key, title, hint]) => {
+          const change = model.changes.find((c) => c.text.startsWith(`${key}:`));
+          const recent = change !== undefined && Date.parse(s.now) - Date.parse(change.at) < 120_000;
+          return leaderCard(h, title, s.leaders[key], hint, recent ? ago(s.now, change.at) : null);
+        })
+      ),
+      h.div(
+        [h.Class("pulse"), h.AriaLabel("Right now")],
+        [
+          pulseTile(h, "commands per second", s.pulse.commandsPerSecond.toFixed(1)),
+          pulseTile(h, "events per second", s.pulse.eventsPerSecond.toFixed(1)),
+          pulseTile(h, "events waiting for processors", s.pulse.pendingEvents === null ? "?" : s.pulse.pendingEvents.toLocaleString("en"), s.pulse.pendingEvents === null ? "plain" : s.pulse.pendingEvents > 5000 ? "bad" : s.pulse.pendingEvents > 500 ? "warn" : "ok"),
+          pulseTile(h, "slowest processor behind by", s.pulse.behindSeconds === null ? "?" : formatDuration(s.pulse.behindSeconds), s.pulse.behindSeconds === null ? "plain" : s.pulse.behindSeconds >= 30 ? "bad" : s.pulse.behindSeconds >= 5 ? "warn" : "ok"),
+          pulseTile(h, "commands in the log", s.commands.toLocaleString("en")),
+          pulseTile(h, "events in the log", s.events.toLocaleString("en"))
+        ]
+      ),
       loadCard(model, s, h),
       h.div([h.Class("two")], [runCard(model, s, h), logCard(s, model, h)]),
       podsCard(s, h),

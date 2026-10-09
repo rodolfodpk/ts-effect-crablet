@@ -8,14 +8,25 @@
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
-  "refresh": "30s",
+  "refresh": "10s",
   "time": {
-    "from": "now-1h",
+    "from": "now-30m",
     "to": "now"
   },
   "timezone": "browser",
   "templating": {
     "list": [
+      {
+        "name": "fresh",
+        "label": "A gauge is stale after (s)",
+        "type": "textbox",
+        "query": "120",
+        "current": {
+          "text": "120",
+          "value": "120"
+        },
+        "hide": 0
+      },
       {
         "name": "ds",
         "label": "Data source",
@@ -64,6 +75,24 @@
   },
   "annotations": {
     "list": [
+      {
+        "builtIn": 0,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "iconColor": "red",
+        "name": "Chaos faults",
+        "target": {
+          "limit": 200,
+          "matchAny": false,
+          "tags": [
+            "chaos"
+          ],
+          "type": "tags"
+        }
+      },
       {
         "name": "Leader changes",
         "enable": true,
@@ -115,7 +144,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "count(max by (processor) (crablet_poller_status_ratio{status=\"FAILED\",processor=~\"$processor\"} == 1)) or vector(0)",
+          "expr": "count(max by (processor) ((crablet_poller_status_ratio{status=\"FAILED\",processor=~\"$processor\"} == 1 and (time() - timestamp(crablet_poller_status_ratio{status=\"FAILED\",processor=~\"$processor\"} == 1) < $fresh)))) or vector(0)",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -124,6 +153,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "-",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -146,7 +176,10 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "background"
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
       }
     },
     {
@@ -171,7 +204,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "count(max by (processor) (crablet_poller_status_ratio{status=\"PAUSED\",processor=~\"$processor\"} == 1)) or vector(0)",
+          "expr": "count(max by (processor) ((crablet_poller_status_ratio{status=\"PAUSED\",processor=~\"$processor\"} == 1 and (time() - timestamp(crablet_poller_status_ratio{status=\"PAUSED\",processor=~\"$processor\"} == 1) < $fresh)))) or vector(0)",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -180,6 +213,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "-",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -198,7 +232,10 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "none"
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
       }
     },
     {
@@ -232,6 +269,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "-",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -254,7 +292,10 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "background"
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
       }
     },
     {
@@ -279,7 +320,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "count(max by (processor) (crablet_poller_status_ratio{processor=~\"$processor\"}))",
+          "expr": "count(max by (processor) ((crablet_poller_status_ratio{processor=~\"$processor\"} and (time() - timestamp(crablet_poller_status_ratio{processor=~\"$processor\"}) < $fresh))))",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -288,6 +329,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "-",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -306,23 +348,677 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "none"
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
       }
     },
     {
       "id": 6,
-      "type": "table",
-      "title": "Leader of each module",
-      "description": "The instance that leads each module (views, automations, outbox): one advisory lock per module, so all of a module's processors run in the same instance. A crashed leader drops out after two minutes.",
+      "type": "row",
+      "title": "How is it doing right now?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Throughput",
+      "description": "Commands that succeeded, per second (each attempt of a retried command counts).",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
       },
       "gridPos": {
         "x": 0,
-        "y": 9,
-        "w": 12,
-        "h": 8
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(rate(crablet_command_handle_successes[$__rate_interval]))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 1,
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Command p95",
+      "description": "95th percentile of handling a command, retries included. Yellow above half a second, red above two.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(crablet_command_handle_duration_milliseconds_bucket[$__rate_interval])))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Slowest behind",
+      "description": "Age of the oldest event any processor has not handled yet; 0 when all are caught up. Yellow above 5 s, red above 30 s.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "max((crablet_poller_lag_seconds_ratio{processor=~\"$processor\"} and (time() - timestamp(crablet_poller_lag_seconds_ratio{processor=~\"$processor\"}) < $fresh))) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Events waiting",
+      "description": "Events the processors have not handled yet, summed over processors (each counted up to 100 000).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(max by (processor) ((crablet_poller_lag_events_ratio{processor=~\"$processor\"} and (time() - timestamp(crablet_poller_lag_events_ratio{processor=~\"$processor\"}) < $fresh)))) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Conflict retries/s",
+      "description": "Commands that found their boundary changed and ran again. Some are normal under concurrency; a lot means contention. Yellow above 1, red above 10.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(rate(crablet_command_conflict_retries[$__rate_interval])) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 1,
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Failed attempts/s",
+      "description": "Command attempts that failed, a retried conflict included (so this is not the number of commands that gave up: read it against the conflict retries beside it).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum(rate(crablet_command_handle_failures[$__rate_interval])) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 1,
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Who leads, and who is behind?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Outbox leader",
+      "description": "The pod that leads the outbox module now: one advisory lock per module, so all of its processors run in that pod. Red when no pod does (a crashed leader drops out after two minutes).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "max by (instance_id) (topk(1, timestamp((crablet_poller_leadership_ratio{lock_key=\"4856221667890123456\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123456\"}) < 120))))) or label_replace(absent((crablet_poller_leadership_ratio{lock_key=\"4856221667890123456\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123456\"}) < 120))) * 0, \"instance_id\", \"NO LEADER\", \"\", \"\")",
+          "legendFormat": "{{instance_id}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Views leader",
+      "description": "The pod that leads the views module now: one advisory lock per module, so all of its processors run in that pod. Red when no pod does (a crashed leader drops out after two minutes).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 11,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "max by (instance_id) (topk(1, timestamp((crablet_poller_leadership_ratio{lock_key=\"4856221667890123457\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123457\"}) < 120))))) or label_replace(absent((crablet_poller_leadership_ratio{lock_key=\"4856221667890123457\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123457\"}) < 120))) * 0, \"instance_id\", \"NO LEADER\", \"\", \"\")",
+          "legendFormat": "{{instance_id}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Automations leader",
+      "description": "The pod that leads the automations module now: one advisory lock per module, so all of its processors run in that pod. Red when no pod does (a crashed leader drops out after two minutes).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "max by (instance_id) (topk(1, timestamp((crablet_poller_leadership_ratio{lock_key=\"4856221667890123458\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123458\"}) < 120))))) or label_replace(absent((crablet_poller_leadership_ratio{lock_key=\"4856221667890123458\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123458\"}) < 120))) * 0, \"instance_id\", \"NO LEADER\", \"\", \"\")",
+          "legendFormat": "{{instance_id}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Leader changes in this range",
+      "description": "How many times a module changed hands in the time range selected above (a pod took a lock another had held). A deploy or a crash is one or more; a steady system is zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 11,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "clamp_min(count(max by (lock_key, instance_id) (max_over_time((crablet_poller_leadership_ratio == 1)[$__range:1m]))) - count(count by (lock_key) (max_over_time(crablet_poller_leadership_ratio[$__range:1m]))), 0) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 18,
+      "type": "state-timeline",
+      "title": "Who led what, over time",
+      "description": "One bar per pod and module, from when the pod took the module's lock to when it stopped reporting as leader. A handover is one bar ending and another starting; a gap between them is the time with no leader. The vertical marks on the other graphs are the same changes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 9
       },
       "targets": [
         {
@@ -332,33 +1028,46 @@
             "uid": "${ds}"
           },
           "expr": "max by (module, instance_id) (label_replace(label_replace(label_replace((crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), \"module\", \"outbox\", \"lock_key\", \"4856221667890123456\"), \"module\", \"views\", \"lock_key\", \"4856221667890123457\"), \"module\", \"automations\", \"lock_key\", \"4856221667890123458\"))",
-          "legendFormat": "",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
+          "legendFormat": "{{module}} · {{instance_id}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          }
+        },
         "overrides": []
       },
       "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "Value",
-            "desc": true
-          }
-        ]
+        "mergeValues": true,
+        "showValue": "never",
+        "rowHeight": 0.8,
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       }
     },
     {
-      "id": 7,
+      "id": 19,
       "type": "table",
       "title": "Status of each processor",
       "description": "Current status. Every instance reports the same value.",
@@ -367,9 +1076,9 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 9,
-        "w": 12,
+        "x": 0,
+        "y": 24,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -379,16 +1088,30 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "max by (processor, status) (crablet_poller_status_ratio{processor=~\"$processor\"}) == 1",
+          "expr": "max by (processor, status) ((crablet_poller_status_ratio{processor=~\"$processor\"} == 1 and (time() - timestamp(crablet_poller_status_ratio{processor=~\"$processor\"} == 1) < $fresh)))",
           "legendFormat": "",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         }
       ],
       "transformations": [
         {
           "id": "merge",
           "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "processor": "Processor",
+              "status": "Status"
+            }
+          }
         }
       ],
       "fieldConfig": {
@@ -397,29 +1120,30 @@
       },
       "options": {
         "showHeader": true,
+        "cellHeight": "sm",
         "sortBy": [
           {
-            "displayName": "Value",
-            "desc": true
+            "displayName": "Processor",
+            "desc": false
           }
         ]
       }
     },
     {
-      "id": 8,
+      "id": 20,
       "type": "row",
       "title": "Are the consumers keeping up?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 32,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 9,
+      "id": 21,
       "type": "timeseries",
       "title": "Lag in events",
       "description": "Events the processor selects that are committed and after its cursor, counted up to 100 000. Counted against the processor's own selection, not the end of the log. Every instance reports it, so the query takes the max.",
@@ -429,7 +1153,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 33,
         "w": 12,
         "h": 8
       },
@@ -468,7 +1192,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 22,
       "type": "timeseries",
       "title": "Lag in seconds",
       "description": "Age, by the events' own occurred_at, of the first event waiting for the processor; 0 when it is caught up. Rising while the processor is ACTIVE means it is stuck or slow.",
@@ -478,7 +1202,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 33,
         "w": 12,
         "h": 8
       },
@@ -517,17 +1241,17 @@
       }
     },
     {
-      "id": 11,
+      "id": 23,
       "type": "table",
       "title": "Worst first",
-      "description": "Lag now, per processor.",
+      "description": "Lag now, per processor, the slowest first.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
       },
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 41,
         "w": 12,
         "h": 8
       },
@@ -538,10 +1262,11 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "max by (processor) (crablet_poller_lag_seconds_ratio{processor=~\"$processor\"})",
+          "expr": "max by (processor) ((crablet_poller_lag_seconds_ratio{processor=~\"$processor\"} and (time() - timestamp(crablet_poller_lag_seconds_ratio{processor=~\"$processor\"}) < $fresh)))",
           "legendFormat": "seconds",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         },
         {
           "refId": "B",
@@ -549,16 +1274,30 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "max by (processor) (crablet_poller_lag_events_ratio{processor=~\"$processor\"})",
+          "expr": "max by (processor) ((crablet_poller_lag_events_ratio{processor=~\"$processor\"} and (time() - timestamp(crablet_poller_lag_events_ratio{processor=~\"$processor\"}) < $fresh)))",
           "legendFormat": "events",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         }
       ],
       "transformations": [
         {
           "id": "merge",
           "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "processor": "Processor",
+              "Value #A": "Seconds behind",
+              "Value #B": "Events behind"
+            }
+          }
         }
       ],
       "fieldConfig": {
@@ -567,16 +1306,17 @@
       },
       "options": {
         "showHeader": true,
+        "cellHeight": "sm",
         "sortBy": [
           {
-            "displayName": "Value",
-            "desc": true
+            "displayName": "Seconds behind",
+            "desc": false
           }
         ]
       }
     },
     {
-      "id": 12,
+      "id": 24,
       "type": "timeseries",
       "title": "Events fetched per second",
       "description": "Events the processor's loop fetched (the leader's work).",
@@ -586,7 +1326,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 26,
+        "y": 41,
         "w": 12,
         "h": 8
       },
@@ -625,7 +1365,7 @@
       }
     },
     {
-      "id": 13,
+      "id": 25,
       "type": "timeseries",
       "title": "Idle polls",
       "description": "The share of polls that found nothing. High and steady is normal for a quiet system.",
@@ -635,7 +1375,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 49,
         "w": 12,
         "h": 8
       },
@@ -674,7 +1414,7 @@
       }
     },
     {
-      "id": 14,
+      "id": 26,
       "type": "timeseries",
       "title": "Backed off",
       "description": "1 while the processor has backed off after errors or empty polls.",
@@ -684,7 +1424,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 49,
         "w": 12,
         "h": 8
       },
@@ -723,7 +1463,7 @@
       }
     },
     {
-      "id": 15,
+      "id": 27,
       "type": "timeseries",
       "title": "Cursor position",
       "description": "Where each processor has read up to.",
@@ -733,7 +1473,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 57,
         "w": 12,
         "h": 8
       },
@@ -772,20 +1512,20 @@
       }
     },
     {
-      "id": 16,
+      "id": 28,
       "type": "row",
       "title": "Is it failing?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 65,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 17,
+      "id": 29,
       "type": "timeseries",
       "title": "View projection failures",
       "description": "Failures per second by view.",
@@ -795,7 +1535,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 66,
         "w": 12,
         "h": 8
       },
@@ -834,7 +1574,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 30,
       "type": "timeseries",
       "title": "Automation and outbox failures",
       "description": "Failures per second: automations decide, outbox publishers publish (to something outside the process).",
@@ -844,7 +1584,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 51,
+        "y": 66,
         "w": 12,
         "h": 8
       },
@@ -894,7 +1634,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 31,
       "type": "timeseries",
       "title": "View projection time (p95)",
       "description": "95th percentile of one projection call, by view.",
@@ -904,7 +1644,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 74,
         "w": 12,
         "h": 8
       },
@@ -943,7 +1683,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 32,
       "type": "timeseries",
       "title": "Successful calls per second",
       "description": "Projections, automation decisions and outbox publishes that succeeded, to read the failure panels against.",
@@ -953,7 +1693,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 59,
+        "y": 74,
         "w": 12,
         "h": 8
       },
@@ -1014,7 +1754,7 @@
       }
     },
     {
-      "id": 21,
+      "id": 33,
       "type": "timeseries",
       "title": "Automation decision time (p95)",
       "description": "95th percentile of one automation decision, by automation.",
@@ -1024,7 +1764,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 82,
         "w": 12,
         "h": 8
       },
@@ -1063,7 +1803,7 @@
       }
     },
     {
-      "id": 22,
+      "id": 34,
       "type": "timeseries",
       "title": "Outbox publish time (p95)",
       "description": "95th percentile of one publish call, by publisher.",
@@ -1073,7 +1813,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 67,
+        "y": 82,
         "w": 12,
         "h": 8
       },
@@ -1112,7 +1852,7 @@
       }
     },
     {
-      "id": 23,
+      "id": 35,
       "type": "timeseries",
       "title": "Events handled per second",
       "description": "Events projected by views, handled by automations and published by the outbox.",
@@ -1122,7 +1862,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 75,
+        "y": 90,
         "w": 12,
         "h": 8
       },
@@ -1183,7 +1923,7 @@
       }
     },
     {
-      "id": 24,
+      "id": 36,
       "type": "timeseries",
       "title": "Stored events that could not be read",
       "description": "A stored event the current definitions cannot decode: an unsafe event change (Evolving events). Should stay at zero.",
@@ -1193,7 +1933,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 75,
+        "y": 90,
         "w": 12,
         "h": 8
       },
@@ -1232,20 +1972,20 @@
       }
     },
     {
-      "id": 25,
+      "id": 37,
       "type": "row",
       "title": "The write side",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 83,
+        "y": 98,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 26,
+      "id": 38,
       "type": "timeseries",
       "title": "Appends per second",
       "description": "Events appended, and append calls that failed.",
@@ -1255,7 +1995,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 84,
+        "y": 99,
         "w": 12,
         "h": 8
       },
@@ -1316,7 +2056,7 @@
       }
     },
     {
-      "id": 27,
+      "id": 39,
       "type": "timeseries",
       "title": "Wake-ups per second",
       "description": "Notifications that tell pollers events were appended (ADR-0021): recorded per commit, actually sent, and saved by coalescing. Sent should stay near 1 / window per process.",
@@ -1326,7 +2066,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 84,
+        "y": 99,
         "w": 12,
         "h": 8
       },
@@ -1387,7 +2127,7 @@
       }
     },
     {
-      "id": 28,
+      "id": 40,
       "type": "timeseries",
       "title": "Contention",
       "description": "Commands that retried after a conflict, appends the DCB condition refused, and commands recognised as repeats.",
@@ -1397,7 +2137,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 92,
+        "y": 107,
         "w": 12,
         "h": 8
       },
@@ -1458,7 +2198,7 @@
       }
     },
     {
-      "id": 29,
+      "id": 41,
       "type": "timeseries",
       "title": "Command time (p95)",
       "description": "95th percentile of handling one command, by command type, retries included.",
@@ -1468,7 +2208,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 92,
+        "y": 107,
         "w": 12,
         "h": 8
       },
@@ -1507,7 +2247,7 @@
       }
     },
     {
-      "id": 30,
+      "id": 42,
       "type": "timeseries",
       "title": "Commands per second",
       "description": "Commands that succeeded, and commands that failed (rejected by their rules or by an error) by command type.",
@@ -1517,7 +2257,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 100,
+        "y": 115,
         "w": 12,
         "h": 8
       },
@@ -1567,7 +2307,7 @@
       }
     },
     {
-      "id": 31,
+      "id": 43,
       "type": "timeseries",
       "title": "Append time (p95)",
       "description": "95th percentile of the conditional append.",
@@ -1577,7 +2317,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 100,
+        "y": 115,
         "w": 12,
         "h": 8
       },
@@ -1616,7 +2356,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 44,
       "type": "timeseries",
       "title": "Reads that waited for views",
       "description": "Reads that carried a consistency marker, per second by mode, and how long the waiting ones waited (p95).",
@@ -1626,7 +2366,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 108,
+        "y": 123,
         "w": 12,
         "h": 8
       },
@@ -1665,7 +2405,7 @@
       }
     },
     {
-      "id": 33,
+      "id": 45,
       "type": "timeseries",
       "title": "Time reads waited (p95)",
       "description": "How long reads spent waiting for views to catch up (only reads that waited).",
@@ -1675,7 +2415,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 108,
+        "y": 123,
         "w": 12,
         "h": 8
       },
@@ -1714,20 +2454,20 @@
       }
     },
     {
-      "id": 34,
+      "id": 46,
       "type": "row",
       "title": "Storage",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 116,
+        "y": 131,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 35,
+      "id": 47,
       "type": "timeseries",
       "title": "Table size",
       "description": "Total bytes (heap, indexes and TOAST) of each library table. Nothing deletes events, so watch the growth.",
@@ -1737,7 +2477,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 117,
+        "y": 132,
         "w": 12,
         "h": 8
       },
@@ -1776,7 +2516,7 @@
       }
     },
     {
-      "id": 36,
+      "id": 48,
       "type": "timeseries",
       "title": "Rows",
       "description": "The planner's estimate, as fresh as the last autovacuum or ANALYZE.",
@@ -1786,7 +2526,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 117,
+        "y": 132,
         "w": 12,
         "h": 8
       },
@@ -1825,7 +2565,7 @@
       }
     },
     {
-      "id": 37,
+      "id": 49,
       "type": "timeseries",
       "title": "Bytes per event",
       "description": "The events table and the tag table with their indexes, divided by events (about 1.2 KB at the time of writing).",
@@ -1835,7 +2575,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 125,
+        "y": 140,
         "w": 12,
         "h": 8
       },
