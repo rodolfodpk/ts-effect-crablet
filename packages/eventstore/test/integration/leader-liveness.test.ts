@@ -3,7 +3,7 @@
 // can take it. `isLeader()` used to stay true for ever; now a heartbeat on the leader's own connection notices, and `verify` answers on demand.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
@@ -11,23 +11,25 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader, type LeaderHandle } from "../../src/Leader.ts";
 
 let db: TestDb;
-let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+// One runtime (one pool) for the whole file: a pool built and closed around each call would wait on the connection a leader still holds (@effect/sql-pg 4.0.2).
+let rt: ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient, never>;
 
 before(async () => {
   db = await startTestDb();
-  layer = PgClient.layer({
+  rt = ManagedRuntime.make(PgClient.layer({
     host: db.connInfo.host,
     port: db.connInfo.port,
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>);
 }, { timeout: 60_000 });
 after(async () => {
+  await rt.dispose();
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => rt.runPromise(effect);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const newKey = () => BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);
 const fast = { heartbeat: "100 millis", verifyTimeout: "1 second", failuresBeforeLost: 2 } as const;

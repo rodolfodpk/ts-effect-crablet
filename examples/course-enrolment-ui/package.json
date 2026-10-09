@@ -9,9 +9,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "effect": "4.0.0",
-    "foldkit": "0.165.0",
-    "@effect/platform-browser": "4.0.0",
+    "effect": "4.0.2",
+    "foldkit": "0.167.0",
+    "@effect/platform-browser": "4.0.2",
     "course-enrolment-app": "workspace:*"
   },
   "devDependencies": {

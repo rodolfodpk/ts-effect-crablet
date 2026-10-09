@@ -44,8 +44,12 @@ const clientShape = Effect.gen(function* () {
   return yield* HttpApiClient.make(api);
 });
 type Client = Effect.Success<typeof clientShape>;
-type BookError = Effect.Error<ReturnType<Client["commands"]["execute_book"]>>;
-type LogError = Effect.Error<ReturnType<Client["commands"]["execute_log"]>>;
+// A client method is generic over its response mode (since effect 4.0.1); `ReturnType` of the generic
+// function would use the mode's whole constraint, so instantiate the default mode first.
+const bookCall = (c: Client) => c.commands.execute_book<"decoded-only">;
+const logCall = (c: Client) => c.commands.execute_log<"decoded-only">;
+type BookError = Effect.Error<ReturnType<ReturnType<typeof bookCall>>>;
+type LogError = Effect.Error<ReturnType<ReturnType<typeof logCall>>>;
 type DomainProblems<E> = Extract<E, { readonly errorType: string }>;
 export type BookDeclaresTwo = Expect<Equal<DomainProblems<BookError>["errorType"], "SeatTaken" | "NoSuchSeat">>;
 export type LogDeclaresNone = Expect<Equal<DomainProblems<LogError>, never>>;
@@ -74,7 +78,7 @@ const Plain = defineCommand({ ...LogContract, decide: () => fail("nope") });
 export const notPresentable: Implementations<typeof contracts> = { book: Book, log: Plain };
 
 // ---- the answers a client sees ----
-type BookSuccess = Effect.Success<ReturnType<Client["commands"]["execute_book"]>>;
+type BookSuccess = Effect.Success<ReturnType<ReturnType<typeof bookCall>>>;
 export type SuccessIsCreatedOrIdempotent = Expect<Equal<BookSuccess["status"], "CREATED" | "IDEMPOTENT">>;
 export type TransportErrorsAreInTheChannel = Expect<Equal<HttpClientError extends BookError ? true : false, true>>;
 export type SchemaErrorsAreInTheChannel = Expect<Equal<Schema.SchemaError extends BookError ? true : false, true>>;

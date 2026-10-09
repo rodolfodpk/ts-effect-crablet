@@ -65,3 +65,12 @@ descriptions in `docs/api/` are byte-identical. The imports named above (`effect
 stable release. ADR-0004 and ADR-0005 were verified on rc.118 and their behaviour held on 4.0.0 (the whole suite exercises both). The rule stands:
 bump all Effect packages together, exact versions, full suite.
 
+## Addendum (2026-10-09): moved to 4.0.2
+
+`effect`, `@effect/sql-pg`, `@effect/platform-node` and `@effect/platform-browser` went from `4.0.0` to `4.0.2` (the npm `latest`; Foldkit from 0.165.0 to 0.167.0 in the three UIs). Two things needed a change, both in tests:
+
+- **The derived HTTP client's methods are generic over a response mode** (`decoded-only`, `response-only`, `decoded-and-response`). `ReturnType` of a generic function uses the constraint, so the type-level contract test (`contract-api.types.ts`) saw the union of all three modes; it now instantiates the default mode first. Runtime and the generated OpenAPI descriptions are unchanged.
+- **Closing a pool now waits for the connections still reserved from it.** Two leader tests built a layer around each call, so the pool was closed while the leader still held its connection, and the call never returned. They now share one `ManagedRuntime` per file and release what they take (`leader-election.test.ts`, `leader-liveness.test.ts`). Nothing in the application changed: every module releases its leader before its client goes (the wallet's end-to-end tests stop an instance under load and pass).
+
+Typecheck clean, 838 unit and 394 integration tests green. ADR-0024's findings (pool of 7 or more, listen reserving a pooled connection) were rechecked on 4.0.2 by `session-clients.test.ts` and `pgbouncer-e2e.test.ts`, both in that run.
+

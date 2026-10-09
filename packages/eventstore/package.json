@@ -25,8 +25,8 @@
     "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "dependencies": {
-    "effect": "4.0.0",
-    "@effect/sql-pg": "4.0.0",
+    "effect": "4.0.2",
+    "@effect/sql-pg": "4.0.2",
     "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {

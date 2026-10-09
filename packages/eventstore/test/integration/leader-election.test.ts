@@ -1,32 +1,34 @@
 // Runs under Node (Testcontainers) - see NOTES.md.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader } from "../../src/Leader.ts";
 
 let db: TestDb;
-let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+// One runtime (one pool) for the whole file: a pool built and closed around each call would wait on the connection a leader still holds (@effect/sql-pg 4.0.2).
+let rt: ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient, never>;
 
 before(async () => {
   db = await startTestDb();
-  layer = PgClient.layer({
+  rt = ManagedRuntime.make(PgClient.layer({
     host: db.connInfo.host,
     port: db.connInfo.port,
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>);
 }, { timeout: 60_000 });
 
 after(async () => {
+  await rt.dispose();
   await db.stop();
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  rt.runPromise(effect);
 
 describe("advisory-lock leader election parity (Phase 0, Risk B part 2)", () => {
   it("two concurrent acquisitions on the same key: exactly one succeeds (20 runs)", { timeout: 30_000 }, async () => {
@@ -37,12 +39,13 @@ describe("advisory-lock leader election parity (Phase 0, Risk B part 2)", () => 
         run(
           Effect.gen(function* () {
             const sql = yield* SqlClient.SqlClient;
-            const handle = yield* tryAcquireGlobalLeader(sql, lockKey);
-            return handle !== null;
+            return yield* tryAcquireGlobalLeader(sql, lockKey);
           })
         );
 
-      const [a, b] = await Promise.all([attempt(), attempt()]);
+      const handles = await Promise.all([attempt(), attempt()]);
+      const [a, b] = handles.map((h) => h !== null);
+      for (const h of handles) if (h !== null) await Effect.runPromise(h.release()); // the pool is shared: give the connection back
       const successCount = [a, b].filter(Boolean).length;
       assert.strictEqual(successCount, 1, `iteration ${i}: expected exactly one acquisition, got [${a}, ${b}]`);
     }

@@ -22,8 +22,8 @@
     "./MonitorProcessors": "./src/MonitorProcessors.ts"
   },
   "dependencies": {
-    "effect": "4.0.0",
-    "@effect/sql-pg": "4.0.0",
+    "effect": "4.0.2",
+    "@effect/sql-pg": "4.0.2",
     "@crablet/eventstore": "workspace:*",
     "@crablet/metrics-otel": "workspace:*"
   },

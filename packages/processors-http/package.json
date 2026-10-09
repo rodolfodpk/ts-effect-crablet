@@ -9,10 +9,10 @@
     "./Authorization": "./src/Authorization.ts"
   },
   "dependencies": {
-    "effect": "4.0.0",
+    "effect": "4.0.2",
     "@crablet/event-poller": "workspace:*"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0"
+    "@effect/platform-node": "4.0.2"
   }
 }

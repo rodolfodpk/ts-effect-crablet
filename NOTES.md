@@ -1590,3 +1590,6 @@ asserts the model directly (queries, fold, both regressions).
 - The layer's warning "below 7" was wrong for the topology (an api pod keeps 1, a worker 2): it would have warned every api pod. Replaced by `sessionHolds`, which the caller states (the wallet computes it from its roles with `sessionConnectionsHeld`, tested against the measured 7, 6, 2 and 1) and a pure `sessionPoolWarning(maxConnections, holds)`, tested.
 - Documented in the production guide ("A pod per role"), with what is measured and what is from the code or the AWS documentation (a `LISTEN` lost on an api pod behind a pooler, RDS Proxy pinning) and not measured. Verified: `tsc`, 838 unit (834 + 4), 394 integration.
 
+## Effect 4.0.0 -> 4.0.2 (2026-10-09)
+- All Effect pins moved to `4.0.2` (Foldkit `0.167.0`). Two test-side changes, nothing in `src/`: the derived client's methods became generic over a response mode, which broke `ReturnType` in `contract-api.types.ts` (default mode instantiated first); and a pool now waits, when closed, for connections still reserved from it, which hung two leader tests that built a layer per call (now one `ManagedRuntime` per file, and the winners are released). Details in the ADR-0009 addendum. 838 unit, 394 integration.
+
