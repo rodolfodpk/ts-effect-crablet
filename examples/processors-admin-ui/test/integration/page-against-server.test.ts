@@ -54,6 +54,18 @@ const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<
 // #endregion driver
 
 const connect = (token: string) => drive(init().model, Message.ChangedToken({ value: token }), Message.SubmittedToken());
+// A processor writes its progress row on the FIRST tick of its loop, which `start` forks and does not wait for, so a list read right after start-up can show a
+// processor with no row yet (`errorCount` null). A test about the initial state waits until every processor has one.
+const connectWhenRegistered = async (token: string, expected: number): Promise<Model> => {
+  const end = Date.now() + 20_000;
+  for (;;) {
+    const model = await connect(token);
+    const rows = AsyncData.isSuccess(model.processors) ? model.processors.data : [];
+    if (rows.length === expected && rows.every((p) => p.errorCount !== null)) return model;
+    if (Date.now() > end) assert.fail(`processors not registered in 20 s: ${JSON.stringify(rows.map((p) => ({ id: p.id, status: p.status, errorCount: p.errorCount })))}`);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+};
 const shown = (model: Model): ReadonlyArray<ProcessorInfo> => {
   assert.ok(AsyncData.isSuccess(model.processors), `the list is shown, not ${model.processors._tag}`);
   return model.processors.data;
@@ -72,13 +84,14 @@ describe("the processors page against a real application", () => {
     assert.strictEqual(refused.token, null);
     assert.ok(AsyncData.isIdle(refused.processors));
 
-    const model = await connect(TOKEN);
+    const model = await connectWhenRegistered(TOKEN, 6);
     assert.strictEqual(model.token, TOKEN);
     assert.deepStrictEqual(shown(model).map((p) => `${p.kind}/${p.id}`), [
       "automations/wallet-opened-welcome-notification", `outbox/${OUTBOX_ID}`,
       "views/wallet-balance-view", "views/wallet-statement-view", "views/wallet-summary-view", "views/wallet-transaction-view"
     ]);
-    assert.ok(shown(model).every((p) => p.status === "ACTIVE" && p.errorCount === 0));
+    const notClean = shown(model).filter((p) => p.status !== "ACTIVE" || p.errorCount !== 0);
+    assert.deepStrictEqual(notClean.map((p) => ({ id: p.id, status: p.status, errorCount: p.errorCount, lastError: p.lastError })), [], "every processor starts ACTIVE with no errors");
   });
 
   it("pause then resume, through the page: the status in the list follows, and the notice says what happened", async () => {

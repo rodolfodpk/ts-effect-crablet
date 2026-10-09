@@ -76,16 +76,14 @@ describe("the wallet's admin API", () => {
   });
 
   it("lists the processors of the three modules with their description, status and failure details (the SQL of every module's details reached the right id)", async () => {
-    const all = await list();
+    // a processor writes its progress row on the first tick of its loop, which start-up does not wait for: wait until all six have one
+    const all = await until(list, (ps) => ps.length === 6 && ps.every((p) => p.errorCount !== null), "every processor to have a progress row");
     assert.deepStrictEqual(all.map((p) => `${p.kind}/${p.id}`), [
       `automations/wallet-opened-welcome-notification`, `outbox/${OUTBOX_ID}`,
       "views/wallet-balance-view", "views/wallet-statement-view", "views/wallet-summary-view", "views/wallet-transaction-view"
     ]);
-    for (const p of all) {
-      assert.strictEqual(p.status, "ACTIVE", p.id);
-      assert.strictEqual(p.errorCount, 0, `${p.kind}/${p.id}: the failure details were read from its progress table`);
-      assert.strictEqual(p.lastError, null);
-    }
+    const notClean = all.filter((p) => p.status !== "ACTIVE" || p.errorCount !== 0 || p.lastError !== null);
+    assert.deepStrictEqual(notClean.map((p) => ({ id: p.id, status: p.status, errorCount: p.errorCount, lastError: p.lastError })), [], "every processor starts ACTIVE with no errors (and its failure details were read from its own progress table)");
     assert.strictEqual((await one("views", "wallet-balance-view")).description, "The balance of each wallet");
     assert.strictEqual((await one("automations", "wallet-opened-welcome-notification")).description, "Sends a welcome notification when a wallet is opened");
     assert.strictEqual((await one("outbox", OUTBOX_ID)).description, null);
