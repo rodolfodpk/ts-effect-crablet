@@ -12,6 +12,8 @@ node examples/wallet-example-app/src/index.ts
 ```
 
 Connection (all optional): `WALLET_DB_HOST`, `WALLET_DB_PORT`, `WALLET_DB_NAME`, `WALLET_DB_USER`, `WALLET_DB_PASSWORD`; the API listens on `PORT` (8080). `WALLET_DB_POOL` sets the most connections the pool may open (unset: the library's default of 10; [how to size it](../../docs/guides/run-in-production.md#size-the-pool)).
+`WALLET_ROLES` picks what this process runs: a comma-separated list of `api`, `views`, `automations`, `outbox`, or `all` (unset: `all`, everything in one process). A process without `api` serves only `GET /healthz` on `PORT`; the admin API is mounted by the `api` role. An invalid value stops the start-up ([ADR-0022](../../docs/adr/0022-runtime-roles.md)).
+
 Two more are off unless set: `OTEL_EXPORTER_OTLP_ENDPOINT` exports metrics, spans and logs ([See it on a dashboard](../../docs/guides/dashboard.md)), and `WALLET_ADMIN_TOKEN` mounts the processors admin API at `/admin/processors` behind that bearer token ([`@crablet/processors-http`](../../packages/processors-http/README.md), with a page for it: [`processors-admin-ui`](../processors-admin-ui/README.md)).
 
 Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/c4-examples.md#wallet).

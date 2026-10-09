@@ -84,7 +84,8 @@ const viewsHandle = yield* makeViewsProcessor({
   subscriptions: walletViewSubscriptions,
   instanceId
 });
-yield* viewsHandle.service.start;
+if (roles.has("views")) yield* viewsHandle.service.start;
+
 ```
 
 ## 5. Read it

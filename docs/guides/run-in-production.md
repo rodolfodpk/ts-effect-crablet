@@ -67,6 +67,12 @@ pinned). Today the process has one client for everything, so run it on direct co
 What has **not** been measured: the effect of the pool size on throughput. A comparison of 10 against 30 on one laptop was inconclusive (the database and the views' backlog grew from run to run), so there is no recommended
 number here beyond the arithmetic above.
 
+### Keep an append small
+
+One append is one transaction that takes the writer lock and sends one wake-up, so a very large batch holds every other writer back for as long as it takes. `append` refuses more than `MAX_APPEND_EVENTS` (50) events
+with a typed `AppendTooLarge` before any SQL runs (over HTTP it is a 500: the batch size is the code's choice, not the caller's). To write more, split it into several appends; each is atomic on its own, so decide
+whether the rule you protect needs them in one command.
+
 ## 3. Start the processors, serve, and fail loudly
 
 Building a processor's layer does not process anything: `service.start` forks the fibers that do. Let a **Scope** own them: `service.startScoped` starts the processors and registers
@@ -92,16 +98,11 @@ The wallet wraps its three processors the same way (`service.start` and `service
 ```ts
 export const startBackgroundProcessorsScoped = (
   instanceId?: string,
-  outboxPublishers?: ReadonlyArray<OutboxPublisher>
+  outboxPublishers?: ReadonlyArray<OutboxPublisher>,
+  roles?: Roles
 ): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
-  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers), stopBackgroundProcessors);
+  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles), stopBackgroundProcessors);
 ```
-
-### Keep an append small
-
-One append is one transaction that takes the writer lock and sends one wake-up, so a very large batch holds every other writer back for as long as it takes. `append` refuses more than `MAX_APPEND_EVENTS` (50) events
-with a typed `AppendTooLarge` before any SQL runs (over HTTP it is a 500: the batch size is the code's choice, not the caller's). To write more, split it into several appends; each is atomic on its own, so decide
-whether the rule you protect needs them in one command.
 
 ## 4. Several instances
 

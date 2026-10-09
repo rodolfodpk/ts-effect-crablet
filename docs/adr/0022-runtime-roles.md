@@ -57,6 +57,15 @@ What the code and the measurements say about that shape:
 - The decision 4 verification (handles built without being started), and a test that the admin API in the `api` role lists and acts on every module.
 - A health endpoint test (alive while standby) and a test that an invalid `WALLET_ROLES` stops the start.
 
+## Progress (2026-10-08)
+
+Still **Proposed**. Built and passing: `WALLET_ROLES` in the wallet (decisions 1, 5 and the `api`-role part of 4), the default role `all` unchanged (arrangement A: the whole existing suite passes), and arrangement B (`test/integration/roles-e2e.test.ts`: four instances in one process, each with its own pool, named in `pg_stat_activity`).
+
+- **Decision 4, verified:** the handles are built without being started. Building one creates a `Ref`, a `PubSub` and a queue and opens no connection; `stop` on one that never started is a no-op. The `api` instance serves the admin API for all six processors, with status read from the database, and a pause or resume through it acts on the loop running in another instance.
+- **Boundaries, measured from `pg_locks` and `pg_stat_activity`:** the `api` instance holds no leader lock and no events `LISTEN`; of two `views` instances exactly one holds the views lock and both `LISTEN`; the `automations` instance holds only its own lock. Stopping the leading `views` instance moves the lock to the other and views keep being built.
+- **Across instances:** a command through `api` is projected by `views` and read back from `api` with its marker, and without one; the automation fires on its own instance.
+- **Not done:** the `outbox` role is not exercised in B; the migration-race handling of decision 6 (a pre-deploy job) is not built; arrangement C (kind) needs a Dockerfile.
+
 ## Follow-ups (not decided here)
 
 - A lease with a deadline in Postgres, or a documented keepalive setting, so failover does not depend on the TCP stack (measured above).

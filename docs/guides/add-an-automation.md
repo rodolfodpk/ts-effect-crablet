@@ -46,7 +46,8 @@ const automationsHandle = yield* makeAutomationsProcessor({
   handlers: [walletOpenedAutomation],
   instanceId
 });
-yield* automationsHandle.service.start;
+if (roles.has("automations")) yield* automationsHandle.service.start;
+
 ```
 
 Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:

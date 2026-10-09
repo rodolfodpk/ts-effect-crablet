@@ -34,6 +34,7 @@ import { makeWalletTransactionViewProjector } from "./views/WalletTransactionVie
 import { makeWalletSummaryViewProjector } from "./views/WalletSummaryViewProjector.ts";
 import { makeWalletStatementViewProjector } from "./views/WalletStatementViewProjector.ts";
 import { walletViewSubscriptions } from "./views/WalletViewConfig.ts";
+import { allRoles, type Role, type Roles } from "./roles.ts";
 import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
@@ -96,6 +97,8 @@ const defaultOutboxConfig: OutboxConfig = {
 // `Fiber.interruptAll` does. Omitting this leaves the poll loops running forever, retrying against
 // a closed pool - the hang this comment is here to prevent from recurring.
 export interface BackgroundProcessors {
+  // The roles this process runs. Every handle exists either way (the admin API reads status through them); only the modules named here are started.
+  readonly roles: Roles;
   readonly viewsHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
   readonly automationsHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
   readonly outboxHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
@@ -118,7 +121,9 @@ export const startBackgroundProcessors = (
   instanceId: string = defaultInstanceId(),
   // Injectable for testability (outbox-e2e.test.ts swaps in a capturing test publisher instead of
   // asserting on log output) - defaults to the same makeLogPublisher() the real app uses.
-  outboxPublishers: ReadonlyArray<OutboxPublisher> = [makeLogPublisher()]
+  outboxPublishers: ReadonlyArray<OutboxPublisher> = [makeLogPublisher()],
+  // The roles to start (ADR-0022). Default: all of them, one process. A handle of a role that is not started is still built: building one opens no connection and runs no loop.
+  roles: Roles = allRoles
 ): Effect.Effect<
   BackgroundProcessors,
   never,
@@ -137,7 +142,7 @@ export const startBackgroundProcessors = (
       subscriptions: walletViewSubscriptions,
       instanceId
     });
-    yield* viewsHandle.service.start;
+    if (roles.has("views")) yield* viewsHandle.service.start;
     // #endregion views-processor
 
     // #region automations-processor
@@ -146,7 +151,7 @@ export const startBackgroundProcessors = (
       handlers: [walletOpenedAutomation],
       instanceId
     });
-    yield* automationsHandle.service.start;
+    if (roles.has("automations")) yield* automationsHandle.service.start;
     // #endregion automations-processor
 
     const outboxHandle = yield* makeOutboxProcessor({
@@ -160,9 +165,9 @@ export const startBackgroundProcessors = (
       publishers: outboxPublishers,
       instanceId
     });
-    yield* outboxHandle.service.start;
+    if (roles.has("outbox")) yield* outboxHandle.service.start;
 
-    return { viewsHandle, automationsHandle, outboxHandle };
+    return { roles, viewsHandle, automationsHandle, outboxHandle };
   });
 
 // The same, owned by a Scope: closing the scope stops the three processors and releases their leader locks (the others take over at once). This is what an entry point
@@ -170,9 +175,10 @@ export const startBackgroundProcessors = (
 // #region start-scoped
 export const startBackgroundProcessorsScoped = (
   instanceId?: string,
-  outboxPublishers?: ReadonlyArray<OutboxPublisher>
+  outboxPublishers?: ReadonlyArray<OutboxPublisher>,
+  roles?: Roles
 ): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
-  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers), stopBackgroundProcessors);
+  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles), stopBackgroundProcessors);
 // #endregion start-scoped
 
 // What each module's processors are for, as the admin API shows it.
@@ -204,8 +210,9 @@ export const monitorBackgroundProcessors = (
   instanceId: string = defaultInstanceId()
 ): Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function* () {
-    const sources = yield* processorSources(processors);
-    yield* Effect.forkScoped(monitorProcessors(sources.map((s) => s.service), { instanceId }));
+    // Only the modules this process runs: the gauges come from the roles that have a loop to sample (ADR-0022, decision 4).
+    const sources = (yield* processorSources(processors)).filter((s) => processors.roles.has(s.kind as Role));
+    if (sources.length > 0) yield* Effect.forkScoped(monitorProcessors(sources.map((s) => s.service), { instanceId }));
   });
 // #endregion monitor-processors
 

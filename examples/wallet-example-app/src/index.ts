@@ -8,6 +8,8 @@ import { migrateIfFresh } from "./migrate.ts";
 import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
+import { hasWorkers, rolesFromEnv } from "./roles.ts";
+import { serveHealth } from "./health.ts";
 
 const connInfo = {
   host: process.env["WALLET_DB_HOST"] ?? "localhost",
@@ -18,6 +20,7 @@ const connInfo = {
 };
 const port = Number(process.env["PORT"] ?? 8080);
 const poolSize = poolSizeFromEnv();
+const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (ADR-0022)
 
 // Entry point: apply migrations (to a fresh database only), then start the app - views/
 // automations/outbox background processors AND the HTTP server, all sharing one connection pool.
@@ -35,10 +38,16 @@ async function main(): Promise<void> {
   });
 
   const program = Effect.gen(function* () {
-    const processors = yield* startBackgroundProcessorsScoped();
+    // Every handle is built; only the modules named in WALLET_ROLES are started. A process with only `api` runs no loop and holds no leader lock.
+    const processors = yield* startBackgroundProcessorsScoped(undefined, undefined, roles);
     yield* monitorBackgroundProcessors(processors);
-    yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
-    yield* Effect.log(`wallet-example-app listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
+    if (hasWorkers(roles)) yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
+    yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
+    if (!roles.has("api")) {
+      // Workers only: no application routes, just a liveness probe.
+      yield* serveHealth(port);
+      return yield* Effect.never;
+    }
     // The admin API (list, pause, resume and reset the processors) exists only when WALLET_ADMIN_TOKEN is set, and is behind that bearer token.
     const adminToken = process.env["WALLET_ADMIN_TOKEN"];
     const admin = adminToken === undefined || adminToken === "" ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));

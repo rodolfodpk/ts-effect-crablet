@@ -67,8 +67,9 @@ export const monitorBackgroundProcessors = (
   instanceId: string = defaultInstanceId()
 ): Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> =>
   Effect.gen(function* () {
-    const sources = yield* processorSources(processors);
-    yield* Effect.forkScoped(monitorProcessors(sources.map((s) => s.service), { instanceId }));
+    // Only the modules this process runs: the gauges come from the roles that have a loop to sample (ADR-0022, decision 4).
+    const sources = (yield* processorSources(processors)).filter((s) => processors.roles.has(s.kind as Role));
+    if (sources.length > 0) yield* Effect.forkScoped(monitorProcessors(sources.map((s) => s.service), { instanceId }));
   });
 ```
 

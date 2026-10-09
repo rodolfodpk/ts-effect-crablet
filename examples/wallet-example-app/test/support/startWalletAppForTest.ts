@@ -8,6 +8,7 @@ import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
+import { allRoles, type Roles } from "../../src/roles.ts";
 import { startBackgroundProcessors, stopBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
 
 export type CoreServices = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
@@ -30,13 +31,17 @@ export const startWalletAppForTest = async (
   runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>,
   outboxPublishers?: ReadonlyArray<OutboxPublisher>,
   // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
-  adminToken?: string
+  adminToken?: string,
+  // The roles this instance runs (ADR-0022); default all, one process. Without `api` no HTTP server starts (baseUrl is ""), and the admin API is only mounted with `api`, as in the entry point.
+  options: { readonly roles?: Roles; readonly instanceId?: string } = {}
 ): Promise<RunningWalletApp> => {
+  const roles = options.roles ?? allRoles;
   const scope = await runtime.runPromise(Scope.make());
 
   const { context, processors } = await runtime.runPromise(
     Effect.gen(function* () {
-      const processors = yield* startBackgroundProcessors(undefined, outboxPublishers);
+      const processors = yield* startBackgroundProcessors(options.instanceId, outboxPublishers, roles);
+      if (!roles.has("api")) return { context: Context.empty(), processors };
 
       const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
       const serverLayer = Layer.provideMerge(
@@ -48,11 +53,13 @@ export const startWalletAppForTest = async (
     })
   );
 
-  const httpServer = Context.get(context, HttpServer.HttpServer);
-  const port = httpServer.address._tag === "UnixPathAddress" ? 0 : httpServer.address.port;
+  const port = !roles.has("api") ? 0 : (() => {
+    const address = Context.get(context as Context.Context<HttpServer.HttpServer>, HttpServer.HttpServer).address;
+    return address._tag === "UnixPathAddress" ? 0 : address.port;
+  })();
 
   return {
-    baseUrl: `http://localhost:${port}`,
+    baseUrl: roles.has("api") ? `http://localhost:${port}` : "",
     processors,
     // Must stop the background processors' daemon fibers (see stopBackgroundProcessors' own
     // primer) BEFORE closing the scope/disposing the runtime - otherwise they keep polling
