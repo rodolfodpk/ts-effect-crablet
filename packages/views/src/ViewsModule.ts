@@ -58,6 +58,8 @@ export const makeViewsProcessor = (
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),
       acquireLeader: tryAcquireGlobalLeader(sql, VIEWS_LOCK_KEY),
+      // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
+      atomically: (effect) => sql.withTransaction(effect),
       wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(pg, EVENTS_CHANNEL)
     });
   });

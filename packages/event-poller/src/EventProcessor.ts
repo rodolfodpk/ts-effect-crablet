@@ -1,4 +1,5 @@
 import { Cause, Duration, Effect, Exit, Fiber, Metric, PubSub, Queue, Ref, Result, type Scope, Stream } from "effect";
+import type { SqlError } from "effect/sql/SqlError";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
@@ -20,6 +21,19 @@ import type { BackoffState } from "./BackoffState.ts";
 // handler failure: nothing is recorded against the processor, and the scheduled loop just stops the tick.
 class LeadershipLost {
   readonly _tag = "LeadershipLost";
+}
+
+// Inside an atomic batch (EventProcessorDeps.atomically): the handler failed (so the error is recorded, after the rollback), and the cursor had already
+// been moved by someone else (so the rollback is the right outcome and not an error).
+class HandlerFailed {
+  readonly _tag = "HandlerFailed";
+  readonly error: unknown;
+  constructor(error: unknown) {
+    this.error = error;
+  }
+}
+class CursorSuperseded {
+  readonly _tag = "CursorSuperseded";
 }
 
 const isLeadershipLost = (cause: Cause.Cause<unknown>): boolean => {
@@ -70,6 +84,12 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   readonly acquireLeader: Effect.Effect<LeaderHandle | null, unknown>;
   readonly wakeupStream: Stream.Stream<WakeupBatch, unknown>;
   readonly leaderRetryIntervalMs?: number;
+  // Runs an effect in ONE database transaction (`sql.withTransaction`). When it is set, and the tracker has `advanceCursor`, a batch is handled and
+  // its cursor moved in that one transaction: the handler's writes and the cursor commit together or not at all. The cursor move is a forward-only
+  // compare-and-set, and when it moves nothing (another processor already handled this batch) the transaction is rolled back, so each event is
+  // applied once even when two processors take the same batch (a zombie and its successor) or a crash falls between the handler and the cursor.
+  // Only for processors whose effects are all in this database (views); the outbox and the automations do things a rollback cannot undo.
+  readonly atomically?: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E | SqlError>;
 }
 
 export interface EventProcessorHandle<C extends ProcessorConfig<I>, I extends string> {
@@ -156,17 +176,53 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         if (events.length === 0) return 0;
 
         // A span only for a poll that found something: an idle poll every second would be a span a second per processor, and says nothing.
-        return yield* Effect.gen(function* () {
-          yield* fence;
-          const handled = yield* deps.handler.handle(id, events).pipe(
-            Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
+        const next = ProgressCursorNS.after(events[events.length - 1]!);
+        const advance = deps.progressTracker.advanceCursor;
+        const atomically = deps.atomically;
+
+        // One transaction for the handler's writes and the cursor. The error is recorded AFTER the rollback (inside it, the record would be undone too),
+        // and only for a handler failure: a failed cursor move is not the handler's fault.
+        const atomicBatch = (
+          atomically: NonNullable<typeof deps.atomically>,
+          advance: NonNullable<typeof deps.progressTracker.advanceCursor>
+        ): Effect.Effect<number, unknown> =>
+          atomically(
+            Effect.gen(function* () {
+              yield* fence;
+              const handled = yield* deps.handler.handle(id, events).pipe(Effect.mapError((error) => new HandlerFailed(error)));
+              yield* fence;
+              if (!(yield* advance(id, next))) return yield* Effect.fail(new CursorSuperseded());
+              return handled;
+            })
+          ).pipe(
+            Effect.tapError((err) =>
+              err instanceof HandlerFailed ? deps.progressTracker.recordError(id, String(err.error), config.maxErrors) : Effect.void
+            ),
+            Effect.catch((err): Effect.Effect<number, unknown> =>
+              err instanceof CursorSuperseded
+                ? Effect.logWarning(`processor ${String(id)}: another processor already handled this batch; rolled back`).pipe(Effect.as(-1))
+                : Effect.fail(err instanceof HandlerFailed ? err.error : err)
+            ),
+            Effect.flatMap((handled) =>
+              handled < 0 ? Effect.succeed(0) : Effect.as(deps.progressTracker.resetErrorCount(id), handled)
+            )
           );
 
-          yield* fence;
-          yield* deps.progressTracker.updateCursor(id, ProgressCursorNS.after(events[events.length - 1]!));
-          yield* deps.progressTracker.resetErrorCount(id);
-          return handled;
-        }).pipe(Effect.withSpan("crablet.poller.batch", { attributes: { "crablet.processor": String(id), "crablet.batch.events": events.length } }));
+        // A span only for a poll that found something: an idle poll every second would be a span a second per processor, and says nothing.
+        return yield* (atomically !== undefined && advance !== undefined
+          ? atomicBatch(atomically, advance)
+          : Effect.gen(function* () {
+              yield* fence;
+              const handled = yield* deps.handler.handle(id, events).pipe(
+                Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
+              );
+
+              yield* fence;
+              yield* deps.progressTracker.updateCursor(id, next);
+              yield* deps.progressTracker.resetErrorCount(id);
+              return handled;
+            })
+        ).pipe(Effect.withSpan("crablet.poller.batch", { attributes: { "crablet.processor": String(id), "crablet.batch.events": events.length } }));
       });
 
     const process = (id: I): Effect.Effect<number, unknown> => processWith(id, Effect.void);
