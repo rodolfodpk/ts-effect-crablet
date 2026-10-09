@@ -6,7 +6,7 @@ write; with no marker it waits for everything committed. The default is strict: 
 ## What it gives you
 
 - **`makeConsistentRead`** (`/ReadConsistency`, `/ReadQuery`) - wrap a read handler so it honours the marker, with a policy (strict, or bounded and marked stale).
-- **`WaitForViews`**, **`HeadOfLog`** - the waiting, and the "head of the log" a marker-less read waits for.
+- **`WaitForViews`**, **`HeadOfLog`** - the waiting, and the "head of the log" a marker-less read waits for. A read's first look is one statement (`readCheck`, from `@crablet/views/ReadCheck`): where the log ends and where each view is; only the views still behind go on to wait ([ADR-0015](../../docs/adr/0015-read-consistency-by-marker.md)).
 - **`ReadProblems`** - the `503` (`ViewsUnavailable`) and the other problem bodies, as schema fragments to add to your endpoints.
 
 ## Depends on

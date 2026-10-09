@@ -6,6 +6,7 @@ import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import type { ViewSubscription } from "./ViewSubscription.ts";
 import { ViewProgressHub } from "./ViewProgressHub.ts";
+import { viewVerdict } from "./ViewVerdict.ts";
 
 // Read your own writes from an asynchronous view.
 //
@@ -87,9 +88,11 @@ export const waitUntilProcessed = (
               ? ProgressCursorNS.zero
               : ProgressCursorNS.of(rows[0].last_transaction_id, BigInt(rows[0].last_position));
           const reached = cursor.position;
-          if (ProgressCursorNS.compare(cursor, write) >= 0) return;
-          if (!(yield* hasPendingSelectedEvents(subscription, cursor, write))) return;
-          if (rows[0]?.status === "FAILED") {
+          // `pending` is only asked while the view is behind the write (the verdict ignores it otherwise)
+          const pending = ProgressCursorNS.compare(cursor, write) >= 0 ? false : yield* hasPendingSelectedEvents(subscription, cursor, write);
+          const verdict = viewVerdict(write, cursor, rows[0]?.status ?? null, pending);
+          if (verdict === "caught_up") return;
+          if (verdict === "failed") {
             return yield* new ViewFailed({ message: `View "${viewName}" is FAILED and will not progress`, viewName });
           }
           const elapsed = (yield* Clock.currentTimeMillis) - startedAt;

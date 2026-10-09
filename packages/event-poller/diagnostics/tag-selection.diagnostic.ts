@@ -5,6 +5,9 @@
 // E9d: the poller's REAL queries (buildEventSelectionQuery / buildPendingSelectionQuery, through makeSqlEventFetcher / hasPendingSelectedEvents) with the wallet's
 //      real selections, answering tag-key presence from the tag table ("table") or from the events' own tags ("scan").
 // E9e: five pollers (four views and an outbox topic) and a writer at once, as built (tag table, tag rows written) against the alternative (scan, no tag rows).
+// E9g: the first look of a consistent read, the fused statement (buildReadCheckQuery) against the three it replaces (end of the log, the view's progress row, the pending check),
+//      on the same log, with the plans (docs/adr/0015-read-consistency-by-marker.md, update of 2026-10-09). NOTE: the 'rare key' (audit_id) never occurs in this log: the generator adds it
+//      only to deposits, and the events numbered 10,000 * k are transfers; so those rows measure a key that is absent, like 'never occurs'.
 import { after, before, describe, it } from "node:test";
 import { performance } from "node:perf_hooks";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -16,7 +19,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { hasPendingSelectedEvents, makeSqlEventFetcher } from "../src/SqlEventFetcher.ts";
 import * as EventSelection from "../src/EventSelection.ts";
 import * as ProgressCursorNS from "../src/ProgressCursor.ts";
-import { buildEventSelectionQuery, buildPendingSelectionQuery, type TagKeyStrategy } from "../src/internal/sql.ts";
+import { buildEventSelectionQuery, buildPendingSelectionQuery, buildReadCheckQuery, type TagKeyStrategy } from "../src/internal/sql.ts";
 
 const N = Number(process.env["N"] ?? 1_000_000);
 const WALLETS = Math.max(1_000, Math.floor(N / 10));
@@ -62,7 +65,7 @@ describe("DIAG", () => {
     const t0 = performance.now();
     await runtime.runPromise(Effect.gen(function* () {
       const es = yield* EventStore;
-      for (let start = 0; start < N; start += 200) yield* es.append(Array.from({ length: Math.min(200, N - start) }, (_, k) => nextEvent(start + k)));
+      for (let start = 0; start < N; start += 50) yield* es.append(Array.from({ length: Math.min(50, N - start) }, (_, k) => nextEvent(start + k)));
     }));
     await q("VACUUM ANALYZE crablet_events"); await q("VACUUM ANALYZE crablet_event_tag_keys");
     line(`E9d loaded ${N} events through the real append path in ${((performance.now() - t0) / 1000).toFixed(0)} s`);
@@ -97,6 +100,66 @@ describe("DIAG", () => {
       const cells: string[] = [];
       for (const s of strategies) cells.push(`${s}: ${await time(runs, () => pending(sel, s, after, upTo))}`);
       line(`E9d    ${label}\n         ${cells.join("   |   ")}`);
+    }
+  });
+
+  it("E9g: the first look of a consistent read, one fused statement against the three it replaces", { timeout: 2_400_000 }, async () => {
+    const have = Number((await q<{ n: string }>("SELECT count(*)::text AS n FROM crablet_events"))[0]!.n);
+    if (have < N) {
+      await runtime.runPromise(Effect.gen(function* () {
+        const es = yield* EventStore;
+        for (let start = have; start < N; start += 50) yield* es.append(Array.from({ length: Math.min(50, N - start) }, (_, k) => nextEvent(start + k)));
+      }));
+      await q("VACUUM ANALYZE crablet_events"); await q("VACUUM ANALYZE crablet_event_tag_keys");
+    }
+    const at = async (offsetFromEnd: number) => {
+      const r = (await q<{ x: string; p: string }>(`SELECT transaction_id::text AS x, position::text AS p FROM crablet_events ORDER BY transaction_id, position OFFSET ${Math.max(0, N - offsetFromEnd)} LIMIT 1`))[0]!;
+      return ProgressCursorNS.of(r.x, BigInt(r.p));
+    };
+    const end = await at(1), tail = await at(5_000), recent = await at(100_000);
+    const time = async (runs: number, f: () => Promise<unknown>) => { await f(); const xs: number[] = []; for (let i = 0; i < runs; i++) { const t = performance.now(); await f(); xs.push(performance.now() - t); } return `${pct(xs, 50).toFixed(2)} ms / ${pct(xs, 95).toFixed(2)} ms`; };
+    const setProgress = (view: string, c: ProgressCursorNS.ProgressCursor) =>
+      q("INSERT INTO crablet_view_progress (view_name, status, last_position, last_transaction_id) VALUES ($1, 'ACTIVE', $2::bigint, $3::xid8) ON CONFLICT (view_name) DO UPDATE SET last_position = EXCLUDED.last_position, last_transaction_id = EXCLUDED.last_transaction_id", [view, c.position.toString(), c.transactionId]);
+    const sels = {
+      view: EventSelection.of({ eventTypes: new Set(["WalletOpened", "DepositMade", "WithdrawalMade", "MoneyTransferred", "WalletClosed"]), anyOfTags: WALLET_KEYS }),
+      rare: EventSelection.of({ anyOfTags: new Set(["audit_id"]) }),
+      never: EventSelection.of({ anyOfTags: new Set(["never_there"]) }),
+      required: EventSelection.of({ requiredTags: new Set(["year"]) })
+    };
+    const mid = await at(Math.min(50_000, Math.floor(N / 2)));
+    const cases: ReadonlyArray<readonly [string, keyof typeof sels, ProgressCursorNS.ProgressCursor]> = [
+      ["a required key that every event has, 50,000 behind (the pending query alone scans: a match at once, but not where the plan looks)", "required", mid],
+      ["a view at the end of the log (caught up)", "view", end],
+      ["a view 5,000 events behind (something matches at once)", "view", tail],
+      ["a rare key, 5,000 behind (nothing pending: scans the range)", "rare", tail],
+      ["a rare key, 100,000 behind (scans until the first match)", "rare", recent],
+      ["a key that never occurs, 100,000 behind (scans the whole range)", "never", recent]
+    ];
+    line("E9g first look, p50 / p95: the three statements one after another (end of the log, progress, pending) against ONE fused statement, same log, no network delay");
+    for (const [label, which, cursor] of cases) {
+      const name = `e9g-${which}`;
+      await setProgress(name, cursor);
+      const sel = sels[which];
+      const view = { viewName: name, ...sel };
+      const separate = async () => {
+        await q("SELECT transaction_id::text AS x, position::text AS p FROM crablet_events ORDER BY transaction_id DESC, position DESC LIMIT 1");
+        await q("SELECT last_position::text, last_transaction_id::text, status FROM crablet_view_progress WHERE view_name = $1", [name]);
+        // as waitUntilProcessed does: the pending check only while the view is behind the write
+        if (ProgressCursorNS.compare(cursor, end) < 0) {
+          const pq = buildPendingSelectionQuery(sel, cursor, end);
+          await q(pq.sql, pq.params as never);
+        }
+      };
+      const fused = async () => { const fq = buildReadCheckQuery([view], null); await q(fq.sql, fq.params as never); };
+      line(`E9g    ${label}\n         three statements: ${await time(15, separate)}   |   fused: ${await time(15, fused)}`);
+    }
+    // the plans of the fused statement, for the cases that scan: does the EXISTS keep to the indexes the separate pending query uses?
+    for (const [label, which, cursor] of cases.filter((c) => c[1] === "never" || c[1] === "required")) {
+      const name = `e9g-${which}`;
+      await setProgress(name, cursor);
+      const fq = buildReadCheckQuery([{ viewName: name, ...sels[which] }], null);
+      const plan = await q<{ "QUERY PLAN": string }>(`EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY ON) ${fq.sql}`, fq.params as never);
+      line(`E9g plan of the fused statement, ${label}\n         ${plan.map((r) => r["QUERY PLAN"]).filter((l) => /Scan|Execution Time/.test(l)).map((l) => l.trim()).join("\n         ")}`);
     }
   });
 

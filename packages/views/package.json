@@ -12,7 +12,9 @@
     "./ViewSubscription": "./src/ViewSubscription.ts",
     "./ViewsConfig": "./src/ViewsConfig.ts",
     "./ViewManagementService": "./src/ViewManagementService.ts",
-    "./WaitUntilProcessed": "./src/WaitUntilProcessed.ts"
+    "./WaitUntilProcessed": "./src/WaitUntilProcessed.ts",
+    "./ViewVerdict": "./src/ViewVerdict.ts",
+    "./ReadCheck": "./src/ReadCheck.ts"
   },
   "dependencies": {
     "effect": "4.0.0",

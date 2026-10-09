@@ -206,7 +206,7 @@ sequenceDiagram
   end
 ```
 
-A read with no marker waits for the head of the log. The modes are `strict` (right or a `503`, the default), `bounded` (returns the data marked stale after a timeout) and `eventual` (does not wait).
+A read with no marker waits for the head of the log. Its first look is one statement of the framework's (where the log ends, where each view is, whether anything a lagging view handles is pending), then only the views still behind wait, then the application's own query runs: two statements for a default read ([ADR-0015](./adr/0015-read-consistency-by-marker.md), update of 2026-10-09). The modes are `strict` (right or a `503`, the default), `bounded` (returns the data marked stale after a timeout) and `eventual` (does not wait).
 A client that did not write learns that something changed from a **ping** over server-sent events and reads again. See [ADR-0015](./adr/0015-read-consistency-by-marker.md),
 [ADR-0014](./adr/0014-live-updates-by-ping.md) and [ADR-0016](./adr/0016-one-listen-per-process-for-view-progress.md).
 

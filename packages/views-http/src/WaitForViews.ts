@@ -4,6 +4,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import type { ViewSubscription } from "@crablet/views/ViewSubscription";
 import { ViewFailed, WaitTimeout, waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
+import type { ViewVerdict } from "@crablet/views/ViewVerdict";
 
 // One view that had not caught up when the wait ended: which, why, and how far its progress had got (a log position; null for a view
 // that is FAILED, which is not progressing and was not asked how far it got).
@@ -34,13 +35,19 @@ export const waitForViews = <R = SqlClient.SqlClient>(
   subscriptions: ReadonlyArray<ViewSubscription>,
   write: ProgressCursor,
   timeoutMs: number,
-  wait: ViewWait<R> = waitUntilProcessed as unknown as ViewWait<R>
+  wait: ViewWait<R> = waitUntilProcessed as unknown as ViewWait<R>,
+  // What a first look (`readCheck`) already decided, one per subscription by position: a view that has caught up is not waited for, and one that has FAILED is reported without
+  // waiting. Only the views whose verdict is `wait` (or all of them, when this is omitted) go on to `wait`.
+  verdicts?: ReadonlyArray<ViewVerdict>
 ): Effect.Effect<ViewsOutcome, SqlError, R> =>
   Effect.gen(function* () {
     const outcomes = yield* Effect.forEach(
       subscriptions,
-      (subscription) =>
-        wait(subscription, write, { timeout: Duration.millis(timeoutMs) }).pipe(
+      (subscription, index) => {
+        const verdict = verdicts?.[index];
+        if (verdict === "caught_up") return Effect.succeed(null);
+        if (verdict === "failed") return Effect.succeed<UncaughtView>({ name: subscription.viewName, reason: "view_failed", reachedPosition: null });
+        return wait(subscription, write, { timeout: Duration.millis(timeoutMs) }).pipe(
           Effect.as(null),
           Effect.catchTag("WaitTimeout", (e) =>
             Effect.succeed<UncaughtView>({ name: subscription.viewName, reason: "lagging", reachedPosition: String(e.reached) })
@@ -48,7 +55,8 @@ export const waitForViews = <R = SqlClient.SqlClient>(
           Effect.catchTag("ViewFailed", () =>
             Effect.succeed<UncaughtView>({ name: subscription.viewName, reason: "view_failed", reachedPosition: null })
           )
-        ),
+        );
+      },
       { concurrency: "unbounded" }
     );
     const behind = outcomes.filter((o): o is UncaughtView => o !== null);

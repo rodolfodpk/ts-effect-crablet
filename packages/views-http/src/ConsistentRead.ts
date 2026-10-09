@@ -7,6 +7,8 @@ import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import * as ReadConsistencyMetrics from "@crablet/metrics-otel/ReadConsistencyMetrics";
 import type { ViewSubscription } from "@crablet/views/ViewSubscription";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
+import { readCheck, type ReadCheckResult } from "@crablet/views/ReadCheck";
+import { viewVerdict } from "@crablet/views/ViewVerdict";
 import { headOfLog } from "./HeadOfLog.ts";
 import {
   defaultReadConsistency,
@@ -23,6 +25,9 @@ import { waitForViews, type ViewWait } from "./WaitForViews.ts";
 export interface ReadDeps<R = SqlClient.SqlClient> {
   readonly head: Effect.Effect<ProgressCursor.ProgressCursor, SqlError, R>;
   readonly wait: ViewWait<R>;
+  // The first look in ONE statement (`readCheck`): where the log ends and where each view is. When given, `head` is not used and a view that has already caught up is not waited
+  // for; when omitted (the tests that fake `head` and `wait`), the end of the log is read with `head` and every view goes to `wait`, as before.
+  readonly check?: (subscriptions: ReadonlyArray<ViewSubscription>, marker: ProgressCursor.ProgressCursor | null) => Effect.Effect<ReadCheckResult, SqlError, R>;
 }
 
 export interface ConsistentReadOptions<R = SqlClient.SqlClient> {
@@ -63,7 +68,7 @@ export interface ConsistentHeaders {
 export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentReadOptions<R> = {}) => {
   const config = options.config ?? defaultReadConsistency;
   const retryAfterSeconds = options.retryAfterSeconds ?? 1;
-  const deps = options.deps ?? ({ head: headOfLog, wait: waitUntilProcessed } as unknown as ReadDeps<R>);
+  const deps = options.deps ?? ({ head: headOfLog, wait: waitUntilProcessed, check: readCheck } as unknown as ReadDeps<R>);
 
   return <Request extends { readonly query: ConsistencyParams }, Parsed, E1, R1, A, E2, R2>(
     spec: ReadSpec<Request, Parsed, E1, R1>,
@@ -90,23 +95,37 @@ export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentR
           return yield* answer(false);
         }
 
-        const head = yield* Effect.orDie(deps.head);
-        let write: ProgressCursor.ProgressCursor;
-        if (policy.target._tag === "Latest") {
-          write = head;
-        } else {
-          write = ProgressCursor.of(policy.target.marker.transactionId, policy.target.marker.position);
-          if (ProgressCursor.compare(write, head) > 0) {
-            return yield* Effect.fail(CommandApiBadRequest.of("consistentWith is beyond the end of the log: it is not a marker this service returned"));
-          }
-        }
-        if (subscriptions.length === 0) {
-          yield* count("skipped");
-          return yield* answer(false);
-        }
+        const marker = policy.target._tag === "Latest" ? null : ProgressCursor.of(policy.target.marker.transactionId, policy.target.marker.position);
+        const beyond = () => Effect.fail(CommandApiBadRequest.of("consistentWith is beyond the end of the log: it is not a marker this service returned"));
 
-        const startedAt = yield* Clock.currentTimeMillis;
-        const outcome = yield* Effect.orDie(waitForViews(subscriptions, write, policy.timeoutMs, deps.wait));
+        let write: ProgressCursor.ProgressCursor;
+        let startedAt: number;
+        let outcome;
+        if (deps.check === undefined) {
+          // Three statements that wait for one another: the end of the log, then, per view, its progress and whether anything it handles is pending.
+          const head = yield* Effect.orDie(deps.head);
+          write = marker ?? head;
+          if (marker !== null && ProgressCursor.compare(marker, head) > 0) return yield* beyond();
+          if (subscriptions.length === 0) {
+            yield* count("skipped");
+            return yield* answer(false);
+          }
+          startedAt = yield* Clock.currentTimeMillis;
+          outcome = yield* Effect.orDie(waitForViews(subscriptions, write, policy.timeoutMs, deps.wait));
+        } else {
+          // One statement: the end of the log and where each view is. The wait metric starts before it (it used to start after the end of the log was read).
+          startedAt = yield* Clock.currentTimeMillis;
+          const first = yield* Effect.orDie(deps.check(subscriptions, marker));
+          write = marker ?? first.head;
+          if (marker !== null && ProgressCursor.compare(marker, first.head) > 0) return yield* beyond();
+          if (subscriptions.length === 0) {
+            yield* count("skipped");
+            return yield* answer(false);
+          }
+          // A view that has caught up is not waited for, one that has FAILED is reported at once, and only the ones still working on the write go on to wait.
+          const verdicts = first.views.map((v) => viewVerdict(write, v.cursor, v.status, v.pending));
+          outcome = yield* Effect.orDie(waitForViews(subscriptions, write, policy.timeoutMs, deps.wait, verdicts));
+        }
         const waited = (yield* Clock.currentTimeMillis) - startedAt;
         yield* Metric.update(Metric.withAttributes(ReadConsistencyMetrics.waitDuration, { mode: policy.mode }), Duration.millis(waited));
 

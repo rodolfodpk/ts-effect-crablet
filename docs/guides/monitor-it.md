@@ -47,7 +47,7 @@ Suggestions, by what each metric tells you:
 | `crablet.eventstore.decoding_failures` | a stored event the current definitions cannot read (an unsafe event change) |
 | `crablet.command.conflict_retries`, `crablet.eventstore.concurrency_violations` | contention: commands whose boundaries overlap |
 | `crablet.eventstore.wakeups_recorded`, `_sent`, `_saved` | the wake-up notifications ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)): recorded per committed transaction, sent to Postgres, and saved by merging them. `sent` should stay near 1 / window per process |
-| `crablet.read.consistency.wait.duration` | how long reads wait for views to catch up |
+| `crablet.read.consistency.wait.duration` | how long a read's first look and wait take (it dropped when the first look became one statement, [ADR-0015](../adr/0015-read-consistency-by-marker.md)) |
 | `crablet.poller.backoff_active` | a processor has backed off after errors or empty polls |
 | `crablet.poller.lag_events`, `crablet.poller.lag_seconds` | a consumer is behind (see above); `lag_seconds` rising while the processor is `ACTIVE` means it is stuck or slow |
 | `crablet.poller.status` | a processor is `FAILED` (too many errors) or `PAUSED` |

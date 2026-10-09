@@ -116,6 +116,51 @@ export const buildPendingSelectionQuery = (
   return { sql: `SELECT 1 AS pending FROM crablet_events e WHERE ${clauses.join(" AND ")} LIMIT 1`, params };
 };
 
+// The first look of a consistent read, in ONE statement: where the log ends, and for each view where it is and whether anything it handles is pending between its cursor and the
+// write the read waits for (the marker, or the end of the log when there is none). It replaces three statements that depended on one another (the end of the log; the view's
+// progress row; `buildPendingSelectionQuery` with those two as its bounds), and reads only the framework's own tables. One row per view, in the order given (`ord`); with no
+// views, just the end of the log. A view with no progress row has a null cursor and status. `pending` is computed as `buildPendingSelectionQuery` does, from the same
+// selection clauses, up to the write.
+export const buildReadCheckQuery = (
+  views: ReadonlyArray<{ readonly viewName: string } & EventSelection>,
+  marker: ProgressCursor | null,
+  options: SelectionQueryOptions = {}
+): EventSelectionQuery => {
+  if (views.length === 0) {
+    return { sql: "SELECT transaction_id::text AS head_xid, position::text AS head_pos FROM crablet_events ORDER BY transaction_id DESC, position DESC LIMIT 1", params: [] };
+  }
+  const params: Array<unknown> = [marker === null ? null : marker.transactionId, marker === null ? null : marker.position.toString()];
+  const selects = views.map((view, ord) => {
+    params.push(view.viewName);
+    const nameParam = params.length;
+    const clauses: Array<string> = [];
+    pushSelectionClauses(view, clauses, params, options.tagKeys);
+    const selection = clauses.map((c) => ` AND ${c}`).join("");
+    // `pending` is a lateral "next matching event" probe, not an EXISTS. Measured on 100,000 events: with the bounds coming from other columns of the same statement the planner
+    // does not know them, takes a Seq Scan of crablet_events for the EXISTS (8 ms, growing with the log) and runs it even for a view that is already at the write; the lateral
+    // form, with its own "the cursor is behind the write" test and ORDER BY ... LIMIT 1, keeps the (transaction_id, position) index (0.1 ms) and does not run at all for a view
+    // that has caught up (it was never run in that case before the statement was fused: `cursor >= write` returns first).
+    return `SELECT ${ord} AS ord, h.xid::text AS head_xid, h.pos::text AS head_pos,
+       p.last_transaction_id::text AS cur_xid, p.last_position::text AS cur_pos, p.status AS status,
+       (n.found IS NOT NULL) AS pending
+  FROM h CROSS JOIN w LEFT JOIN crablet_view_progress p ON p.view_name = $${nameParam}
+  LEFT JOIN LATERAL (
+    SELECT true AS found FROM crablet_events e
+     WHERE (COALESCE(p.last_transaction_id, '0'::xid8), COALESCE(p.last_position, 0::bigint)) < (w.xid, w.pos)
+       AND (e.transaction_id, e.position) > (COALESCE(p.last_transaction_id, '0'::xid8), COALESCE(p.last_position, 0::bigint))
+       AND (e.transaction_id, e.position) <= (w.xid, w.pos)${selection}
+     ORDER BY e.transaction_id, e.position LIMIT 1) n ON true`;
+  });
+  return {
+    sql: `WITH head AS (SELECT transaction_id, position FROM crablet_events ORDER BY transaction_id DESC, position DESC LIMIT 1),
+     h AS (SELECT (SELECT transaction_id FROM head) AS xid, (SELECT position FROM head) AS pos),
+     w AS (SELECT COALESCE($1::xid8, h.xid, '0'::xid8) AS xid, COALESCE($2::bigint, h.pos, 0::bigint) AS pos FROM h)
+${selects.join("\nUNION ALL\n")}
+ORDER BY ord`,
+    params
+  };
+};
+
 // How much is waiting for a processor: the committed events its selection matches after `cursor`, counted up to `cap` (a processor
 // that is days behind does not make the sampler count millions of rows), and the age in seconds of the first of them by `occurred_at`.
 // Same predicate as the fetch, minus the xmin bound: this asks what exists, not what the poller may safely read yet.

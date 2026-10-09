@@ -6,6 +6,9 @@ import type { EventSelection } from "./EventSelection.ts";
 import type { ProgressCursor } from "./ProgressCursor.ts";
 import { buildEventSelectionQuery, buildPendingSelectionQuery, parseStoredEventRow, type SelectionQueryOptions, type StoredEventRow } from "./internal/sql.ts";
 
+export { buildReadCheckQuery } from "./internal/sql.ts";
+export type { SelectionQueryOptions } from "./internal/sql.ts";
+
 // A generic, selection-keyed EventFetcher against crablet_events/crablet_event_tag_keys - the query
 // logic (event types / required-tags / any-of-tags / exact-tags) is the same across every
 // consumer module, so this is reusable as-is rather than reimplemented per module in Phase 3
