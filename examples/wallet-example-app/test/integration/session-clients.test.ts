@@ -53,14 +53,14 @@ const whoHolds = async () => {
 };
 
 const withApp = async (session: boolean, body: (app: RunningWalletApp) => Promise<void>) => {
-  const appLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive, ...(session ? [sessionClientsLayer({ ...pgConfig("crablet-session"), maxConnections: 5 })] : []));
+  const appLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive, ...(session ? [sessionClientsLayer({ ...pgConfig("crablet-session"), maxConnections: 10 })] : []));
   const runtime = ManagedRuntime.make(Layer.provideMerge(appLayers, PgClient.layer({ ...pgConfig("crablet-main"), maxConnections: 10 })) as unknown as Layer.Layer<CoreServices, never>);
   const app = await startWalletAppForTest(runtime);
   try {
     // the three roles have taken their locks, and the LISTEN connections are up
     for (let i = 0; i < 100; i++) {
       const w = await whoHolds();
-      if (w.lockHolders.length === 3 && w.listeners.length >= 1) break;
+      if (w.lockHolders.length === 3 && w.listeners.length >= 4) break;
       await sleep(100);
     }
     await body(app);
@@ -75,7 +75,8 @@ describe("the leader locks and LISTEN on a session connection of their own (opti
     await withApp(true, async (app) => {
       const w = await whoHolds();
       assert.deepStrictEqual(w.lockHolders, ["crablet-session", "crablet-session", "crablet-session"], "views, automations and outbox lead from the session client");
-      assert.ok(w.listeners.length >= 1, "something listens");
+      // 3 modules' wake-ups and the views' progress hub: with @effect/sql-pg each LISTEN holds a pooled connection, so with the 3 leader locks the session client keeps 7 for good
+      assert.strictEqual(w.listeners.length, 4, "four LISTENs: the three modules' wake-ups and the views' progress hub");
       assert.deepStrictEqual([...new Set(w.listeners)], ["crablet-session"], "every LISTEN, the pollers' wake-ups and the views' progress hub, is on the session client");
 
       // and the application still works on its own client: a command, then a consistent read of the view it feeds
@@ -91,6 +92,7 @@ describe("the leader locks and LISTEN on a session connection of their own (opti
     await withApp(false, async () => {
       const w = await whoHolds();
       assert.deepStrictEqual(w.lockHolders, ["crablet-main", "crablet-main", "crablet-main"]);
+      assert.strictEqual(w.listeners.length, 4);
       assert.deepStrictEqual([...new Set(w.listeners)], ["crablet-main"]);
     });
   });

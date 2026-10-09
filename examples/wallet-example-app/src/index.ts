@@ -19,7 +19,7 @@ const connInfo = {
   username: process.env["WALLET_DB_USER"] ?? "postgres",
   password: process.env["WALLET_DB_PASSWORD"] ?? "postgres"
 };
-// WALLET_DB_SESSION_HOST (and _PORT, _NAME, _USER, _PASSWORD, _POOL, each defaulting to the main one, the pool to 5): a DIRECT connection to the database for the leader locks and LISTEN, while
+// WALLET_DB_SESSION_HOST (and _PORT, _NAME, _USER, _PASSWORD, _POOL, each defaulting to the main one, the pool to 10; it must be at least 7: 3 leader locks and 4 LISTEN are held for good): a DIRECT connection to the database for the leader locks and LISTEN, while
 // WALLET_DB_HOST points at a pooler in transaction mode (PgBouncer). Unset, they share the main connection. See docs/guides/run-in-production.md.
 const sessionHost = process.env["WALLET_DB_SESSION_HOST"];
 const sessionInfo = sessionHost === undefined || sessionHost === "" ? undefined : {
@@ -28,7 +28,7 @@ const sessionInfo = sessionHost === undefined || sessionHost === "" ? undefined 
   database: process.env["WALLET_DB_SESSION_NAME"] ?? connInfo.database,
   username: process.env["WALLET_DB_SESSION_USER"] ?? connInfo.username,
   password: process.env["WALLET_DB_SESSION_PASSWORD"] ?? connInfo.password,
-  maxConnections: Number(process.env["WALLET_DB_SESSION_POOL"] ?? 5)
+  maxConnections: Number(process.env["WALLET_DB_SESSION_POOL"] ?? 10)
 };
 const port = Number(process.env["PORT"] ?? 8080);
 const poolSize = poolSizeFromEnv();

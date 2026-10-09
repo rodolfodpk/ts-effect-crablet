@@ -2,7 +2,7 @@ import { Duration, Effect, Exit, Fiber, Scope } from "effect";
 import { EVENTS_CHANNEL } from "./EventStore.ts";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
-import type { SqlError } from "effect/sql/SqlError";
+import { ConnectionError, SqlError } from "effect/sql/SqlError";
 
 // Session-level pg_try_advisory_lock/pg_advisory_unlock on a
 // dedicated connection that is held open indefinitely on success (never returned to the pool
@@ -32,6 +32,9 @@ export interface LeaderOptions {
   readonly heartbeat?: Duration.Input;
   // How long a check may take before it counts as failed (default 2 seconds): a connection that answers nothing is as lost as one that errors.
   readonly verifyTimeout?: Duration.Input;
+  // How long to wait for the client's pool to give the connection the lock is taken on (default 10 seconds). A pool whose connections are all held (by other leaders, by LISTENs: with
+  // @effect/sql-pg each takes one for as long as it lasts) gives none, and a wait with no limit made the module never lead, silently. On the limit the attempt fails saying so.
+  readonly reserveTimeout?: Duration.Input;
   // Consecutive failed checks before the leader is lost (default 2): one slow answer does not end leadership.
   readonly failuresBeforeLost?: number;
 }
@@ -91,7 +94,35 @@ export const tryAcquireGlobalLeader = (
 ): Effect.Effect<LeaderHandle | null, SqlError> =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
-    const connection: Connection = yield* Scope.provide(sql.reserve, scope);
+    const reserveTimeout = Duration.fromInputUnsafe(options.reserveTimeout ?? "10 seconds");
+    return yield* attempt(sql, lockKey, options, scope, reserveTimeout).pipe(
+      // Whatever the attempt ends as, other than a leader that keeps the scope (and so its connection), the connection goes back to the pool: before this a failure of the first
+      // statement, or an interruption while waiting, left the pool one connection short for good.
+      Effect.onExit((exit) => (Exit.isSuccess(exit) && exit.value !== null ? Effect.void : Scope.close(scope, Exit.void)))
+    );
+  });
+
+const attempt = (
+  sql: SqlClient.SqlClient,
+  lockKey: bigint,
+  options: LeaderOptions,
+  scope: Scope.Closeable,
+  reserveTimeout: Duration.Duration
+): Effect.Effect<LeaderHandle | null, SqlError> =>
+  Effect.gen(function* () {
+    const connection: Connection = yield* Scope.provide(sql.reserve, scope).pipe(
+      Effect.timeout(reserveTimeout),
+      Effect.catchTag("TimeoutError", () =>
+        Effect.fail(
+          new SqlError({
+            reason: new ConnectionError({
+              cause: new Error("reserve timed out"),
+              message: `no connection from the pool in ${Duration.toMillis(reserveTimeout)} ms for the leader lock ${lockKey}: the pool's connections are all held (leader locks and LISTENs hold one each for as long as they last; a process that runs the three modules holds 7). Raise maxConnections.`
+            })
+          })
+        )
+      )
+    );
 
     const rows = yield* connection.execute(
       "SELECT pg_try_advisory_lock($1) AS acquired",
@@ -100,10 +131,7 @@ export const tryAcquireGlobalLeader = (
     );
     const acquired = Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired);
 
-    if (!acquired) {
-      yield* Scope.close(scope, Exit.void);
-      return null;
-    }
+    if (!acquired) return null;
 
     const heartbeat = Duration.fromInputUnsafe(options.heartbeat ?? "1 second");
     const verifyTimeout = Duration.fromInputUnsafe(options.verifyTimeout ?? "2 seconds");

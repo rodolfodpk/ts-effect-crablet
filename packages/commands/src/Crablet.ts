@@ -36,7 +36,8 @@ export interface CrabletOptions {
   readonly eventStore?: EventStoreConfig;
   readonly audit?: Partial<AuditConfig>;
   // A direct connection to the database for what cannot go through a pooler in transaction mode (PgBouncer): a module's leader (a session-level advisory lock) and LISTEN.
-  // Give it the database's own endpoint (same shape as `pg`) while `pg` points at the pooler. Omitted, they use `pg`, as before. See docs/guides/run-in-production.md.
+  // Give it the database's own endpoint (same shape as `pg`) while `pg` points at the pooler. Omitted, they use `pg`, as before. Its `maxConnections` must be at least 7 (the default 10 is
+  // fine): a process that runs the three modules keeps 3 leader locks and 4 LISTEN connections in that pool for good. See docs/guides/run-in-production.md.
   readonly session?: PgConfig;
 }
 

@@ -141,12 +141,13 @@ with the split below, 15 of 15 worked, p50 61 ms.
 ```ts
 Crablet.layer(
   { host: "pgbouncer.internal", port: 6432, /* ...the application's connection, through the pooler */ },
-  { session: { host: "db-writer.internal", port: 5432, /* ...the same database, direct */ maxConnections: 5 } }
+  { session: { host: "db-writer.internal", port: 5432, /* ...the same database, direct */ maxConnections: 10 } }
 );
 ```
 
-`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. It needs room for one reserved connection per module that leads in
-this process (at most three, so 5 is plenty); LISTEN opens a connection of its own, outside that pool. The wallet reads it from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`,
+`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. Its pool holds what a process keeps for good (the table under "Size the pool"):
+**7 connections for a process that runs the three modules** (3 leader locks, 3 `LISTEN` for event wake-ups, 1 for view progress), and the default of 10 leaves room for the attempts of the
+modules that do not lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a leader (a leader now gives up after 10 s and logs why; the layer warns below 7). The wallet reads it from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`,
 `_PASSWORD`, `_POOL`, each defaulting to the main one). The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
 Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it.
 

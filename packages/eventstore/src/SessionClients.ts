@@ -33,13 +33,24 @@ export const sessionPg: Effect.Effect<PgClient.PgClient, never, PgClient.PgClien
   return session !== null ? session.pg : yield* PgClient.PgClient;
 });
 
-// A second client, for the session connections, over `config` (the same shape as the application's: host, port, database, username, password, maxConnections). It needs
-// room for one reserved connection per module that leads in this process (at most three); LISTEN uses a connection of its own, outside the pool.
+// A second client, for the session connections, over `config` (the same shape as the application's: host, port, database, username, password, maxConnections).
+//
+// Its pool must hold what the process keeps for good: one connection per module that leads (a reserved one, at most three), and one per LISTEN, which with @effect/sql-pg takes a pooled
+// connection for as long as it lasts (the three modules' wake-ups and the views' progress hub: four). Seven for a process that runs everything, the default of 10 leaves room for the
+// attempts of the modules that do not lead. Too small a pool does not fail: the connections that do not fit wait, and a module can stay without a leader (the first version of this advice
+// said 5, and a wallet behind PgBouncer never got its outbox leader back after its connection was killed). A leader now gives up waiting after `reserveTimeout` and says so.
+const MIN_POOL = 7;
+
 // (A `Reference` is not tracked in a layer's output type, hence `Layer<never, ...>`.)
 export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0]): Layer.Layer<never, SqlError> =>
   Layer.effect(
     SessionClients,
     Effect.gen(function* () {
+      if (config.maxConnections !== undefined && config.maxConnections < MIN_POOL) {
+        yield* Effect.logWarning(
+          `session connections: maxConnections is ${config.maxConnections}; a process that runs the three modules keeps ${MIN_POOL} for good (3 leader locks, 4 LISTEN) and the rest wait. Use ${MIN_POOL} or more (10 is the default).`
+        )
+      }
       const context = yield* Layer.build(PgClient.layer(config));
       return { pg: Context.get(context, PgClient.PgClient), sql: Context.get(context, SqlClient.SqlClient) };
     })
