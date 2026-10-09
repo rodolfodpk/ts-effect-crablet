@@ -1,28 +1,109 @@
-body { font-family: system-ui, sans-serif; max-width: 70rem; margin: 2rem auto; padding: 0 1rem; color: #1b1b1f; }
-h1 { font-size: 1.4rem; }
-form { display: flex; gap: 0.5rem; margin: 1rem 0; align-items: center; }
-input[type="password"], input[type="text"] { flex: 1; max-width: 26rem; padding: 0.4rem 0.5rem; }
-button { padding: 0.35rem 0.8rem; cursor: pointer; }
-.muted { color: #666; }
-.result { padding: 0.6rem 1rem; border-radius: 6px; background: #eef6ee; }
-.error { background: #fbeaea; }
-.toolbar { display: flex; gap: 1rem; align-items: center; margin: 1rem 0; }
-.toolbar label { display: flex; gap: 0.4rem; align-items: center; }
-table.processors { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
-.processors th, .processors td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid #e3e3e8; vertical-align: top; }
-.processors th { font-weight: 600; color: #444; }
-.processors td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.processors .id { font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-all; }
-.processors .kind { color: #666; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.processors .desc { color: #555; font-size: 0.85rem; }
-.processors tr.failed { background: #fdf0f0; }
-.processors tr.paused { background: #fbf8ec; }
-.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; background: #e6efe6; color: #1d5a1d; }
-.badge.PAUSED { background: #f3eccb; color: #6a5200; }
-.badge.FAILED { background: #f6d6d6; color: #8a1c1c; }
-.last-error { color: #8a1c1c; font-size: 0.82rem; word-break: break-word; }
-.last-error.old { color: #777; }
-.confirm { margin: 1rem 0; padding: 0.75rem 1rem; border: 1px solid #d9a3a3; border-radius: 6px; background: #fff8f8; }
+/* Colours are tokens on :root; the dark theme redefines them. Nothing below uses a literal colour. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1a1d23;
+  --muted: #6b7280;
+  --line: #e4e7ec;
+  --accent: #3b5bdb;
+  --accent-text: #ffffff;
+  --ok-bg: #e3f5ea;   --ok-text: #14633a;   --ok-dot: #1fa05a;
+  --warn-bg: #fdf1d3; --warn-text: #7a5300; --warn-dot: #d99a00;
+  --bad-bg: #fde4e4;  --bad-text: #9b1c1c;  --bad-dot: #d64545;
+  --row-hover: #f8f9fc;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12141a;
+    --surface: #1b1e27;
+    --text: #e8eaf0;
+    --muted: #9aa3b2;
+    --line: #2b2f3b;
+    --accent: #7c93ff;
+    --accent-text: #0f1220;
+    --ok-bg: #153325;   --ok-text: #7fd8a4;   --ok-dot: #3cc47c;
+    --warn-bg: #3a2f10; --warn-text: #f0c75e; --warn-dot: #e6b422;
+    --bad-bg: #3d1a1a;  --bad-text: #f19a9a;  --bad-dot: #ef6b6b;
+    --row-hover: #20242f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); margin: 0; line-height: 1.45; }
+main { max-width: 78rem; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 0.25rem; }
+p { margin: 0.5rem 0; }
+.muted { color: var(--muted); }
+
+/* the connect form and the toolbar */
+form { display: flex; gap: 0.5rem; margin: 1.25rem 0; align-items: center; flex-wrap: wrap; }
+input[type="password"], input[type="text"] {
+  flex: 1; max-width: 26rem; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit;
+}
+input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toolbar { display: flex; gap: 1rem; align-items: center; margin: 1.25rem 0 0.75rem; flex-wrap: wrap; }
+.toolbar label { display: flex; gap: 0.4rem; align-items: center; color: var(--muted); font-size: 0.9rem; }
+
+/* buttons: neutral by default, a primary one to connect, a tint per action */
+button {
+  padding: 0.4rem 0.9rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text);
+  font: inherit; font-size: 0.88rem; cursor: pointer; box-shadow: var(--shadow); transition: background 0.12s, border-color 0.12s;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+button.pause { color: var(--warn-text); }
+button.resume { color: var(--ok-text); }
+button.reset { color: var(--bad-text); }
+
+/* what the last action did, and the reset confirmation */
+.result { padding: 0.65rem 1rem; border-radius: 8px; background: var(--ok-bg); color: var(--ok-text); margin: 0.75rem 0; }
+.error { background: var(--bad-bg); color: var(--bad-text); }
+.confirm { margin: 1rem 0; padding: 0.9rem 1.1rem; border: 1px solid var(--bad-dot); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
 .confirm button + button { margin-left: 0.5rem; }
+
+/* the summary above the table: how many processors are in each state */
+.summary { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0.25rem 0 1rem; }
+.chip { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.3rem 0.8rem; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 0.85rem; box-shadow: var(--shadow); }
+.chip strong { font-variant-numeric: tabular-nums; }
+.chip .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); }
+.chip.ACTIVE .dot { background: var(--ok-dot); }
+.chip.PAUSED .dot { background: var(--warn-dot); }
+.chip.FAILED .dot { background: var(--bad-dot); }
+
+/* the table sits in a card */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow-x: auto; }
+table.processors { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+.processors th { text-align: left; padding: 0.7rem 1rem; font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.processors td { text-align: left; padding: 0.85rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.processors tbody tr:last-child td { border-bottom: none; }
+.processors tbody tr:hover { background: var(--row-hover); }
+.processors td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.processors .id { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.86rem; word-break: break-all; font-weight: 600; }
+.processors .kind { display: inline-block; margin-bottom: 0.2rem; padding: 0.05rem 0.5rem; border-radius: 6px; background: var(--bg); color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.processors .desc { color: var(--muted); font-size: 0.84rem; margin-top: 0.15rem; }
+.processors tr.failed { box-shadow: inset 3px 0 0 var(--bad-dot); }
+.processors tr.paused { box-shadow: inset 3px 0 0 var(--warn-dot); }
+.processors td.actions { white-space: nowrap; text-align: right; }
 .actions button + button { margin-left: 0.4rem; }
-.field-note { font-size: 0.82rem; color: #666; }
+
+/* a status is a dot and a word */
+.badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0.65rem; border-radius: 999px; font-size: 0.78rem; font-weight: 650; background: var(--ok-bg); color: var(--ok-text); }
+.badge::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ok-dot); }
+.badge.PAUSED { background: var(--warn-bg); color: var(--warn-text); }
+.badge.PAUSED::before { background: var(--warn-dot); }
+.badge.FAILED { background: var(--bad-bg); color: var(--bad-text); }
+.badge.FAILED::before { background: var(--bad-dot); }
+.last-error { color: var(--bad-text); font-size: 0.82rem; word-break: break-word; margin-top: 0.2rem; }
+.last-error.old { color: var(--muted); }
+.field-note { font-size: 0.82rem; color: var(--muted); margin-top: 1rem; }
+
+@media (max-width: 40rem) {
+  main { padding: 1rem 0.75rem 2rem; }
+  .processors th, .processors td { padding: 0.6rem 0.65rem; }
+}

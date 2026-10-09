@@ -208,7 +208,7 @@ const row = (p: ProcessorInfo, model: Model, h: HtmlBuilder<Message>) => {
     const label = action === "pause" ? "Pause" : action === "resume" ? "Resume" : "Reset";
     const message =
       action === "pause" ? Message.ClickedPause({ kind: p.kind, id: p.id }) : action === "resume" ? Message.ClickedResume({ kind: p.kind, id: p.id }) : Message.ClickedReset({ kind: p.kind, id: p.id });
-    return h.button([h.AriaLabel(`${label} ${p.id}`), h.OnClick(message), ...(busy ? [h.Disabled(true)] : [])], [label]);
+    return h.button([h.Class(action), h.AriaLabel(`${label} ${p.id}`), h.OnClick(message), ...(busy ? [h.Disabled(true)] : [])], [label]);
   };
   return h.tr(
     [h.Class(p.status === "FAILED" ? "failed" : p.status === "PAUSED" ? "paused" : "")],
@@ -234,11 +234,29 @@ const row = (p: ProcessorInfo, model: Model, h: HtmlBuilder<Message>) => {
 const table = (processors: ReadonlyArray<ProcessorInfo>, model: Model, h: HtmlBuilder<Message>) =>
   processors.length === 0
     ? h.p([h.Class("muted")], ["The application reports no processors."])
-    : h.table(
-        [h.Class("processors"), h.AriaLabel("Processors")],
+    : h.div(
+        [],
         [
-          h.thead([], [h.tr([], ["Processor", "Status", "Failures", "Waiting", "Cursor", ""].map((title) => h.th([h.Scope("col")], [title])))]),
-          h.tbody([], processors.map((p) => row(p, model, h)))
+          // how many are in each state, at a glance
+          h.div(
+            [h.Class("summary"), h.AriaLabel("Processors by status")],
+            (["ACTIVE", "PAUSED", "FAILED"] as const)
+              .map((status) => ({ status, count: processors.filter((p) => p.status === status).length }))
+              .filter(({ status, count }) => count > 0 || status === "ACTIVE")
+              .map(({ status, count }) => h.span([h.Class(`chip ${status}`)], [h.span([h.Class("dot")], []), h.strong([], [String(count)]), ` ${status.toLowerCase()}`]))
+          ),
+          h.div(
+            [h.Class("card")],
+            [
+              h.table(
+                [h.Class("processors"), h.AriaLabel("Processors")],
+                [
+                  h.thead([], [h.tr([], ["Processor", "Status", "Failures", "Waiting", "Cursor", ""].map((title) => h.th([h.Scope("col")], [title])))]),
+                  h.tbody([], processors.map((p) => row(p, model, h)))
+                ]
+              )
+            ]
+          )
         ]
       );
 
@@ -269,7 +287,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
               [h.OnSubmit(Message.SubmittedToken()), h.AriaLabel("Connect form")],
               [
                 h.input([h.Type("password"), h.AriaLabel("Admin token"), h.Placeholder("Admin bearer token"), h.Value(model.tokenInput), h.OnInput((value) => Message.ChangedToken({ value }))]),
-                h.button([h.Type("submit")], ["Connect"])
+                h.button([h.Type("submit"), h.Class("primary")], ["Connect"])
               ]
             )
           ]

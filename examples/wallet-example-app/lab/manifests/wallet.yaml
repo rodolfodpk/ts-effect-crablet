@@ -5,6 +5,8 @@ kind: Deployment
 metadata: { name: wallet-api, labels: { app: wallet, role: api } }
 spec:
   replicas: ${API_REPLICAS}
+  # One API pod per node (the anti-affinity below is required), so a rolling update has no room for an extra pod: it replaces one at a time.
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
   selector: { matchLabels: { app: wallet, role: api } }
   template:
     metadata: { labels: { app: wallet, role: api } }

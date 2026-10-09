@@ -14,14 +14,15 @@ scenario at a time, each starting from an empty database. It is a **baseline**: 
 
 ## Watching it
 
-`node examples/wallet-example-app/lab/lab.ts observe` brings up the cluster with Grafana, the wallet (2 API pods, 2 workers) and a load generator that sends, every 30 seconds, a uniformly random number of commands from 1 to 100
-(`scripts/load.ts --burst-every 30 --burst-max 100`: deposits, withdrawals and transfers, with a few that fail on purpose). It prints the addresses; they are:
+`node examples/wallet-example-app/lab/lab.ts observe` brings up the cluster with Grafana, the wallet (2 API pods, 2 workers) and a load generator that sends, every 5 seconds, a uniformly random number of commands from 10 to 1000
+(`scripts/load.ts --burst-every 5 --burst-min 10 --burst-max 1000 --wallets 200`: deposits, withdrawals and transfers, with a few that fail on purpose). It prints the addresses; they are:
 
 | What | Where | Login |
 |---|---|---|
 | Grafana, the "Crablet" dashboard | http://localhost:3000 (Dashboards, "Crablet") | admin / admin |
 | The processors admin page (Foldkit) | http://localhost:5173, after `cd examples/processors-admin-ui && ADMIN_API_URL=http://127.0.0.1:8081 bun run dev` | the token `lab-token` |
 | The wallet API | http://localhost:8081 (`/openapi.json`, `/admin/processors` with `Authorization: Bearer lab-token`) | none |
+| The list of wallets (JSON, in the browser) | http://localhost:8081/api/wallets (`?limit=50`, and `?after=<next>` for the next page); one wallet: `/api/wallets/<walletId>`, its `/transactions` and `/summary` | none |
 | Postgres | localhost:5433, database `wallet_db` | postgres / postgres |
 | The load | `kubectl --context kind-crablet-lab logs -f deploy/loadgen` | |
 
@@ -29,7 +30,7 @@ Use `127.0.0.1`, not `localhost`, for the admin page's proxy: `localhost` can re
 To see the failover on the dashboard and the admin page: `kubectl --context kind-crablet-lab delete pod -l role=workers --grace-period=0 --force`, or `rollout restart deployment/wallet-workers`. `lab.ts down` removes everything.
 
 Checked on 2026-10-09: the dashboard is provisioned, the metrics arrive (events appended, commands, notifications sent, the consumers' status, leadership of the three modules, lag), and the admin page lists the six processors through its proxy.
-Not checked: the dashboard's panels by eye (only that their metrics have data), the page in a browser, and the Grafana alerts firing. Under the 100-command bursts the API was slow (75 commands took 14 s, 61 took 31 s, longer than the interval) while the machine was also compiling something else; I did not look into it.
+Not checked: the dashboard's panels by eye (only that their metrics have data), the page in a browser, and the Grafana alerts firing. Under the first, lighter bursts (1 to 100 every 30 seconds) the API was slow (75 commands took 14 s, 61 took 31 s, longer than the interval) while the machine was also compiling something else; I did not look into it.
 
 ## Results
 

@@ -7,6 +7,7 @@ import { makeConsistentRead } from "@crablet/views-http";
 import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
 import { walletBalanceViewSubscription, walletSummaryViewSubscription, walletTransactionViewSubscription } from "../views/WalletViewConfig.ts";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
+import { decodeWalletCursor, encodeWalletCursor } from "./WalletListPaging.ts";
 import { decodeTransactionCursor, encodeTransactionCursor, maxPageSize, parseLimit } from "./TransactionPaging.ts";
 
 interface BalanceRow {
@@ -63,6 +64,37 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
   return groupBuilder(api, "walletQueries", (handlers: any) =>
     Effect.succeed(
       handlers
+        // The list of wallets, from the balance view, by keyset on wallet_id (no OFFSET, so a wallet that appears between two requests cannot shift the pages). Like every read it waits for its view.
+        .handle(
+          "listWallets",
+          consistentRead(
+            {
+              reads: [walletBalanceViewSubscription],
+              parse: (request: { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string } }) => {
+                const limit = parseLimit(request.query.limit);
+                if (limit === null) return Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`));
+                const after = request.query.after === undefined ? null : decodeWalletCursor(request.query.after);
+                if (request.query.after !== undefined && after === null) return Effect.fail(CommandApiBadRequest.of("after must be the next cursor of a previous page"));
+                return Effect.succeed({ limit, after });
+              }
+            },
+            ({ limit, after }: { readonly limit: number; readonly after: string | null }) =>
+              Effect.gen(function* () {
+                const sql = yield* SqlClient.SqlClient;
+                const rows = yield* Effect.orDie(
+                  after === null
+                    ? sql.unsafe<BalanceRow>("SELECT * FROM wallet_balance_view ORDER BY wallet_id LIMIT $1", [limit + 1])
+                    : sql.unsafe<BalanceRow>("SELECT * FROM wallet_balance_view WHERE wallet_id > $1 ORDER BY wallet_id LIMIT $2", [after, limit + 1])
+                );
+                const page = rows.slice(0, limit);
+                const last = page[page.length - 1];
+                return {
+                  wallets: page.map((row) => ({ walletId: row.wallet_id, owner: row.owner, balance: Number(row.balance), lastUpdatedAt: row.last_updated_at.toISOString() })),
+                  next: rows.length > limit && last !== undefined ? encodeWalletCursor(last.wallet_id) : null
+                };
+              })
+          )
+        )
         .handle(
           "getWallet",
           consistentRead(

@@ -151,4 +151,33 @@ describe("when a view cannot catch up", () => {
       await holder.end();
     }
   });
+
+  it("the list of wallets: every wallet once, in pages, in walletId order; a bad limit or cursor is a 400", { timeout: 30_000 }, async () => {
+    const prefix = `list-${crypto.randomUUID().slice(0, 8)}`;
+    const ids = Array.from({ length: 5 }, (_, i) => `${prefix}-${i}`);
+    for (const walletId of ids) assert.strictEqual((await post("open_wallet", { walletId, owner: "Eve", initialBalance: 1 })).status, 201);
+
+    // the read waits for the balance view, so all five are there at once; page through everything, two at a time
+    const seen: string[] = [];
+    let after: string | null = null;
+    let pages = 0;
+    do {
+      const res: { status: number; body: Record<string, any> } = await get(`/api/wallets?limit=2${after === null ? "" : `&after=${after}`}`);
+      assert.strictEqual(res.status, 200);
+      assert.ok(res.body["wallets"].length <= 2);
+      seen.push(...res.body["wallets"].map((w: { walletId: string }) => w.walletId));
+      after = res.body["next"];
+      pages++;
+    } while (after !== null && pages < 1000);
+    assert.deepStrictEqual(seen, [...seen].sort(), "ordered by walletId");
+    assert.strictEqual(new Set(seen).size, seen.length, "no wallet twice");
+    for (const id of ids) assert.ok(seen.includes(id), `${id} is listed`);
+
+    assert.strictEqual((await get("/api/wallets?limit=0")).status, 400);
+    assert.strictEqual((await get("/api/wallets?limit=101")).status, 400);
+    assert.strictEqual((await get("/api/wallets?after=not-a-cursor!")).status, 400);
+    const first = await get("/api/wallets");
+    assert.strictEqual(first.status, 200);
+    assert.ok(first.body["wallets"].length <= 20, "the default page is 20");
+  });
 });

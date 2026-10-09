@@ -16,6 +16,12 @@ export const WalletResponse = Schema.Struct({
   lastUpdatedAt: Schema.String
 });
 
+// One page of wallets, ordered by walletId. `next` is the cursor of the following page, or null on the last one; pass it back as `after`.
+export const WalletsResponse = Schema.Struct({
+  wallets: Schema.Array(WalletResponse),
+  next: Schema.NullOr(Schema.String)
+});
+
 export const TransactionResponse = Schema.Struct({
   transactionId: Schema.String,
   walletId: Schema.String,
@@ -52,9 +58,26 @@ export const TransactionsPageParams = {
   )
 };
 
+// Query-string params for the wallet list, plain strings for the same reason as the transactions'.
+export const WalletsPageParams = {
+  limit: Schema.optionalKey(
+    Schema.String.annotate({ description: `How many wallets to return: a whole number from 1 to ${maxPageSize} (default ${defaultPageSize}).` } as never)
+  ),
+  after: Schema.optionalKey(
+    Schema.String.annotate({ description: "Return the wallets after this cursor: the `next` of the previous page. Opaque to clients." } as never)
+  )
+};
+
 const walletIdParam = { walletId: Schema.String };
 
 export const walletQueryGroup = HttpApiGroup.make("walletQueries")
+  .add(
+    HttpApiEndpoint.get("listWallets", "/api/wallets", {
+      query: { ...WalletsPageParams, ...consistencyQuery },
+      success: ReadSuccess(WalletsResponse),
+      error: readProblems
+    })
+  )
   .add(
     HttpApiEndpoint.get("getWallet", "/api/wallets/:walletId", {
       params: walletIdParam,
