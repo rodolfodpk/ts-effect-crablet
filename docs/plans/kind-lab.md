@@ -32,6 +32,19 @@ To see the failover on the dashboard and the admin page: `kubectl --context kind
 Checked on 2026-10-09: the dashboard is provisioned, the metrics arrive (events appended, commands, notifications sent, the consumers' status, leadership of the three modules, lag), and the admin page lists the six processors through its proxy.
 Not checked: the dashboard's panels by eye (only that their metrics have data), the page in a browser, and the Grafana alerts firing. Under the first, lighter bursts (1 to 100 every 30 seconds) the API was slow (75 commands took 14 s, 61 took 31 s, longer than the interval) while the machine was also compiling something else; I did not look into it.
 
+### The chaos page
+
+[`examples/chaos-ui`](../../examples/chaos-ui/README.md) is a page to break the lab on purpose: choose the faults, run them for N minutes, then ask whether the data is still consistent. Start its server and the page as that README says; the page is at http://localhost:5175.
+It also steers the load generator (interval, range, wallets, start and pause, with no restart) and can empty the database to start again.
+
+What the lab, and that page, found while being built (2026-10-09):
+
+- **The wallet's views lose updates.** The balance and summary views copy the `newBalance` recorded in the event; deposits are concurrent, so that number can be stale; 22 to 28 wallets of several hundred ended with a balance other than the sum of their events. The log was right. The fix is for the projectors to apply the amount.
+- **Commands deadlock under concurrency.** Each wallet command makes more than one append in its transaction (opening the statement period, then the deposit or transfer); two transfers in opposite directions take the locks in opposite orders. Measured: about 7 deadlocks a second under bursts of up to 1000 commands, and a burst of 875 commands took 265 s
+  with the machine idle. Postgres detects each cycle after `deadlock_timeout` (1 s). The load of 10 to 1000 commands every 5 seconds is therefore not sustainable on this wallet; a smaller range is.
+- **A view keeps up at about `batchSize / pollingIntervalMs` events a second when it is behind**: after a full batch the processor waits for its interval instead of reading the next one (100 events a second with the wallet's settings), which is why a backlog drains slowly.
+- **The metrics were wrong with more than one pod** until each instance exported with its own `service.instance.id` (a rate was 20 to 30 times too high).
+
 ## Results
 
 One run of each unless a column says otherwise. "Lost" is acknowledged commands missing from the views after catching up.

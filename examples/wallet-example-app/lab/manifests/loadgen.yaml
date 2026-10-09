@@ -1,4 +1,4 @@
-# The load: every 5 seconds, a uniformly random number of commands from 10 to 1000, all at once (examples/wallet-example-app/scripts/load.ts). It waits for the API, opens its wallets, and runs until deleted.
+# The load (steered while it runs, through its control port: POST /config on :9090; the chaos page does it): every 5 seconds, a uniformly random number of commands from 10 to 1000, all at once (examples/wallet-example-app/scripts/load.ts). It waits for the API, opens its wallets, and runs until deleted.
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: loadgen, labels: { app: loadgen } }
@@ -12,4 +12,5 @@ spec:
         - name: loadgen
           image: crablet-wallet:lab
           imagePullPolicy: Never
-          command: ["node", "scripts/load.ts", "--url", "http://wallet-api:8080", "--burst-every", "5", "--burst-min", "10", "--burst-max", "1000", "--wallets", "200"]
+          command: ["node", "scripts/load.ts", "--url", "http://wallet-api:8080", "--burst-every", "5", "--burst-min", "10", "--burst-max", "1000", "--wallets", "200", "--control-port", "9090"]
+          ports: [{ containerPort: 9090 }]
