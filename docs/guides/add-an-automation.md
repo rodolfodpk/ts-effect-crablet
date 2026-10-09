@@ -53,3 +53,29 @@ if (roles.has("automations")) yield* automationsHandle.service.start;
 
 Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:
 [`@crablet/automations`](../../packages/automations/README.md).
+
+## 4. Test that it is idempotent
+
+`idempotentBy` is yours to write, and a wrong query fails quietly: too narrow and a redelivered event does its work twice, too broad and a legitimate event is
+dropped. `assertAutomationIdempotent` runs the automation against an in-memory event store, with no database, and reports both. Give it triggers that should
+each produce an effect.
+
+<!-- file: examples/wallet-example-app/test/wallet-automation-idempotency.test.ts#automation-idempotency-test -->
+```ts
+test("welcome notification: one per wallet, and a redelivered WalletOpened does it again for none", async () => {
+  // triggers that should each produce an effect: two DIFFERENT wallets
+  await assertAutomationIdempotent(walletOpenedAutomation, [
+    WalletOpened({ walletId: "w1", owner: "Ana", initialBalance: 0, openedAt: "2026-10-09T00:00:00Z" }),
+    WalletOpened({ walletId: "w2", owner: "Bo", initialBalance: 0, openedAt: "2026-10-09T00:00:00Z" })
+  ]);
+});
+```
+
+It handles the triggers once, then handles them again, and fails with the problems it found:
+
+- **NOT IDEMPOTENT**: the second pass appended events. The command has no `idempotentBy`, or its query never matches what it appends (a misspelled tag, the wrong event type).
+- **TOO BROAD**: on the first pass a decision was answered "already done". The query matches something that is not this operation, such as the wallet's id where the deposit's id was needed.
+- **FAILED**: a command failed, usually for want of state it reads. Give the events it needs with `{ given: [...] }`.
+
+It is only as good as the triggers: two deposits to the same wallet expose a key on the wallet, two deposits to different wallets do not. It is a test, for you to call;
+nothing runs it in production.

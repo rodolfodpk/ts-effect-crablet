@@ -8,7 +8,8 @@
     "./AutomationHandler": "./src/AutomationHandler.ts",
     "./AutomationDecision": "./src/AutomationDecision.ts",
     "./AutomationsConfig": "./src/AutomationsConfig.ts",
-    "./AutomationManagementService": "./src/AutomationManagementService.ts"
+    "./AutomationManagementService": "./src/AutomationManagementService.ts",
+    "./testing/AutomationIdempotency": "./src/testing/AutomationIdempotency.ts"
   },
   "dependencies": {
     "effect": "4.0.0",

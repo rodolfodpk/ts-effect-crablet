@@ -8,7 +8,7 @@ Automations: when an event appears, issue a **follow-up command**. They run on t
 - **`AutomationHandler`**, **`AutomationDecision`** - a handler says which events wake it, and `decide(event)` returns the decisions; each decision runs the one command the handler is bound to.
 - **`AutomationsConfig`**, **`AutomationManagementService`** - configure, inspect and control automations.
 
-Delivery is at-least-once, so the follow-up command must be idempotent (declare `idempotentBy`), otherwise a redelivered event runs it twice.
+Delivery is at-least-once, so the follow-up command must be idempotent (declare `idempotentBy`), otherwise a redelivered event runs it twice. `automationHandlerOf` refuses a command without it, and `assertAutomationIdempotent` (`@crablet/automations/testing/AutomationIdempotency`) is a test that catches a key too narrow or too broad.
 
 ## Depends on
 
