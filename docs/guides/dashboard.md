@@ -48,7 +48,7 @@ export const observabilityLayer = (env: Readonly<Record<string, string | undefin
   if (endpoint === undefined || endpoint === "") return Layer.empty;
   return Otlp.layerJson({
     baseUrl: endpoint,
-    resource: { serviceName: env["OTEL_SERVICE_NAME"] ?? "wallet-example-app" },
+    resource: { serviceName: env["OTEL_SERVICE_NAME"] ?? "wallet-example-app", attributes: { "service.instance.id": env["OTEL_SERVICE_INSTANCE_ID"] ?? hostname() } },
     metricsExportInterval: "5 seconds",
     loggerMergeWithExisting: true
   }).pipe(Layer.provide(FetchHttpClient.layer));
