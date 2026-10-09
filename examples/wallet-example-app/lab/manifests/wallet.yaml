@@ -23,6 +23,7 @@ spec:
             - { name: WALLET_DB_HOST, value: postgres }
             - { name: WALLET_DB_POOL, value: "${POOL}" }
             - { name: WALLET_ADMIN_TOKEN, value: lab-token }
+${OTEL_ENV}
           ports: [{ containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /openapi.json, port: 8080 }, periodSeconds: 2 }
 ---
@@ -57,6 +58,7 @@ spec:
           imagePullPolicy: Never
           env:
             - { name: WALLET_ROLES, value: "views,automations,outbox" }
+${OTEL_ENV}
             - { name: WALLET_MIGRATE, value: "off" }
             - { name: WALLET_DB_HOST, value: postgres }
             - { name: WALLET_DB_POOL, value: "${POOL}" }

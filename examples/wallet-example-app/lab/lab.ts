@@ -1,6 +1,7 @@
 // The kind lab (ADR-0022, arrangement C). Not a test: it measures and prints `LAB` lines, with a verdict where there is a criterion.
 //   node examples/wallet-example-app/lab/lab.ts up             create the cluster (3 nodes), build and load the image
 //   node examples/wallet-example-app/lab/lab.ts run <name>...  run scenarios (each starts from an empty database and a fresh deployment); no names = all
+//   node examples/wallet-example-app/lab/lab.ts observe       up, then a deployment you can watch: Grafana, a load of 1 to 100 commands every 30 s, the admin API (prints the addresses)
 //   node examples/wallet-example-app/lab/lab.ts down           delete the cluster
 // Needs Docker, kind and kubectl (1.30 or later: `kubectl debug --profile=netadmin`). BUILD=0 reuses the image already built.
 import { execFileSync } from "node:child_process";
@@ -58,6 +59,7 @@ interface Deployment {
   readonly apiReplicas: number;
   readonly workerReplicas: number;
   readonly migrate: boolean; // run the pre-deploy job
+  readonly observe?: boolean; // Grafana in the cluster, and the wallet pods export to it
 }
 // What a managed Postgres sets for keepalives out of the box (RDS: 300 s idle, 30 s interval, 2 probes) against settings an operator would choose.
 const KEEPALIVE_RDS = ["tcp_keepalives_idle=300", "tcp_keepalives_interval=30", "tcp_keepalives_count=2"];
@@ -76,7 +78,7 @@ const render = (file: string, vars: Record<string, string>): string =>
 const apply = (yaml: string): void => { run("kubectl", ["--context", CTX, "apply", "-f", "-"], { input: yaml }); };
 
 const reset = (): void => {
-  kubectlQuiet("delete", "deployment", "wallet-api", "wallet-workers", "postgres", "--ignore-not-found", "--wait=true");
+  kubectlQuiet("delete", "deployment", "wallet-api", "wallet-workers", "postgres", "grafana", "loadgen", "--ignore-not-found", "--wait=true");
   kubectlQuiet("delete", "job", "--all", "--ignore-not-found", "--wait=true");
   for (const n of kubectlQuiet("get", "nodes", "-o", "name").split("\n").filter(Boolean)) void n; // nodes are started again by the scenarios that stop them
 };
@@ -92,14 +94,23 @@ const runMigrate = (name: string, parallelism: number, mode: "apply" | "if-fresh
 const runFlyway = (name: string, parallelism: number): void => {
   apply(render("flyway-job.yaml", { FLYWAY_NAME: name, FLYWAY_PARALLELISM: String(parallelism) }));
 };
+const OTEL_ENV = "            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: \"http://grafana:4318\" }";
+const deployGrafana = (): void => {
+  // the dashboard, its provider and the alerts, from the files the compose stack mounts
+  const config = run("kubectl", ["--context", CTX, "create", "configmap", "grafana-crablet", `--from-file=${path.join(repoRoot, "ops/grafana")}`, "--dry-run=client", "-o", "yaml"]);
+  apply(config);
+  apply(readFileSync(path.join(here, "manifests", "grafana.yaml"), "utf-8"));
+  kubectl("rollout", "status", "deployment/grafana", "--timeout=300s");
+};
 const deployWallet = (d: Deployment): void => {
-  apply(render("wallet.yaml", { API_REPLICAS: String(d.apiReplicas), WORKER_REPLICAS: String(d.workerReplicas), POOL: String(d.pool) }));
+  apply(render("wallet.yaml", { API_REPLICAS: String(d.apiReplicas), WORKER_REPLICAS: String(d.workerReplicas), POOL: String(d.pool), OTEL_ENV: d.observe === true ? OTEL_ENV : "" }));
   kubectl("rollout", "status", "deployment/wallet-api", "--timeout=180s");
   kubectl("rollout", "status", "deployment/wallet-workers", "--timeout=180s");
 };
 
 const fresh = (d: Deployment = standard): void => {
   reset();
+  if (d.observe === true) deployGrafana(); // first, so the wallet pods can resolve it
   deployPostgres(d);
   if (d.migrate) {
     runMigrate("migrate", 1, "apply");
@@ -460,8 +471,31 @@ const podIpOf = (app: string): string => kubectl("get", "pod", "-l", `app=${app}
 
 // ---- main --------------------------------------------------------------------------------------------------------------------------------------------------
 
+const observe = (): void => {
+  up();
+  fresh({ ...standard, observe: true });
+  apply(readFileSync(path.join(here, "manifests", "loadgen.yaml"), "utf-8"));
+  kubectl("rollout", "status", "deployment/loadgen", "--timeout=120s");
+  console.log(`
+LAB observation is up. Open:
+
+  Grafana (the Crablet dashboard)   http://localhost:3000        login admin / admin; Dashboards, "Crablet"
+  The wallet API                    http://localhost:8081        e.g. http://localhost:8081/openapi.json
+  The processors admin page         run this in another terminal, then open http://localhost:5173 and connect with the token  lab-token
+                                      cd examples/processors-admin-ui && ADMIN_API_URL=http://127.0.0.1:8081 bun run dev
+  Postgres                          localhost:5433               user postgres, password postgres, database wallet_db
+
+The load: every 30 seconds, 1 to 100 commands at once.  Watch it:  kubectl --context ${CTX} logs -f deploy/loadgen
+Break something while you watch (the dashboard and the admin page show it):
+  kubectl --context ${CTX} delete pod -l role=workers --grace-period=0 --force     (kill the workers; one takes over)
+  kubectl --context ${CTX} rollout restart deployment/wallet-workers                (a rolling update)
+Stop it:  node examples/wallet-example-app/lab/lab.ts down
+`);
+};
+
 const [command, ...names] = process.argv.slice(2);
 if (command === "up") up();
+else if (command === "observe") observe();
 else if (command === "down") down();
 else if (command === "run") {
   const chosen = names.length === 0 ? scenarios : names.map((n) => scenarios.find((s) => s.name === n) ?? (() => { throw new Error(`unknown scenario ${n}; known: ${scenarios.map((s) => s.name).join(", ")}`); })());
@@ -470,6 +504,6 @@ else if (command === "run") {
     try { await s.run(); } catch (e) { log(`${s.name}: ERROR ${e instanceof Error ? e.message : String(e)}`); }
   }
 } else {
-  console.log("usage: node lab.ts up | run [scenario...] | down");
+  console.log("usage: node lab.ts up | observe | run [scenario...] | down");
   console.log(`scenarios: ${scenarios.map((s) => s.name).join(", ")}`);
 }

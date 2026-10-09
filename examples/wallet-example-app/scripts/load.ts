@@ -2,6 +2,8 @@
 // with some commands that fail on purpose (a withdrawal larger than the balance, a deposit to a wallet that does not exist).
 //   node examples/wallet-example-app/scripts/load.ts [--url http://localhost:8080] [--seconds 120] [--rate 20] [--wallets 25]
 // Prints how many requests got each status at the end.
+// Bursts instead of a steady rate: --burst-every 30 --burst-max 100 sends, every 30 seconds, a uniformly random number of commands from 1 to 100, all at once, and never stops
+// (--seconds is ignored). The kind lab runs it this way, so the dashboard has a changing load to show.
 const arg = (name: string, fallback: string): string => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 && process.argv[i + 1] !== undefined ? process.argv[i + 1]! : fallback;
@@ -10,6 +12,8 @@ const url = arg("url", "http://localhost:8080").replace(/\/$/, "");
 const seconds = Number(arg("seconds", "120"));
 const rate = Number(arg("rate", "20"));
 const walletCount = Number(arg("wallets", "25"));
+const burstEvery = Number(arg("burst-every", "0"));
+const burstMax = Number(arg("burst-max", "100"));
 
 const statuses = new Map<string, number>();
 const post = async (command: string, body: unknown): Promise<void> => {
@@ -36,7 +40,25 @@ const once = (): Promise<void> => {
 };
 
 console.log(`opening ${walletCount} wallets at ${url}`);
+// The API may still be starting (a pod that has just been created): try the first wallet until it answers.
+for (let attempt = 0; attempt < 60; attempt++) {
+  const up = await fetch(`${url}/openapi.json`).then((r) => r.ok, () => false);
+  if (up) break;
+  await new Promise((r) => setTimeout(r, 2000));
+}
 await Promise.all(wallets.map((walletId) => post("open_wallet", { walletId, owner: "load", initialBalance: 1_000 })));
+
+if (burstEvery > 0) {
+  console.log(`bursts: every ${burstEvery} s, 1 to ${burstMax} commands (uniform), until stopped`);
+  for (;;) {
+    const started = Date.now();
+    const n = 1 + Math.floor(Math.random() * burstMax);
+    await Promise.all(Array.from({ length: n }, once));
+    console.log(`burst: ${n} commands in ${Date.now() - started} ms`);
+    await new Promise((r) => setTimeout(r, Math.max(0, burstEvery * 1000 - (Date.now() - started))));
+  }
+}
+
 console.log(`load: ${rate} commands a second for ${seconds} s`);
 for (let s = 0; s < seconds; s++) {
   const started = Date.now();
