@@ -54,19 +54,25 @@ describe("wake-ups after the commit, coalesced (ADR-0021)", () => {
     const result = await run({ wakeupMode: "coalesced", wakeupWindowMs: 50 }, Effect.gen(function* () {
       const store = yield* EventStore;
       const sql = yield* SqlClient.SqlClient;
-      const l = yield* listen(committed);
+      // no per-type query here (a batch of 200 types would take longer than the wait): this test only asks what was announced
+      const l = yield* listen(() => Effect.succeed(0));
       yield* Effect.forEach(
         Array.from({ length: N }, (_, i) => i),
         (i) => store.withWakeups(sql.withTransaction(store.append([AppendEvent.of(`W${run1}x${i}`, "wake_id", `${run1}-${i}`, {})]))),
         { concurrency: 32, discard: true }
       );
-      yield* Effect.sleep("400 millis"); // window + listener debounce
-      const heard = yield* l.heard;
+      // the last window plus the listener's debounce, then wait until everything has been heard (or give up)
+      let heard = yield* l.heard;
+      for (let waited = 0; waited < 10_000 && new Set(heard.flatMap((b) => b.types)).size < N; waited += 100) {
+        yield* Effect.sleep("100 millis");
+        heard = yield* l.heard;
+      }
       yield* l.stop;
       return heard;
     }));
     const announced = new Set(result.flatMap((b) => b.types));
-    for (let i = 0; i < N; i++) assert.ok(announced.has(`W${run1}x${i}`), `type ${i} was announced`);
+    const missing = Array.from({ length: N }, (_, i) => i).filter((i) => !announced.has(`W${run1}x${i}`));
+    assert.deepStrictEqual(missing, [], `${missing.length} of ${N} types were not announced; ${result.length} notifications heard`);
     assert.ok(result.length < N / 2, `coalesced: ${result.length} notifications for ${N} commands`);
   });
 

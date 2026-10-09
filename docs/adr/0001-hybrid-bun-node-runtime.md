@@ -43,3 +43,14 @@ Re-checked with Bun 1.3.11 and Testcontainers 12.2: a Testcontainers-backed test
 `bun test` no longer hangs, but it fails with an error (not investigated), so the split stands:
 integration tests run under Node, everything else under Bun. `@effect/sql-pg` 4.x no longer uses
 node-postgres, so Postgres-backed code paths do not depend on `pg` at runtime.
+
+## Update (2026-10-08): retried on Bun 1.4.2, the decision stands
+
+The hang above was found on Bun 1.3.11 and Node 25. On Bun 1.4.2 (the latest at the time) it **did not reproduce**: a Testcontainers test started its Postgres in 21 s and passed, and 15 of 16 tests in three heavier files (LISTEN/NOTIFY, the multi-instance wallet suite with advisory locks and failover, the event processor) passed under `bun test`; the one failure was a flaky test that also failed under Node and was fixed (it read its results before the listener had finished recording them).
+
+The decision does not change, for other reasons found in the same trial:
+
+- **Sequential is slow.** `bun test` runs the files one at a time: after 7 minutes it had reached 27 of 73 integration files (no failures so far), against about 2 minutes for the whole suite under Node with `--test-concurrency=4`. I stopped it there; **no full run under Bun was completed**.
+- **`bun test --parallel=4` did not help.** The first files failed in `before` with a 60 s timeout (starting four Postgres containers at once, behind the lock in `startTestDb`), and the pace stayed at about 4 to 6 files a minute. I stopped it too.
+- A hang may well have been fixed in Bun between 1.3.11 and 1.4.2, but nothing here needs it: the integration tests run on Node, in CI as well.
+

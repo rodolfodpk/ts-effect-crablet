@@ -112,7 +112,7 @@ the framework started from; that is historical. Nothing in the code or API follo
 
 ## Runtime: Bun + Node hybrid, not Bun-only
 
-`@testcontainers/postgresql` hangs indefinitely under Bun, so Testcontainers-backed tests run
+`@testcontainers/postgresql` hung indefinitely under Bun 1.3.11 (it did not reproduce on 1.4.2, but the suite is much slower under Bun; see the update in the ADR), so Testcontainers-backed tests run
 under Node instead — see [ADR-0001](docs/adr/0001-hybrid-bun-node-runtime.md) for the full
 finding and its consequences (`.ts`-extension imports, no parameter-property shorthand, CI needing
 both runtimes).
