@@ -6,6 +6,7 @@ import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { EVENTS_CHANNEL } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
+import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
@@ -50,7 +51,9 @@ export const makeAutomationsProcessor = (
 > =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const pg = yield* PgClient.PgClient;
+    // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
+    const sessionSql_ = yield* sessionSql;
+    const sessionPg_ = yield* sessionPg;
     const commandExecutor = yield* CommandExecutor;
     const eventStore = yield* EventStore;
     const commandAuditStore = yield* CommandAuditStore;
@@ -81,7 +84,7 @@ export const makeAutomationsProcessor = (
       // gets called with is guaranteed to be a key in handlerByName.
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,
-      acquireLeader: tryAcquireGlobalLeader(sql, AUTOMATIONS_LOCK_KEY),
-      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(pg, EVENTS_CHANNEL)
+      acquireLeader: tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY),
+      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

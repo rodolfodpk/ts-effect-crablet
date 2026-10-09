@@ -4,6 +4,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
+import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -35,7 +36,9 @@ export const makeOutboxProcessor = (
 > =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const pg = yield* PgClient.PgClient;
+    // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
+    const sessionSql_ = yield* sessionSql;
+    const sessionPg_ = yield* sessionPg;
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
     const progressTracker = yield* makeOutboxProgressTracker(instanceId);
@@ -53,7 +56,7 @@ export const makeOutboxProcessor = (
       // config.processorId decodes to a topic that's guaranteed to be a key in topicByName.
       selectionOf: (config) => topicByName.get(TopicPublisherPair.fromKey(config.processorId).topic)!,
       instanceId,
-      acquireLeader: tryAcquireGlobalLeader(sql, OUTBOX_LOCK_KEY),
-      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(pg, EVENTS_CHANNEL)
+      acquireLeader: tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY),
+      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

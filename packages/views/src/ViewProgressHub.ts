@@ -1,4 +1,5 @@
 import { Context, Duration, Effect, Latch, Layer, Queue, Scope } from "effect";
+import { sessionPg } from "@crablet/eventstore/SessionClients";
 import { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
 import { VIEW_PROGRESS_CHANNEL, decodeViewProgressPing, type ViewProgressPing } from "./ViewProgress.ts";
@@ -145,7 +146,7 @@ export const makeViewProgressHub = (options: ViewProgressHubOptions): Effect.Eff
 export const ViewProgressHubLive: Layer.Layer<ViewProgressHub, never, PgClient.PgClient> = Layer.effect(
   ViewProgressHub,
   Effect.gen(function* () {
-    const pg = yield* PgClient.PgClient;
+    const pg = yield* sessionPg; // the session client when the application provides one (a pooler in transaction mode does not keep a LISTEN)
     return yield* makeViewProgressHub({ source: pg.listen(VIEW_PROGRESS_CHANNEL) });
   })
 );

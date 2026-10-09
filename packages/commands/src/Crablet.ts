@@ -3,6 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, makeEventStoreLayer, type EventStoreConfig } from "@crablet/eventstore";
+import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "./CommandExecutor.ts";
 import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
@@ -34,6 +35,9 @@ export interface CrabletOptions {
   // How appends tell pollers about new events: `{ wakeupMode: "coalesced" | "inline" | "off", wakeupWindowMs }` (see EventStoreConfig). Default: coalesced, 50 ms.
   readonly eventStore?: EventStoreConfig;
   readonly audit?: Partial<AuditConfig>;
+  // A direct connection to the database for what cannot go through a pooler in transaction mode (PgBouncer): a module's leader (a session-level advisory lock) and LISTEN.
+  // Give it the database's own endpoint (same shape as `pg`) while `pg` points at the pooler. Omitted, they use `pg`, as before. See docs/guides/run-in-production.md.
+  readonly session?: PgConfig;
 }
 
 export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<Services, SqlError> =>
@@ -42,7 +46,8 @@ export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<S
       CommandExecutorLive,
       makeEventStoreLayer(options.eventStore),
       CommandAuditStoreLive,
-      Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" })
+      Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" }),
+      options.session === undefined ? Layer.empty : sessionClientsLayer(options.session)
     ),
     PgClient.layer(pg)
   );

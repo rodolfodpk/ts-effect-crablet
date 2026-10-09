@@ -52,3 +52,5 @@ tests). The `notify()` helper in `Listen.ts` was deleted; call `pg.notify(channe
 `notification.payload`) instead of a `Stream<string>`; `wakeupStream` adapts it with
 `Stream.unwrap(Effect.map(listen, Stream.fromQueue))`. The debounce/coalesce behaviour and its test
 are unchanged. The missing reconnect-on-drop limitation was not re-examined and still applies.
+
+**Update (2026-10-09):** a LISTEN does not survive a pooler in transaction mode, silently. It can be opened on a connection of its own, direct to the database: [ADR-0024](0024-session-connections-for-leader-and-listen.md).

@@ -18,6 +18,7 @@
     "./AppendResult": "./src/AppendResult.ts",
     "./CorrelationContext": "./src/CorrelationContext.ts",
     "./Listen": "./src/Listen.ts",
+    "./SessionClients": "./src/SessionClients.ts",
     "./Leader": "./src/Leader.ts",
     "./NotifyPayload": "./src/NotifyPayload.ts",
     "./spec/Spec": "./src/spec/Spec.ts",

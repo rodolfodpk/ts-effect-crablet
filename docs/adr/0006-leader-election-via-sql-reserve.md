@@ -39,3 +39,5 @@ election tests pass on Effect 4. The performance note above no longer applies: t
 concurrent-race test that took ~21 s now takes well under a second, which points at the old
 `@effect/sql-pg` (node-postgres) pool interaction as the cost, not the advisory-lock design. The
 hard-crash test gap remains.
+
+**Update (2026-10-09):** the reserved connection comes from the application's pool, so behind a pooler in transaction mode the lock is not kept. The lock can now be taken on a separate, direct connection: [ADR-0024](0024-session-connections-for-leader-and-listen.md).

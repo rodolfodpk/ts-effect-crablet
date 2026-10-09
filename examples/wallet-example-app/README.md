@@ -12,6 +12,8 @@ node examples/wallet-example-app/src/index.ts
 ```
 
 Connection (all optional): `WALLET_DB_HOST`, `WALLET_DB_PORT`, `WALLET_DB_NAME`, `WALLET_DB_USER`, `WALLET_DB_PASSWORD`; the API listens on `PORT` (8080). `WALLET_DB_POOL` sets the most connections the pool may open (unset: the library's default of 10; [how to size it](../../docs/guides/run-in-production.md#size-the-pool)).
+`WALLET_DB_SESSION_HOST` (with `_PORT`, `_NAME`, `_USER`, `_PASSWORD` and `_POOL`, defaulting to the main ones and 5) gives the leader locks and LISTEN a direct connection while `WALLET_DB_HOST` points at a pooler in transaction mode ([behind a pooler](../../docs/guides/run-in-production.md#behind-a-pooler-pgbouncer-rds-proxy)); unset, they share the main connection.
+
 `WALLET_ROLES` picks what this process runs: a comma-separated list of `api`, `views`, `automations`, `outbox`, or `all` (unset: `all`, everything in one process). A process without `api` serves only `GET /healthz` on `PORT`; the admin API is mounted by the `api` role. An invalid value stops the start-up ([ADR-0022](../../docs/adr/0022-runtime-roles.md)).
 
 `WALLET_POLL_MS` (default 1000) and `WALLET_BACKOFF_MAX_SECONDS` (default 10) set how often the processors poll and how long an idle one waits; `WALLET_WAKEUPS` (`coalesced` by default, `inline` or `off`) sets how appends notify them. Profiles, with measurements: [Polling and wake-ups](../../docs/guides/run-in-production.md#polling-and-wake-ups).

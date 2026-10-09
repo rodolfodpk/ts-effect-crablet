@@ -4,6 +4,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
+import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
@@ -36,7 +37,9 @@ export const makeViewsProcessor = (
 > =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const pg = yield* PgClient.PgClient;
+    // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
+    const sessionSql_ = yield* sessionSql;
+    const sessionPg_ = yield* sessionPg;
 
     const progressTracker = yield* makePostgresProgressTracker<string>({
       tableName: "crablet_view_progress",
@@ -57,9 +60,9 @@ export const makeViewsProcessor = (
       // this gets called with is guaranteed to be a key in subscriptionByViewName.
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),
-      acquireLeader: tryAcquireGlobalLeader(sql, VIEWS_LOCK_KEY),
+      acquireLeader: tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY),
       // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
       atomically: (effect) => sql.withTransaction(effect),
-      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(pg, EVENTS_CHANNEL)
+      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

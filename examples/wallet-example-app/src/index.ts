@@ -19,6 +19,17 @@ const connInfo = {
   username: process.env["WALLET_DB_USER"] ?? "postgres",
   password: process.env["WALLET_DB_PASSWORD"] ?? "postgres"
 };
+// WALLET_DB_SESSION_HOST (and _PORT, _NAME, _USER, _PASSWORD, _POOL, each defaulting to the main one, the pool to 5): a DIRECT connection to the database for the leader locks and LISTEN, while
+// WALLET_DB_HOST points at a pooler in transaction mode (PgBouncer). Unset, they share the main connection. See docs/guides/run-in-production.md.
+const sessionHost = process.env["WALLET_DB_SESSION_HOST"];
+const sessionInfo = sessionHost === undefined || sessionHost === "" ? undefined : {
+  host: sessionHost,
+  port: Number(process.env["WALLET_DB_SESSION_PORT"] ?? connInfo.port),
+  database: process.env["WALLET_DB_SESSION_NAME"] ?? connInfo.database,
+  username: process.env["WALLET_DB_SESSION_USER"] ?? connInfo.username,
+  password: process.env["WALLET_DB_SESSION_PASSWORD"] ?? connInfo.password,
+  maxConnections: Number(process.env["WALLET_DB_SESSION_POOL"] ?? 5)
+};
 const port = Number(process.env["PORT"] ?? 8080);
 const poolSize = poolSizeFromEnv();
 const wakeupMode = wakeupModeFromEnv(); // WALLET_WAKEUPS
@@ -40,14 +51,17 @@ async function main(): Promise<void> {
     password: Redacted.make(connInfo.password),
     // WALLET_DB_POOL: at most this many connections. Unset, the library's default applies.
     ...(poolSize === undefined ? {} : { maxConnections: poolSize })
-  }, { eventStore: { wakeupMode } });
+  }, {
+    eventStore: { wakeupMode },
+    ...(sessionInfo === undefined ? {} : { session: { ...sessionInfo, password: Redacted.make(sessionInfo.password) } })
+  });
 
   const program = Effect.gen(function* () {
     // Every handle is built; only the modules named in WALLET_ROLES are started. A process with only `api` runs no loop and holds no leader lock.
     const processors = yield* startBackgroundProcessorsScoped(undefined, undefined, roles, polling);
     yield* monitorBackgroundProcessors(processors);
     if (hasWorkers(roles)) yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
-    yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; wake-ups: ${wakeupMode}; polling: ${polling.pollingIntervalMs} ms, idle up to ${polling.backoffMaxSeconds} s; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
+    yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; wake-ups: ${wakeupMode}; polling: ${polling.pollingIntervalMs} ms, idle up to ${polling.backoffMaxSeconds} s; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}; leader and LISTEN: ${sessionInfo === undefined ? "on the main connection" : `direct to ${sessionInfo.host}:${sessionInfo.port}`}`);
     if (!roles.has("api")) {
       // Workers only: no application routes, just a liveness probe.
       yield* serveHealth(port);

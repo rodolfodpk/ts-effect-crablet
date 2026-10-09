@@ -123,6 +123,37 @@ Pollers sleep between polls, and a `NOTIFY` wakes them early. Appends do not not
 
 A wake-up is only a hint, and the one place it can now be lost is a process that dies between the commit and the send. The pollers' idle backoff (`backoffMaxSeconds`, 10 in the wallet) is then the worst-case delay; raise it if idle polling matters more to you than that bound.
 
+### Behind a pooler (PgBouncer, RDS Proxy)
+
+A pooler in transaction mode lends a server connection for **one transaction**. Nearly everything Crablet does is a transaction and takes only transaction-level locks, so it works through
+one: the appends, the commands, the pollers' queries, and a view's batch with its cursor. Two things do not, because they live on a connection for as long as the process holds a role:
+
+- **a module's leader**, a session-level advisory lock on a reserved connection (`pg_try_advisory_lock`);
+- **LISTEN**, the pollers' wake-ups and the views' progress pings.
+
+Behind PgBouncer in transaction mode **neither fails loudly**. Measured (PgBouncer 1.26, a server pool of 4, Postgres in Docker): while one instance held a leader lock, a second took it in 24 of
+40 tries and the first saw its own lock as lost in 38 of 40 checks; 0 of 20 notifications reached a LISTEN, with no error. The whole wallet with everything through the pooler
+(`examples/wallet-example-app/diagnostics/pgbouncer-session.diagnostic.ts`): 15 of 15 commands followed by a consistent read failed with a 503 after the 5 s wait, because the views never caught up;
+with the split below, 15 of 15 worked, p50 61 ms.
+
+**Give the leader and LISTEN a direct connection**, to the database's own endpoint (the writer, not a reader, not the pooler), and keep the pooler for the rest:
+
+```ts
+Crablet.layer(
+  { host: "pgbouncer.internal", port: 6432, /* ...the application's connection, through the pooler */ },
+  { session: { host: "db-writer.internal", port: 5432, /* ...the same database, direct */ maxConnections: 5 } }
+);
+```
+
+`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. It needs room for one reserved connection per module that leads in
+this process (at most three, so 5 is plenty); LISTEN opens a connection of its own, outside that pool. The wallet reads it from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`,
+`_PASSWORD`, `_POOL`, each defaulting to the main one). The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
+Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it.
+
+**RDS Proxy** does not break these but pins them: per the AWS documentation, LISTEN and session-level advisory locks pin a connection to the proxy, and transaction-level locks do not. `session` keeps
+those few connections off the proxy. Not tested against a real RDS Proxy. Aurora Limitless supports neither LISTEN nor RDS Proxy. After a failover of the direct endpoint the leader notices through its heartbeat
+and LISTEN reconnects with a wake-up for what it missed (tested locally, not against Aurora).
+
 ## 3. Start the processors, serve, and fail loudly
 
 Building a processor's layer does not process anything: `service.start` forks the fibers that do. Let a **Scope** own them: `service.startScoped` starts the processors and registers
