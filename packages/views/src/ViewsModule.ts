@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL } from "@crablet/eventstore";
@@ -58,6 +58,6 @@ export const makeViewsProcessor = (
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),
       acquireLeader: tryAcquireGlobalLeader(sql, VIEWS_LOCK_KEY),
-      wakeupStream: wakeupStream(pg, EVENTS_CHANNEL)
+      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(pg, EVENTS_CHANNEL)
     });
   });

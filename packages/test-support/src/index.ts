@@ -61,10 +61,11 @@ async function withContainerStartLock<T>(fn: () => Promise<T>): Promise<T> {
 // Even one start can exceed the fixed 10 s port-bind wait while other test containers are busy;
 // that specific failure is transient, so retry it. (A failed attempt's container is cleaned up by
 // Testcontainers' reaper when the process exits.) Any other error is not retried.
-async function startContainerWithRetry(attempts = 3): Promise<StartedPostgreSqlContainer> {
+async function startContainerWithRetry(postgresArgs: ReadonlyArray<string> = [], attempts = 3): Promise<StartedPostgreSqlContainer> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await new PostgreSqlContainer("postgres:18.6-alpine").start();
+      const container = new PostgreSqlContainer("postgres:18.6-alpine");
+      return await (postgresArgs.length === 0 ? container : container.withCommand(["postgres", ...postgresArgs])).start();
     } catch (e) {
       const transient = e instanceof Error && e.message.includes("waiting for container ports to be bound");
       if (!transient || attempt >= attempts) throw e;
@@ -86,10 +87,12 @@ export interface StartTestDbOptions {
   // The migration files to apply, in order (default: all of them). A test of a migration starts the database at the schema BEFORE it, puts data in, then applies
   // the migration itself: `startTestDb({ migrations: migrationFiles.slice(0, -1) })`.
   readonly migrations?: ReadonlyArray<string>;
+  // Extra arguments for the postgres server, for a diagnostic that needs one (for example ["-c", "shared_preload_libraries=pg_stat_statements"]).
+  readonly postgresArgs?: ReadonlyArray<string>;
 }
 
 export async function startTestDb(options: StartTestDbOptions = {}): Promise<TestDb> {
-  const container = await withContainerStartLock(startContainerWithRetry);
+  const container = await withContainerStartLock(() => startContainerWithRetry(options.postgresArgs));
 
   const connInfo: ConnInfo = {
     host: container.getHost(),

@@ -10,6 +10,7 @@ import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
 import { hasWorkers, rolesFromEnv } from "./roles.ts";
 import { serveHealth } from "./health.ts";
+import { pollingFromEnv, wakeupModeFromEnv } from "./polling.ts";
 
 const connInfo = {
   host: process.env["WALLET_DB_HOST"] ?? "localhost",
@@ -20,6 +21,8 @@ const connInfo = {
 };
 const port = Number(process.env["PORT"] ?? 8080);
 const poolSize = poolSizeFromEnv();
+const wakeupMode = wakeupModeFromEnv(); // WALLET_WAKEUPS
+const polling = { ...pollingFromEnv(), listenForWakeups: wakeupMode !== "off" }; // WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS
 const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (ADR-0022)
 
 // Entry point: apply migrations (to a fresh database only), then start the app - views/
@@ -35,14 +38,14 @@ async function main(): Promise<void> {
     password: Redacted.make(connInfo.password),
     // WALLET_DB_POOL: at most this many connections. Unset, the library's default applies.
     ...(poolSize === undefined ? {} : { maxConnections: poolSize })
-  });
+  }, { eventStore: { wakeupMode } });
 
   const program = Effect.gen(function* () {
     // Every handle is built; only the modules named in WALLET_ROLES are started. A process with only `api` runs no loop and holds no leader lock.
-    const processors = yield* startBackgroundProcessorsScoped(undefined, undefined, roles);
+    const processors = yield* startBackgroundProcessorsScoped(undefined, undefined, roles, polling);
     yield* monitorBackgroundProcessors(processors);
     if (hasWorkers(roles)) yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
-    yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
+    yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; wake-ups: ${wakeupMode}; polling: ${polling.pollingIntervalMs} ms, idle up to ${polling.backoffMaxSeconds} s; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
     if (!roles.has("api")) {
       // Workers only: no application routes, just a liveness probe.
       yield* serveHealth(port);

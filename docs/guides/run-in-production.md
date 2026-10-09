@@ -60,12 +60,49 @@ instance class) with room for migrations, `psql` and monitoring. A pool at or be
 pool. A process that only serves commands and reads would, by the code, hold one connection for good (the view-progress `LISTEN`) and need a pool sized to its request concurrency; the examples always start the
 processors, so this shape is allowed by the framework but neither shown nor measured.
 
-**Connection poolers.** The held connections use session features: `LISTEN` and the session-level advisory lock that elects a leader. PgBouncer in transaction mode and RDS Proxy do not carry these (RDS Proxy pins
-the session on `LISTEN` and on session-level advisory locks, [AWS documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html); the transaction-level advisory locks the append uses are not
-pinned). Today the process has one client for everything, so run it on direct connections, or on a session-mode pooler. Splitting the held connections from the work pool is not built.
+**Connection poolers.** The held connections use session features: `LISTEN` and the session-level advisory lock that elects a leader. A pooler that multiplexes transactions (PgBouncer in transaction mode, RDS Proxy) cannot carry those without pinning the session to one backend connection; RDS Proxy pins on `LISTEN` and on session-level advisory locks ([AWS documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html)), and does not pin on the transaction-level advisory locks the append uses. This was read from that documentation; it was not tested against a proxy.
+
+Whether it matters depends on why you would use a pooler. A pooler earns its place when there are **many short-lived client connections** (functions, a large fleet, connection storms). A few instances with a fixed pool do not have that problem, and a pinned connection per instance is a rounding error against `max_connections`. So:
+
+- **Workers** (`WALLET_ROLES=views,automations,outbox`) hold the leader lock, so they connect **directly** to Postgres. They need few, long connections; a pooler gains nothing for them.
+- **The API** (`WALLET_ROLES=api`) may go through the proxy: commands and reads use short transactions and transaction-level locks. It still holds **one** `LISTEN` per process, for the hub that wakes reads waiting on a marker (ADR-0016), so each API instance pins one proxy connection. With a handful of instances that is a small cost and needs no change.
+- Both are plain configuration: a different `WALLET_DB_HOST` per deployment ([ADR-0022](../adr/0022-runtime-roles.md)). A single process that wants a pooled path for commands and a direct one for the held connections would need the connection configuration split inside the process; that is not built, and nothing here asks for it yet.
+
+If you would rather hold no `LISTEN` for event wake-ups at all, `WALLET_WAKEUPS=off` removes the notification and the processors' `LISTEN`; the polling interval is then the latency (see "Wake-ups"). That is a choice about predictable latency and a quieter database, not something a proxy forces on you: workers connect directly anyway. The hub's `LISTEN` (reads that wait) stays.
 
 What has **not** been measured: the effect of the pool size on throughput. A comparison of 10 against 30 on one laptop was inconclusive (the database and the views' backlog grew from run to run), so there is no recommended
 number here beyond the arithmetic above.
+
+### Polling and wake-ups
+
+Each processor polls the log by cursor, and a wake-up notification ends its wait early. Two settings decide how often the database is asked and how long an event can wait when no notification arrives:
+
+| Setting (wallet) | What it sets | Default |
+|---|---|---|
+| `WALLET_POLL_MS` | the wait between polls while events keep coming (also the wait when a processor first goes idle) | 1000 |
+| `WALLET_BACKOFF_MAX_SECONDS` | the longest an idle processor waits between polls. After 3 empty polls the wait doubles each time up to this (1 s, 1, 1, 2, 4, 8, ... so about 250 s to reach 120) | 120 |
+| `WALLET_WAKEUPS` | `coalesced`, `inline` or `off` (see "Wake-ups" above) | `coalesced` |
+
+Only the leader of each module polls (six processors in the wallet). A poll with nothing new is a cursor read and a progress check, and any notification resets the backoff. In your own application these are the `pollingIntervalMs` and `backoffMaxSeconds` of each module's config.
+
+**Three profiles to start from.** Measured on the wallet (all six processors, Postgres 18.6, one laptop under Docker, `pg_stat_statements`; the experiment is `examples/wallet-example-app/diagnostics/polling-load.diagnostic.ts`). "Statements/s" is everything the database ran, so under load it is mostly the commands themselves; the idle rows are the cost of polling.
+
+| Profile | `WALLET_POLL_MS` | `WALLET_BACKOFF_MAX_SECONDS` | Idle, statements/s | Reads of a write, no notifications: p50 / p95 | Worst case after a quiet spell, notification lost |
+|---|---|---|---|---|---|
+| **Default** | 1000 | 120 | 3.4 (still falling: the 120 s wait is reached after about 250 s) | 513 ms / 772 ms | up to 120 s |
+| **Bounded** | 1000 | 10 | 5.1 | 523 ms / 802 ms | up to 10 s |
+| **Relaxed** | 5000 | 60 | 3.2 | 2 519 ms / 5 015 ms | up to 60 s |
+
+With notifications working (`coalesced`), the three profiles were **indistinguishable** at 2 and at 20 commands a second: a write was visible in a view after about 20 to 26 ms (p50) and 32 to 66 ms (p95), and the load was the same (about 107 statements/s at 2 commands/s and about 815 at 20). The profile only matters when a notification does not arrive: `wakeupMode: "off"`, a process that died between the commit and the send, or a dropped `LISTEN`.
+
+How to choose:
+
+- **Bounded** is the one to start with in production. At its ceiling an idle processor polls 6 times a minute (Default: once every two minutes); measured, that is about 1.7 more idle statements a second than Default for the whole wallet (5.1 against 3.4, the Default figure still falling). It caps the wait after a lost notification at 10 s instead of two minutes.
+- **Default** is fine when the cost of a late event after a quiet spell does not matter, or when you read the idle load as the only thing to minimise.
+- **Relaxed** halves the polling load with no notifications (30 against 55 statements/s at 2 commands/s) and makes the latency the interval (p50 2.5 s, p95 5 s). It is for a deployment that runs with `wakeupMode: "off"` and a relaxed need for freshness, or for a database you want to leave quiet.
+- With `WALLET_WAKEUPS=off`, the interval **is** the latency: about half of `WALLET_POLL_MS` at p50 and the whole of it at p95 while events are flowing, and up to `WALLET_BACKOFF_MAX_SECONDS` after a quiet spell. Pick both from the freshness you need.
+
+What these numbers do not say: the loads are light (2 and 20 commands a second, one instance), the idle figure was taken after 90 s so the Default row had not reached its ceiling, a laptop is not an RDS instance, and no run combined no notifications with 20 commands a second. Measure your own deployment: `pg_stat_statements` on the database and the `crablet.poller.*` metrics show what the processors really ask.
 
 ### Keep an append small
 
@@ -76,6 +113,8 @@ whether the rule you protect needs them in one command.
 ### Wake-ups
 
 Pollers sleep between polls, and a `NOTIFY` wakes them early. Appends do not notify themselves: the event store collects what a transaction appended and sends **one** notification per 50 ms window, **after the commit** (`EventStoreConfig.wakeupWindowMs`; `wakeupMode: "inline"` brings back one `pg_notify` inside every append). This is what lifts the write ceiling from about 3 000 to about 5 800 appends a second on the laptop measured ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). `CommandExecutor` does it for you. If you call `EventStore.append` inside a transaction of your own, wrap that transaction: `eventStore.withWakeups(sql.withTransaction(...))`; without it the wake-up goes out before your commit and a poller may wake, find nothing and sleep.
+
+`wakeupMode: "off"` (`WALLET_WAKEUPS=off` in the wallet) sends nothing, and with `listenForWakeups: false` on the module configs the processors do not `LISTEN` either: new events are seen only when the polling interval comes round. Use it when you prefer a latency that is exactly the interval over a `NOTIFY` in the database.
 
 A wake-up is only a hint, and the one place it can now be lost is a process that dies between the commit and the send. The pollers' idle backoff (`backoffMaxSeconds`, 120 in the examples) is then the worst-case delay; lower it if that matters more to you than idle polling.
 
@@ -105,9 +144,10 @@ The wallet wraps its three processors the same way (`service.start` and `service
 export const startBackgroundProcessorsScoped = (
   instanceId?: string,
   outboxPublishers?: ReadonlyArray<OutboxPublisher>,
-  roles?: Roles
+  roles?: Roles,
+  polling?: Polling
 ): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
-  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles), stopBackgroundProcessors);
+  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles, polling), stopBackgroundProcessors);
 ```
 
 ## 4. Several instances

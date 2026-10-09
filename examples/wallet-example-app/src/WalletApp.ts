@@ -35,6 +35,7 @@ import { makeWalletSummaryViewProjector } from "./views/WalletSummaryViewProject
 import { makeWalletStatementViewProjector } from "./views/WalletStatementViewProjector.ts";
 import { walletViewSubscriptions } from "./views/WalletViewConfig.ts";
 import { allRoles, type Role, type Roles } from "./roles.ts";
+import { defaultPolling, type Polling } from "./polling.ts";
 import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
@@ -123,7 +124,9 @@ export const startBackgroundProcessors = (
   // asserting on log output) - defaults to the same makeLogPublisher() the real app uses.
   outboxPublishers: ReadonlyArray<OutboxPublisher> = [makeLogPublisher()],
   // The roles to start (ADR-0022). Default: all of them, one process. A handle of a role that is not started is still built: building one opens no connection and runs no loop.
-  roles: Roles = allRoles
+  roles: Roles = allRoles,
+  // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
+  polling: Polling = defaultPolling
 ): Effect.Effect<
   BackgroundProcessors,
   never,
@@ -132,7 +135,7 @@ export const startBackgroundProcessors = (
   Effect.gen(function* () {
     // #region views-processor
     const viewsHandle = yield* makeViewsProcessor({
-      config: defaultViewsConfig,
+      config: { ...defaultViewsConfig, ...polling },
       projectors: [
         yield* makeWalletBalanceViewProjector(),
         yield* makeWalletTransactionViewProjector(),
@@ -147,7 +150,7 @@ export const startBackgroundProcessors = (
 
     // #region automations-processor
     const automationsHandle = yield* makeAutomationsProcessor({
-      config: defaultAutomationsConfig,
+      config: { ...defaultAutomationsConfig, ...polling },
       handlers: [walletOpenedAutomation],
       instanceId
     });
@@ -155,7 +158,7 @@ export const startBackgroundProcessors = (
     // #endregion automations-processor
 
     const outboxHandle = yield* makeOutboxProcessor({
-      config: defaultOutboxConfig,
+      config: { ...defaultOutboxConfig, ...polling },
       topics: [
         topicConfigOf("wallet-events", {
           anyOfTags: new Set(["wallet_id", "from_wallet_id", "to_wallet_id"]),
@@ -176,9 +179,10 @@ export const startBackgroundProcessors = (
 export const startBackgroundProcessorsScoped = (
   instanceId?: string,
   outboxPublishers?: ReadonlyArray<OutboxPublisher>,
-  roles?: Roles
+  roles?: Roles,
+  polling?: Polling
 ): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
-  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles), stopBackgroundProcessors);
+  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles, polling), stopBackgroundProcessors);
 // #endregion start-scoped
 
 // What each module's processors are for, as the admin API shows it.

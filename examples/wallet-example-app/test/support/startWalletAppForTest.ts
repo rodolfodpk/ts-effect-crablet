@@ -8,6 +8,7 @@ import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
+import type { Polling } from "../../src/polling.ts";
 import { allRoles, type Roles } from "../../src/roles.ts";
 import { startBackgroundProcessors, stopBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
 
@@ -33,14 +34,14 @@ export const startWalletAppForTest = async (
   // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
   adminToken?: string,
   // The roles this instance runs (ADR-0022); default all, one process. Without `api` no HTTP server starts (baseUrl is ""), and the admin API is only mounted with `api`, as in the entry point.
-  options: { readonly roles?: Roles; readonly instanceId?: string } = {}
+  options: { readonly roles?: Roles; readonly instanceId?: string; readonly polling?: Polling } = {}
 ): Promise<RunningWalletApp> => {
   const roles = options.roles ?? allRoles;
   const scope = await runtime.runPromise(Scope.make());
 
   const { context, processors } = await runtime.runPromise(
     Effect.gen(function* () {
-      const processors = yield* startBackgroundProcessors(options.instanceId, outboxPublishers, roles);
+      const processors = yield* startBackgroundProcessors(options.instanceId, outboxPublishers, roles, options.polling);
       if (!roles.has("api")) return { context: Context.empty(), processors };
 
       const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));

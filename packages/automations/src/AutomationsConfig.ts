@@ -3,6 +3,8 @@
 export interface AutomationsConfig {
   readonly enabled: boolean;
   readonly pollingIntervalMs: number;
+  // false: do not LISTEN for wake-ups (no connection held for it); the processor sees new events only on its polling interval. Use it with the event store's `wakeupMode: "off"`. Default true.
+  readonly listenForWakeups?: boolean;
   readonly batchSize: number;
   readonly backoffEnabled: boolean;
   readonly backoffThreshold: number;

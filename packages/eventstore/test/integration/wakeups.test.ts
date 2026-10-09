@@ -129,4 +129,20 @@ describe("wake-ups after the commit, coalesced (ADR-0021)", () => {
     }));
     assert.ok(heard.some((b) => b.types.includes(type)));
   });
+
+  it("off mode sends nothing, ever: the pollers' own interval is all that is left", { timeout: 30_000 }, async () => {
+    const type = `Off${crypto.randomUUID().slice(0, 8)}`;
+    const heard = await run({ wakeupMode: "off" }, Effect.gen(function* () {
+      const store = yield* EventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const l = yield* listen(committed);
+      yield* store.append([AppendEvent.of(type, "k", "v", {})]);
+      yield* store.withWakeups(sql.withTransaction(store.append([AppendEvent.of(type, "k", "w", {})])));
+      yield* Effect.sleep("400 millis");
+      const h = yield* l.heard;
+      yield* l.stop;
+      return h;
+    }));
+    assert.deepStrictEqual(heard.filter((b) => b.types.includes(type)), []);
+  });
 });

@@ -42,7 +42,7 @@ export const walletOpenedAutomation: AutomationHandler<SendWelcomeNotificationCo
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#automations-processor -->
 ```ts
 const automationsHandle = yield* makeAutomationsProcessor({
-  config: defaultAutomationsConfig,
+  config: { ...defaultAutomationsConfig, ...polling },
   handlers: [walletOpenedAutomation],
   instanceId
 });

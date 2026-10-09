@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore } from "@crablet/eventstore";
@@ -82,6 +82,6 @@ export const makeAutomationsProcessor = (
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,
       acquireLeader: tryAcquireGlobalLeader(sql, AUTOMATIONS_LOCK_KEY),
-      wakeupStream: wakeupStream(pg, EVENTS_CHANNEL)
+      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(pg, EVENTS_CHANNEL)
     });
   });

@@ -104,7 +104,9 @@ export interface EventStoreService {
 // How the event store tells pollers that events were appended (ADR-0021).
 export interface EventStoreConfig {
   // "coalesced" (default): appends do not notify; one notification per `wakeupWindowMs`, sent after the commit. "inline": `pg_notify` inside every append, as before.
-  readonly wakeupMode?: "coalesced" | "inline";
+  // "off": nothing is ever sent; the pollers see new events only when their own interval (and idle backoff) comes round. Choose it to take the NOTIFY out of the database entirely
+  // and accept the polling interval as the latency.
+  readonly wakeupMode?: "coalesced" | "inline" | "off";
   // The coalescing window (default 50). 0 sends after each commit without waiting.
   readonly wakeupWindowMs?: number;
 }
@@ -170,6 +172,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const inline = config.wakeupMode === "inline";
+    const off = config.wakeupMode === "off";
     const windowMs = config.wakeupWindowMs ?? 50;
     if (!Number.isFinite(windowMs) || windowMs < 0) return yield* Effect.die(`wakeupWindowMs must be 0 or more, got ${windowMs}`);
     // The notification goes out on its own connection from the pool, never inside whatever transaction the caller happens to be in.
@@ -244,7 +247,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
         Sql.appendEventsIf(sql, events, condition, inline ? { notifyChannel: EVENTS_CHANNEL, notifyPayload: encodePayload(eventTypes, tagKeys) } : {}).pipe(
           // Not inline: remember what was appended for the wake-up. Inside `withWakeups` it waits for the commit; outside, it is sent now.
           Effect.tap(() =>
-            inline
+            inline || off
               ? Effect.void
               : Effect.flatMap(Effect.service(PendingWakeups), (pending) => {
                   if (pending === null) return notifier.signal(eventTypes, tagKeys);
@@ -281,7 +284,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
       project(query, after, projectors).pipe(Effect.withSpan("crablet.eventstore.project", { attributes: { "crablet.project.query_items": query.items.length } }))) as EventStoreService["project"];
 
     const withWakeups = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-      inline
+      inline || off
         ? effect
         : Effect.suspend(() => {
             const pending: PendingWakeups = { types: new Set(), tagKeys: new Set() };

@@ -2,7 +2,7 @@ import { Layer } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
-import { EventStore, EventStoreLive } from "@crablet/eventstore";
+import { EventStore, makeEventStoreLayer, type EventStoreConfig } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "./CommandExecutor.ts";
 import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
@@ -31,6 +31,8 @@ export type Services = CommandExecutor | EventStore | CommandAuditStore | SqlCli
 // `options.audit` sets what the command audit stores (see CommandAudit.ts): `{ payload: "redacted" | "none" | "full" | "off" }`,
 // "redacted" by default.
 export interface CrabletOptions {
+  // How appends tell pollers about new events: `{ wakeupMode: "coalesced" | "inline" | "off", wakeupWindowMs }` (see EventStoreConfig). Default: coalesced, 50 ms.
+  readonly eventStore?: EventStoreConfig;
   readonly audit?: Partial<AuditConfig>;
 }
 
@@ -38,7 +40,7 @@ export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<S
   Layer.provideMerge(
     Layer.mergeAll(
       CommandExecutorLive,
-      EventStoreLive,
+      makeEventStoreLayer(options.eventStore),
       CommandAuditStoreLive,
       Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" })
     ),
