@@ -61,7 +61,7 @@ const defaultViewsConfig: ViewsConfig = {
   backoffEnabled: true,
   backoffThreshold: 3,
   backoffMultiplier: 2,
-  backoffMaxSeconds: 120,
+  backoffMaxSeconds: 10,
   leaderElectionRetryIntervalMs: 5_000,
   maxErrors: 10
 };
@@ -73,7 +73,7 @@ const defaultAutomationsConfig: AutomationsConfig = {
   backoffEnabled: true,
   backoffThreshold: 3,
   backoffMultiplier: 2,
-  backoffMaxSeconds: 120,
+  backoffMaxSeconds: 10,
   leaderElectionRetryIntervalMs: 5_000,
   maxErrors: 10
 };
@@ -85,7 +85,7 @@ const defaultOutboxConfig: OutboxConfig = {
   backoffEnabled: true,
   backoffThreshold: 3,
   backoffMultiplier: 2,
-  backoffMaxSeconds: 120,
+  backoffMaxSeconds: 10,
   leaderElectionRetryIntervalMs: 5_000,
   maxErrors: 10
 };

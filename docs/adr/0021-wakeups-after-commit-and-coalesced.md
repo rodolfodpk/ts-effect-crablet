@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-08). Built. The evidence in "Context" comes from `pgbench` runs against `postgres:18.6-alpine` with a prototype; the figures for the implementation are in "Result of the implementation". Decision 6 (a bounded idle backoff) is a documented trade, not a changed default (see Follow-ups).
+**Accepted** (2026-10-08). Built. The evidence in "Context" comes from `pgbench` runs against `postgres:18.6-alpine` with a prototype; the figures for the implementation are in "Result of the implementation". Decision 6 (a bounded idle backoff) is done in the wallet: its default `backoffMaxSeconds` is now 10 (2026-10-08), measured in the guide's "Polling and wake-ups".
 
 ## Context
 
@@ -83,7 +83,7 @@ About **1.95 times** the appends per second and half the latency. That is less t
 
 ## Follow-ups (not decided here)
 
-- Lower the default idle backoff of the examples and document `backoffMaxSeconds` as a latency bound when notifications can be lost (decision 6).
+- Lower the default idle backoff of the other examples (the wallet is done, to 10 s) the same way.
 - The same treatment for the view-progress pings if a deployment ever batches so fast that they matter.
 - A documented ceiling (about 2 to 4 thousand appends a second per database with in-append notification, on the hardware measured) in the operating docs, whichever way this goes.
 - The logical-decoding event source, if a deployment needs it.

@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { defaultPolling, pollingFromEnv, wakeupModeFromEnv } from "../src/polling.ts";
 
 describe("WALLET_POLL_MS and WALLET_BACKOFF_MAX_SECONDS", () => {
-  test("unset or blank means today's defaults (1 s, 120 s)", () => {
+  test("unset or blank means the defaults (1 s, 10 s: the Bounded profile)", () => {
     expect(pollingFromEnv({})).toEqual(defaultPolling);
-    expect(pollingFromEnv({ WALLET_POLL_MS: " ", WALLET_BACKOFF_MAX_SECONDS: "" })).toEqual({ pollingIntervalMs: 1000, backoffMaxSeconds: 120 });
+    expect(pollingFromEnv({ WALLET_POLL_MS: " ", WALLET_BACKOFF_MAX_SECONDS: "" })).toEqual({ pollingIntervalMs: 1000, backoffMaxSeconds: 10 });
   });
   test("whole numbers set them", () => {
-    expect(pollingFromEnv({ WALLET_POLL_MS: "5000", WALLET_BACKOFF_MAX_SECONDS: "10" })).toEqual({ pollingIntervalMs: 5000, backoffMaxSeconds: 10 });
+    expect(pollingFromEnv({ WALLET_POLL_MS: "5000", WALLET_BACKOFF_MAX_SECONDS: "60" })).toEqual({ pollingIntervalMs: 5000, backoffMaxSeconds: 60 });
   });
   test("anything else stops the start-up with a message that names the variable and the value", () => {
     expect(() => pollingFromEnv({ WALLET_POLL_MS: "10" })).toThrow('WALLET_POLL_MS must be a whole number of 50 or more, got "10"');

@@ -80,7 +80,7 @@ Each processor polls the log by cursor, and a wake-up notification ends its wait
 | Setting (wallet) | What it sets | Default |
 |---|---|---|
 | `WALLET_POLL_MS` | the wait between polls while events keep coming (also the wait when a processor first goes idle) | 1000 |
-| `WALLET_BACKOFF_MAX_SECONDS` | the longest an idle processor waits between polls. After 3 empty polls the wait doubles each time up to this (1 s, 1, 1, 2, 4, 8, ... so about 250 s to reach 120) | 120 |
+| `WALLET_BACKOFF_MAX_SECONDS` | the longest an idle processor waits between polls. After 3 empty polls the wait doubles each time up to this (1 s, 1, 1, 2, 4, 8, ... so about 250 s to reach 120) | 10 |
 | `WALLET_WAKEUPS` | `coalesced`, `inline` or `off` (see "Wake-ups" above) | `coalesced` |
 
 Only the leader of each module polls (six processors in the wallet). A poll with nothing new is a cursor read and a progress check, and any notification resets the backoff. In your own application these are the `pollingIntervalMs` and `backoffMaxSeconds` of each module's config.
@@ -89,20 +89,20 @@ Only the leader of each module polls (six processors in the wallet). A poll with
 
 | Profile | `WALLET_POLL_MS` | `WALLET_BACKOFF_MAX_SECONDS` | Idle, statements/s | Reads of a write, no notifications: p50 / p95 | Worst case after a quiet spell, notification lost |
 |---|---|---|---|---|---|
-| **Default** | 1000 | 120 | 3.4 (still falling: the 120 s wait is reached after about 250 s) | 513 ms / 772 ms | up to 120 s |
-| **Bounded** | 1000 | 10 | 5.1 | 523 ms / 802 ms | up to 10 s |
+| **Bounded** (the default) | 1000 | 10 | 5.1 | 523 ms / 802 ms | up to 10 s |
+| **Quiet** (the default before 2026-10-08) | 1000 | 120 | 3.4 (still falling: the 120 s wait is reached after about 250 s) | 513 ms / 772 ms | up to 120 s |
 | **Relaxed** | 5000 | 60 | 3.2 | 2 519 ms / 5 015 ms | up to 60 s |
 
 With notifications working (`coalesced`), the three profiles were **indistinguishable** at 2 and at 20 commands a second: a write was visible in a view after about 20 to 26 ms (p50) and 32 to 66 ms (p95), and the load was the same (about 107 statements/s at 2 commands/s and about 815 at 20). The profile only matters when a notification does not arrive: `wakeupMode: "off"`, a process that died between the commit and the send, or a dropped `LISTEN`.
 
 How to choose:
 
-- **Bounded** is the one to start with in production. At its ceiling an idle processor polls 6 times a minute (Default: once every two minutes); measured, that is about 1.7 more idle statements a second than Default for the whole wallet (5.1 against 3.4, the Default figure still falling). It caps the wait after a lost notification at 10 s instead of two minutes.
-- **Default** is fine when the cost of a late event after a quiet spell does not matter, or when you read the idle load as the only thing to minimise.
+- **Bounded** is the default, and the one to start with in production. At its ceiling an idle processor polls 6 times a minute (Quiet: once every two minutes); measured, that is about 1.7 more idle statements a second than Quiet for the whole wallet (5.1 against 3.4, the Quiet figure still falling). It caps the wait after a lost notification at 10 s instead of two minutes.
+- **Quiet** is fine when the cost of a late event after a quiet spell does not matter, or when you read the idle load as the only thing to minimise.
 - **Relaxed** halves the polling load with no notifications (30 against 55 statements/s at 2 commands/s) and makes the latency the interval (p50 2.5 s, p95 5 s). It is for a deployment that runs with `wakeupMode: "off"` and a relaxed need for freshness, or for a database you want to leave quiet.
 - With `WALLET_WAKEUPS=off`, the interval **is** the latency: about half of `WALLET_POLL_MS` at p50 and the whole of it at p95 while events are flowing, and up to `WALLET_BACKOFF_MAX_SECONDS` after a quiet spell. Pick both from the freshness you need.
 
-What these numbers do not say: the loads are light (2 and 20 commands a second, one instance), the idle figure was taken after 90 s so the Default row had not reached its ceiling, a laptop is not an RDS instance, and no run combined no notifications with 20 commands a second. Measure your own deployment: `pg_stat_statements` on the database and the `crablet.poller.*` metrics show what the processors really ask.
+What these numbers do not say: the loads are light (2 and 20 commands a second, one instance), the idle figure was taken after 90 s so the Quiet row had not reached its ceiling, a laptop is not an RDS instance, and no run combined no notifications with 20 commands a second. Measure your own deployment: `pg_stat_statements` on the database and the `crablet.poller.*` metrics show what the processors really ask.
 
 ### Keep an append small
 
@@ -116,7 +116,7 @@ Pollers sleep between polls, and a `NOTIFY` wakes them early. Appends do not not
 
 `wakeupMode: "off"` (`WALLET_WAKEUPS=off` in the wallet) sends nothing, and with `listenForWakeups: false` on the module configs the processors do not `LISTEN` either: new events are seen only when the polling interval comes round. Use it when you prefer a latency that is exactly the interval over a `NOTIFY` in the database.
 
-A wake-up is only a hint, and the one place it can now be lost is a process that dies between the commit and the send. The pollers' idle backoff (`backoffMaxSeconds`, 120 in the examples) is then the worst-case delay; lower it if that matters more to you than idle polling.
+A wake-up is only a hint, and the one place it can now be lost is a process that dies between the commit and the send. The pollers' idle backoff (`backoffMaxSeconds`, 10 in the wallet) is then the worst-case delay; raise it if idle polling matters more to you than that bound.
 
 ## 3. Start the processors, serve, and fail loudly
 

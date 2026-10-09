@@ -1,6 +1,6 @@
 // DIAGNOSTIC EXPERIMENT (docs/guides/run-in-production.md, "Polling and wake-ups"), not a test: it measures, it does not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test examples/wallet-example-app/diagnostics/polling-load.diagnostic.ts   and read the `DIAG` lines.
-//   QUICK=1 shortens every run (smoke test).   ONLY="default|idle" runs one profile/load pair.
+//   QUICK=1 shortens every run (smoke test).   ONLY="bounded|idle" runs one profile/load pair.
 // The whole wallet (api, views, automations, outbox: six processors) on one database, under three polling profiles and three loads, with pg_stat_statements counting what reaches the database.
 //   - statements/s and db ms/s: every statement the database ran, minus the experiment's own monitoring. Under load this includes the commands themselves; the idle rows are the pure cost of polling.
 //   - latency: from a command's response until its row is visible in wallet_balance_view (read by SQL, every 5 ms), p50 / p95. With wake-ups it is what the user sees; with "polling only"
@@ -19,8 +19,8 @@ import type { Polling } from "../src/polling.ts";
 
 const QUICK = process.env["QUICK"] !== undefined;
 const profiles: Record<string, Polling> = {
-  default: { pollingIntervalMs: 1000, backoffMaxSeconds: 120 },
-  bounded: { pollingIntervalMs: 1000, backoffMaxSeconds: 10 },
+  quiet: { pollingIntervalMs: 1000, backoffMaxSeconds: 120 }, // the wallet's default before 2026-10-08
+  bounded: { pollingIntervalMs: 1000, backoffMaxSeconds: 10 }, // the default now
   relaxed: { pollingIntervalMs: 5000, backoffMaxSeconds: 60 }
 };
 // commands per second; idle has none
