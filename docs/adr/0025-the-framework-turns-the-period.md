@@ -33,6 +33,7 @@ Never turn a period back: if another pod's clock is behind, the command decides 
 - The tracking read (all openings and closings of the entity) grows with the number of periods; fine for month and day, not for an hour. Hours wait for a "last event that matches" read.
 - Tests that move the Effect clock into the future must switch off the wake-up window (`wakeupMode: "off"`): it measures time with the same clock and schedules a timer for days.
 - The events the turn builds are checked for the binding tag and the tags of the level, the first time a period is turned (a definition cannot say which tags an event declares without data): an opening that could not be found again would be opened again by every command.
+- A duplicate opening that is ALREADY in a log (an older writer without the condition, another system) is not repaired: the fold takes the last opening of a period as the one that counts, so a stale second opening drops what was credited before it (`test.todo` in `period.test.ts`: 5, not 15). "Ignore the second" is not safe either - an opening that read a later state of the old period can be the second and the right one - so the rule waits for a real log to decide on; detect first, then interpret.
 - Not covered: events with period tags written by something that does not declare `.period`; an entity whose period was closed and never reopened is a defect (`die`), not a typed error.
 
 ## Alternatives considered

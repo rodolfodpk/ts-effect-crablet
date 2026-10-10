@@ -22,4 +22,6 @@ Status: **em andamento (2026-10-09)**. O `.period` (ano, mês e dia em UTC) est�
 
 ## Fora do plano
 
+A proteção do fold contra uma abertura duplicada **já gravada**: avaliada e **não feita** (2026-10-10). Nenhum código atual a produz (16 comandos concorrentes: uma abertura), a regra "ignora a segunda" erra no caso em que a segunda leu um estado mais novo do período antigo, e mudaria a leitura de eventos já gravados sem um log real para olhar. Fica o `test.todo` como documentação e a nota no guia e no ADR-0025; se aparecer um log com duplicatas, primeiro detectar (contador ou aviso), depois escolher a regra com os dados.
+
 `OpenWallet` abrir o primeiro extrato (decisão de produto: muda o que as views mostram). O `WalletModel` ignorar uma segunda abertura do mesmo extrato (o `test.todo` de `duplicate-statement-opening.test.ts`): só se existir um log com duplicatas.

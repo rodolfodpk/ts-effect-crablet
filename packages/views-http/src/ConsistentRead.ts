@@ -101,8 +101,9 @@ export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentR
         let write: ProgressCursor.ProgressCursor;
         let startedAt: number;
         let outcome;
+        // Without `deps.check`: three statements that wait for one another, the end of the log, then, per view, its progress and whether anything it handles is pending. (The comment is above the
+        // block, not inside it: the integration run counts a comment that opens a block as a line, the unit run does not, and the merged coverage then reads that line as never run.)
         if (deps.check === undefined) {
-          // Three statements that wait for one another: the end of the log, then, per view, its progress and whether anything it handles is pending.
           const head = yield* Effect.orDie(deps.head);
           write = marker ?? head;
           if (marker !== null && ProgressCursor.compare(marker, head) > 0) return yield* beyond();
