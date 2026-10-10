@@ -59,7 +59,7 @@ describe("Deposit", () => {
     expect(r.events[0]!.data).toMatchObject({ newBalance: 15 });
   });
 
-  test("an unknown wallet is WalletNotFound - and the statement its prepare step opened is rolled back", async () => {
+  test("an unknown wallet is WalletNotFound - and the statement it would have opened is not written", async () => {
     const s = given();
     const r = await s.when(Deposit, dep("ghost", "d1"));
     expect(r.error).toBeInstanceOf(WalletNotFound);

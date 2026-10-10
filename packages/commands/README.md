@@ -7,6 +7,7 @@ This is the package most application code imports.
 
 - **`defineEvent`** (`/Event`) - a name, a payload Schema and the tags the event is found by.
 - **`defineModel`** and **`all(...)`** (`/Model`) - what events mean for an entity, and (from the same declaration) the boundary a command is consistent with.
+- **`.period(Period.month, ...)`** (`/Period`) - a model that closes one statement, shift or page and opens the next with the state carried forward: declared once on the model, turned by the framework in the command's own append ([ADR-0025](../../docs/adr/0025-the-framework-turns-the-period.md)).
 - **`defineCommand`** (`/Command`) - a pure `decide` over model state: `emit`, `fail`, or `noop`. **`commandContract`** (`/Contract`) is its public half (name, input, errors).
 - **`DomainError`** (`/Errors`), **`Personal`** (marking personal data) and **`CommandAudit`**.
 - **`Crablet.layer`** (`/Crablet`) - Postgres connection in, working `CommandExecutor` and event store out.

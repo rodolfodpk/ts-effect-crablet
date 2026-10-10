@@ -7,7 +7,6 @@ import path from "node:path";
 import { loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
 import { assertModelImpact, eventFactsFromFixtures, modelFactsOf } from "@crablet/commands/ModelImpact";
 import * as M from "../src/domain/WalletModel.ts";
-import { StatementTracking } from "../src/domain/period/WalletStatementPeriodResolver.ts";
 import { WelcomeNotificationSent } from "../src/domain/notification/WelcomeNotificationSent.ts";
 
 describe("the wallet's decision models", () => {
@@ -20,7 +19,7 @@ describe("the wallet's decision models", () => {
       models: [
         modelFactsOf("WalletModel", M.WalletModel.of({ id: "w", year: 2026, month: 1 })),
         modelFactsOf("WalletLifecycleModel", M.WalletLifecycleModel.of({ id: "w" })),
-        modelFactsOf("StatementTracking", StatementTracking.of({ id: "w" }))
+        modelFactsOf("WalletPeriodModel", M.WalletPeriodModel.of({ id: "w" }))
       ],
       baselineFile: path.join(import.meta.dir, "fixtures/model-impact-baseline.json")
     });

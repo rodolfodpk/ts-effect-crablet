@@ -1,14 +1,10 @@
 [
-  {"model":"StatementTracking","eventType":"DepositMade","reason":"A deposit neither opens nor closes a statement; only the statement events decide which statement is open."},
-  {"model":"StatementTracking","eventType":"WalletClosed","reason":"A closed wallet runs no more commands, so no statement is opened or closed after it."},
-  {"model":"StatementTracking","eventType":"WalletOpened","reason":"Opening a wallet does not touch statements: the first statement is opened lazily by the first command (the period resolver)."},
-  {"model":"StatementTracking","eventType":"WelcomeNotificationSent","reason":"A welcome notification says nothing about statements."},
-  {"model":"StatementTracking","eventType":"WithdrawalMade","reason":"A withdrawal neither opens nor closes a statement; only the statement events decide which statement is open."},
   {"model":"WalletLifecycleModel","eventType":"DepositMade","reason":"Whether the wallet exists does not depend on its transactions."},
   {"model":"WalletLifecycleModel","eventType":"WalletStatementClosed","reason":"Whether the wallet exists does not depend on its statements."},
   {"model":"WalletLifecycleModel","eventType":"WalletStatementOpened","reason":"Whether the wallet exists does not depend on its statements."},
   {"model":"WalletLifecycleModel","eventType":"WelcomeNotificationSent","reason":"A welcome notification does not change whether the wallet exists."},
   {"model":"WalletLifecycleModel","eventType":"WithdrawalMade","reason":"Whether the wallet exists does not depend on its transactions."},
-  {"model":"WalletModel","eventType":"WalletStatementClosed","reason":"The next period's WalletStatementOpened carries the opening balance, so the closed statement's closing balance adds nothing to the fold."},
-  {"model":"WalletModel","eventType":"WelcomeNotificationSent","reason":"A welcome notification does not change the balance."}
+  {"model":"WalletModel","eventType":"WalletStatementClosed","reason":"The next period's WalletStatementOpened carries the opening balance, so the closed statement's closing balance adds nothing to the fold. (WalletPeriodModel, the one commands use, does put the closing in its boundary: a command that decided in a period conflicts if it closed since.)"},
+  {"model":"WalletModel","eventType":"WelcomeNotificationSent","reason":"A welcome notification does not change the balance."},
+  {"model":"WalletPeriodModel","eventType":"WelcomeNotificationSent","reason":"A welcome notification does not change the balance."}
 ]

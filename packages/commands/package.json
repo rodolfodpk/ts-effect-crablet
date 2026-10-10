@@ -10,6 +10,7 @@
     "./Personal": "./src/Personal.ts",
     "./CommandAudit": "./src/CommandAudit.ts",
     "./Model": "./src/Model.ts",
+    "./Period": "./src/Period.ts",
     "./Errors": "./src/Errors.ts",
     "./Command": "./src/Command.ts",
     "./Contract": "./src/Contract.ts",

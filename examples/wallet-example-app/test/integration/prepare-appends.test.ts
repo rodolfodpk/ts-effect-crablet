@@ -1,25 +1,22 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A measurement of the `prepare` gap (Command.ts, "prepare"): a command that ends as an idempotent repeat commits whatever its `prepare` appended, and writes
-// no audit row. The only `prepare` that appends in this repository is `resolveActivePeriod` (the wallet's Deposit, Withdraw and TransferMoney run it). This races every way a wallet command can end
-// idempotent or lose a race after `prepare` appended - the same withdrawal three times, transfers in both directions, and the month rollover (close the old statement, open the new one) through a command
-// whose `prepare` is given a later "now" - and requires one opening and one closing per wallet and no event whose transaction has no command in the audit.
+// Runs under Node (Testcontainers) - see NOTES.md. A measurement of the `prepare` gap (Command.ts, "prepare") that stayed useful after the wallet stopped appending in a `prepare`: the wallet's commands used to open the
+// statement period there, and a command that ended as an idempotent repeat committed what its `prepare` had appended with no audit row. Now the framework turns the period in the command's own append (`.period`) and an
+// idempotent result rolls everything back. This still races every way a wallet command can end idempotent or lose a race on a fresh wallet - the same withdrawal three times, transfers in both directions, and the month
+// rollover (close the old statement, open the new one) with the clock moved to the next month - and requires one opening and one closing per wallet and no event whose transaction has no command in the audit.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Exit, Layer, ManagedRuntime, Redacted, Schema } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
-import { EventStoreLive } from "@crablet/eventstore";
+import { makeEventStoreLayer } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import { concurrent, defineCommand, emit } from "@crablet/commands/Command";
 import { startTestDb, type TestDb } from "@crablet/test-support";
+import { atClock } from "../support/clocked-commands.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
 import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
 import { Withdraw } from "../../src/domain/commands/WithdrawCommand.ts";
 import { TransferMoney } from "../../src/domain/commands/TransferMoneyCommand.ts";
-import { resolveActivePeriod, periodTags } from "../../src/domain/period/WalletStatementPeriodResolver.ts";
-import { DepositMade, WalletModel } from "../../src/domain/WalletModel.ts";
-import * as WalletTags from "../../src/domain/WalletTags.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CommandExecutor, never>;
@@ -30,7 +27,7 @@ before(async () => {
   await applyAppMigrations(db.connInfo);
   runtime = ManagedRuntime.make(
     Layer.provideMerge(
-      Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive),
+      Layer.mergeAll(CommandExecutorLive, makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive),
       PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })
     ) as never
   );
@@ -88,23 +85,12 @@ describe("what a `prepare` that appends leaves behind when its command ends idem
   });
 
   it("the month rollover: the same deposit three times at once, the first command of the next month closes the old statement and opens the new one", { timeout: 120_000 }, async () => {
-    // Same steps as Deposit, but its `prepare` runs one month later than the wall clock, so the wallet's open statement is the old one.
     const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 15));
-    const LaterDeposit = defineCommand({
-      name: "later_deposit",
-      input: Schema.Struct({ depositId: Schema.String, walletId: Schema.String, amount: Schema.Number }),
-      errors: [],
-      prepare: (c: any, es: any) => resolveActivePeriod(es, c.walletId, next),
-      model: (c: any, period: any) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
-      consistency: (c: any) => concurrent({ guard: WalletModel.lifecycleQuery(c.walletId) }),
-      idempotentBy: (c: any) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
-      decide: (_w: any, c: any, period: any) => emit(DepositMade({ depositId: c.depositId, walletId: c.walletId, amount: c.amount, newBalance: 0, depositedAt: next.toISOString(), description: "later" } as never, periodTags(period)))
-    } as never);
     const ids = wallets(30);
     for (const id of ids) { await openWallet(id); await run(Deposit, { depositId: crypto.randomUUID(), walletId: id, amount: 1, description: "this month" }); }
     for (const id of ids) {
       const depositId = crypto.randomUUID();
-      const exits = await Promise.all([1, 2, 3].map(() => run(LaterDeposit, { depositId, walletId: id, amount: 2 })));
+      const exits = await Promise.all([1, 2, 3].map(() => exec(atClock(() => next, Effect.flatMap(CommandExecutor, (ex) => (ex as any).run(Deposit, { depositId, walletId: id, amount: 2, description: "next month" }))))));
       for (const e of exits) assert.ok(okOrConflict(e), String(e));
     }
     const closed = await countOf("WalletStatementClosed", ids);

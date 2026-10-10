@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import { defineEvent } from "@crablet/commands/Event";
-import { defineModel } from "@crablet/commands/Model";
+import { defineModel, type PeriodInfo } from "@crablet/commands/Model";
+import { Period } from "@crablet/commands/Period";
+import * as Tag from "@crablet/eventstore/Tag";
 import { personal } from "@crablet/commands/Personal";
 import * as WalletTags from "./WalletTags.ts";
 
@@ -125,7 +127,7 @@ export interface Wallet {
 //   a sum of amounts is order-insensitive, which is exactly what a commutative command needs.
 // - A transfer is bound to a wallet through either of its two tags, and the side is decided by
 //   comparing the wallet ids (both tags are on the event, so "has a from_wallet_id tag" says nothing).
-export const WalletModel = defineModel({
+const walletFold = defineModel({
   by: WalletTags.WALLET_ID,
   initial: (): Wallet => ({ exists: false, balance: 0 }),
   scope: (s: { year: number; month: number }) => ({ [WalletTags.YEAR]: s.year, [WalletTags.MONTH]: s.month })
@@ -140,6 +142,40 @@ export const WalletModel = defineModel({
     (w, d, ctx) => ({ ...w, balance: w.balance + (d.toWalletId === ctx.id ? d.amount : -d.amount) }),
     { by: [WalletTags.FROM_WALLET_ID, WalletTags.TO_WALLET_ID] }
   );
+
+// One statement period asked for explicitly (`WalletModel.of({ id, year, month })`): what a read or a test needs.
+export const WalletModel = walletFold;
+
+// The statement id of a wallet's period: deterministic, so opening the same period twice is the same statement.
+export const statementIdOf = (walletId: string, periodKey: string): string => `wallet:${walletId}:${periodKey}`;
+
+// The CURRENT period, turned by the framework (`.period`, docs/plans/period-rollover.md): the first command of a new month closes the previous month's statement and opens the new one
+// with the balance carried forward, in the command's own append. Commands use this; they no longer resolve a period themselves.
+export const WalletPeriodModel = walletFold.period(Period.month, {
+  opened: WalletStatementOpened,
+  closed: WalletStatementClosed,
+  open: (carry, p) => ({
+    walletId: p.id,
+    statementId: statementIdOf(p.id, p.key),
+    ...p.fields,
+    openingBalance: carry.balance,
+    openedAt: p.at
+  }),
+  close: (state, p) => ({
+    walletId: p.id,
+    statementId: statementIdOf(p.id, p.key),
+    ...p.fields,
+    openingBalance: state.balance,
+    closingBalance: state.balance,
+    closedAt: p.at
+  })
+});
+
+// The tags that place a period-scoped event (deposit, withdrawal) in its month and statement.
+export const periodTags = (walletId: string, period: PeriodInfo<{ readonly year: number; readonly month: number }>): ReadonlyArray<Tag.Tag> => [
+  ...period.tags,
+  Tag.of(WalletTags.STATEMENT_ID, statementIdOf(walletId, period.key))
+];
 
 // Whether a wallet exists, from its lifecycle events alone - no period, no balance. The boundary of
 // commands that only care about the wallet being open or closed (closing it).

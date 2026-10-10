@@ -46,7 +46,7 @@ after(async () => {
 const run = <A, E>(effect: Effect.Effect<A, E, CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient>) =>
   Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
 
-// The current statement period, computed the same way the commands' period resolver does (UTC).
+// The current statement period, computed the same way the period model does (UTC).
 const now = new Date();
 const period = { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
 const id = (p: string) => `${p}-${crypto.randomUUID()}`;

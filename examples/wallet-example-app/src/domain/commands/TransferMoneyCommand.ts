@@ -1,12 +1,10 @@
-import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { all } from "@crablet/commands/Model";
 import * as Tag from "@crablet/eventstore/Tag";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
 import { TransferMoneyContract } from "../WalletContracts.ts";
-import { resolveActivePeriod } from "../period/WalletStatementPeriodResolver.ts";
-import { MoneyTransferred, WalletModel } from "../WalletModel.ts";
+import { MoneyTransferred, WalletPeriodModel, statementIdOf } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
 export type TransferMoneyCommand = Schema.Schema.Type<(typeof TransferMoneyContract)["input"]>;
@@ -16,18 +14,8 @@ export type TransferMoneyCommand = Schema.Schema.Type<(typeof TransferMoneyContr
 // lazily open one), sequentially because both may append.
 export const TransferMoney = defineCommand({
   ...TransferMoneyContract,
-  prepare: (c, es) =>
-    Effect.gen(function* () {
-      const from = yield* resolveActivePeriod(es, c.fromWalletId);
-      const to = yield* resolveActivePeriod(es, c.toWalletId);
-      return { from, to };
-    }),
-  model: (c, p) =>
-    all({
-      from: WalletModel.of({ id: c.fromWalletId, year: p.from.year, month: p.from.month }),
-      to: WalletModel.of({ id: c.toWalletId, year: p.to.year, month: p.to.month })
-    }),
-  decide: ({ from, to }, c, p) =>
+  model: (c) => all({ from: WalletPeriodModel.of({ id: c.fromWalletId }), to: WalletPeriodModel.of({ id: c.toWalletId }) }),
+  decide: ({ from, to }, c) =>
     !from.exists
       ? fail(new WalletNotFound({ walletId: c.fromWalletId }))
       : !to.exists
@@ -39,10 +27,10 @@ export const TransferMoney = defineCommand({
                 { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: new Date().toISOString() },
                 // both wallets share the current period; each side's own statement id is tagged for the views
                 [
-                  Tag.of(WalletTags.YEAR, String(p.from.year)),
-                  Tag.of(WalletTags.MONTH, String(p.from.month)),
-                  Tag.of(WalletTags.FROM_STATEMENT_ID, p.from.statementId),
-                  Tag.of(WalletTags.TO_STATEMENT_ID, p.to.statementId)
+                  Tag.of(WalletTags.YEAR, String(from.period.fields.year)),
+                  Tag.of(WalletTags.MONTH, String(from.period.fields.month)),
+                  Tag.of(WalletTags.FROM_STATEMENT_ID, statementIdOf(c.fromWalletId, from.period.key)),
+                  Tag.of(WalletTags.TO_STATEMENT_ID, statementIdOf(c.toWalletId, to.period.key))
                 ]
               )
             )

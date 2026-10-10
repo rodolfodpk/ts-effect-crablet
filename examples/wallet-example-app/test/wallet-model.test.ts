@@ -8,12 +8,12 @@ import * as Tag from "@crablet/eventstore/Tag";
 import { all } from "@crablet/commands/Model";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import * as M from "../src/domain/WalletModel.ts";
-import { periodTags } from "../src/domain/period/WalletStatementPeriodResolver.ts";
 
 const Y = 2026;
 const MO = 9;
 const at = "2026-09-01T00:00:00.000Z";
-const period = (walletId: string, month = MO) => periodTags({ year: Y, month, statementId: `wallet:${walletId}:${Y}-0${month}` });
+const period = (walletId: string, month = MO) =>
+  M.periodTags(walletId, { key: `${Y}-0${month}`, fields: { year: Y, month }, tags: [Tag.of("year", String(Y)), Tag.of("month", String(month))] });
 
 const item = (types: string[], tags: Array<[string, string]>) => Query.queryItemOf(types, tags.map(([k, v]) => Tag.of(k, v)));
 // the wallet's boundary for one period: its lifecycle events, plus that period's statement events,

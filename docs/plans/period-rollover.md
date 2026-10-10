@@ -1,6 +1,6 @@
 # Desenho: virada de período automática no framework (`.period`)
 
-Status: **proposto (2026-10-09), só desenho, nenhum código.** Escrito depois de medir o buraco no wallet (`WalletStatementOpened` sem condição perde depósitos; depósito gravado em período já fechado) e de comparar com o padrão "closing the books" (artigo de Oskar Dudycz, fórum do Axon 5). Um conserto pontual no wallet é a alternativa de curto prazo (seção Alternativas).
+Status: **implementado (2026-10-09) para ano, mês e dia (UTC)**; semana, hora e fuso ficaram de fora; ver [ADR-0025](../adr/0025-the-framework-turns-the-period.md) e as diferenças abaixo. Estado original: proposto, só desenho. Escrito depois de medir o buraco no wallet (`WalletStatementOpened` sem condição perde depósitos; depósito gravado em período já fechado) e de comparar com o padrão "closing the books" (artigo de Oskar Dudycz, fórum do Axon 5). Um conserto pontual no wallet é a alternativa de curto prazo (seção Alternativas).
 
 ## Problema
 
@@ -113,3 +113,11 @@ Regressão do depósito atrasado com **dois pontos de pausa**, antes do `load` (
 ## Estimativa
 
 4 a 5 dias: `Model`/`Command`/executor (2), `all` e `Scenario` (0,5), migração do wallet (0,5), testes, documentação e ADR (1,5). O código do desenvolvedor encolhe; a complexidade se concentra em `Model.ts` e `Command.ts`, e é maior do que o conserto pontual.
+
+## Como ficou (diferenças em relação ao desenho)
+
+- **Wallet:** `WalletModel` (um período explícito, para leituras e testes) continua; `WalletPeriodModel` (o período corrente) vem do mesmo `defineModel`, e os comandos usam este. O estado do `WalletModel` não ganhou campos: o `statementId` é determinístico (`wallet:<id>:<chave>`) e o `openingBalance` do `Closed` é o saldo, como era.
+- **`Period`:** `Period.year`, `Period.month`, `Period.day` e `Period.custom(spec)` (a especificação inteira: `fieldsAt`, `fieldsOf`, `key`, `tagKeys`). Sem `week`, `hour` e fuso.
+- **Janela entre `prepare` e `load`:** não existe mais (não há `prepare`). Os testes que pausavam ali foram removidos.
+- **Não feito:** métrica do relógio atrasado (só um log de aviso); `ctx.now` no `decide`; validação na definição de que `opened`/`closed` declaram as tags do nível (só um erro em tempo de execução se o evento não trouxer os campos).
+- **Mutação:** retirar a guarda do período faz o depósito atrasado e o período vazio falharem; usar a posição da última leitura em vez do horizonte mais antigo faz seis testes falharem.

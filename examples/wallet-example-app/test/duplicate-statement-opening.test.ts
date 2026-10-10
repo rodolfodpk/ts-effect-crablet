@@ -9,7 +9,7 @@ const at = new Date().toISOString();
 const dep = (walletId: string, depositId: string, amount: number) => ({ depositId, walletId, amount, description: "" });
 
 describe("a duplicate statement opening", () => {
-  // `todo`: this fails today (105, not 115). The conditioned opening in `resolveActivePeriod` keeps such a log from arising (unguarded-opening-balance.test.ts); making the model ignore a second
+  // `todo`: this fails today (105, not 115). The framework's period turn (`.period`), which opens a statement only in the append of a command that conflicts if one opened since, keeps such a log from arising (unguarded-opening-balance.test.ts, period-rollover.test.ts); making the model ignore a second
   // opening of the same statement would make this pass and keep a duplicate that did get written (an old log, another writer) from losing money. Run it with `bun test --todo`.
   test.todo("a stale second opening, after a deposit, does not drop that deposit from the balance", async () => {
     const now = new Date();

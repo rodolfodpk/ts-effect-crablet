@@ -144,7 +144,7 @@ C4Component
     Component(cmdapi, "Command API", "commands-http", "open_wallet, deposit, withdraw, transfer_money, close_wallet, from WalletContracts")
     Component(queryapi, "Query API", "views-http", "getWallet, getWalletTransactions (keyset paging), getWalletSummary; consistent reads")
     Component(commands, "Commands", "commands", "Five commands over WalletModel; transfer decides on both wallets with all(...)")
-    Component(period, "Statement periods", "prepare step", "Lazily opens this month's statement before a deposit, withdrawal or transfer; rolled back if the command is refused")
+    Component(period, "Statement periods", "WalletPeriodModel (.period)", "The framework closes last month's statement and opens this month's in the command's own append, before a deposit, withdrawal or transfer; nothing is written if the command is refused")
     Component(executor, "CommandExecutor and EventStore", "Crablet.layer", "Conditional append with retries; idempotency per operation id")
     Component(views, "Views processor", "event-poller and views", "Four projectors: balance, transactions, summary, statement. The statement projector is the idempotent worked example")
     Component(auto, "Automations processor", "automations", "WalletOpenedAutomation: WalletOpened -> SendWelcomeNotification, idempotent per wallet")

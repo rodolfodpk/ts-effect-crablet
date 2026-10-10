@@ -136,8 +136,8 @@ export const defineCommand = <
   // if the command is retried or fails, whatever it appended is rolled back with it. So it is when the command ends as an idempotent repeat or a no-op: that attempt has done nothing,
   // and the executor rolls its transaction back (an idempotent result writes no audit row, so committing would leave those events with no command behind them).
   // What a rollback does NOT cover is racers that both create: two commands that each append in `prepare` and then each succeed both commit. So give every append in `prepare` a
-  // condition, so a racer conflicts and runs again instead of appending a second copy: `resolveActivePeriod` (examples/wallet-example-app) opened a statement with none, and commands
-  // racing on a new wallet opened three.
+  // condition, so a racer conflicts and runs again instead of appending a second copy (the wallet's statement opening once had none: commands racing on a new wallet opened three, and a deposit
+  // lost money). Do not use `prepare` to turn a period: declare it on the model (`.period`, Period.ts), and the framework turns it in the command's own append under the command's own condition.
   readonly prepare?: (input: Schema.Schema.Type<I>, eventStore: EventStoreService) => Effect.Effect<P, PE> & Declared<PE, Es>;
   // Omit for commands that need no state (e.g. "record that this happened"); `decide` then gets
   // `undefined` and the default consistency is `concurrent()`.

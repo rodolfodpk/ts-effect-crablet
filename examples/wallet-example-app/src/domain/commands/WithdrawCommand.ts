@@ -2,8 +2,7 @@ import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
 import { WithdrawContract } from "../WalletContracts.ts";
-import { resolveActivePeriod, periodTags } from "../period/WalletStatementPeriodResolver.ts";
-import { WalletModel, WithdrawalMade } from "../WalletModel.ts";
+import { WalletPeriodModel, WithdrawalMade, periodTags } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
 export type WithdrawCommand = Schema.Schema.Type<(typeof WithdrawContract)["input"]>;
@@ -14,13 +13,12 @@ export type WithdrawCommand = Schema.Schema.Type<(typeof WithdrawContract)["inpu
 // runs first and reports "already done".
 export const Withdraw = defineCommand({
   ...WithdrawContract,
-  prepare: (c, es) => resolveActivePeriod(es, c.walletId),
-  model: (c, period) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
+  model: (c) => WalletPeriodModel.of({ id: c.walletId }),
   idempotentBy: (c) => WithdrawalMade.where({ [WalletTags.WITHDRAWAL_ID]: c.withdrawalId }),
-  decide: (wallet, c, period) =>
+  decide: (wallet, c) =>
     !wallet.exists
       ? fail(new WalletNotFound({ walletId: c.walletId }))
       : wallet.balance < c.amount
         ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: new Date().toISOString() }, periodTags(period)))
+        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: new Date().toISOString() }, periodTags(c.walletId, wallet.period)))
 });

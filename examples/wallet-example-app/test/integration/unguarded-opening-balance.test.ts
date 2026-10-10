@@ -1,5 +1,5 @@
 // Runs under Node (Testcontainers). The duplicate-opening unit test shows the model drops a deposit when a stale second `WalletStatementOpened` follows it. This shows the log does arise: wallets whose first
-// deposits race. With a `prepare` that opens the statement WITHOUT a condition (what `resolveActivePeriod` did before it was fixed) every wallet lost money (60 of 60 in the first run); with the real Deposit none does.
+// deposits race. With a `prepare` that opens the statement WITHOUT a condition (what the wallet's period resolver did before it was fixed, and before the framework took the period over) every wallet lost money (60 of 60 in the first run); with the real Deposit none does.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
@@ -15,7 +15,7 @@ import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
 import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
 import { DepositContract } from "../../src/domain/WalletContracts.ts";
 import { DepositMade, WalletModel, WalletStatementOpened } from "../../src/domain/WalletModel.ts";
-import { periodTags } from "../../src/domain/period/WalletStatementPeriodResolver.ts";
+import * as Tag from "@crablet/eventstore/Tag";
 import * as WalletTags from "../../src/domain/WalletTags.ts";
 
 let db: TestDb;
@@ -58,7 +58,7 @@ const UnguardedDeposit = defineCommand({
     }),
   model: (c: any, period: any) => WalletModel.of({ id: c.walletId, year: period.year, month: period.month }),
   consistency: (c: any) => concurrent({ guard: WalletModel.lifecycleQuery(c.walletId) }),
-  decide: (wallet: any, c: any, period: any) => emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, periodTags(period)))
+  decide: (wallet: any, c: any, period: any) => emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, [Tag.of(WalletTags.YEAR, String(period.year)), Tag.of(WalletTags.MONTH, String(period.month)), Tag.of(WalletTags.STATEMENT_ID, period.statementId)]))
 } as never);
 
 const exec = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.exit(effect as never)) as Promise<Exit.Exit<unknown, unknown>>;

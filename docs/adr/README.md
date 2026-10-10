@@ -41,6 +41,7 @@ The four that explain the shape of what you use.
 
 ## Storage and operation
 
+- [ADR-0025: A model declares its period, and the framework turns it in the command's own append](0025-the-framework-turns-the-period.md)
 - [ADR-0022: One image, several runtime roles: the same code runs as one process or as separate deployments](0022-runtime-roles.md) - **proposed**: partly built and run (`WALLET_ROLES` in the wallet, a suite with several instances, the kind lab); the migration job and the health endpoint of the workers are in the lab, not yet decided as a whole
 - [ADR-0020: The processors admin API is a description plus handlers, closed until the application says who may call it](0020-processors-admin-api.md)
 - [ADR-0019: Storage is visible, and the tag table is heavier than its reads need](0019-storage-visibility-and-the-tag-table.md)
