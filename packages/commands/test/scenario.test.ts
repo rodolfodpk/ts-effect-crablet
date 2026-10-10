@@ -135,7 +135,7 @@ describe("given / when: command logic without a database", () => {
     expect(result.events.map((e) => e.type)).toEqual(["Audited", "Withdrawn"]);
   });
 
-  test("a command that ends idempotent after its prepare step appended something fails the test: that transaction would commit with no audit row", async () => {
+  test("a command that ends idempotent after its prepare step appended something leaves nothing behind (the transaction is rolled back, as in production)", async () => {
     const Leaky = defineCommand({
       name: "leaky",
       input: Schema.Struct({ id: Schema.String }),
@@ -143,7 +143,11 @@ describe("given / when: command logic without a database", () => {
       model: (c) => AccountModel.of({ id: c.id }),
       decide: () => noop("NOTHING_TO_DO")
     });
-    await expect(given(Opened({ id: "a1", initial: 5 })).when(Leaky, { id: "a1" })).rejects.toThrow(/leaky.*prepare.*appended/s);
+    const scenario = given(Opened({ id: "a1", initial: 5 }));
+    const result = await scenario.when(Leaky, { id: "a1" });
+    expect(result.outcome).toBe("idempotent");
+    expect(result.events).toEqual([]);
+    expect(scenario.log.map((e) => e.type)).toEqual(["Opened"]);
   });
 
   test("an idempotent outcome whose prepare step appended nothing is fine", async () => {

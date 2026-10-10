@@ -6,6 +6,7 @@ import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/events
 import type { Command } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
 import type { InvalidInput } from "../Errors.ts";
+import type { ExecutionResult } from "../ExecutionResult.ts";
 
 // BDD-style tests of command logic with NO database:
 //
@@ -21,10 +22,18 @@ import type { InvalidInput } from "../Errors.ts";
 // history the store starts with; each `when` runs one command in an all-or-nothing transaction, and
 // later `when`s see earlier ones' effects.
 //
-// It does fail a `when` whose command ends idempotent after its `prepare` appended something (see `prepare` in Command.ts): the real executor would commit those events with no audit row.
+// An idempotent outcome rolls the `when` back, `prepare`'s appends included, as the real executor does.
 //
 // What it cannot show is concurrency: nothing interleaves, so conflict retries never happen here. Test
 // races against Postgres (see packages/commands/test/integration/command-run.test.ts).
+
+class RolledBackIdempotent {
+  readonly _tag = "RolledBackIdempotent";
+  readonly result: ExecutionResult;
+  constructor(result: ExecutionResult) {
+    this.result = result;
+  }
+}
 
 export type ScenarioOutcome = "created" | "idempotent" | "failed";
 
@@ -58,17 +67,17 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
       const input = yield* command.decodeInput(rawInput);
       // One attempt = one transaction (exclusive, rolled back on failure); retried on Conflict like the
       // real executor, though in-memory a Conflict cannot occur.
-      return yield* withConflictRetry(command.retries, store.transaction(runHandler(command.handler, input)));
+      // An idempotent result rolls the attempt back, `prepare`'s appends included, exactly like the real executor (CommandExecutor.ts); the result is carried out of the transaction.
+      const attempt = store.transaction(
+        Effect.flatMap(runHandler(command.handler, input), (result) => (result.wasIdempotent ? Effect.fail(new RolledBackIdempotent(result)) : Effect.succeed(result)))
+      );
+      return yield* withConflictRetry(command.retries, attempt).pipe(
+        Effect.catch((error) => (error instanceof RolledBackIdempotent ? Effect.succeed(error.result) : Effect.fail(error)))
+      );
     }).pipe(Effect.provide(store.layer));
 
     const exit = await Effect.runPromiseExit(program);
     if (Exit.isSuccess(exit)) {
-      // The real executor commits this transaction and, for an idempotent result, writes no audit row: whatever `prepare` appended would stay in the log with no command behind it.
-      // Fail the test here, where it can be seen, rather than in production (Command.ts, "prepare").
-      if (exit.value.wasIdempotent && store.log.length > before) {
-        const left = store.log.slice(before).map((e) => e.type).join(", ");
-        throw new Error(`command "${command.name}" ended idempotent (${exit.value.reason ?? "no reason"}) but its prepare step appended [${left}]: that transaction commits and an idempotent result writes no audit row, so those events would have no command behind them. Condition the append in prepare so a racer conflicts and runs again, or do not append there.`);
-      }
       return {
         outcome: exit.value.wasIdempotent ? "idempotent" : "created",
         events: store.log.slice(before),

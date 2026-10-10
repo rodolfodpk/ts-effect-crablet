@@ -47,6 +47,15 @@ export interface CommandExecutorService {
 
 export class CommandExecutor extends Context.Service<CommandExecutor, CommandExecutorService>()("CommandExecutor") {}
 
+// Carries an idempotent result out of the transaction that is rolled back for it (see `execute`); never reaches a caller.
+class RolledBackIdempotent {
+  readonly _tag = "RolledBackIdempotent";
+  readonly result: ExecutionResult;
+  constructor(result: ExecutionResult) {
+    this.result = result;
+  }
+}
+
 // The part of running a command that does not depend on HOW transactions are provided: call the
 // handler, then apply its decision with ONE atomic conditional append. Exported so other runners (the
 // in-memory scenario runner in testing/) share exactly this logic instead of copying it.
@@ -145,13 +154,18 @@ export const CommandExecutorLive = Layer.effect(
         Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(
           Effect.gen(function* () {
             const result = yield* runHandler(handler, command);
+            // An idempotent result (a repeat, or a decision that does nothing) has done nothing, so nothing of this attempt may stay: roll the transaction back, `prepare`'s appends included.
+            // Committing it would leave those events with no command behind them, because an idempotent result writes no audit row. The failure is caught just below, outside the wake-up.
+            if (result.wasIdempotent) return yield* Effect.fail(new RolledBackIdempotent(result));
             // A command that appended events leaves an audit row IN THE SAME transaction (see CommandAudit.ts):
-            // a repeat that appended nothing records nothing, and a rolled-back command leaves no row.
-            if (!result.wasIdempotent) yield* recordCommand(definition, command);
+            // a rolled-back command leaves no row.
+            yield* recordCommand(definition, command);
             return result;
           })
         ).pipe(
-          Effect.catch((error) => (isDeadlock(error) ? Effect.fail(deadlockConflict) : Effect.fail(error))),
+          Effect.catch((error) => (isDeadlock(error) ? Effect.fail(deadlockConflict) : Effect.fail(error)))
+        ))).pipe(
+          Effect.catch((error) => (error instanceof RolledBackIdempotent ? Effect.succeed(error.result) : Effect.fail(error))),
           Effect.tap((result) => {
             if (!result.wasIdempotent) return Effect.void;
             const taggedCounter: Metric.Counter<number> = Metric.withAttributes(
@@ -160,7 +174,7 @@ export const CommandExecutorLive = Layer.effect(
             );
             return Metric.update(taggedCounter, 1);
           })
-        ))),
+        ),
         [["command_type", definition.name]]
       );
 
