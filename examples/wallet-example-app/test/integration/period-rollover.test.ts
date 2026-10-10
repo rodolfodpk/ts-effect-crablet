@@ -19,7 +19,10 @@ import { atClock, pausableDeposit, pausableTransfer, pausableWithdraw } from "..
 import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
 import { Withdraw } from "../../src/domain/commands/WithdrawCommand.ts";
 import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { WalletModel, WalletStatementOpened } from "../../src/domain/WalletModel.ts";
+import * as Tag from "@crablet/eventstore/Tag";
+import { DepositMade, WalletModel, WalletOpened, WalletStatementClosed, WalletStatementOpened } from "../../src/domain/WalletModel.ts";
+import { TransferMoney } from "../../src/domain/commands/TransferMoneyCommand.ts";
+import * as WalletTags from "../../src/domain/WalletTags.ts";
 
 // The tests move the Effect clock to other months. The wake-up window (EventStoreConfig.wakeupMode) measures time with that same clock, and a clock in the future makes it schedule a timer for days that keeps the
 // process alive: wake-ups are off here, nothing listens for them.
@@ -162,5 +165,86 @@ describe("the month turns while several commands run", () => {
     assert.strictEqual(await balance(id, nextMonth), 100 + 10 + 5 + 7, "the deposit went into the open period");
     const reopened = (await probe.query<{ n: number }>(`SELECT count(*)::int AS n FROM crablet_events WHERE type = 'WalletStatementOpened' AND tags @> ARRAY['wallet_id=' || $1, 'month=' || $2]::text[]`, [id, String(ym(thisMonth).month)])).rows[0]!.n;
     assert.strictEqual(reopened, 1, "this month's statement was not opened a second time");
+  });
+});
+
+const monthsBefore = (d: Date, n: number) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 15));
+const stmtId = (id: string, d: Date) => `wallet:${id}:${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+const append = (events: ReadonlyArray<any>) => runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append(events))) as never);
+const periodTagsOf = (id: string, d: Date) => [Tag.of(WalletTags.YEAR, String(ym(d).year)), Tag.of(WalletTags.MONTH, String(ym(d).month)), Tag.of(WalletTags.STATEMENT_ID, stmtId(id, d))];
+const opening = (id: string, d: Date, openingBalance: number) => WalletStatementOpened({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance, openedAt: d.toISOString() });
+const closing = (id: string, d: Date, balance: number) => WalletStatementClosed({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance: balance, closingBalance: balance, closedAt: d.toISOString() });
+const walletOpened = (id: string) => WalletOpened({ walletId: id, owner: "x", initialBalance: 100, openedAt: monthsBefore(thisMonth, 3).toISOString() });
+const transfer = (from: string, to: string, amount: number) => ({ transferId: crypto.randomUUID(), fromWalletId: from, toWalletId: to, amount, description: "" });
+
+describe("a transfer that turns the month of both its wallets", () => {
+  it("one command, no race: each wallet closes this month and opens the next, and the money moves once", { timeout: 60_000 }, async () => {
+    const [a, b] = [await warmWallet(), await warmWallet()]; // 110 each, this month
+    assert.ok(ok(await runAt(() => nextMonth, TransferMoney, transfer(a, b, 7))));
+    assert.strictEqual(await balance(a, nextMonth), 110 - 7);
+    assert.strictEqual(await balance(b, nextMonth), 110 + 7);
+    for (const id of [a, b]) {
+      assert.strictEqual(await countOf(id, "WalletStatementClosed"), 1, `${id}: one closing`);
+      assert.strictEqual(await countOf(id, "WalletStatementOpened"), 2, `${id}: this month's and next month's opening`);
+    }
+    const orphans = (await probe.query<{ n: number }>(`SELECT count(DISTINCT e.transaction_id)::int AS n FROM crablet_events e WHERE e.tags && ARRAY['wallet_id=' || $1, 'wallet_id=' || $2]::text[] AND NOT EXISTS (SELECT 1 FROM crablet_commands k WHERE k.transaction_id = e.transaction_id)`, [a, b])).rows[0]!.n;
+    assert.strictEqual(orphans, 0, "every transaction of events, the turn included, has its command in the audit");
+  });
+
+  it("transfers in opposite directions at once, on wallets whose month just turned: both go through, once each", { timeout: 120_000 }, async () => {
+    const pairs: Array<[string, string]> = [];
+    for (let i = 0; i < 3; i++) pairs.push([await warmWallet(), await warmWallet()]);
+    for (const [a, b] of pairs) {
+      const exits = await Promise.all([runAt(() => nextMonth, TransferMoney, transfer(a, b, 7)), runAt(() => nextMonth, TransferMoney, transfer(b, a, 3))]);
+      for (const e of exits) assert.ok(ok(e), String((e as any).cause));
+      assert.strictEqual(await balance(a, nextMonth), 110 - 7 + 3);
+      assert.strictEqual(await balance(b, nextMonth), 110 + 7 - 3);
+      assert.strictEqual(await countOf(a, "WalletStatementClosed"), 1);
+      assert.strictEqual(await countOf(a, "WalletStatementOpened"), 2);
+    }
+  });
+});
+
+describe("a log written before the framework turned periods", () => {
+  it("an empty period that was never closed, then a period that was: the next turn closes the open one and carries its balance", { timeout: 60_000 }, async () => {
+    const id = newWallet();
+    const [m2, m1, m0] = [monthsBefore(thisMonth, 2), monthsBefore(thisMonth, 1), thisMonth];
+    await append([walletOpened(id), opening(id, m2, 100)]); // m-2 opened, nothing done on it, never closed (the old resolver closed only periods with transactions)
+    await append([opening(id, m1, 100), DepositMade({ depositId: crypto.randomUUID(), walletId: id, amount: 20, newBalance: 120, depositedAt: m1.toISOString(), description: "" } as never, periodTagsOf(id, m1))]); // m-1: opened, 20 deposited
+    await append([closing(id, m1, 120), opening(id, m0, 120)]); // m-1 closed with transactions, m opened
+    assert.ok(ok(await runAt(() => m0, Deposit, dep(id, 5))), "in the open period: no turn");
+    assert.strictEqual(await balance(id, m0), 125);
+    assert.strictEqual(await countOf(id, "WalletStatementOpened"), 3, "nothing opened by the deposit in the open period");
+    assert.ok(ok(await runAt(() => nextMonth, Deposit, dep(id, 1))), "the next month turns it");
+    assert.strictEqual(await balance(id, nextMonth), 126, "the balance carried is the open period's");
+    assert.strictEqual(await countOf(id, "WalletStatementOpened"), 4);
+    assert.strictEqual(await countOf(id, "WalletStatementClosed"), 2);
+  });
+
+  it("a period left open for months turns straight to the current one: one closing, one opening", { timeout: 60_000 }, async () => {
+    const id = newWallet();
+    const old = monthsBefore(thisMonth, 4);
+    await append([walletOpened(id), opening(id, old, 100), DepositMade({ depositId: crypto.randomUUID(), walletId: id, amount: 10, newBalance: 110, depositedAt: old.toISOString(), description: "" } as never, periodTagsOf(id, old))]);
+    assert.ok(ok(await runAt(() => thisMonth, Deposit, dep(id, 5))));
+    assert.strictEqual(await balance(id, thisMonth), 115);
+    assert.strictEqual(await countOf(id, "WalletStatementClosed"), 1);
+    assert.strictEqual(await countOf(id, "WalletStatementOpened"), 2);
+  });
+});
+
+describe("a refusal in a new month writes nothing of the turn", () => {
+  it("a deposit on a wallet that does not exist", { timeout: 60_000 }, async () => {
+    const ghost = newWallet();
+    assert.ok(!ok(await runAt(() => nextMonth, Deposit, dep(ghost, 5))));
+    const n = (await probe.query<{ n: number }>(`SELECT count(*)::int AS n FROM crablet_events WHERE tags @> ARRAY['wallet_id=' || $1]::text[]`, [ghost])).rows[0]!.n;
+    assert.strictEqual(n, 0);
+  });
+
+  it("a transfer to a wallet that does not exist writes nothing for the wallet that does", { timeout: 60_000 }, async () => {
+    const real = await warmWallet();
+    const before = (await probe.query<{ n: number }>(`SELECT count(*)::int AS n FROM crablet_events WHERE tags @> ARRAY['wallet_id=' || $1]::text[]`, [real])).rows[0]!.n;
+    assert.ok(!ok(await runAt(() => nextMonth, TransferMoney, transfer(real, newWallet(), 5))));
+    const after = (await probe.query<{ n: number }>(`SELECT count(*)::int AS n FROM crablet_events WHERE tags @> ARRAY['wallet_id=' || $1]::text[]`, [real])).rows[0]!.n;
+    assert.strictEqual(after, before, "no closing, no opening for the wallet that exists");
   });
 });

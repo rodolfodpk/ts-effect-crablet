@@ -170,6 +170,14 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
   const byType = new Map(entries.map((e) => [e.type, e] as const));
   const eventTypes = [...byType.keys()];
   const openedEntry = byType.get(opened.type)!;
+  // The events the turn builds must carry the model's binding tag and the tags of the level: without them a period's query would never find its own opening, and every command would open it again.
+  const requireTags = (event: AppendEvent, of: string): AppendEvent => {
+    const have = new Set(event.tags.map((t) => t.key));
+    for (const key of [def.by, ...spec.tagKeys]) {
+      if (!have.has(key)) throw new Error(`.period: the event "${of}" does not carry the tag "${key}" (it needs ${[def.by, ...spec.tagKeys].map((k) => `"${k}"`).join(", ")} to be found as its period's ${of === opened.type ? "opening" : "closing"})`);
+    }
+    return event;
+  };
   const info = (fields: F): PeriodInfo<F> => ({ key: spec.key(fields), fields, tags: tagsOf(spec, fields) });
 
   // The entity's periods as the log says: the one the last opening opened, unless a later closing closed it.
@@ -251,9 +259,9 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         carry = old.s;
         boundary = unionOf(boundary, old.query);
         horizon = LogPositionNS.earliest(horizon, old.horizon);
-        prefix.push(closed(config.close(old.s, context(current))));
+        prefix.push(requireTags(closed(config.close(old.s, context(current))), closed.type));
       }
-      const opening = opened(config.open(carry, context(target)));
+      const opening = requireTags(opened(config.open(carry, context(target))), opened.type);
       prefix.push(opening);
       const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
       return { state: withPeriod(state, target), logPosition: horizon, horizon, prefix, boundary } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;

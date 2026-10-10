@@ -136,4 +136,20 @@ describe("a model with a period", () => {
     const bare = defineModel({ by: "acct", initial: () => ({ balance: 0 }) });
     expect(() => bare.period(Period.month, { opened: PeriodOpened, closed: PeriodClosed, open: () => ({} as never), close: () => ({} as never) })).toThrow(/PX_PeriodOpened/);
   });
+
+  test("an opening event that does not carry the tags of its period is refused the first time the period is turned, naming the tag", async () => {
+    // a period whose events cannot be found again would be opened again by every command: the framework checks the tags of the events it builds
+    const Bare = defineEvent("PX_BareOpened", { schema: Schema.Struct({ id: Schema.String, year: Schema.Number, month: Schema.Number, opening: Schema.Number }), tags: (d) => ({ acct: d.id }) });
+    const bareModel = defineModel({ by: "acct", initial: () => ({ exists: false, balance: 0 }) })
+      .lifecycle(Opened, () => ({ exists: true, balance: 0 }))
+      .on(Bare, (a, d) => ({ ...a, balance: d.opening }))
+      .period(Period.month, {
+        opened: Bare,
+        closed: PeriodClosed,
+        open: (carry, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, opening: carry.balance }),
+        close: (state, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, closing: state.balance })
+      });
+    const Cmd = defineCommand({ name: "px_bare", input, errors: [NoSuchAccount], model: (cc) => bareModel.of({ id: cc.id }), decide: (a, cc) => (a.exists ? emit(Credited(cc, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id }))) });
+    await expect(given(Opened({ id: "a1" })).at(oct).when(Cmd, c(1, "o1"))).rejects.toThrow(/PX_BareOpened.*"year"/s);
+  });
 });

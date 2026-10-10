@@ -32,6 +32,7 @@ Never turn a period back: if another pod's clock is behind, the command decides 
 - The cursor MUST be the earliest horizon of the reads (a mutation of it fails six tests); using the last read's position would reopen the window between two reads of the same load.
 - The tracking read (all openings and closings of the entity) grows with the number of periods; fine for month and day, not for an hour. Hours wait for a "last event that matches" read.
 - Tests that move the Effect clock into the future must switch off the wake-up window (`wakeupMode: "off"`): it measures time with the same clock and schedules a timer for days.
+- The events the turn builds are checked for the binding tag and the tags of the level, the first time a period is turned (a definition cannot say which tags an event declares without data): an opening that could not be found again would be opened again by every command.
 - Not covered: events with period tags written by something that does not declare `.period`; an entity whose period was closed and never reopened is a defect (`die`), not a typed error.
 
 ## Alternatives considered
