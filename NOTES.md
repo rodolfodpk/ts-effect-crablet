@@ -1,7 +1,7 @@
 # Phase 0 Spike — Findings
 
 Status: all acceptance criteria from the plan (`/Users/rodolfo/Documents/ts-effect-crablet-phase0-plan.md`)
-met except where noted. (That was the state after Phase 0: 22/22 tests. On 2026-10-09: 838 unit tests under Bun and 394 integration tests under Node pass (they were 578 and 322 on 2026-10-07); the reliability and scale work is summarized in [`docs/plans/reliability-and-scale-diagnostic.md`](docs/plans/reliability-and-scale-diagnostic.md), and later entries below are in order.)
+met except where noted. (That was the state after Phase 0: 22/22 tests. On 2026-10-09: 838 unit tests under Bun and 397 integration tests under Node pass (they were 578 and 322 on 2026-10-07); the reliability and scale work is summarized in [`docs/plans/reliability-and-scale-diagnostic.md`](docs/plans/reliability-and-scale-diagnostic.md), and later entries below are in order.)
 
 **This is the working journal**, not documentation: findings, gotchas and what changed against each plan, in the order they happened. To learn the project start at
 [`docs/README.md`](docs/README.md); the lasting decisions are in [`docs/adr/`](docs/adr/README.md).
@@ -1592,4 +1592,9 @@ asserts the model directly (queries, fold, both regressions).
 
 ## Effect 4.0.0 -> 4.0.2 (2026-10-09)
 - All Effect pins moved to `4.0.2` (Foldkit `0.167.0`). Two test-side changes, nothing in `src/`: the derived client's methods became generic over a response mode, which broke `ReturnType` in `contract-api.types.ts` (default mode instantiated first); and a pool now waits, when closed, for connections still reserved from it, which hung two leader tests that built a layer per call (now one `ManagedRuntime` per file, and the winners are released). Details in the ADR-0009 addendum. 838 unit, 394 integration.
+
+## Who appends in `prepare`, measured (2026-10-09)
+- Only one `prepare` in the repository appends: `resolveActivePeriod` (the wallet's Deposit, Withdraw and TransferMoney). Every other `prepare` (automation tests, command tests) only reads. Of the three, Deposit and Withdraw can end idempotent (`idempotentBy`); TransferMoney has no `idempotentBy` and its `decide` never returns `Noop`, so it cannot.
+- `prepare-appends.test.ts` races the cases that matter, on fresh wallets: the same withdrawal three times at once; transfers in both directions; the month rollover (close the old statement, open the new) through a command whose `prepare` is given next month's date, the same deposit three times at once. Each requires one opening (and one closing) per wallet and no event whose transaction has no command in the audit. All pass with the conditioned appends (with the statement-opening condition removed the deposit scenario already fails, `statement-open-race.test.ts`). So the gap is real in the framework but, for the code in this repository, closed in its one user; a new command that appends in `prepare` without a condition would reopen it.
+- Found on the way: transfers in **opposite directions** at once between the same two wallets take about 1 s each (30 pairs: 32 s; same direction: 0.9 s). Postgres detects the deadlock after `deadlock_timeout` (1 s), the executor turns it into a conflict and retries (ADR on writer-side locking, `deadlock-retry.test.ts`). Correct but slow; the lock order across wallets is not fixed. Not examined further.
 
