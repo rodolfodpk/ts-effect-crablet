@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { dashboard, dashboardPath, FRESH_SECONDS, MODULE_LOCKS, render } from "./build-dashboard.ts";
 import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
 import * as CommandMetrics from "../packages/metrics-otel/src/CommandMetrics.ts";
+import * as PeriodMetrics from "../packages/metrics-otel/src/PeriodMetrics.ts";
 import * as EventStoreMetrics from "../packages/metrics-otel/src/EventStoreMetrics.ts";
 import * as LeaderMetrics from "../packages/metrics-otel/src/LeaderMetrics.ts";
 import * as PollerMetrics from "../packages/metrics-otel/src/PollerMetrics.ts";
@@ -23,7 +24,7 @@ const isMetric = (v: unknown): v is Described => typeof v === "object" && v !== 
 // (docs/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
 const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
   const out = new Map<string, ReadonlyArray<string>>();
-  const modules = [CommandMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics];
+  const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics];
   for (const mod of modules) {
     for (const [key, value] of Object.entries(mod)) {
       if (key === "observe") continue;
@@ -51,6 +52,7 @@ const alerts = async (): Promise<{ groups: Array<{ name: string; rules: Array<Re
 // A metric with no panel and no alert must say why. Adding a metric to metrics-otel without a panel or a line here fails the test below.
 const NO_PANEL: Record<string, string> = {
   "crablet.poller.backoff_empty_poll_count": "an internal counter of the backoff; the `Backed off` panel shows the state that matters",
+  "crablet.period.clock_behind": "a rare signal about clocks that disagree, read in an ad hoc query or alerted on by an application that has periods; most applications have none, and the library's dashboard stays free of it",
   "crablet.eventstore.event_type_appended": "per event type, which is an unbounded label; the appends panel shows the total, and the type breakdown belongs in an ad hoc query"
 };
 
@@ -73,6 +75,7 @@ const LABELS: Record<string, ReadonlyArray<string>> = {
   "crablet.outbox.publish.duration": ["publisher"], "crablet.outbox.publish.successes": ["publisher"], "crablet.outbox.publish.failures": ["publisher"], "crablet.outbox.events_published": ["publisher"],
   "crablet.command.handle.duration": ["command_type"], "crablet.command.handle.successes": ["command_type"], "crablet.command.handle.failures": ["command_type"],
   "crablet.command.idempotent_duplicates": ["command_type"], "crablet.command.conflict_retries": ["command_type"],
+  "crablet.period.clock_behind": [],
   "crablet.eventstore.append.duration": [], "crablet.eventstore.append.successes": [], "crablet.eventstore.append.failures": [],
   "crablet.eventstore.events_appended": [], "crablet.eventstore.event_type_appended": ["event_type"], "crablet.eventstore.concurrency_violations": [], "crablet.eventstore.decoding_failures": ["event_type"],
   "crablet.eventstore.wakeups_recorded": [], "crablet.eventstore.wakeups_sent": [], "crablet.eventstore.wakeups_saved": [],

@@ -13,5 +13,5 @@ export const OpenWallet = defineCommand({
   ...OpenWalletContract,
   idempotentBy: (c) => WalletOpened.where({ [WalletTags.WALLET_ID]: c.walletId }),
   onDuplicate: "fail",
-  decide: (_, c) => emit(WalletOpened({ ...c, openedAt: new Date().toISOString() }))
+  decide: (_, c, _prepared, { now }) => emit(WalletOpened({ ...c, openedAt: now.toISOString() }))
 });

@@ -46,6 +46,7 @@ Suggestions, by what each metric tells you:
 | `crablet.view.project.failures`, `crablet.automation.decide.failures`, `crablet.outbox.publish.failures` | a handler is failing; the error is recorded against the processor |
 | `crablet.eventstore.decoding_failures` | a stored event the current definitions cannot read (an unsafe event change) |
 | `crablet.command.conflict_retries`, `crablet.eventstore.concurrency_violations` | contention: commands whose boundaries overlap |
+| `crablet.period.clock_behind` | a command found a period open that is later than its clock says (a model with a period never turns one back): a few is a pod a little behind, a steady rate is clocks that disagree ([ADR-0025](../adr/0025-the-framework-turns-the-period.md)) |
 | `crablet.eventstore.wakeups_recorded`, `_sent`, `_saved` | the wake-up notifications ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)): recorded per committed transaction, sent to Postgres, and saved by merging them. `sent` should stay near 1 / window per process |
 | `crablet.read.consistency.wait.duration` | how long a read's first look and wait take (it dropped when the first look became one statement, [ADR-0015](../adr/0015-read-consistency-by-marker.md)) |
 | `crablet.poller.backoff_active` | a processor has backed off after errors or empty polls |

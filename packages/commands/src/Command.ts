@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore, type EventStoreService } from "@crablet/eventstore";
@@ -45,6 +45,11 @@ export interface Fail<E> {
   readonly error: E;
 }
 export type Decision<E = never> = Emit | Noop | Fail<E>;
+
+// What `decide` is told besides the state and the input.
+export interface DecideContext {
+  readonly now: Date;
+}
 
 export const emit = (...events: ReadonlyArray<AppendEvent>): Emit => ({ _tag: "Emit", events });
 export const noop = (reason: string | null = null): Noop => ({ _tag: "Noop", reason });
@@ -150,7 +155,8 @@ export const defineCommand = <
   // A repeat is reported as a successful "already done" ("return", the default, safe for retries) or
   // fails with `Duplicate` ("fail", e.g. "open a wallet that already exists").
   readonly onDuplicate?: OD;
-  readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P) => D & Declared<ErrorOf<D>, Es>;
+  // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
+  readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P, context: DecideContext) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
 }): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never), I, Es> => {
@@ -190,7 +196,8 @@ export const defineCommand = <
       const loaded = model !== null ? yield* model.load(eventStore) : null;
 
       // 4. Decide (pure).
-      const decision = def.decide(loaded?.state as S, input, prepared) as Decision<ErrorOf<D>>;
+      const now = loaded?.now ?? new Date(yield* Clock.currentTimeMillis);
+      const decision = def.decide(loaded?.state as S, input, prepared, { now }) as Decision<ErrorOf<D>>;
       if (decision._tag === "Fail") return yield* Effect.fail(decision.error);
       if (decision._tag === "Noop") return CD.noOp(decision.reason);
       if (decision.events.length === 0) return CD.noOp("NO_EVENTS");

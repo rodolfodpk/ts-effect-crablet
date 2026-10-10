@@ -14,8 +14,8 @@ export const Deposit = defineCommand({
   model: (c) => WalletPeriodModel.of({ id: c.walletId }),
   consistency: (c) => concurrent({ guard: WalletPeriodModel.lifecycleQuery(c.walletId) }),
   idempotentBy: (c) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
-  decide: (wallet, c) =>
+  decide: (wallet, c, _prepared, { now }) =>
     wallet.exists
-      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: new Date().toISOString() }, periodTags(c.walletId, wallet.period)))
+      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, periodTags(c.walletId, wallet.period)))
       : fail(new WalletNotFound({ walletId: c.walletId }))
 });

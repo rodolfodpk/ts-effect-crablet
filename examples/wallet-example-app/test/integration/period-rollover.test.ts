@@ -248,3 +248,17 @@ describe("a refusal in a new month writes nothing of the turn", () => {
     assert.strictEqual(after, before, "no closing, no opening for the wallet that exists");
   });
 });
+
+describe("the instant of a turn", () => {
+  it("the closing, the opening and the deposit carry the clock's instant, not the machine's", { timeout: 60_000 }, async () => {
+    const id = await warmWallet();
+    assert.ok(ok(await runAt(() => nextMonth, Deposit, dep(id, 5))));
+    const rows = (await probe.query<{ type: string; at: string }>(
+      `SELECT type, COALESCE(data->>'closedAt', data->>'openedAt', data->>'depositedAt') AS at FROM crablet_events WHERE tags @> ARRAY['wallet_id=' || $1]::text[] AND type IN ('WalletStatementClosed', 'WalletStatementOpened', 'DepositMade') AND position > (SELECT min(position) FROM crablet_events WHERE type = 'DepositMade' AND tags @> ARRAY['wallet_id=' || $1]::text[]) ORDER BY position`,
+      [id]
+    )).rows;
+    assert.deepStrictEqual(rows.map((r) => r.type), ["WalletStatementClosed", "WalletStatementOpened", "DepositMade"]);
+    assert.deepStrictEqual([...new Set(rows.map((r) => r.at))], [nextMonth.toISOString()], "one instant for all three");
+  });
+});
+

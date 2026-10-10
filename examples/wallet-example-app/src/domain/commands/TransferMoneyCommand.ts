@@ -15,7 +15,7 @@ export type TransferMoneyCommand = Schema.Schema.Type<(typeof TransferMoneyContr
 export const TransferMoney = defineCommand({
   ...TransferMoneyContract,
   model: (c) => all({ from: WalletPeriodModel.of({ id: c.fromWalletId }), to: WalletPeriodModel.of({ id: c.toWalletId }) }),
-  decide: ({ from, to }, c) =>
+  decide: ({ from, to }, c, _prepared, { now }) =>
     !from.exists
       ? fail(new WalletNotFound({ walletId: c.fromWalletId }))
       : !to.exists
@@ -24,7 +24,7 @@ export const TransferMoney = defineCommand({
           ? fail(new InsufficientFunds({ walletId: c.fromWalletId, currentBalance: from.balance, requestedAmount: c.amount }))
           : emit(
               MoneyTransferred(
-                { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: new Date().toISOString() },
+                { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: now.toISOString() },
                 // both wallets share the current period; each side's own statement id is tagged for the views
                 [
                   Tag.of(WalletTags.YEAR, String(from.period.fields.year)),

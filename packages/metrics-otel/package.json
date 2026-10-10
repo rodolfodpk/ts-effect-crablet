@@ -6,6 +6,7 @@
   "exports": {
     "./EventStoreMetrics": "./src/EventStoreMetrics.ts",
     "./CommandMetrics": "./src/CommandMetrics.ts",
+    "./PeriodMetrics": "./src/PeriodMetrics.ts",
     "./PollerMetrics": "./src/PollerMetrics.ts",
     "./LeaderMetrics": "./src/LeaderMetrics.ts",
     "./ViewMetrics": "./src/ViewMetrics.ts",

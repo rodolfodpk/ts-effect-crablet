@@ -1,6 +1,8 @@
 // `.period`: a model that declares its period once, and a command that never writes the rollover itself (docs/plans/period-rollover.md). In memory, with a clock: `given(...).at(date).when(...)`.
 import { describe, expect, test } from "bun:test";
+import { Effect, Metric } from "effect";
 import * as Schema from "effect/Schema";
+import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import { defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
@@ -151,5 +153,84 @@ describe("a model with a period", () => {
       });
     const Cmd = defineCommand({ name: "px_bare", input, errors: [NoSuchAccount], model: (cc) => bareModel.of({ id: cc.id }), decide: (a, cc) => (a.exists ? emit(Credited(cc, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id }))) });
     await expect(given(Opened({ id: "a1" })).at(oct).when(Cmd, c(1, "o1"))).rejects.toThrow(/PX_BareOpened.*"year"/s);
+  });
+
+  test("Period.custom: a fiscal year that starts in April turns on 1 April, not on 1 January", async () => {
+    // fiscal year N runs from April of N to March of N+1; its fields are { fy }
+    const fiscal = Period.custom({
+      fieldsAt: (now: Date) => ({ fy: now.getUTCMonth() >= 3 ? now.getUTCFullYear() : now.getUTCFullYear() - 1 }),
+      fieldsOf: (data: unknown) => {
+        const fy = (data as { fy?: unknown } | null)?.fy;
+        return typeof fy === "number" ? { fy } : null;
+      },
+      key: (f: { readonly fy: number }) => `FY${f.fy}`,
+      tagKeys: ["fy"]
+    });
+    const FyOpened = defineEvent("PX_FyOpened", { schema: Schema.Struct({ id: Schema.String, fy: Schema.Number, opening: Schema.Number }), tags: (d) => ({ acct: d.id, fy: d.fy }) });
+    const FyClosed = defineEvent("PX_FyClosed", { schema: Schema.Struct({ id: Schema.String, fy: Schema.Number, closing: Schema.Number }), tags: (d) => ({ acct: d.id, fy: d.fy }) });
+    const FyCredited = defineEvent("PX_FyCredited", { schema: Schema.Struct({ id: Schema.String, amount: Schema.Number }), tags: (d) => ({ acct: d.id }) });
+    const Fiscal = defineModel({ by: "acct", initial: () => ({ exists: false, balance: 0 }) })
+      .lifecycle(Opened, () => ({ exists: true, balance: 0 }))
+      .on(FyOpened, (a, d) => ({ ...a, balance: d.opening }))
+      .on(FyCredited, (a, d) => ({ ...a, balance: a.balance + d.amount }))
+      .period(fiscal, {
+        opened: FyOpened,
+        closed: FyClosed,
+        open: (carry, p) => ({ id: p.id, fy: p.fields.fy, opening: carry.balance }),
+        close: (state, p) => ({ id: p.id, fy: p.fields.fy, closing: state.balance })
+      });
+    const Add = defineCommand({
+      name: "px_fy_credit",
+      input,
+      errors: [NoSuchAccount],
+      model: (cc) => Fiscal.of({ id: cc.id }),
+      decide: (a, cc) => (a.exists ? emit(FyCredited({ id: cc.id, amount: cc.amount }, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
+    });
+    const s = given(Opened({ id: "a1" }));
+    const march = new Date(Date.UTC(2027, 2, 31, 12));
+    const april = new Date(Date.UTC(2027, 3, 1, 12));
+    const first = await s.at(march).when(Add, c(10, "o1"));
+    expect(types(first)).toEqual(["PX_FyOpened", "PX_FyCredited"]);
+    expect(first.events[0]!.data).toMatchObject({ fy: 2026, opening: 0 });
+    // 1 January is the same fiscal year: nothing turns
+    expect(types(await s.at(new Date(Date.UTC(2027, 0, 1, 12))).when(Add, c(1, "o2")))).toEqual(["PX_FyCredited"]);
+    // 1 April is the next one
+    const turned = await s.at(april).when(Add, c(5, "o3"));
+    expect(types(turned)).toEqual(["PX_FyClosed", "PX_FyOpened", "PX_FyCredited"]);
+    expect(turned.events[0]!.data).toMatchObject({ fy: 2026, closing: 11 });
+    expect(turned.events[1]!.data).toMatchObject({ fy: 2027, opening: 11 });
+    // a pod whose clock is still in March never turns it back
+    expect(types(await s.at(march).when(Add, c(2, "o4")))).toEqual(["PX_FyCredited"]);
+  });
+
+  test("decide gets the instant the period was decided at: the clock, once, the same for the period's events and the command's own", async () => {
+    const Stamped = defineEvent("PX_Stamped", { schema: Schema.Struct({ id: Schema.String, at: Schema.String }), tags: (d) => ({ acct: d.id }) });
+    const Stamp = defineCommand({
+      name: "px_stamp",
+      input,
+      errors: [NoSuchAccount],
+      model: (cc) => Monthly.of({ id: cc.id }),
+      decide: (a, cc, _prepared, { now }) => (a.exists ? emit(Stamped({ id: cc.id, at: now.toISOString() }, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
+    });
+    const r = await given(Opened({ id: "a1" })).at(nov).when(Stamp, c(1, "o1"));
+    expect(types(r)).toEqual(["PX_PeriodOpened", "PX_Stamped"]);
+    expect(r.events[1]!.data).toMatchObject({ at: nov.toISOString() });
+  });
+
+  test("a command without a period model gets the clock as `now` too", async () => {
+    const Plain = defineEvent("PX_Plain", { schema: Schema.Struct({ at: Schema.String }), tags: () => ({ acct: "x" }) });
+    const Cmd = defineCommand({ name: "px_plain", input, decide: (_s, _c, _p, { now }) => emit(Plain({ at: now.toISOString() })) });
+    const r = await given().at(dec).when(Cmd, c(1, "o1"));
+    expect(r.events[0]!.data).toMatchObject({ at: dec.toISOString() });
+  });
+
+  test("a clock behind the open period is counted: crablet.period.clock_behind", async () => {
+    const count = () => Effect.runPromise(Metric.value(PeriodMetrics.clockBehind)).then((m) => (m as unknown as { count: number }).count);
+    const s = given(Opened({ id: "a1" }));
+    await s.at(nov).when(Credit, c(10, "o1"));
+    const before = await count();
+    await s.at(oct).when(Credit, c(1, "o2")); // behind
+    await s.at(nov).when(Credit, c(1, "o3")); // not behind
+    expect(await count()).toBe(before + 1);
   });
 });

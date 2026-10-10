@@ -1,4 +1,5 @@
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Metric } from "effect";
+import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { EventStoreService, StateProjector, StoredEvent } from "@crablet/eventstore";
@@ -52,6 +53,8 @@ export interface Loaded<S> {
   // command's own events and only if the command appends any. `boundary`: the query the append is conditioned on, when it is not the model's static `query` (a turn reads more than it
   // declares). `guard`: what a command that only needs to commute with itself must still conflict with - here, the closing of the period it decided in.
   readonly prefix?: ReadonlyArray<AppendEvent>;
+  // The instant a period model read from the clock to decide the period (what `decide` receives as `now`, so its own timestamps agree with the period).
+  readonly now?: Date;
   readonly boundary?: Query.Query;
   readonly guard?: Query.Query;
 }
@@ -223,12 +226,14 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const context = (fields: F): PeriodContext<F> => ({ id, key: spec.key(fields), fields, at });
       const target = spec.fieldsAt(now);
       const withPeriod = (s: S, fields: F) => ({ ...(s as object), period: info(fields) }) as S & { readonly period: PeriodInfo<F> };
+      const stamp = { now } as const;
       const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
         state: withPeriod(m.s, fields),
         logPosition: m.logPosition,
         horizon: m.horizon,
         boundary: m.query,
-        guard: closingQuery(id, fields)
+        guard: closingQuery(id, fields),
+        ...stamp
       });
 
       const first = yield* read(eventStore, id, target);
@@ -240,7 +245,8 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       if (current !== null && spec.key(current) >= spec.key(target)) {
         // Never turn a period back: a clock behind (another pod) or an opening that landed since the first read. Decide in the period that is open.
         if (spec.key(current) > spec.key(target)) {
-          yield* Effect.logWarning(`period: the clock says ${spec.key(target)} but ${spec.key(current)} is already open for ${id}; deciding in ${spec.key(current)}`);
+          yield* Metric.update(PeriodMetrics.clockBehind, 1);
+          yield* Effect.logDebug(`period: the clock says ${spec.key(target)} but ${spec.key(current)} is already open for ${id}; deciding in ${spec.key(current)}`);
         }
         const open = yield* read(eventStore, id, current);
         if (!open.opened || open.closed) return yield* Effect.die(new Error(`.period: ${spec.key(current)} is open for ${id} by its opening but its own events say otherwise`));
@@ -264,7 +270,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const opening = requireTags(opened(config.open(carry, context(target))), opened.type);
       prefix.push(opening);
       const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
-      return { state: withPeriod(state, target), logPosition: horizon, horizon, prefix, boundary } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
+      return { state: withPeriod(state, target), logPosition: horizon, horizon, prefix, boundary, ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
     });
 
   return {
@@ -379,6 +385,7 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
           state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never,
           logPosition: horizon,
           horizon,
+          ...(loaded.find(([, l]) => l.now !== undefined)?.[1].now ? { now: loaded.find(([, l]) => l.now !== undefined)![1].now } : {}),
           ...(prefix.length > 0 ? { prefix } : {}),
           ...(boundary !== undefined ? { boundary } : {}),
           ...(guardParts.length > 0 ? { guard: unionOf(...guardParts) } : {})

@@ -23,7 +23,7 @@ The model declares the period once (`defineModel(...).period(Period.month, { ope
 3. otherwise reads the entity's open period and returns, besides the state, the events that turn it (`closed` for the old, `opened` for the new, built by the model's `close` and `open`), the wider boundary it read, and a cursor that is the EARLIEST horizon of its reads;
 4. the executor appends `[...turn, ...the command's events]` in ONE append, strictly over that boundary, even for a commuting command - and only if the command has events of its own: a refusal, a no-op or an idempotent repeat never writes the turn.
 
-Never turn a period back: if another pod's clock is behind, the command decides in the period that is open (logged). Levels are UTC; a zone, a week and an hour are not built (`Period.custom` takes the four functions of a level). `.lifecycle` keeps its meaning (an event not scoped by the period); it models no states or transitions, which stay in `decide`.
+Never turn a period back: if another pod's clock is behind, the command decides in the period that is open (counted by `crablet.period.clock_behind`). `decide` receives `{ now }` as its fourth argument: the instant the period was decided at (the clock, read once), so the timestamps a command stamps agree with the period, also under a test clock. Levels are UTC; a zone, a week and an hour are not built (`Period.custom` takes the four functions of a level). `.lifecycle` keeps its meaning (an event not scoped by the period); it models no states or transitions, which stay in `decide`.
 
 ## Consequences
 

@@ -15,10 +15,10 @@ export const Withdraw = defineCommand({
   ...WithdrawContract,
   model: (c) => WalletPeriodModel.of({ id: c.walletId }),
   idempotentBy: (c) => WithdrawalMade.where({ [WalletTags.WITHDRAWAL_ID]: c.withdrawalId }),
-  decide: (wallet, c) =>
+  decide: (wallet, c, _prepared, { now }) =>
     !wallet.exists
       ? fail(new WalletNotFound({ walletId: c.walletId }))
       : wallet.balance < c.amount
         ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: new Date().toISOString() }, periodTags(c.walletId, wallet.period)))
+        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: now.toISOString() }, periodTags(c.walletId, wallet.period)))
 });
