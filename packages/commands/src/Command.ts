@@ -195,22 +195,26 @@ export const defineCommand = <
       if (decision._tag === "Noop") return CD.noOp(decision.reason);
       if (decision.events.length === 0) return CD.noOp("NO_EVENTS");
 
-      // 5. Build the append: events + the condition the chosen consistency implies.
+      // 5. Build the append: events + the condition the chosen consistency implies. A model with a period may bring the events that turn the period (`loaded.prefix`): they go in
+      // this same append, ahead of the command's own, and only because the command has events of its own (a refusal, a no-op, an idempotent repeat never get here).
       const consistency = def.consistency?.(input, prepared) ?? (model !== null ? strict() : concurrent());
+      const events = [...(loaded?.prefix ?? []), ...decision.events];
       let append: CD.Append;
-      if (consistency._tag === "Strict") {
+      if (consistency._tag === "Strict" || (loaded?.prefix?.length ?? 0) > 0) {
+        // Turning a period reads more than a commuting command declares (the old period, the entity's periods): the append is strict over everything that was read.
         if (model === null || loaded === null) {
           return yield* Effect.die(new Error(`command "${def.name}": strict consistency needs a model`));
         }
-        append = CD.nonCommutative(decision.events, model.query, loaded.logPosition);
-      } else if (consistency.guard !== null) {
+        append = CD.nonCommutative(events, loaded.boundary ?? model.query, loaded.logPosition);
+      } else if (consistency.guard !== null || loaded?.guard !== undefined) {
         if (loaded === null) {
           return yield* Effect.die(new Error(`command "${def.name}": a consistency guard needs a model (for its position)`));
         }
+        const guard = consistency.guard !== null && loaded.guard !== undefined ? Query.of([...consistency.guard.items, ...loaded.guard.items]) : (consistency.guard ?? loaded.guard!);
         // Throws if the guard includes an event type this command appends (see withLifecycleGuard in CommandDecision.ts).
-        append = CD.withLifecycleGuard(decision.events, consistency.guard, loaded.logPosition);
+        append = CD.withLifecycleGuard(events, guard, loaded.logPosition);
       } else {
-        append = CD.commutative(...decision.events);
+        append = CD.commutative(...events);
       }
       return idempotency !== null
         ? CD.withIdempotencyQuery(append, idempotency, duplicates === "fail" ? "THROW" : "RETURN_IDEMPOTENT")

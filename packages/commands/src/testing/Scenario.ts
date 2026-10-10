@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Clock, Effect, Exit } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
@@ -55,15 +55,23 @@ export interface Scenario {
   readonly log: ReadonlyArray<StoredEvent>;
   // Run a command with raw (unvalidated) input, like a request arriving.
   readonly when: <In, Err>(command: Command<In, Err>, input: unknown) => Promise<ScenarioResult<Err>>;
+  // The same scenario (same store, same log) with the clock fixed at `date`: what a model with a period reads as "now" (`.period`, Period.ts). Without it the real clock is used.
+  readonly at: (date: Date) => Scenario;
 }
 
-export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
-  const store = makeInMemoryEventStore();
-  store.seed(...events);
+// A clock that reads `ms` as the time and is otherwise the real one (sleeping, scheduling).
+const fixedClock = (base: Clock.Clock, ms: number): Clock.Clock =>
+  Object.assign(Object.create(base), {
+    currentTimeMillisUnsafe: () => ms,
+    currentTimeMillis: Effect.succeed(ms),
+    currentTimeNanosUnsafe: () => BigInt(ms) * 1_000_000n,
+    currentTimeNanos: Effect.succeed(BigInt(ms) * 1_000_000n)
+  });
 
+const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario => {
   const when: Scenario["when"] = async (command, rawInput) => {
     const before = store.log.length;
-    const program = Effect.gen(function* () {
+    const attempt = Effect.gen(function* () {
       const input = yield* command.decodeInput(rawInput);
       // One attempt = one transaction (exclusive, rolled back on failure); retried on Conflict like the
       // real executor, though in-memory a Conflict cannot occur.
@@ -75,6 +83,7 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
         Effect.catch((error) => (error instanceof RolledBackIdempotent ? Effect.succeed(error.result) : Effect.fail(error)))
       );
     }).pipe(Effect.provide(store.layer));
+    const program = atMs === null ? attempt : Effect.flatMap(Clock.Clock, (base) => Effect.provideService(attempt, Clock.Clock, fixedClock(base, atMs)));
 
     const exit = await Effect.runPromiseExit(program);
     if (Exit.isSuccess(exit)) {
@@ -91,5 +100,11 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
     return { outcome: "failed", events: [], error: failure.error as never, reason: null };
   };
 
-  return { store, get log() { return store.log; }, when };
+  return { store, get log() { return store.log; }, when, at: (date) => scenarioOver(store, date.getTime()) };
+};
+
+export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
+  const store = makeInMemoryEventStore();
+  store.seed(...events);
+  return scenarioOver(store, null);
 };

@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { EventStoreService, StateProjector, StoredEvent } from "@crablet/eventstore";
@@ -6,6 +6,8 @@ import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
+import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import { tagsOf, type PeriodFields, type PeriodSpec } from "./Period.ts";
 
 // A model answers two questions about one entity (or a group of them):
 //
@@ -46,6 +48,12 @@ export interface Loaded<S> {
   readonly logPosition: LogPosition;
   // A cursor before anything this load could have missed (see `ProjectionResult.horizon`); what `all` builds its cursor from.
   readonly horizon: LogPosition;
+  // Only a model with a period (`.period`) sets these three. `prefix`: the events that turn the period (close the old one, open the new one), appended in the same append as the
+  // command's own events and only if the command appends any. `boundary`: the query the append is conditioned on, when it is not the model's static `query` (a turn reads more than it
+  // declares). `guard`: what a command that only needs to commute with itself must still conflict with - here, the closing of the period it decided in.
+  readonly prefix?: ReadonlyArray<AppendEvent>;
+  readonly boundary?: Query.Query;
+  readonly guard?: Query.Query;
 }
 
 export interface ModelInstance<S> {
@@ -66,6 +74,25 @@ interface OnEntry<S> {
   readonly apply: (state: S, raw: unknown, ctx: HandlerCtx) => S;
 }
 
+// Group entries into query items by (lifecycle?, binding tag): events of several types that are
+// bound the same way share one item (type any-of, tags all-of).
+const queryOf = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, scopeTags: ReadonlyArray<Tag.Tag>, lifecycleOnly: boolean): Query.Query => {
+  const groups = new Map<string, { types: Array<string>; tags: ReadonlyArray<Tag.Tag> }>();
+  for (const entry of entries) {
+    if (lifecycleOnly && !entry.lifecycle) continue;
+    for (const binding of entry.by ?? [by]) {
+      const key = `${entry.lifecycle ? "L" : "S"}|${binding}`;
+      const group = groups.get(key) ?? {
+        types: [],
+        tags: [Tag.of(binding, id), ...(entry.lifecycle ? [] : scopeTags)]
+      };
+      if (!group.types.includes(entry.type)) group.types.push(entry.type);
+      groups.set(key, group);
+    }
+  }
+  return Query.of([...groups.values()].map((g) => Query.queryItemOf(g.types, g.tags)));
+};
+
 export interface ModelBuilder<S, Scope extends object> {
   // Handle an event of this kind. By default it is bound to the model's id via the `by` tag and
   // scoped by the model's `scope` tags. `by` lists other tag keys to bind through instead - one
@@ -85,7 +112,164 @@ export interface ModelBuilder<S, Scope extends object> {
   // Just the lifecycle events' query: the natural "guard" for a command that is otherwise
   // commutative (see withLifecycleGuard in CommandDecision.ts).
   lifecycleQuery(id: string): Query.Query;
+  // Declare the model's PERIOD (docs/plans/period-rollover.md): the cycle after which one statement, shift or page is closed and the next opened with the state carried forward. The model
+  // then needs no `scope`: the period is the scope, and the instance is built from the id alone (`Model.of({ id })`). On every load the framework reads the clock, finds the period "now" falls in,
+  // and, if the entity's open period is an older one, returns the events that turn it (`closed` for the old, `opened` for the new, built by `close` and `open`) for the command to append in its own
+  // append - atomically, under one condition - or not at all if the command appends nothing. `opened` must already have a handler (`.on(opened, ...)`) that folds what `open` carried forward.
+  // `open` and `close` run for every turn, also for an entity that does not exist yet (the command's `decide` then refuses and the events are dropped): keep them total.
+  // The state the command's `decide` receives is the model's, plus `period: { key, fields, tags }` of the period it decided in.
+  period<F extends PeriodFields, OD, CD>(
+    spec: PeriodSpec<F>,
+    config: {
+      readonly opened: PeriodEvent<OD>;
+      readonly closed: PeriodEvent<CD>;
+      readonly open: (carry: S, period: PeriodContext<F>) => OD;
+      readonly close: (state: S, period: PeriodContext<F>) => CD;
+    }
+  ): PeriodModel<S & { readonly period: PeriodInfo<F> }>;
 }
+
+// The event definitions a period is opened and closed with (`defineEvent`'s result): callable, with the type and decoder.
+export type PeriodEvent<D> = { (data: D, extraTags?: ReadonlyArray<Tag.Tag>): AppendEvent; readonly type: string; readonly decode: (raw: unknown) => any };
+
+export interface PeriodInfo<F> {
+  readonly key: string;
+  readonly fields: F;
+  // The tags that place an event in this period: put them on the events the command appends (`Event(data, state.period.tags)`).
+  readonly tags: ReadonlyArray<Tag.Tag>;
+}
+export interface PeriodContext<F> {
+  readonly id: string;
+  readonly key: string;
+  readonly fields: F;
+  // The instant of the turn, ISO 8601, from the clock.
+  readonly at: string;
+}
+export interface PeriodModel<S> {
+  readonly of: (args: { readonly id: string }) => ModelInstance<S>;
+  readonly lifecycleQuery: (id: string) => Query.Query;
+}
+
+const unionOf = (...queries: ReadonlyArray<Query.Query | undefined>): Query.Query => Query.of(queries.flatMap((q) => q?.items ?? []));
+
+const periodModel = <S, F extends PeriodFields, OD, CD>(
+  declared: ReadonlyArray<OnEntry<S>>,
+  ignored: ReadonlyArray<string>,
+  def: { readonly by: string; readonly initial: () => S },
+  spec: PeriodSpec<F>,
+  config: { readonly opened: PeriodEvent<OD>; readonly closed: PeriodEvent<CD>; readonly open: (carry: S, period: PeriodContext<F>) => OD; readonly close: (state: S, period: PeriodContext<F>) => CD }
+): PeriodModel<S & { readonly period: PeriodInfo<F> }> => {
+  const { opened, closed } = config;
+  if (!declared.some((e) => e.type === opened.type)) {
+    throw new Error(`.period: the model has no handler for its opening event "${opened.type}"; add .on(${opened.type}, ...) that folds what \`open\` carries forward (an opening balance, say)`);
+  }
+  // The closing event is part of the boundary even when the model's state does not depend on it: a command that decided in a period conflicts if the period closed since.
+  const entries: ReadonlyArray<OnEntry<S>> = declared.some((e) => e.type === closed.type)
+    ? declared
+    : [...declared, { type: closed.type, lifecycle: false, by: null, apply: (state: S) => state }];
+  const byType = new Map(entries.map((e) => [e.type, e] as const));
+  const eventTypes = [...byType.keys()];
+  const openedEntry = byType.get(opened.type)!;
+  const info = (fields: F): PeriodInfo<F> => ({ key: spec.key(fields), fields, tags: tagsOf(spec, fields) });
+
+  // The entity's periods as the log says: the one the last opening opened, unless a later closing closed it.
+  const trackingQuery = (id: string): Query.Query => Query.of([Query.queryItemOf([opened.type, closed.type], [Tag.of(def.by, id)])]);
+  const fieldsIn = (event: { readonly type: string; readonly data: unknown }, which: PeriodEvent<any>): F => {
+    const fields = spec.fieldsOf(which.decode(event.data));
+    if (fields === null) throw new Error(`.period: the event "${which.type}" does not carry the fields of its period (${spec.tagKeys.join(", ")})`);
+    return fields;
+  };
+  const tracking: StateProjector<F | null> = {
+    eventTypes: [opened.type, closed.type],
+    initialState: null,
+    transition: (open, event) => {
+      if (event.type === opened.type) return fieldsIn(event, opened);
+      return open !== null && spec.key(fieldsIn(event, closed)) === spec.key(open) ? null : open;
+    }
+  };
+  const closingQuery = (id: string, fields: F): Query.Query => Query.of([Query.queryItemOf([closed.type], [Tag.of(def.by, id), ...tagsOf(spec, fields)])]);
+
+  // One read of the model scoped to a period, remembering whether that period's opening and closing were seen.
+  type Marked = { readonly s: S; readonly opened: boolean; readonly closed: boolean };
+  const read = (eventStore: EventStoreService, id: string, fields: F) => {
+    const query = queryOf(entries, def.by, id, tagsOf(spec, fields), false);
+    const projector: StateProjector<Marked> = {
+      eventTypes,
+      initialState: { s: def.initial(), opened: false, closed: false },
+      transition: (m, event) => {
+        const entry = byType.get(event.type);
+        return {
+          s: entry ? entry.apply(m.s, event.data, { event, id }) : m.s,
+          opened: m.opened || event.type === opened.type,
+          closed: m.closed || event.type === closed.type
+        };
+      }
+    };
+    return Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), (r) => ({ ...r.state, query, logPosition: r.logPosition, horizon: r.horizon }));
+  };
+
+  const load = (eventStore: EventStoreService, id: string) =>
+    Effect.gen(function* () {
+      const now = new Date(yield* Clock.currentTimeMillis);
+      const at = now.toISOString();
+      const context = (fields: F): PeriodContext<F> => ({ id, key: spec.key(fields), fields, at });
+      const target = spec.fieldsAt(now);
+      const withPeriod = (s: S, fields: F) => ({ ...(s as object), period: info(fields) }) as S & { readonly period: PeriodInfo<F> };
+      const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
+        state: withPeriod(m.s, fields),
+        logPosition: m.logPosition,
+        horizon: m.horizon,
+        boundary: m.query,
+        guard: closingQuery(id, fields)
+      });
+
+      const first = yield* read(eventStore, id, target);
+      if (first.opened && !first.closed) return inOpen(first, target);
+
+      // The period "now" falls in is not open: find which one is, and turn it.
+      const track = yield* eventStore.project(trackingQuery(id), LogPositionNS.zero(), [tracking]);
+      const current = track.state;
+      if (current !== null && spec.key(current) >= spec.key(target)) {
+        // Never turn a period back: a clock behind (another pod) or an opening that landed since the first read. Decide in the period that is open.
+        if (spec.key(current) > spec.key(target)) {
+          yield* Effect.logWarning(`period: the clock says ${spec.key(target)} but ${spec.key(current)} is already open for ${id}; deciding in ${spec.key(current)}`);
+        }
+        const open = yield* read(eventStore, id, current);
+        if (!open.opened || open.closed) return yield* Effect.die(new Error(`.period: ${spec.key(current)} is open for ${id} by its opening but its own events say otherwise`));
+        return inOpen(open, current);
+      }
+      if (current === null && first.closed) {
+        return yield* Effect.die(new Error(`.period: ${spec.key(target)} was closed for ${id} and no period is open; a closed period is not reopened`));
+      }
+
+      let carry = first.s;
+      let boundary = unionOf(first.query, trackingQuery(id));
+      let horizon = LogPositionNS.earliest(first.horizon, track.horizon);
+      const prefix: Array<AppendEvent> = [];
+      if (current !== null) {
+        const old = yield* read(eventStore, id, current);
+        carry = old.s;
+        boundary = unionOf(boundary, old.query);
+        horizon = LogPositionNS.earliest(horizon, old.horizon);
+        prefix.push(closed(config.close(old.s, context(current))));
+      }
+      const opening = opened(config.open(carry, context(target)));
+      prefix.push(opening);
+      const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
+      return { state: withPeriod(state, target), logPosition: horizon, horizon, prefix, boundary } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
+    });
+
+  return {
+    of: ({ id }) => ({
+      query: unionOf(queryOf(entries, def.by, id, [], true), trackingQuery(id)),
+      handles: eventTypes,
+      ignores: ignored,
+      bindings: [...new Set([def.by, ...entries.flatMap((e) => e.by ?? [])])],
+      load: (eventStore) => load(eventStore, id) as never
+    }),
+    lifecycleQuery: (id) => queryOf(entries, def.by, id, [], true)
+  };
+};
 
 export const defineModel = <S, Scope extends object = {}>(def: {
   // Default tag key that binds an event to this model's id (e.g. "wallet_id").
@@ -95,24 +279,7 @@ export const defineModel = <S, Scope extends object = {}>(def: {
   readonly scope?: (scope: Scope) => Record<string, TagValue>;
 }): ModelBuilder<S, Scope> => {
   const build = (entries: ReadonlyArray<OnEntry<S>>, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope> => {
-    // Group entries into query items by (lifecycle?, binding tag): events of several types that are
-    // bound the same way share one item (type any-of, tags all-of).
-    const queryFor = (id: string, scopeTags: ReadonlyArray<Tag.Tag>, lifecycleOnly: boolean): Query.Query => {
-      const groups = new Map<string, { types: Array<string>; tags: ReadonlyArray<Tag.Tag> }>();
-      for (const entry of entries) {
-        if (lifecycleOnly && !entry.lifecycle) continue;
-        for (const binding of entry.by ?? [def.by]) {
-          const key = `${entry.lifecycle ? "L" : "S"}|${binding}`;
-          const group = groups.get(key) ?? {
-            types: [],
-            tags: [Tag.of(binding, id), ...(entry.lifecycle ? [] : scopeTags)]
-          };
-          if (!group.types.includes(entry.type)) group.types.push(entry.type);
-          groups.set(key, group);
-        }
-      }
-      return Query.of([...groups.values()].map((g) => Query.queryItemOf(g.types, g.tags)));
-    };
+    const queryFor = (id: string, scopeTags: ReadonlyArray<Tag.Tag>, lifecycleOnly: boolean): Query.Query => queryOf(entries, def.by, id, scopeTags, lifecycleOnly);
 
     const byType = new Map(entries.map((e) => [e.type, e] as const));
     const eventTypes = [...byType.keys()];
@@ -139,6 +306,7 @@ export const defineModel = <S, Scope extends object = {}>(def: {
       on: (event, apply, opts) => add(event, apply, opts),
       lifecycle: (event, apply) => add(event, apply, { lifecycle: true }),
       lifecycleQuery: (id) => queryFor(id, [], true),
+      period: (spec, config) => periodModel(entries, ignored, def, spec, config) as never,
       // a declaration only: the boundary and the fold are untouched
       ignores: (...events) => build(entries, [...new Set([...ignored, ...events.map((e) => e.type)])]),
       of: (args) => {
@@ -194,7 +362,19 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
         );
         const horizons = loaded.map(([, l]) => l.horizon);
         const horizon = horizons.length === 0 ? LogPositionNS.zero() : horizons.reduce((a, b) => LogPositionNS.earliest(a, b));
-        return { state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never, logPosition: horizon, horizon };
+        // Members with a period bring the events that turn it, the boundary they were read with and the guard of the period they decided in; the whole carries all of them.
+        const entriesWithPeriod = Object.entries(members).map(([key, member]) => [key, member, loaded.find(([k]) => k === key)![1]] as const);
+        const prefix = loaded.flatMap(([, l]) => l.prefix ?? []);
+        const boundary = entriesWithPeriod.some(([, , l]) => l.boundary !== undefined) ? unionOf(...entriesWithPeriod.map(([, m, l]) => l.boundary ?? m.query)) : undefined;
+        const guardParts = loaded.map(([, l]) => l.guard).filter((g): g is Query.Query => g !== undefined);
+        return {
+          state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never,
+          logPosition: horizon,
+          horizon,
+          ...(prefix.length > 0 ? { prefix } : {}),
+          ...(boundary !== undefined ? { boundary } : {}),
+          ...(guardParts.length > 0 ? { guard: unionOf(...guardParts) } : {})
+        };
       })
   };
 };
