@@ -16,7 +16,7 @@ Status: **em andamento (2026-10-09)**. O `.period` (ano, mês e dia em UTC) est�
 
 ## Bloco C: acabamento
 
-- **C1. Guia do desenvolvedor** em `docs/guides/` (exemplo do wallet, tabela de níveis, `Period.custom`).
+- **C1. Guia do desenvolvedor** em `docs/guides/turn-a-period.md` (o modelo, o comando, o teste com relógio, o que saber). **Feito**; o código do guia vem de regiões do wallet e é conferido pelo teste de sincronia.
 - **C2. "Período fechado e sem reabertura"** continua um defeito (`die`): só dado corrompido chega ali; um erro tipado obrigaria todo comando a declará-lo.
 - **C3. Merge de `feature/period-rollover` em `main` e push**: decisão do usuário.
 

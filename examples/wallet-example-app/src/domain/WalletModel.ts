@@ -151,6 +151,7 @@ export const statementIdOf = (walletId: string, periodKey: string): string => `w
 
 // The CURRENT period, turned by the framework (`.period`, docs/plans/period-rollover.md): the first command of a new month closes the previous month's statement and opens the new one
 // with the balance carried forward, in the command's own append. Commands use this; they no longer resolve a period themselves.
+// #region period-model
 export const WalletPeriodModel = walletFold.period(Period.month, {
   opened: WalletStatementOpened,
   closed: WalletStatementClosed,
@@ -170,6 +171,7 @@ export const WalletPeriodModel = walletFold.period(Period.month, {
     closedAt: p.at
   })
 });
+// #endregion period-model
 
 // The tags that place a period-scoped event (deposit, withdrawal) in its month and statement.
 export const periodTags = (walletId: string, period: PeriodInfo<{ readonly year: number; readonly month: number }>): ReadonlyArray<Tag.Tag> => [

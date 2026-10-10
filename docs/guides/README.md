@@ -9,6 +9,7 @@ Short pages for "how do I...?". Each one is a checklist with the code from a rea
 | React to an event by issuing a command | [Add an automation](add-an-automation.md) |
 | Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](expose-a-command-over-http.md) |
 | Test a command's decisions without a database | [Test a command](test-a-command.md) |
+| Close one statement or shift and open the next, per period | [Turn a period](turn-a-period.md) |
 | Run it for real: migrations, the connection, the background processors | [Run it in production](run-in-production.md) |
 | See what it is doing and what it costs | [Monitor it](monitor-it.md) |
 | Watch the poller and its consumers on a Grafana dashboard, with alerts | [See it on a dashboard](dashboard.md) |

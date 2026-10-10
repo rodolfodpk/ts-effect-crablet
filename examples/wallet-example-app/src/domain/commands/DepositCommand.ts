@@ -9,6 +9,7 @@ export type DepositCommand = Schema.Schema.Type<(typeof DepositContract)["input"
 
 // Deposits commute with each other - two concurrent deposits do not conflict - but a concurrent wallet
 // close still does (the lifecycle guard), and a repeated deposit id is an idempotent success.
+// #region period-command
 export const Deposit = defineCommand({
   ...DepositContract,
   model: (c) => WalletPeriodModel.of({ id: c.walletId }),
@@ -19,3 +20,4 @@ export const Deposit = defineCommand({
       ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, periodTags(c.walletId, wallet.period)))
       : fail(new WalletNotFound({ walletId: c.walletId }))
 });
+// #endregion period-command
