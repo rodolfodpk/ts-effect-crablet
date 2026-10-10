@@ -6,7 +6,7 @@
 //       .on(...)
 //       .period(Period.month, { opened: StatementOpened, closed: StatementClosed, open: ..., close: ... });
 //
-// Levels are UTC. A zone, a week and an hour are not here yet; `Period.custom` is the way to any other cycle.
+// Levels follow UTC unless called with a zone (`Period.day({ timeZone: "America/Sao_Paulo" })`); `Period.week` follows ISO weeks (or weeks from Sunday). An hour is not here yet; `Period.custom` is the way to any other cycle.
 import * as Tag from "@crablet/eventstore/Tag";
 
 export type PeriodFields = Readonly<Record<string, number>>;
@@ -37,30 +37,99 @@ const fieldsFrom = <F extends PeriodFields>(data: unknown, names: ReadonlyArray<
   return out as F;
 };
 
-export const year: PeriodSpec<{ readonly year: number }> = {
-  fieldsAt: (now) => ({ year: now.getUTCFullYear() }),
-  fieldsOf: (data) => fieldsFrom(data, ["year"]),
-  key: (f) => pad(f.year, 4),
-  tagKeys: ["year"]
+// What a level takes: the zone whose calendar the period follows (an IANA name such as "America/Sao_Paulo"; UTC when omitted).
+export interface PeriodOptions {
+  readonly timeZone?: string;
+}
+// A level is a value (the UTC one) that can also be called with options, which gives the level in that zone.
+export type PeriodLevel<F extends PeriodFields, O extends PeriodOptions = PeriodOptions> = PeriodSpec<F> & ((options?: O) => PeriodSpec<F>);
+
+interface CalendarDate {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}
+const formatters = new Map<string, Intl.DateTimeFormat>();
+// The calendar date `now` falls on in a zone. A zone that does not exist is refused here, when the level is defined (Intl throws a RangeError naming it).
+const calendarIn = (timeZone: string | undefined): ((now: Date) => CalendarDate) => {
+  if (timeZone === undefined || timeZone === "UTC") return (now) => ({ year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: now.getUTCDate() });
+  let format = formatters.get(timeZone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" });
+    formatters.set(timeZone, format);
+  }
+  const f = format;
+  return (now) => {
+    const parts = f.formatToParts(now);
+    const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+    return { year: get("year"), month: get("month"), day: get("day") };
+  };
 };
 
-export const month: PeriodSpec<{ readonly year: number; readonly month: number }> = {
-  fieldsAt: (now) => ({ year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 }),
-  fieldsOf: (data) => fieldsFrom(data, ["year", "month"]),
-  key: (f) => `${pad(f.year, 4)}-${pad(f.month)}`,
-  tagKeys: ["year", "month"]
-};
+const level = <F extends PeriodFields, O extends PeriodOptions>(make: (options: O | undefined) => PeriodSpec<F>): PeriodLevel<F, O> =>
+  Object.assign((options?: O) => make(options), make(undefined));
 
-export const day: PeriodSpec<{ readonly year: number; readonly month: number; readonly day: number }> = {
-  fieldsAt: (now) => ({ year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: now.getUTCDate() }),
-  fieldsOf: (data) => fieldsFrom(data, ["year", "month", "day"]),
-  key: (f) => `${pad(f.year, 4)}-${pad(f.month)}-${pad(f.day)}`,
-  tagKeys: ["year", "month", "day"]
-};
+export const year = level<{ readonly year: number }, PeriodOptions>((o) => {
+  const calendar = calendarIn(o?.timeZone);
+  return {
+    fieldsAt: (now) => ({ year: calendar(now).year }),
+    fieldsOf: (data) => fieldsFrom(data, ["year"]),
+    key: (f) => pad(f.year, 4),
+    tagKeys: ["year"]
+  };
+});
+
+export const month = level<{ readonly year: number; readonly month: number }, PeriodOptions>((o) => {
+  const calendar = calendarIn(o?.timeZone);
+  return {
+    fieldsAt: (now) => {
+      const d = calendar(now);
+      return { year: d.year, month: d.month };
+    },
+    fieldsOf: (data) => fieldsFrom(data, ["year", "month"]),
+    key: (f) => `${pad(f.year, 4)}-${pad(f.month)}`,
+    tagKeys: ["year", "month"]
+  };
+});
+
+export const day = level<{ readonly year: number; readonly month: number; readonly day: number }, PeriodOptions>((o) => {
+  const calendar = calendarIn(o?.timeZone);
+  return {
+    fieldsAt: (now) => calendar(now),
+    fieldsOf: (data) => fieldsFrom(data, ["year", "month", "day"]),
+    key: (f) => `${pad(f.year, 4)}-${pad(f.month)}-${pad(f.day)}`,
+    tagKeys: ["year", "month", "day"]
+  };
+});
+
+// Weeks. `startsOn` is "monday" (the default: ISO 8601 weeks) or "sunday". A week belongs to the year that holds most of its days: the year of its fourth day (the Thursday of an ISO week), and its
+// number counts weeks from the first one that has four days in that year. So 1 January 2027, a Friday, is still in week 53 of 2026.
+export interface WeekOptions extends PeriodOptions {
+  readonly startsOn?: "monday" | "sunday";
+}
+const DAY_MS = 86_400_000;
+export const week = level<{ readonly year: number; readonly week: number }, WeekOptions>((o) => {
+  const calendar = calendarIn(o?.timeZone);
+  const firstDay = o?.startsOn === "sunday" ? 0 : 1;
+  return {
+    fieldsAt: (now) => {
+      const d = calendar(now);
+      const today = Date.UTC(d.year, d.month - 1, d.day);
+      const back = (new Date(today).getUTCDay() - firstDay + 7) % 7;
+      const anchor = new Date(today - back * DAY_MS + 3 * DAY_MS); // the fourth day of the week
+      const weekYear = anchor.getUTCFullYear();
+      const dayOfYear = Math.round((Date.UTC(weekYear, anchor.getUTCMonth(), anchor.getUTCDate()) - Date.UTC(weekYear, 0, 1)) / DAY_MS);
+      return { year: weekYear, week: Math.floor(dayOfYear / 7) + 1 };
+    },
+    fieldsOf: (data) => fieldsFrom(data, ["year", "week"]),
+    key: (f) => `${pad(f.year, 4)}-W${pad(f.week)}`,
+    tagKeys: ["year", "week"]
+  };
+});
 
 // Any other cycle (a fiscal year, a shift): the same four functions the levels above carry.
 export const custom = <F extends PeriodFields>(spec: PeriodSpec<F>): PeriodSpec<F> => spec;
 
-export const Period = { year, month, day, custom } as const;
+export const Period = { year, month, day, week, custom } as const;
 
 export const tagsOf = (spec: PeriodSpec<any>, fields: PeriodFields): ReadonlyArray<Tag.Tag> => spec.tagKeys.map((k) => Tag.of(k, String(fields[k])));

@@ -34,7 +34,7 @@ export const WalletPeriodModel = walletFold.period(Period.month, {
 ```
 
 - `Period.month` is a value, not a string: it carries the type of its fields (`{ year, month }`) and the framework derives from it the period "now" falls in, the tags that scope the model, a canonical key (`"2026-10"`) and
-  which period an opening event opened. Levels today: `Period.year`, `Period.month`, `Period.day` (UTC). `Period.custom({ fieldsAt, fieldsOf, key, tagKeys })` is the way to a fiscal year or a shift.
+  which period an opening event opened. Levels today: `Period.year`, `Period.month`, `Period.day` and `Period.week`, in UTC; called with a zone (`Period.day({ timeZone: "America/Sao_Paulo" })`) they follow that zone's calendar. A week is an ISO week (starting on Monday, belonging to the year that holds most of its days: 1 January 2027 is still week 53 of 2026), or `Period.week({ startsOn: "sunday" })`. `Period.custom({ fieldsAt, fieldsOf, key, tagKeys })` is the way to a fiscal year or a shift.
 - `open(carry, p)` builds the opening event from the state the old period ended with; `close(state, p)` builds the closing event. `p` is `{ id, key, fields, at }`. Keep both **total**: they also run for an entity
   that does not exist yet (the command then refuses, and the turn is dropped).
 - Both events need the model's binding tag (`wallet_id`) and the tags of the level (`year`, `month`): without them a period's query would never find its own opening, and every command would open it again. The
@@ -95,6 +95,6 @@ To move the Effect clock in an integration test, wrap the command in a clock of 
 
 - **A clock behind never turns a period back.** If another pod's clock says October and November is already open, the command decides in November; `crablet.period.clock_behind` counts it ([Monitor it](monitor-it.md)).
 - **A period is turned once per entity.** An idle entity jumps straight to the current period: one closing, one opening. The turn reads every opening and closing the entity has ever had: 3 ms with 100 periods,
-  9 ms with 1,000, 75 ms with 10,000 (`examples/wallet-example-app/diagnostics/period-tracking.diagnostic.ts`, one run), so months and days are comfortable for years and hours are not yet built.
+  9 ms with 1,000, 75 ms with 10,000 (`examples/wallet-example-app/diagnostics/period-tracking.diagnostic.ts`, one run), so months, weeks and days are comfortable for years and hours are not yet built. In a zone with daylight saving a local day can be 23 or 25 hours long; the period follows the calendar, not the length.
 - **It protects the commands that declare the period.** Something that writes events with the period's tags but does not use the model is not covered.
 - The design, the algorithm and why the cursor must be the earliest horizon of the reads: [ADR-0025](../adr/0025-the-framework-turns-the-period.md) and [`period-rollover.md`](../plans/period-rollover.md).

@@ -233,4 +233,20 @@ describe("a model with a period", () => {
     await s.at(nov).when(Credit, c(1, "o3")); // not behind
     expect(await count()).toBe(before + 1);
   });
+
+  test("a daily period in a time zone turns at that zone's midnight, a weekly one on its Monday", async () => {
+    const zoned = base.period(Period.day({ timeZone: "America/Sao_Paulo" }), {
+      opened: PeriodOpened,
+      closed: PeriodClosed,
+      open: (carry, p) => ({ id: p.id, ...p.fields, opening: carry.balance }),
+      close: (state, p) => ({ id: p.id, ...p.fields, closing: state.balance })
+    });
+    const Z = credit(zoned as never);
+    const s = given(Opened({ id: "a1" }));
+    await s.at(new Date("2026-10-10T02:30:00Z")).when(Z, c(10, "o1")); // 23:30 on 9 October in Sao Paulo
+    expect(types(await s.at(new Date("2026-10-10T02:59:00Z")).when(Z, c(1, "o2")))).toEqual(["PX_Credited"]); // still the 9th
+    const turned = await s.at(new Date("2026-10-10T03:00:00Z")).when(Z, c(1, "o3")); // midnight there
+    expect(types(turned)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened", "PX_Credited"]);
+    expect(turned.events[1]!.data).toMatchObject({ month: 10, day: 10 });
+  });
 });
