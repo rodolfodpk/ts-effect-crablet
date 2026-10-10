@@ -52,6 +52,14 @@ const credit = (model: typeof Monthly) =>
   });
 const Credit = credit(Monthly);
 const CreditDaily = credit(Daily as never);
+const Reported = defineEvent("PX_Reported", { schema: Schema.Struct({ id: Schema.String, balance: Schema.Number }), tags: (d) => ({ acct: d.id }) });
+const Report = defineCommand({
+  name: "px_report",
+  input,
+  errors: [NoSuchAccount],
+  model: (cc) => Monthly.of({ id: cc.id }),
+  decide: (a, cc) => (a.exists ? emit(Reported({ id: cc.id, balance: a.balance }, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
+});
 const noopCmd = defineCommand({ name: "px_noop", input, model: (c) => Monthly.of({ id: c.id }), decide: () => noop("nothing") });
 
 const oct = new Date(Date.UTC(2026, 9, 9, 12));
@@ -248,5 +256,18 @@ describe("a model with a period", () => {
     const turned = await s.at(new Date("2026-10-10T03:00:00Z")).when(Z, c(1, "o3")); // midnight there
     expect(types(turned)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened", "PX_Credited"]);
     expect(turned.events[1]!.data).toMatchObject({ month: 10, day: 10 });
+  });
+
+  // A log that already holds a second opening of the open period (written before the period was turned by the framework, by a writer that did not condition its opening, or by another system). The fold
+  // resets the balance to what that opening carried, which was read BEFORE the deposits in between, so they drop out of the balance.
+  // `todo`: fails today (balance 5, not 15). Run it with `bun test --todo`. A period model could ignore a second opening of a period whose opening it has already seen (docs/plans/period-follow-ups.md).
+  test.todo("a stale duplicate opening of the open period, already in the log, does not drop what was credited before it", async () => {
+    const s = given(Opened({ id: "a1" }));
+    await s.at(oct).when(Credit, c(10, "o1")); // opens October (opening 0), credits 10
+    s.store.seed(PeriodOpened({ id: "a1", year: 2026, month: 10, opening: 0 }, [])); // the stale second opening: carries 0, written after the credit
+    const r = await s.at(oct).when(Credit, c(5, "o2"));
+    expect(types(r)).toEqual(["PX_Credited"]); // it is not turned again
+    const balance = (await s.at(oct).when(Report, c(0, "o3"))).events.at(-1)!.data as { balance?: number };
+    expect(balance.balance).toBe(15);
   });
 });
