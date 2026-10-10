@@ -262,3 +262,56 @@ describe("the instant of a turn", () => {
   });
 });
 
+describe("many commands at once on the same wallet", () => {
+  // N commands of three kinds race on ONE wallet: a fresh one (the first period is opened) and one whose month just turned (the old one is closed, the new one opened). Whatever order they take, the log
+  // must hold exactly one opening (and one closing) per period, the balance must be the sum of what the commands that went through did, and a command may fail only with a Conflict that ran out of retries.
+  const kinds = (id: string, other: string, i: number) =>
+    i % 3 === 0 ? [Deposit, dep(id, 1 + i)] : i % 3 === 1 ? [Withdraw, wd(id, 1)] : [TransferMoney, transfer(id, other, 1)];
+
+  const race = async (n: number, setup: () => Promise<{ id: string; other: string; clock: () => Date; period: Date; start: number }>) => {
+    const { id, other, clock, period, start: startBalance } = await setup();
+    const jobs = Array.from({ length: n }, (_, i) => {
+      const [command, input] = kinds(id, other, i);
+      return runAt(clock, command, input).then((exit) => ({ exit, i }));
+    });
+    const results = await Promise.all(jobs);
+    const failed = results.filter((r) => !ok(r.exit));
+    const notConflicts = failed.filter((r) => !String((r.exit as any).cause).includes("Conflict"));
+    // what the commands that went through did to this wallet
+    let expected = startBalance;
+    for (const r of results) {
+      if (!ok(r.exit)) continue;
+      expected += r.i % 3 === 0 ? 1 + r.i : -1;
+    }
+    return { id, failed: failed.length, notConflicts: notConflicts.map((r) => String((r.exit as any).cause)), expected, got: await balance(id, period) };
+  };
+
+  it("16 commands on a fresh wallet: one opening, the right balance, no failure but a Conflict out of retries", { timeout: 120_000 }, async () => {
+    const r = await race(16, async () => {
+      const id = newWallet();
+      const other = newWallet();
+      await open(id);
+      await open(other);
+      return { id, other, clock: () => thisMonth, period: thisMonth, start: 100 };
+    });
+    console.log(`fresh wallet, 16 at once: ${r.failed} failed (conflicts out of retries)`);
+    assert.deepStrictEqual(r.notConflicts, [], "a failure is only ever a Conflict");
+    assert.strictEqual(await countOf(r.id, "WalletStatementOpened"), 1, "one opening");
+    assert.strictEqual(r.got, r.expected, "the balance is what the commands that went through did");
+  });
+
+  it("16 commands on a wallet whose month just turned: one closing, two openings, the right balance", { timeout: 120_000 }, async () => {
+    const r = await race(16, async () => {
+      const id = await warmWallet(); // 110 in this month
+      const other = await warmWallet();
+      return { id, other, clock: () => nextMonth, period: nextMonth, start: 110 };
+    });
+    console.log(`turning wallet, 16 at once: ${r.failed} failed (conflicts out of retries)`);
+    assert.deepStrictEqual(r.notConflicts, [], "a failure is only ever a Conflict");
+    assert.strictEqual(await countOf(r.id, "WalletStatementClosed"), 1, "one closing");
+    assert.strictEqual(await countOf(r.id, "WalletStatementOpened"), 2, "this month's and next month's opening");
+    // the old period must have been closed with everything the commands wrote there; the new one opened with that balance
+    assert.strictEqual(r.got, r.expected, "the balance is what the commands that went through did (starting from 110)");
+  });
+});
+
