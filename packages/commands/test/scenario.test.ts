@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { Duplicate } from "@crablet/eventstore/AppendErrors";
-import { concurrent, defineCommand, emit, fail } from "../src/Command.ts";
+import { concurrent, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError, InvalidInput } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
@@ -133,6 +133,28 @@ describe("given / when: command logic without a database", () => {
     const result = await given(Opened({ id: "a1", initial: 5 })).when(Audit, { id: "a1", amount: 1, opId: "x" });
     expect(result.outcome).toBe("created");
     expect(result.events.map((e) => e.type)).toEqual(["Audited", "Withdrawn"]);
+  });
+
+  test("a command that ends idempotent after its prepare step appended something fails the test: that transaction would commit with no audit row", async () => {
+    const Leaky = defineCommand({
+      name: "leaky",
+      input: Schema.Struct({ id: Schema.String }),
+      prepare: (c, es) => es.append([Audited({ id: c.id })]),
+      model: (c) => AccountModel.of({ id: c.id }),
+      decide: () => noop("NOTHING_TO_DO")
+    });
+    await expect(given(Opened({ id: "a1", initial: 5 })).when(Leaky, { id: "a1" })).rejects.toThrow(/leaky.*prepare.*appended/s);
+  });
+
+  test("an idempotent outcome whose prepare step appended nothing is fine", async () => {
+    const Quiet = defineCommand({
+      name: "quiet",
+      input: Schema.Struct({ id: Schema.String }),
+      prepare: (c, es) => es.exists(Opened.where({ account_id: c.id })),
+      decide: () => noop("NOTHING_TO_DO")
+    });
+    const result = await given(Opened({ id: "a1", initial: 5 })).when(Quiet, { id: "a1" });
+    expect(result.outcome).toBe("idempotent");
   });
 
   test("a bug in a command (a defect) fails the test loudly instead of becoming a result", async () => {

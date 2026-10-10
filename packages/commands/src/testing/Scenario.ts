@@ -21,6 +21,8 @@ import type { InvalidInput } from "../Errors.ts";
 // history the store starts with; each `when` runs one command in an all-or-nothing transaction, and
 // later `when`s see earlier ones' effects.
 //
+// It does fail a `when` whose command ends idempotent after its `prepare` appended something (see `prepare` in Command.ts): the real executor would commit those events with no audit row.
+//
 // What it cannot show is concurrency: nothing interleaves, so conflict retries never happen here. Test
 // races against Postgres (see packages/commands/test/integration/command-run.test.ts).
 
@@ -61,6 +63,12 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
 
     const exit = await Effect.runPromiseExit(program);
     if (Exit.isSuccess(exit)) {
+      // The real executor commits this transaction and, for an idempotent result, writes no audit row: whatever `prepare` appended would stay in the log with no command behind it.
+      // Fail the test here, where it can be seen, rather than in production (Command.ts, "prepare").
+      if (exit.value.wasIdempotent && store.log.length > before) {
+        const left = store.log.slice(before).map((e) => e.type).join(", ");
+        throw new Error(`command "${command.name}" ended idempotent (${exit.value.reason ?? "no reason"}) but its prepare step appended [${left}]: that transaction commits and an idempotent result writes no audit row, so those events would have no command behind them. Condition the append in prepare so a racer conflicts and runs again, or do not append there.`);
+      }
       return {
         outcome: exit.value.wasIdempotent ? "idempotent" : "created",
         events: store.log.slice(before),

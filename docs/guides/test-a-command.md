@@ -52,6 +52,8 @@ What you can assert on the result of `.when`:
 `given(...)` takes events; a scenario value can run several `when`s in a row, and `.log` is everything in the store afterwards (empty after a refusal, because a failed
 command's changes are rolled back).
 
+A `.when` also **throws** when the command ends idempotent after its `prepare` step appended something. In production that transaction commits and an idempotent result writes no audit row, so those events would be left with no command behind them; condition the append in `prepare` (so a racer conflicts and runs again) or do not append there.
+
 ## What this does not cover
 
 Concurrency: nothing interleaves in memory, so races and conflict retries are tested against Postgres only

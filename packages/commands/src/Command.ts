@@ -137,7 +137,7 @@ export const defineCommand = <
   // NOT when the command ends as an idempotent repeat or a no-op: that transaction commits, with what `prepare` appended, and an idempotent result writes no audit row,
   // so the events are left with no command behind them. Racing commands can reach that (both pass the idempotency pre-check, both append in `prepare`, one loses the final
   // append to a Duplicate). So give every append in `prepare` a condition, so a racer conflicts and runs again instead of appending a second copy: `resolveActivePeriod`
-  // (examples/wallet-example-app) opened a statement with none, and commands racing on a new wallet opened three.
+  // (examples/wallet-example-app) opened a statement with none, and commands racing on a new wallet opened three. The in-memory scenario runner (`given(...).when(...)`) throws when a command ends idempotent after its `prepare` appended, so the deterministic form of this (a `Noop` after an append) fails in a unit test.
   readonly prepare?: (input: Schema.Schema.Type<I>, eventStore: EventStoreService) => Effect.Effect<P, PE> & Declared<PE, Es>;
   // Omit for commands that need no state (e.g. "record that this happened"); `decide` then gets
   // `undefined` and the default consistency is `concurrent()`.
