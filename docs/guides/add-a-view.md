@@ -98,3 +98,46 @@ if (roles.has("views")) yield* viewsHandle.service.start;
 
 Reads that must include a write go through a consistent read: [tutorial step 4](../tutorial/04-read-your-own-writes.md). Full reference for the package:
 [`@crablet/views`](../../packages/views/README.md).
+
+## Optional: type-checked queries with Kysely
+
+The projector above writes its SQL as strings, so a misspelled column or a value in the wrong place fails when the first event arrives. If you want the compiler to catch those, build the SQL with [Kysely](https://kysely.dev) and run it on the `sql` the projector is given.
+Crablet does not depend on Kysely, and nothing in the libraries changes: the example app adds it, and only to build queries. It never opens a connection, because the queries run on the projector's `sql`, so they stay in the same transaction as the view's cursor and a batch handled twice is still applied once.
+
+<!-- file: examples/course-enrolment-app/src/views/CourseSeatsViewProjectorKysely.ts#kysely-projector -->
+```ts
+const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
+  Effect.gen(function* () {
+    switch (event.type) {
+      case CourseDefined.type: {
+        const data = yield* CourseDefined.decodeStored(event);
+        yield* run(sql,
+          qb.insertInto("course_seats_view")
+            .values({ course_id: data.courseId, capacity: data.capacity, subscribers: 0, last_position: event.position })
+            .onConflict((oc) => oc.column("course_id").doNothing())
+        );
+        return;
+      }
+      case StudentSubscribed.type: {
+        const data = yield* StudentSubscribed.decodeStored(event);
+        yield* run(sql,
+          qb.updateTable("course_seats_view")
+            .set((eb) => ({ subscribers: eb("subscribers", "+", 1), last_position: event.position }))
+            .where("course_id", "=", data.courseId)
+            .where("last_position", "<", event.position)
+        );
+        return;
+      }
+      default:
+        return;
+    }
+  });
+
+export const makeCourseSeatsViewProjectorKysely = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
+  makeTransactionalViewProjector(COURSE_SEATS_VIEW, handleEvent);
+```
+
+The setup is [`queryBuilder.ts`](../../examples/course-enrolment-app/src/views/queryBuilder.ts): a `Kysely` with a driver that only compiles, the shape of the view tables, and a `run(sql, query)` that executes a compiled query. The tests
+([`course-view-kysely.test.ts`](../../examples/course-enrolment-app/test/integration/course-view-kysely.test.ts)) check that it behaves like the hand-written projector, that a failed batch rolls its writes back, and that a misspelled column or a value of the wrong type does not compile.
+
+What it costs: one more dependency in your app, and the table types, which you write by hand (as here, for one table) or generate from the migrated database with `kysely-codegen`, and keep in step with your migrations. Kysely types the tables it is told about; a fragment it does not model (a row-value comparison, an `xid8` cast) goes through its `sql` template and is not checked.
