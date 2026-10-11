@@ -12,9 +12,10 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError";
 // administrator's `pg_terminate_backend`), Postgres drops the lock at once and another instance can take it. The leader must therefore KNOW when
 // its connection is gone, or two instances lead at the same time (measured: docs/plans/reliability-and-scale-diagnostic.md, D1). Two things do that:
 //
-//   - a HEARTBEAT: a trivial query on the leader's own connection every `heartbeat` (default 1 s). A query that succeeds on this connection proves the
-//     session is alive and so the lock is held at that instant (a reserved connection whose session dies fails every later query and never reconnects
-//     silently: D4). `failuresBeforeLost` consecutive failures (default 2) make the leader LOST: `isLeader()` turns false and the connection is released.
+//   - a HEARTBEAT: a check on the leader's own connection every `heartbeat` (default 1 s) that asks Postgres whether THIS session still holds the advisory
+//     lock (`pg_locks`, `pid = pg_backend_pid()`). A query that merely answers proves nothing: after the session is killed the pooled connection can come
+//     back on a NEW session that answers queries but holds no lock (D4, and its correction). `failuresBeforeLost` consecutive failures (default 2) make
+//     the leader LOST: `isLeader()` turns false and the connection is released.
 //   - `verify`: the same check on demand, used by the processor right before it does work that must not be done by a non-leader (it fails closed: a
 //     failed check answers false at once, even before the heartbeat would call the leader lost).
 //
@@ -43,7 +44,7 @@ export interface LeaderHandle {
   readonly lockKey: bigint;
   // True until the leader is released on purpose or lost (its session died or stopped answering).
   isLeader(): boolean;
-  // Is the lock still held right now? Runs a check on the leader's own connection: true if it answers, false if it fails or times out (and false once the
+  // Is the lock still held right now? Asks Postgres, on the leader's own connection, whether this session holds the advisory lock: true if it does, false if it does not, the check fails or times out (and false once the
   // handle is released or lost). Two consecutive failures make the handle lost.
   readonly verify: Effect.Effect<boolean>;
   release(): Effect.Effect<void>;
