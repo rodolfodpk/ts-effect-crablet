@@ -7,7 +7,8 @@ import { migrationFiles as coreMigrationFiles, sqlDir as coreSqlDir } from "@cra
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appMigrationDir = path.join(__dirname, "..", "db", "migration");
 
-const appMigrationFiles = [
+// The app's own migrations, in order. Every `V*.sql` in db/migration must be listed (test/migration-files.test.ts), because the lab's Flyway job applies the whole directory and this list is what the migrate job and the tests apply.
+export const appMigrationFiles = [
   "V100__wallet_balance_view.sql",
   "V101__wallet_transaction_view.sql",
   "V102__wallet_summary_view.sql",

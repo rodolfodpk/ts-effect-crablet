@@ -3,18 +3,10 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import type { ConnInfo } from "@crablet/test-support";
+import { appMigrationFiles } from "../../src/migrate.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationDir = path.join(__dirname, "..", "..", "db", "migration");
-
-const migrationFiles = [
-  "V100__wallet_balance_view.sql",
-  "V101__wallet_transaction_view.sql",
-  "V102__wallet_summary_view.sql",
-  "V103__wallet_statement_view.sql",
-  "V104__wallet_transaction_view_page_index.sql",
-  "V105__drop_statement_transactions.sql"
-] as const;
 
 // `startTestDb()` (@crablet/test-support) only applies @crablet/db-migrations' own core schema -
 // this app's own view tables need a small local helper, run after `startTestDb()` returns, same
@@ -31,7 +23,7 @@ export async function applyAppMigrations(connInfo: ConnInfo): Promise<void> {
   });
   await client.connect();
   try {
-    for (const file of migrationFiles) {
+    for (const file of appMigrationFiles) {
       const sqlText = readFileSync(path.join(migrationDir, file), "utf-8");
       await client.query(sqlText);
     }
