@@ -1,6 +1,6 @@
 // DIAGNOSTIC EXPERIMENTS (docs/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/commands/diagnostics/boundary-and-storage.diagnostic.ts   and read the `DIAG` lines.
-// E5: command latency against the number of events in its boundary. E5f: what reading fewer columns saves. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
+// E5: command latency against the number of events in its boundary. E5f: what reading fewer columns saves. E5h: where the gap between the raw fetch and `project` goes. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
 // E8: what an event costs on disk (events heap and indexes, the tag table). The folder is outside the test globs, so CI does not run it.
 import { after, before, describe, it } from "node:test";
 import { performance } from "node:perf_hooks";
@@ -139,6 +139,46 @@ describe("DIAG", () => {
       for (const r of rows) for (const raw of r.tags) { const i = raw.indexOf("="); kept += (i < 0 ? { key: raw, value: "" } : { key: raw.slice(0, i), value: raw.slice(i + 1) }).key.length; }
       console.log(`DIAG E5f [${label}] splitting the tags of ${rows.length} rows (parseRow's tag work, in memory): ${(performance.now() - t0).toFixed(0)} ms (${kept} key chars)`);
     }
+  });
+
+  it("E5h: where the time between the raw fetch and `project` goes (realistic events, 100,000 in a boundary): parseRow's parts, in memory", { timeout: 600_000 }, async () => {
+    const N = 100_000, reps = 20;
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const spread = (xs: number[]) => `p50 ${pct(xs, 50).toFixed(0)} ms (min ${Math.min(...xs).toFixed(0)}, max ${Math.max(...xs).toFixed(0)})`;
+    const timed = async (f: () => unknown | Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return xs; };
+    const realistic = JSON.stringify({ entityId: "parsebig", reference: "ref-0000000000000000", note: "x".repeat(250), amount: 1250, currency: "EUR", counterparty: { id: "c-1", name: "Counterparty Name" } });
+    await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(
+      "INSERT INTO crablet_events (type, tags, data, transaction_id, correlation_id, causation_id) SELECT 'Ticked', ARRAY['entity_id=parsebig','tenant=acme-corp','request_id=' || md5(g::text)], $1::jsonb, pg_current_xact_id(), gen_random_uuid(), g FROM generate_series(1, $2) g", [realistic, N])));
+    await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+    const sqlText = "SELECT type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, (transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled FROM crablet_events WHERE tags @> ARRAY['entity_id=parsebig']::text[] ORDER BY crablet_events.transaction_id, position ASC";
+    const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ type: string; tags: string[]; data: unknown; transaction_id: string; position: string; occurred_at: Date; correlation_id: string | null; causation_id: string | null }>(sqlText)));
+    // the pieces of `parseRow` (packages/eventstore/src/EventStore.ts), each on the same already-fetched rows, no database
+    const splitTags = (tags: string[]) => tags.map((raw) => { const i = raw.indexOf("="); return i < 0 ? { key: raw, value: "" } : { key: raw.slice(0, i), value: raw.slice(i + 1) }; });
+    const full = () => rows.map((r) => ({ type: r.type, tags: splitTags(r.tags), data: r.data, transactionId: r.transaction_id, position: BigInt(r.position), occurredAt: r.occurred_at, correlationId: r.correlation_id, causationId: r.causation_id === null ? null : BigInt(r.causation_id) }));
+    const noTags = () => rows.map((r) => ({ type: r.type, tags: [] as unknown[], data: r.data, transactionId: r.transaction_id, position: BigInt(r.position), occurredAt: r.occurred_at, correlationId: r.correlation_id, causationId: r.causation_id === null ? null : BigInt(r.causation_id) }));
+    const noBigInt = () => rows.map((r) => ({ type: r.type, tags: splitTags(r.tags), data: r.data, transactionId: r.transaction_id, position: r.position, occurredAt: r.occurred_at, correlationId: r.correlation_id, causationId: r.causation_id }));
+    console.log(`DIAG E5h parseRow as it is, over ${rows.length} fetched rows: ${spread(await timed(full))}`);
+    console.log(`DIAG E5h   without splitting the tags (tags left empty): ${spread(await timed(noTags))}`);
+    console.log(`DIAG E5h   without BigInt (positions and causation ids left as strings): ${spread(await timed(noBigInt))}`);
+    console.log(`DIAG E5h   tag splitting alone: ${spread(await timed(() => rows.map((r) => splitTags(r.tags))))}`);
+    // the rest of `project`'s per-row work (EventStore.ts): the projector loop, the `settled` check and a new LogPosition per settled row, over events already parsed
+    const parsed = full();
+    const noopProjectors = [{ eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s }];
+    const loop = () => { let state = 0; let last: unknown = null; for (const event of parsed) { for (const projector of noopProjectors) { if (projector.eventTypes.length === 0 || projector.eventTypes.includes(event.type)) state = projector.transition(state); } last = { position: event.position, occurredAt: event.occurredAt, transactionId: event.transactionId }; } return [state, last]; };
+    console.log(`DIAG E5h   the projector loop and a LogPosition per row, over parsed events: ${spread(await timed(loop))}`);
+    // the extra query `project` runs first
+    const xmin = await timed(() => run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS xmin"))));
+    console.log(`DIAG E5h the extra currentXmin query: ${spread(xmin)}`);
+    // end to end, interleaved so a slow moment hits both: the raw fetch and `project` with a do-nothing projector
+    const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
+    const q = Query.forEventAndTag("Ticked", "entity_id", "parsebig");
+    const raw: number[] = [], viaProject: number[] = [];
+    await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(sqlText))); await run(Effect.flatMap(EventStore, (es) => es.project(q, LogPosition.zero(), [noop])));
+    for (let i = 0; i < reps; i++) {
+      let t0 = performance.now(); await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(sqlText))); raw.push(performance.now() - t0);
+      t0 = performance.now(); await run(Effect.flatMap(EventStore, (es) => es.project(q, LogPosition.zero(), [noop]))); viaProject.push(performance.now() - t0);
+    }
+    console.log(`DIAG E5h end to end, interleaved: raw fetch ${spread(raw)} | through project ${spread(viaProject)}`);
   });
 
   it("E5g: `exists` (the idempotency pre-check) against the number of events its query matches: the old read-everything path (project + existsProjector) and the SELECT EXISTS now used", { timeout: 600_000 }, async () => {

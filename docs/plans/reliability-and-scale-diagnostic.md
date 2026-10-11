@@ -87,8 +87,23 @@ In a boundary of 100,000 events, reading the last 10 through the command's read 
 
 - **The ceiling is about 20-25% of the fetch**, and that is with every optional column gone, including `tags` and `occurred_at`, which handlers may read. Dropping only the two ids, the one change that needs no opt-in, saves 3-10%: below the 10% bar the plan set.
 - The database's own execution time did not move (52-58 ms in every variant): the saving is in the driver and the bytes, as E5b said, but the bytes of `data` and the cursor columns stay.
-- **A bigger gap is elsewhere.** The same read through `project` (driver plus `parseRow`, nothing applied) took 152-157 ms (tiny) and 344-481 ms (realistic), against 115 and 242-248 ms raw: **40-100% on top of the raw fetch**, more than any column choice saves. Splitting the tags alone is only 5-21 ms, so the rest is something else in `parseRow` and the loop (an object per tag, `BigInt`, the per-row projector loop; also one extra query for `currentXmin`). The cause is **not yet measured**; the spread between the two realistic runs (344 vs 481 ms) says it is also noisy.
+- **A bigger gap is elsewhere.** The same read through `project` (driver plus `parseRow`, nothing applied) took 152-157 ms (tiny) and 344-481 ms (realistic), against 115 and 242-248 ms raw: **40-100% on top of the raw fetch**, more than any column choice saves. Splitting the tags alone is only 5-21 ms, so the rest is something else in `parseRow` and the loop (an object per tag, `BigInt`, the per-row projector loop; also one extra query for `currentXmin`). E5h below measures it: `parseRow` explains about a third. The 344 vs 481 ms spread was from timing the two reads in separate runs; interleaved (E5h) the medians are stable.
 - **Decision (ADR-0013's bar for an API-visible compromise is not met):** do not change which columns a model load reads. The next experiment, if the load time matters, is to profile `project`'s per-row work.
+
+### E5h - where the gap between the raw fetch and `project` goes (2026-10-11)
+Realistic events, 100,000 in the boundary, 20 repetitions, three runs. Each piece of `project`'s own work (`parseRow`, the projector loop) was timed in memory on rows already fetched; the end-to-end reads were timed interleaved, so a slow moment hits both. **Measured.**
+
+| Piece | p50 (min-max) |
+|---|---|
+| `parseRow` as it is (three tags split into objects, `BigInt`, a new event object per row) | 28-38 ms (16-57) |
+| ...of which splitting the tags | about 20 ms (without it: 9-12 ms) |
+| ...of which `BigInt` | about 3-10 ms |
+| the projector loop and a `LogPosition` per row | 3-4 ms |
+| the extra `currentXmin` query | under 1 ms |
+| **end to end: raw fetch / through `project`** | **236-238 ms / 341-347 ms** (min 205-228 / 243-262) |
+
+- `parseRow` and the loop explain **about 35 ms of a 105 ms gap**. About 70 ms is **not attributed**. In the fastest runs the gap is only 25-45 ms, which `parseRow` does explain, so the extra cost sits in the slow runs of `project` (max 368-396 ms against 253-290 for the raw read). That pattern fits garbage collection of the 100,000 row objects plus 100,000 event objects plus 300,000 tag objects, but this was **not measured** (no GC trace was taken).
+- Lazy tag parsing would remove about 20 of the 35 ms, and perhaps some of the GC pressure: roughly 6% of a 340 ms read, up to about 25% if the unattributed part is GC from those objects. Not worth building before a GC trace (`node --trace-gc`) shows whether it is.
 
 ### E5g - `exists` (the idempotency pre-check) against the events its query matches (2026-10-11)
 `exists` used to read every matching event with all columns, ordered, and build an object per row, to answer yes or no. It now asks the database `SELECT EXISTS (...)`, which stops at the first match. One run, p50 of 15 (**measured**, the old path timed in the same run through `project` with `existsProjector`):
