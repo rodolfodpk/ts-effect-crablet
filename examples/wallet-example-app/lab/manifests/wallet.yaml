@@ -21,6 +21,8 @@ spec:
           imagePullPolicy: Never
           env:
             - { name: WALLET_ROLES, value: api }
+            # the statement period: "month", or "minutes:N" to turn it every N minutes (the commands decide in these pods)
+            - { name: WALLET_PERIOD, value: "${PERIOD}" }
             - { name: WALLET_MIGRATE, value: "off" }
             - { name: WALLET_DB_HOST, value: postgres }
             - { name: WALLET_DB_POOL, value: "${POOL}" }

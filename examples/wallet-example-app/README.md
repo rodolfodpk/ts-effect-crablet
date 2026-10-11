@@ -18,6 +18,8 @@ Connection (all optional): `WALLET_DB_HOST`, `WALLET_DB_PORT`, `WALLET_DB_NAME`,
 
 `WALLET_POLL_MS` (default 1000) and `WALLET_BACKOFF_MAX_SECONDS` (default 10) set how often the processors poll and how long an idle one waits; `WALLET_WAKEUPS` (`coalesced` by default, `inline` or `off`) sets how appends notify them. Profiles, with measurements: [Polling and wake-ups](../../docs/guides/run-in-production.md#polling-and-wake-ups).
 
+`WALLET_PERIOD` is the statement period of the commands: `month` (the default) or `minutes:N` (N from 1 to 1440), a period that turns every N minutes, for the kind lab. Choose it for a **new database**: statements written the other way cannot be continued ([turn a period](../../docs/guides/turn-a-period.md)).
+
 Two more are off unless set: `OTEL_EXPORTER_OTLP_ENDPOINT` exports metrics, spans and logs ([See it on a dashboard](../../docs/guides/dashboard.md)), and `WALLET_ADMIN_TOKEN` mounts the processors admin API at `/admin/processors` behind that bearer token ([`@crablet/processors-http`](../../packages/processors-http/README.md), with a page for it: [`processors-admin-ui`](../processors-admin-ui/README.md)).
 
 Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/c4-examples.md#wallet).

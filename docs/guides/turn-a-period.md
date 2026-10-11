@@ -12,7 +12,7 @@ The model is the same fold you already write; `.period(...)` adds what turns it.
 
 <!-- file: examples/wallet-example-app/src/domain/WalletModel.ts#period-model -->
 ```ts
-export const WalletPeriodModel = walletFold.period(Period.month, {
+export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
   opened: WalletStatementOpened,
   closed: WalletStatementClosed,
   open: (carry, p) => ({
@@ -33,6 +33,7 @@ export const WalletPeriodModel = walletFold.period(Period.month, {
 });
 ```
 
+- The wallet's period comes from `periodFromEnv()` ([`WalletPeriod.ts`](../../examples/wallet-example-app/src/domain/WalletPeriod.ts)): `Period.month` by default, or `Period.custom` with a slot of N minutes when `WALLET_PERIOD=minutes:N`, which the kind lab uses to turn a period every few minutes instead of once a month ([run the lab](run-the-kind-lab.md)). Choose it for a **new database**: statements written as months carry no `bucket`, so the framework cannot find the period of a wallet whose last statement was written the other way.
 - `Period.month` is a value, not a string: it carries the type of its fields (`{ year, month }`) and the framework derives from it the period "now" falls in, the tags that scope the model, a canonical key (`"2026-10"`) and
   which period an opening event opened. Levels today: `Period.year`, `Period.month`, `Period.day` and `Period.week`, in UTC; called with a zone (`Period.day({ timeZone: "America/Sao_Paulo" })`) they follow that zone's calendar. A week is an ISO week (starting on Monday, belonging to the year that holds most of its days: 1 January 2027 is still week 53 of 2026), or `Period.week({ startsOn: "sunday" })`. `Period.custom({ fieldsAt, fieldsOf, key, tagKeys })` is the way to a fiscal year or a shift.
 - `open(carry, p)` builds the opening event from the state the old period ended with; `close(state, p)` builds the closing event. `p` is `{ id, key, fields, at }`. Keep both **total**: they also run for an entity

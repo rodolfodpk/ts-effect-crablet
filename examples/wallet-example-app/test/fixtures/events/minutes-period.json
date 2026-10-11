@@ -1,0 +1,39 @@
+[
+  {
+    "type": "WalletStatementOpened",
+    "payload": {
+      "walletId": "w-1",
+      "statementId": "wallet:w-1:m5894400",
+      "year": 2026,
+      "bucket": 5894400,
+      "openingBalance": 100,
+      "openedAt": "2026-10-11T12:00:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1",
+      "statement_id=wallet:w-1:m5894400",
+      "year=2026",
+      "bucket=5894400"
+    ],
+    "note": "WALLET_PERIOD=minutes:N: year and the slot number (month, day and hour absent)"
+  },
+  {
+    "type": "WalletStatementClosed",
+    "payload": {
+      "walletId": "w-1",
+      "statementId": "wallet:w-1:m5894400",
+      "year": 2026,
+      "bucket": 5894400,
+      "openingBalance": 100,
+      "closingBalance": 130,
+      "closedAt": "2026-10-11T12:05:00.000Z"
+    },
+    "tags": [
+      "wallet_id=w-1",
+      "statement_id=wallet:w-1:m5894400",
+      "year=2026",
+      "bucket=5894400"
+    ],
+    "note": "WALLET_PERIOD=minutes:N"
+  }
+]

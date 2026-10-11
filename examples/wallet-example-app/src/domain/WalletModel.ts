@@ -1,10 +1,10 @@
 import * as Schema from "effect/Schema";
 import { defineEvent } from "@crablet/commands/Event";
 import { defineModel, type PeriodInfo } from "@crablet/commands/Model";
-import { Period } from "@crablet/commands/Period";
 import * as Tag from "@crablet/eventstore/Tag";
 import { personal } from "@crablet/commands/Personal";
 import * as WalletTags from "./WalletTags.ts";
+import { periodFromEnv, type WalletPeriodFields } from "./WalletPeriod.ts";
 
 // The wallet's events and its decision model, declared once. Each event owns its payload schema and
 // which tags it carries; the model derives BOTH the state fold and the consistency-boundary query
@@ -27,12 +27,13 @@ export const WalletClosed = defineEvent("WalletClosed", {
   tags: (d) => ({ [WalletTags.WALLET_ID]: d.walletId })
 });
 
-// Day/hour are optional: only monthly statements are used, but the stored shape keeps the fields.
+// Month, day and hour are optional: monthly statements carry year and month, and the shape keeps the others. `bucket` is the N-minute period (WALLET_PERIOD=minutes:N, WalletPeriod.ts), the lab's way to turn a period while you watch.
 const period = {
   year: Schema.Number,
   month: Schema.optional(Schema.Number),
   day: Schema.optional(Schema.Number),
-  hour: Schema.optional(Schema.Number)
+  hour: Schema.optional(Schema.Number),
+  bucket: Schema.optional(Schema.Number)
 };
 
 export const WalletStatementOpened = defineEvent("WalletStatementOpened", {
@@ -47,7 +48,8 @@ export const WalletStatementOpened = defineEvent("WalletStatementOpened", {
     [WalletTags.WALLET_ID]: d.walletId,
     [WalletTags.STATEMENT_ID]: d.statementId,
     [WalletTags.YEAR]: d.year,
-    [WalletTags.MONTH]: d.month
+    [WalletTags.MONTH]: d.month,
+    [WalletTags.BUCKET]: d.bucket
   })
 });
 
@@ -64,7 +66,8 @@ export const WalletStatementClosed = defineEvent("WalletStatementClosed", {
     [WalletTags.WALLET_ID]: d.walletId,
     [WalletTags.STATEMENT_ID]: d.statementId,
     [WalletTags.YEAR]: d.year,
-    [WalletTags.MONTH]: d.month
+    [WalletTags.MONTH]: d.month,
+    [WalletTags.BUCKET]: d.bucket
   })
 });
 
@@ -152,7 +155,7 @@ export const statementIdOf = (walletId: string, periodKey: string): string => `w
 // The CURRENT period, turned by the framework (`.period`, docs/plans/period-rollover.md): the first command of a new month closes the previous month's statement and opens the new one
 // with the balance carried forward, in the command's own append. Commands use this; they no longer resolve a period themselves.
 // #region period-model
-export const WalletPeriodModel = walletFold.period(Period.month, {
+export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
   opened: WalletStatementOpened,
   closed: WalletStatementClosed,
   open: (carry, p) => ({
@@ -174,7 +177,7 @@ export const WalletPeriodModel = walletFold.period(Period.month, {
 // #endregion period-model
 
 // The tags that place a period-scoped event (deposit, withdrawal) in its month and statement.
-export const periodTags = (walletId: string, period: PeriodInfo<{ readonly year: number; readonly month: number }>): ReadonlyArray<Tag.Tag> => [
+export const periodTags = (walletId: string, period: PeriodInfo<WalletPeriodFields>): ReadonlyArray<Tag.Tag> => [
   ...period.tags,
   Tag.of(WalletTags.STATEMENT_ID, statementIdOf(walletId, period.key))
 ];

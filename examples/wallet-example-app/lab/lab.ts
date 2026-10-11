@@ -3,6 +3,7 @@
 //   node examples/wallet-example-app/lab/lab.ts up             create the cluster (3 nodes), build and load the image
 //   node examples/wallet-example-app/lab/lab.ts run <name>...  run scenarios (each starts from an empty database and a fresh deployment); no names = all
 //   node examples/wallet-example-app/lab/lab.ts observe       up, then a deployment you can watch: Grafana, a load generator (paused until started, 10 to 1000 commands every 5 s), the admin API (prints the addresses)
+//                                                              WALLET_PERIOD=minutes:5 in front makes the statement period 5 minutes, so closed statements appear while you watch
 //   node examples/wallet-example-app/lab/lab.ts down           delete the cluster
 // Needs Docker, kind and kubectl (1.30 or later: `kubectl debug --profile=netadmin`). BUILD=0 reuses the image already built.
 // #endregion usage
@@ -62,6 +63,7 @@ interface Deployment {
   readonly workerReplicas: number;
   readonly migrate: boolean; // run the pre-deploy job
   readonly observe?: boolean; // Grafana in the cluster, and the wallet pods export to it
+  readonly period?: string; // WALLET_PERIOD of the API pods: "month" (the default) or "minutes:N", a statement period that turns every N minutes
 }
 // What a managed Postgres sets for keepalives out of the box (RDS: 300 s idle, 30 s interval, 2 probes) against settings an operator would choose.
 const KEEPALIVE_RDS = ["tcp_keepalives_idle=300", "tcp_keepalives_interval=30", "tcp_keepalives_count=2"];
@@ -105,7 +107,7 @@ const deployGrafana = (): void => {
   kubectl("rollout", "status", "deployment/grafana", "--timeout=300s");
 };
 const deployWallet = (d: Deployment): void => {
-  apply(render("wallet.yaml", { API_REPLICAS: String(d.apiReplicas), WORKER_REPLICAS: String(d.workerReplicas), POOL: String(d.pool), OTEL_ENV: d.observe === true ? OTEL_ENV : "" }));
+  apply(render("wallet.yaml", { API_REPLICAS: String(d.apiReplicas), WORKER_REPLICAS: String(d.workerReplicas), POOL: String(d.pool), PERIOD: d.period ?? "month", OTEL_ENV: d.observe === true ? OTEL_ENV : "" }));
   kubectl("rollout", "status", "deployment/wallet-api", "--timeout=180s");
   kubectl("rollout", "status", "deployment/wallet-workers", "--timeout=180s");
 };
@@ -475,7 +477,11 @@ const podIpOf = (app: string): string => kubectl("get", "pod", "-l", `app=${app}
 
 const observe = (): void => {
   up();
-  fresh({ ...standard, observe: true });
+  // WALLET_PERIOD=minutes:5 node lab.ts observe: a statement period of 5 minutes, so closed statements appear while you watch (a new database only, see docs/guides/turn-a-period.md)
+  const period = process.env["WALLET_PERIOD"]?.trim() || "month";
+  if (!/^(month|minutes:\d+)$/.test(period)) throw new Error(`WALLET_PERIOD must be "month" or "minutes:N", got "${period}"`);
+  log(`statement period: ${period}`);
+  fresh({ ...standard, observe: true, period });
   apply(readFileSync(path.join(here, "manifests", "loadgen.yaml"), "utf-8"));
   kubectl("rollout", "status", "deployment/loadgen", "--timeout=120s");
   console.log(`

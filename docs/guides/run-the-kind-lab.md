@@ -28,6 +28,10 @@ node examples/wallet-example-app/lab/lab.ts observe
 It creates the three-node cluster (`crablet-lab`), builds the wallet image and the migrations image, loads them, and deploys Grafana, Postgres, the schema job, two API pods, two worker pods and a load generator. The first run takes several minutes (the images build and the
 Grafana image is downloaded); it prints the addresses when it is done. `BUILD=0` reuses the images already built.
 
+To see a statement period turn while you watch (a month never turns during a run), start it with `WALLET_PERIOD=minutes:5 node examples/wallet-example-app/lab/lab.ts observe`. Every wallet then closes its statement and opens the next one, carrying the balance,
+on its first command after each 5-minute slot, and the chaos page's check "A statement opens and closes with the sum of the log, and its view says the same" compares those closed statements with the log. It is for a **new database**
+(`observe` starts one): see [turn a period](turn-a-period.md).
+
 | What | Where |
 |---|---|
 | Grafana | http://localhost:3000 (admin / admin) |
@@ -41,6 +45,7 @@ What the script accepts (the same lines are at the top of `examples/wallet-examp
 //   node examples/wallet-example-app/lab/lab.ts up             create the cluster (3 nodes), build and load the image
 //   node examples/wallet-example-app/lab/lab.ts run <name>...  run scenarios (each starts from an empty database and a fresh deployment); no names = all
 //   node examples/wallet-example-app/lab/lab.ts observe       up, then a deployment you can watch: Grafana, a load generator (paused until started, 10 to 1000 commands every 5 s), the admin API (prints the addresses)
+//                                                              WALLET_PERIOD=minutes:5 in front makes the statement period 5 minutes, so closed statements appear while you watch
 //   node examples/wallet-example-app/lab/lab.ts down           delete the cluster
 // Needs Docker, kind and kubectl (1.30 or later: `kubectl debug --profile=netadmin`). BUILD=0 reuses the image already built.
 ```

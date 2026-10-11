@@ -14,11 +14,13 @@ export const FROM_STATEMENT_ID = "from_statement_id";
 export const TO_STATEMENT_ID = "to_statement_id";
 
 // Period ("closing the books") tags - every wallet command is scoped to the current calendar
-// month, so period-scoped events carry year/month (day/hour reserved for finer-grained
-// other period granularities - only MONTHLY is used). MoneyTransferred
+// month (the default), so period-scoped events carry year/month; with WALLET_PERIOD=minutes:N they carry year/bucket
+// instead (day/hour are reserved for other granularities). MoneyTransferred
 // carries one shared (year, month) pair too, not separate from/to-prefixed variants - both wallets
 // in a transfer always resolve to the same current period (see TransferMoneyCommand.ts).
 export const YEAR = "year";
 export const MONTH = "month";
 export const DAY = "day";
 export const HOUR = "hour";
+// The N-minute period (WALLET_PERIOD=minutes:N, WalletPeriod.ts): the number of the slot since the epoch.
+export const BUCKET = "bucket";

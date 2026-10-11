@@ -35,6 +35,10 @@ jobs:
       - name: Unit tests (Bun, with coverage)
         run: bun run test:unit:coverage
 
+      # The wallet's commands with WALLET_PERIOD=minutes:5: the period is read when the model is loaded, so these tests need a process of their own.
+      - name: Unit tests (5-minute statement period)
+        run: bun run test:unit:period
+
       # The same integration tests as before, run with Node's coverage on (coverage/integration/lcov.info).
       - name: Integration tests (Node + Testcontainers, with coverage)
         run: bun run test:integration:coverage
