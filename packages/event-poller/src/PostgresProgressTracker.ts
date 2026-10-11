@@ -82,7 +82,7 @@ export const makePostgresProgressTracker = <I extends string>(
       );
 
     // Forward-only: the cursor never moves back. A processor that lost leadership without knowing it (a zombie) and writes late
-    // changes nothing, and no ping is sent for an update that did not advance (docs/plans/reliability-and-scale-diagnostic.md, D2).
+    // changes nothing, and no ping is sent for an update that did not advance (docs/history/plans/reliability-and-scale-diagnostic.md, D2).
     // One statement, forward-only: the row changes only when the stored cursor is behind `cursor`. It returns a row exactly when the cursor moved
     // (with `notifyChannel`, the ping is that row, so a cursor that did not move sends no ping).
     const moveCursor = (id: I, cursor: ProgressCursor): Effect.Effect<ReadonlyArray<unknown>, SqlError> =>
@@ -104,7 +104,7 @@ export const makePostgresProgressTracker = <I extends string>(
           );
 
     // Forward-only: the cursor never moves back. A processor that lost leadership without knowing it (a zombie) and writes late
-    // changes nothing, and no ping is sent for an update that did not advance (docs/plans/reliability-and-scale-diagnostic.md, D2).
+    // changes nothing, and no ping is sent for an update that did not advance (docs/history/plans/reliability-and-scale-diagnostic.md, D2).
     const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void, SqlError> => Effect.asVoid(moveCursor(id, cursor));
 
     const advanceCursor = (id: I, cursor: ProgressCursor): Effect.Effect<boolean, SqlError> =>

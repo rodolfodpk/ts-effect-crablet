@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. What a consistent read sends to the database (docs/adr/0015-read-consistency-by-marker.md): the first look is ONE statement of the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. What a consistent read sends to the database (docs/adr/0015-read-consistency-by-marker.md): the first look is ONE statement of the
 // framework's (where the log ends, where the view is, whether anything it handles is pending), and the application's own query is a separate one. Counted with pg_stat_statements on an
 // instance that runs only the API, so the only statements are the reads'. Before the first look was fused a default read sent four (end of the log, progress, pending, the view's query).
 import { after, before, describe, it } from "node:test";

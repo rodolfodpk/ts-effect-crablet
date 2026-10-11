@@ -1,4 +1,4 @@
-// The guides (docs/evolving-events.md and docs/guides/*.md) cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
+// The guides (every markdown file under docs/guides, in build/ and operate/) cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
 // file's `// #region name` ... `// #endregion name` (compared with the common indentation removed), and the files, links and scripts the text mentions must exist.
 // (The tutorial has the same kind of test: examples/course-enrolment-app/test/tutorial-sync.test.ts.)
 import { describe, expect, test } from "bun:test";
@@ -6,7 +6,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dir, "../../..");
-const guides = ["docs/evolving-events.md", ...readdirSync(path.join(root, "docs/guides")).sort().map((f) => `docs/guides/${f}`)];
+const guides = (readdirSync(path.join(root, "docs/guides"), { recursive: true }) as Array<string>)
+  .filter((f) => f.endsWith(".md"))
+  .sort()
+  .map((f) => `docs/guides/${f.split(path.sep).join("/")}`);
 
 const dedent = (text: string): string => {
   const lines = text.replace(/\s+$/u, "").split("\n").map((l) => l.replace(/\s+$/u, ""));
@@ -47,8 +50,8 @@ for (const guide of guides) {
     });
 
     test("every repository path written in backticks exists (patterns with * are skipped)", () => {
-      const paths = [...doc.matchAll(/`((?:packages|examples|docs)\/[^`\s]+)`/gu)].map((m) => m[1]!.replace(/[.,;:]+$/u, "")).filter((p) => !p.includes("*"));
-      if (guide === "docs/evolving-events.md") expect(paths.length).toBeGreaterThan(0);
+      const paths = [...doc.matchAll(/`((?:packages|examples|tools|docs)\/[^`\s]+)`/gu)].map((m) => m[1]!.replace(/[.,;:]+$/u, "")).filter((p) => !p.includes("*"));
+      if (guide.endsWith("evolving-events.md")) expect(paths.length).toBeGreaterThan(0);
       for (const p of paths) expect(existsSync(path.join(root, p)), `missing: ${p}`).toBe(true);
     });
   });

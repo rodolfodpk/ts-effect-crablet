@@ -1,4 +1,4 @@
-// Runs under Node (not Bun) - see NOTES.md: @testcontainers/postgresql hangs indefinitely under
+// Runs under Node (not Bun) - see docs/history/NOTES.md: @testcontainers/postgresql hangs indefinitely under
 // Bun's wait-strategy handling, confirmed working under plain Node. Run via: node --test
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

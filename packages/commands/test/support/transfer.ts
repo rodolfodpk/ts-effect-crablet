@@ -1,4 +1,4 @@
-// The DCB guide's example (docs/dcb-guide.md): accounts and a transfer between two of them.
+// The DCB guide's example (docs/concepts/dcb-guide.md): accounts and a transfer between two of them.
 // Shared by the in-memory test (transfer-guide.test.ts) and the Postgres test
 // (integration/transfer-guide-postgres.test.ts). The code between the markers is what the guide shows.
 import { Effect } from "effect";

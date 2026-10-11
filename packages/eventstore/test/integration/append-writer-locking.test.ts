@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 //
 // A writer that is IN FLIGHT (its transaction is open, its events not yet committed) must make a
 // checker whose append condition those events would match WAIT for it, and then see it. Otherwise the

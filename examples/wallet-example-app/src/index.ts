@@ -21,7 +21,7 @@ const connInfo = {
   password: process.env["WALLET_DB_PASSWORD"] ?? "postgres"
 };
 // WALLET_DB_SESSION_HOST (and _PORT, _NAME, _USER, _PASSWORD, _POOL, each defaulting to the main one, the pool to 10; it must cover what the roles keep for good: 2 per worker role, 1 for the api): a DIRECT connection to the database for the leader locks and LISTEN, while
-// WALLET_DB_HOST points at a pooler in transaction mode (PgBouncer). Unset, they share the main connection. See docs/guides/run-in-production.md.
+// WALLET_DB_HOST points at a pooler in transaction mode (PgBouncer). Unset, they share the main connection. See docs/guides/operate/run-in-production.md.
 const sessionHost = process.env["WALLET_DB_SESSION_HOST"];
 const sessionInfo = sessionHost === undefined || sessionHost === "" ? undefined : {
   host: sessionHost,
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     );
   });
 
-  // Set OTEL_EXPORTER_OTLP_ENDPOINT to export metrics, spans and logs over OTLP (docs/guides/dashboard.md); unset, nothing is exported.
+  // Set OTEL_EXPORTER_OTLP_ENDPOINT to export metrics, spans and logs over OTLP (docs/guides/operate/dashboard.md); unset, nothing is exported.
   // The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the three processors stop and release their leader locks (another
   // instance takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
   NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(appLayer, observabilityLayer())));

@@ -1,4 +1,4 @@
-// Keeps the Grafana dashboard and the alert rules in step with @crablet/metrics-otel (docs/plans/dashboard.md, step 2). A renamed or removed metric must break
+// Keeps the Grafana dashboard and the alert rules in step with @crablet/metrics-otel (docs/history/plans/dashboard.md, step 2). A renamed or removed metric must break
 // this test, not a panel on a screen nobody is looking at.
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
@@ -21,7 +21,7 @@ interface Described { readonly id: string; readonly type: string }
 const isMetric = (v: unknown): v is Described => typeof v === "object" && v !== null && "id" in v && "type" in v && typeof (v as Described).id === "string";
 
 // Every metric the package exports, with the name or names Prometheus gives it when it arrives by OTLP. Measured against the grafana/otel-lgtm image
-// (docs/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
+// (docs/history/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
 const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
   const out = new Map<string, ReadonlyArray<string>>();
   const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics];

@@ -1,8 +1,8 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A view's writes must apply each event ONCE, even when the same batch is handled twice: by a
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. A view's writes must apply each event ONCE, even when the same batch is handled twice: by a
 // zombie leader and its successor at the same time, or again after a crash between the view's commit and the cursor's update. The projector here
 // ADDS (the way the wallet's balance and summary views do), so a repeated batch shows as a doubled total.
 //
-// Written before the fix (docs/plans/reliability-and-scale-diagnostic.md, F1 residual): the first two tests fail until the cursor is advanced in the
+// Written before the fix (docs/history/plans/reliability-and-scale-diagnostic.md, F1 residual): the first two tests fail until the cursor is advanced in the
 // SAME transaction as the view's writes, as a forward-only compare-and-set that undoes the batch when it matches no row.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

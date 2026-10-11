@@ -1,4 +1,4 @@
-// The coverage gate (docs/plans/test-coverage.md, steps 3 and 5). It compares the merged report (coverage/lcov.info, packages only) with the committed baseline (coverage-baseline.json) and fails when
+// The coverage gate (docs/history/plans/test-coverage.md, steps 3 and 5). It compares the merged report (coverage/lcov.info, packages only) with the committed baseline (coverage-baseline.json) and fails when
 //   - a package, or the packages as a whole, falls below its baseline by more than the tolerance (the ratchet: coverage may not go down), or
 //   - a source file is below the per-file floor and is not listed in `fileExclusions` with a reason, or
 //   - an exclusion is stale (the file is gone, or is above the floor now): the list of exceptions cannot grow silently and cannot outlive its reason.

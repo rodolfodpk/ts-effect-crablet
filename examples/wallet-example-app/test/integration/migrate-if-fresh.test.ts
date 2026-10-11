@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The entry point applies the schema to a fresh database only, so the app can restart against the same database.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The entry point applies the schema to a fresh database only, so the app can restart against the same database.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "pg";

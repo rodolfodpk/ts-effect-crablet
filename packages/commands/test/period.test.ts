@@ -1,4 +1,4 @@
-// `.period`: a model that declares its period once, and a command that never writes the rollover itself (docs/plans/period-rollover.md). In memory, with a clock: `given(...).at(date).when(...)`.
+// `.period`: a model that declares its period once, and a command that never writes the rollover itself (docs/history/plans/period-rollover.md). In memory, with a clock: `given(...).at(date).when(...)`.
 import { describe, expect, test } from "bun:test";
 import { Effect, Metric } from "effect";
 import * as Schema from "effect/Schema";
@@ -260,7 +260,7 @@ describe("a model with a period", () => {
 
   // A log that already holds a second opening of the open period (written before the period was turned by the framework, by a writer that did not condition its opening, or by another system). The fold
   // resets the balance to what that opening carried, which was read BEFORE the deposits in between, so they drop out of the balance.
-  // `todo`: fails today (balance 5, not 15). Run it with `bun test --todo`. A period model could ignore a second opening of a period whose opening it has already seen (docs/plans/period-follow-ups.md).
+  // `todo`: fails today (balance 5, not 15). Run it with `bun test --todo`. A period model could ignore a second opening of a period whose opening it has already seen (docs/history/plans/period-follow-ups.md).
   test.todo("a stale duplicate opening of the open period, already in the log, does not drop what was credited before it", async () => {
     const s = given(Opened({ id: "a1" }));
     await s.at(oct).when(Credit, c(10, "o1")); // opens October (opening 0), credits 10

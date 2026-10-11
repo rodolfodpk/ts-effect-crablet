@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. `project` returns a horizon: a cursor before every event the read could have missed (ADR-0018, decision 8).
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. `project` returns a horizon: a cursor before every event the read could have missed (ADR-0018, decision 8).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "pg";

@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -194,7 +194,7 @@ describe("EventProcessor integration (real Postgres: leader election, LISTEN/NOT
         Effect.gen(function* () {
           const store = yield* EventStore;
           // append fires NOTIFY on EVENTS_CHANNEL automatically now - no manual
-          // notify() call needed (previously a Phase 1 gap, fixed in Phase 3 - see NOTES.md).
+          // notify() call needed (previously a Phase 1 gap, fixed in Phase 3 - see docs/history/NOTES.md).
           yield* store.append([
             AppendEvent.of("PollerIntegWakeupEvent", "run_marker", viewName, {})
           ]);

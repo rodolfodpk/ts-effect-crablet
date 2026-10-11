@@ -1,4 +1,4 @@
-// DIAGNOSTIC EXPERIMENTS (docs/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
+// DIAGNOSTIC EXPERIMENTS (docs/history/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/commands/diagnostics/boundary-and-storage.diagnostic.ts   and read the `DIAG` lines.
 // E5: command latency against the number of events in its boundary. E5f: what reading fewer columns saves. E5h: where the gap between the raw fetch and `project` goes. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
 // E8: what an event costs on disk (events heap and indexes, the tag table). The folder is outside the test globs, so CI does not run it.

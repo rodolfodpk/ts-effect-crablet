@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Full E2E happy path through the real running
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Full E2E happy path through the real running
 // app (background processors + HTTP server).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

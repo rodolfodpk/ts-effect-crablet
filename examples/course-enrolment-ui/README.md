@@ -16,7 +16,7 @@ bun run dev        # the dev server proxies the API, so it needs no CORS
 `bun run build` makes a production build; `bun run typecheck` checks the types. To call the API on its own origin instead of through the proxy, set `VITE_API_URL`
 (the API then needs its opt-in CORS).
 
-Where it sits among the containers: [C4 models](../../docs/c4-examples.md#course-enrolment).
+Where it sits among the containers: [C4 models](../../docs/concepts/c4-examples.md#course-enrolment).
 
 ## Where things are
 

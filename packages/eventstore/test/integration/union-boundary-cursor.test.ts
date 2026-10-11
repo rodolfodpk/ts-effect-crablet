@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Which cursor is a SAFE append condition for a model over SEVERAL entities (`all(...)`, ADR-0018 open point 1)?
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Which cursor is a SAFE append condition for a model over SEVERAL entities (`all(...)`, ADR-0018 open point 1)?
 //
 // The check refuses an append when an event matching the union boundary sorts after the cursor in (transaction_id, position) order. It is safe only if
 // every event that a member's read did NOT see sorts after the cursor, and live (never refuses forever) only if the events every member DID see sort at

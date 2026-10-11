@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Postgres-backed unit tests for
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Postgres-backed unit tests for
 // WalletBalanceViewProjector/WalletTransactionViewProjector/WalletSummaryViewProjector, driven
 // directly (hand-built StoredEvent fixtures), same style as statement-view.test.ts.
 import { after, before, describe, it } from "node:test";

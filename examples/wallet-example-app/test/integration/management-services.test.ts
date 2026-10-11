@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The three modules' management services (views, automations, outbox) on the wallet's real processors and a real
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The three modules' management services (views, automations, outbox) on the wallet's real processors and a real
 // database: the progress details each adds to the generic service, the failure details the admin API lists, and the backlog counted against each processor's own selection.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

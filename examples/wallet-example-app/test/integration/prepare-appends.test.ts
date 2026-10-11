@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A measurement of the `prepare` gap (Command.ts, "prepare") that stayed useful after the wallet stopped appending in a `prepare`: the wallet's commands used to open the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. A measurement of the `prepare` gap (Command.ts, "prepare") that stayed useful after the wallet stopped appending in a `prepare`: the wallet's commands used to open the
 // statement period there, and a command that ended as an idempotent repeat committed what its `prepare` had appended with no audit row. Now the framework turns the period in the command's own append (`.period`) and an
 // idempotent result rolls everything back. This still races every way a wallet command can end idempotent or lose a race on a fresh wallet - the same withdrawal three times, transfers in both directions, and the month
 // rollover (close the old statement, open the new one) with the clock moved to the next month - and requires one opening and one closing per wallet and no event whose transaction has no command in the audit.

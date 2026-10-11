@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 Lasting architectural decisions made while building this framework, extracted from the phase-by-phase
-narrative in [`NOTES.md`](../../NOTES.md). Each ADR is self-contained: context, decision,
+narrative in [`NOTES.md`](../history/NOTES.md). Each ADR is self-contained: context, decision,
 consequences. Process gotchas, one-off bugs, and phase status stay in `NOTES.md` — only decisions
 with lasting effect on the codebase's shape get an ADR here.
 

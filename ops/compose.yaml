@@ -1,5 +1,5 @@
 # A local stack to see the dashboard with a real application behind it: Postgres, and one image that holds an OpenTelemetry Collector, Prometheus, Tempo,
-# Loki and Grafana. Not a production topology: bring your own Collector, Prometheus and Grafana for that (docs/guides/dashboard.md).
+# Loki and Grafana. Not a production topology: bring your own Collector, Prometheus and Grafana for that (docs/guides/operate/dashboard.md).
 #
 #   docker compose -f ops/compose.yaml up -d
 #   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 node examples/wallet-example-app/src/index.ts

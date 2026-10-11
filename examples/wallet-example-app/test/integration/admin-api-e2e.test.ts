@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The admin API over the wallet's real processors (views, automation, outbox) and a real database: who may call it,
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The admin API over the wallet's real processors (views, automation, outbox) and a real database: who may call it,
 // what it lists, and that pause, resume and reset change what the processors do.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

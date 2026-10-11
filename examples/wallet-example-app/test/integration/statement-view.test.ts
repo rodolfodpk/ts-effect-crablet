@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Postgres-backed unit test of
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Postgres-backed unit test of
 // WalletStatementViewProjector specifically, driven directly (hand-built StoredEvent fixtures fed
 // to projector.handle([...])), not through the full views/commands/HTTP pipeline.
 //

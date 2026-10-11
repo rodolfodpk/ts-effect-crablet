@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, and implemented (docs/plans/read-consistency.md, phases 0-6). Supersedes the `?waitFor=<view>` part of the command API (ADR-0011 and the tutorial's step 4). Breaking under ADR-0013: the removal landed in one commit that updated every consumer in this repository.
+Accepted, and implemented (docs/history/plans/read-consistency.md, phases 0-6). Supersedes the `?waitFor=<view>` part of the command API (ADR-0011 and the tutorial's step 4). Breaking under ADR-0013: the removal landed in one commit that updated every consumer in this repository.
 
 ## Context
 

@@ -1,5 +1,5 @@
 // A period a model is scoped by: the unit of time (or any other cycle) after which one statement, shift or ledger page is closed and the next is opened with the state carried forward
-// ("closing the books"; docs/plans/period-rollover.md). `Period.month` and its siblings are VALUES, not strings: each carries the type of its fields, and the framework derives from it what
+// ("closing the books"; docs/history/plans/period-rollover.md). `Period.month` and its siblings are VALUES, not strings: each carries the type of its fields, and the framework derives from it what
 // would otherwise be boilerplate in every model - which period "now" falls in, the tags that scope a model to it, a canonical key, and which period an opening event opened.
 //
 //     defineModel({ by: "wallet_id", initial })

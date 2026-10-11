@@ -1,4 +1,4 @@
-# Codecov settings (docs/plans/test-coverage.md, steps 2 and 3). The report CI uploads is already packages only (scripts/merge-coverage.ts); these ignores keep it that way
+# Codecov settings (docs/history/plans/test-coverage.md, steps 2 and 3). The report CI uploads is already packages only (scripts/merge-coverage.ts); these ignores keep it that way
 # if a file slips in, and the statuses below are the second guard next to the baseline check in CI (scripts/coverage-gate.ts).
 ignore:
   - "examples/**"       # demonstration code; its coverage is reported in the CI log but is not what the library is judged by

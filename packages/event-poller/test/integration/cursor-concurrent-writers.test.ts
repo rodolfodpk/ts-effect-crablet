@@ -1,5 +1,5 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
-// Probabilistic smoke for docs/plans/poller-cursor-fix.md: many concurrent writers (different tags, so the writer
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
+// Probabilistic smoke for docs/history/plans/poller-cursor-fix.md: many concurrent writers (different tags, so the writer
 // locks do not serialize them) while a reader polls with the (transaction_id, position) cursor. It cannot prove
 // the absence of a skip on its own - cursor-inversion.test.ts is the deterministic gate - but with a bare position
 // cursor this shape lost a few events per few thousand appends.

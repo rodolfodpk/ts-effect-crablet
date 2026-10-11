@@ -12,7 +12,7 @@ node src/migrate.ts         # once per fresh database
 node src/index.ts           # the API on :8080 (set PORT to change it; COURSES_DOCS=scalar also serves /docs)
 ```
 
-`docker compose down -v` removes the database. `COURSES_DB_POOL` sets the most connections the pool may open (unset: the library's default of 10; [how to size it](../../docs/guides/run-in-production.md#size-the-pool)). The tutorial explains each step and what to try with `curl`.
+`docker compose down -v` removes the database. `COURSES_DB_POOL` sets the most connections the pool may open (unset: the library's default of 10; [how to size it](../../docs/guides/operate/run-in-production.md#size-the-pool)). The tutorial explains each step and what to try with `curl`.
 
 ## Where things are
 
@@ -20,11 +20,11 @@ node src/index.ts           # the API on :8080 (set PORT to change it; COURSES_D
 |---|---|
 | `src/domain/` | events, models, the two contracts (`enrolment.contract.ts`) and the commands |
 | `src/CourseApi.ts`, `src/CourseApp.ts` | the API declared from contracts, and the server that implements it |
-| `src/views/`, `src/api/` | the seat-map view, declared with `defineView` (what each event does to its table, compared with the migrated database by a test), and the read endpoints, which read through `SqlSchema` (the row type is checked against the database on every read; [the database workflow](../../docs/guides/database-workflow.md)). `CourseEnrolmentsViewProjector` is the hand-written projector, for what `defineView` cannot say, read by `GET /api/courses/:courseId/enrolments` |
+| `src/views/`, `src/api/` | the seat-map view, declared with `defineView` (what each event does to its table, compared with the migrated database by a test), and the read endpoints, which read through `SqlSchema` (the row type is checked against the database on every read; [the database workflow](../../docs/guides/build/database-workflow.md)). `CourseEnrolmentsViewProjector` is the hand-written projector, for what `defineView` cannot say, read by `GET /api/courses/:courseId/enrolments` |
 | `scripts/` | `generate-openapi.ts` (writes [`docs/api/course-enrolment-openapi.json`](../../docs/api/course-enrolment-openapi.json)), `step2-postgres.ts`, `bench-reads.ts` (what a consistent read costs; needs Docker) |
 | `tutorial/` | the step 1 test the tutorial shows |
 | `test/` | unit tests, including the one that keeps the tutorial's code equal to these files; `test/integration/` needs Docker |
 
-Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/c4-examples.md#course-enrolment).
+Its architecture as C4 diagrams (context, containers, components): [C4 models](../../docs/concepts/c4-examples.md#course-enrolment).
 
 The page for this API is [`course-enrolment-ui`](../course-enrolment-ui/README.md).

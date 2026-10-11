@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 // A progress tracker with `notifyChannel` pings when a processor advances: one notification per advance, sent in the same statement as
 // the update (so it is delivered only once the new cursor has committed), and nothing for a tracker without the option or a row that
 // does not exist.

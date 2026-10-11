@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Confirms the correlation id supplied on the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Confirms the correlation id supplied on the
 // inbound HTTP request propagates through CommandApiLive's CorrelationContext.withCorrelationId
 // into the WalletOpened event itself, AND that the automations processor's own
 // AutomationEventHandler.ts propagates that same correlation id (plus a causationId equal to the

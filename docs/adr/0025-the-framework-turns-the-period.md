@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-09). Built: `Period` (`@crablet/commands/Period`: `year`, `month`, `day`, `custom`), `ModelBuilder.period`, `Loaded.prefix/boundary/guard`, the executor's append, `all` carrying them, `Scenario.at(date)`; the wallet runs on it (`WalletPeriodModel`). Tested in memory (`period.test.ts`) and on Postgres (`period-rollover.test.ts`, with the Effect clock moved between months). Design and measurements: [`docs/plans/period-rollover.md`](../plans/period-rollover.md), NOTES.md ("Closed periods").
+**Accepted** (2026-10-09). Built: `Period` (`@crablet/commands/Period`: `year`, `month`, `day`, `custom`), `ModelBuilder.period`, `Loaded.prefix/boundary/guard`, the executor's append, `all` carrying them, `Scenario.at(date)`; the wallet runs on it (`WalletPeriodModel`). Tested in memory (`period.test.ts`) and on Postgres (`period-rollover.test.ts`, with the Effect clock moved between months). Design and measurements: [`docs/history/plans/period-rollover.md`](../history/plans/period-rollover.md), NOTES.md ("Closed periods").
 
 ## Context
 

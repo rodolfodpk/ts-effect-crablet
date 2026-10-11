@@ -1,5 +1,5 @@
-// Runs under Node (Testcontainers + the docker CLI, and the image edoburu/pgbouncer) - see NOTES.md. The whole wallet behind PgBouncer in TRANSACTION mode, the way a deployment with a pooler runs it
-// (docs/guides/run-in-production.md, "Behind a pooler"; ADR-0024): TWO instances, each with the application's connection going through the pooler (a server pool of 8) and the leader locks and LISTEN
+// Runs under Node (Testcontainers + the docker CLI, and the image edoburu/pgbouncer) - see docs/history/NOTES.md. The whole wallet behind PgBouncer in TRANSACTION mode, the way a deployment with a pooler runs it
+// (docs/guides/operate/run-in-production.md, "Behind a pooler"; ADR-0024): TWO instances, each with the application's connection going through the pooler (a server pool of 8) and the leader locks and LISTEN
 // on a direct session connection (a pool of 10: it holds 3 leader locks and 4 LISTEN for good).
 //
 // The load, through both instances: opens, deposits, withdrawals, transfers and a deposit id sent twice at once; then a CONTENTION phase, 240 debits (withdrawals and transfers, which are strict over a
@@ -7,9 +7,9 @@
 // ran out of retries answered 409 and nothing else went wrong. In the middle of more load the session connection of every leader is killed, and then one instance is stopped gracefully.
 //
 // At the end: one leader per role each time, always on a session connection and never on a pooled one; the other instance takes over; no 5xx; and the data is consistent: the same checks the kind lab's
-// chaos page runs (examples/chaos-ui/server/checks.ts: the views equal the sum of the log, no duplicate deposits, one welcome notification per wallet, every transaction of events audited).
+// chaos page runs (tools/chaos-ui/server/checks.ts: the views equal the sum of the log, no duplicate deposits, one welcome notification per wallet, every transaction of events audited).
 //
-// Two things this test taught, both in NOTES.md: the session pool must hold what the process keeps for good (7), and PgBouncer must be given the database's IPv4 address, or it serialises everything.
+// Two things this test taught, both in docs/history/NOTES.md: the session pool must hold what the process keeps for good (7), and PgBouncer must be given the database's IPv4 address, or it serialises everything.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Metric, Redacted } from "effect";
@@ -24,7 +24,7 @@ import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 import * as CommandMetrics from "../../../../packages/metrics-otel/src/CommandMetrics.ts";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { dataChecks } from "../../../chaos-ui/server/checks.ts";
+import { dataChecks } from "../../../../tools/chaos-ui/server/checks.ts";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 

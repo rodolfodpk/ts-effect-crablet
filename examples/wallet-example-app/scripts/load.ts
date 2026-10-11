@@ -7,7 +7,7 @@
 // stops (--seconds is ignored). If a burst takes longer than the interval, the next starts at once.
 //
 // And it can be steered while it runs: --control-port 9090 serves GET /status and POST /config, so the interval, the range, the number of wallets and start/pause change without restarting
-// the process (the kind lab's chaos page does this; see examples/chaos-ui). With --start-paused it waits for a start (POST /config {"running": true}) instead of sending at once. It binds to all interfaces of the pod, which is what a port-forward needs; run it only where that is fine.
+// the process (the kind lab's chaos page does this; see tools/chaos-ui). With --start-paused it waits for a start (POST /config {"running": true}) instead of sending at once. It binds to all interfaces of the pod, which is what a port-forward needs; run it only where that is fine.
 import { createServer } from "node:http";
 
 const arg = (name: string, fallback: string): string => {

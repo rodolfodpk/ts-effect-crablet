@@ -1,4 +1,4 @@
-// DIAGNOSTIC EXPERIMENTS (docs/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker),
+// DIAGNOSTIC EXPERIMENTS (docs/history/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker),
 // the real processor, leader election and listeners. Run with:  node --test packages/event-poller/diagnostics/leader-and-listener.diagnostic.ts
 // and read the `DIAG` lines (add --test-name-pattern="D1|D1b|D2|D3" to pick one). D1: the leader's database session dies (does it stop? does the other instance take
 // over? duplicates? does the cursor go backwards?). D1b: the leader process dies (how long until the follower takes over). D2: can the cursor be written backwards.

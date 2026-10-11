@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Focused on the 5 command handlers' own
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Focused on the 5 command handlers' own
 // decision-building logic in isolation, run through the real CommandExecutor against real
 // Postgres (every handler but OpenWallet genuinely needs a real EventStore for period
 // resolution/projections, so a true no-DB unit test isn't meaningful here) - not yet touching

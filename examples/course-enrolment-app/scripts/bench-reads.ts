@@ -1,4 +1,4 @@
-// What a consistent read costs (docs/plans/read-consistency.md phase 7, docs/plans/shared-listener.md phase 4). Starts the real course app on a
+// What a consistent read costs (docs/history/plans/read-consistency.md phase 7, docs/history/plans/shared-listener.md phase 4). Starts the real course app on a
 // throwaway Postgres (Testcontainers, needs Docker) and measures, with the load generator, the app and the database all on this machine:
 //
 //   1. reads on an idle log:        eventual (no wait) / latest (the server default) / a write's marker, at several concurrencies;

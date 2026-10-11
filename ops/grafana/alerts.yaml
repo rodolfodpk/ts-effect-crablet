@@ -18,7 +18,7 @@ groups:
         execErrState: Error
         annotations:
           summary: "{{ $labels.processor }} is FAILED: it stopped after too many errors."
-          runbook: docs/guides/run-in-production.md
+          runbook: docs/guides/operate/run-in-production.md
         labels: { severity: critical }
         data:
           - refId: A
@@ -37,7 +37,7 @@ groups:
         # series stays at 1 for about five minutes but stops being re-sent, so a leader is a series at 1 written in the last 120 seconds (keep in step with FRESH_SECONDS in
         # scripts/build-dashboard.ts; the exporter must re-send more often than that).
         # The query has two parts, joined with `or`, and returns NOTHING when all is well, so no data means healthy here (noDataState OK). Had it alerted on no data, a healthy system would
-        # fire (found by killing leaders: docs/plans/dashboard.md):
+        # fire (found by killing leaders: docs/history/plans/dashboard.md):
         #   - a module that has reported but has no fresh leader (a leader that crashed, between two and five minutes after);
         #   - `absent(...)`: no leadership series at all (everything that was reporting has been gone for five minutes: a total outage).
         noDataState: OK
@@ -45,7 +45,7 @@ groups:
         annotations:
           summary: "No instance leads the {{ $labels.module }} module."
           description: "Nothing is running that module's processors (or, for 'no leadership data', nothing is reporting). A leader that crashed is recognised after two minutes of silence."
-          runbook: docs/guides/run-in-production.md
+          runbook: docs/guides/operate/run-in-production.md
         labels: { severity: critical }
         data:
           - refId: A
@@ -108,8 +108,8 @@ groups:
         execErrState: Error
         annotations:
           summary: "A stored event could not be decoded by the current definitions."
-          description: "An unsafe event change (rename, retype, remove, or a changed meaning). See docs/evolving-events.md."
-          runbook: docs/evolving-events.md
+          description: "An unsafe event change (rename, retype, remove, or a changed meaning). See docs/guides/build/evolving-events.md."
+          runbook: docs/guides/build/evolving-events.md
         labels: { severity: critical }
         data:
           - refId: A

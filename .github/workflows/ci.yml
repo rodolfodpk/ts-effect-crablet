@@ -21,7 +21,7 @@ jobs:
           bun-version: 1.4.2
 
       # test:integration runs under Node (node --test), not Bun - @testcontainers/postgresql
-      # hangs indefinitely under Bun's wait-strategy handling (see NOTES.md).
+      # hangs indefinitely under Bun's wait-strategy handling (see docs/history/NOTES.md).
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -43,7 +43,7 @@ jobs:
       - name: Integration tests (Node + Testcontainers, with coverage)
         run: bun run test:integration:coverage
 
-      # One report: a line is covered if either suite ran it (scripts/merge-coverage.ts; docs/plans/test-coverage.md).
+      # One report: a line is covered if either suite ran it (scripts/merge-coverage.ts; docs/history/plans/test-coverage.md).
       - name: Merge unit and integration coverage
         run: bun run coverage:merge
 

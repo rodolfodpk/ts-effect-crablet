@@ -20,7 +20,7 @@ framework sits on top of this package.
 
 ## Read more
 
-[DCB guide](../../docs/dcb-guide.md) (what an append condition is for), [ADR-0003](../../docs/adr/0003-non-commutative-append-concurrency-protection.md),
+[DCB guide](../../docs/concepts/dcb-guide.md) (what an append condition is for), [ADR-0003](../../docs/adr/0003-non-commutative-append-concurrency-protection.md),
 [ADR-0012](../../docs/adr/0012-transaction-position-cursors.md) (cursors), [ADR-0005](../../docs/adr/0005-listen-notify-implementation.md) and
 [ADR-0006](../../docs/adr/0006-leader-election-via-sql-reserve.md). You usually reach this package through [`@crablet/commands`](../commands/README.md) rather than directly.
 

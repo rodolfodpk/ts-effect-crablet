@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. What is waiting for a processor, counted against ITS selection, on a real database.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. What is waiting for a processor, counted against ITS selection, on a real database.
 // The point: a cursor only ever lands on events the selection matched, so "head of the log minus cursor" (getLag) says a consumer of a rare event type is
 // far behind when it has everything. The backlog is the number to alert on.
 import { after, before, describe, it } from "node:test";

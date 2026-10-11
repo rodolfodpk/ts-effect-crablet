@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 //
 // Regression tests for append conditions built from MULTI-ITEM queries. A Query is an OR of items;
 // each item is (any-of event types) AND (all tags). The append check must honour that shape:

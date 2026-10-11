@@ -4,7 +4,7 @@
 //
 // The queries are PromQL over the names Prometheus gives the metrics when they arrive by OTLP (the Grafana otel-lgtm image, or a Collector with a
 // Prometheus backend): a counter keeps its name, a gauge gains `_ratio`, a timer becomes `<name>_milliseconds_bucket|count|sum`
-// (docs/plans/dashboard.md, step 2). scripts/dashboard.test.ts derives those names from @crablet/metrics-otel and fails when a panel or an alert
+// (docs/history/plans/dashboard.md, step 2). scripts/dashboard.test.ts derives those names from @crablet/metrics-otel and fails when a panel or an alert
 // queries one that does not exist, or when a metric has neither a panel nor a stated reason for having none.
 import { resolve } from "node:path";
 import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";

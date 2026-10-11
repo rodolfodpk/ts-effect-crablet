@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. `viewProgressFeed` on the view progress hub (ADR-0016): it opens with where each named view is now,
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. `viewProgressFeed` on the view progress hub (ADR-0016): it opens with where each named view is now,
 // sends the pings of the named views and no others, and when the hub reconnects (a ping may have been missed) it says where the views are again. It
 // holds no database connection of its own: it is a subscription to the hub.
 import { after, before, describe, it } from "node:test";

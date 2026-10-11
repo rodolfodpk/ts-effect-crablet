@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The hub over a real `LISTEN crablet_view_progress`: pings from the database reach its
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The hub over a real `LISTEN crablet_view_progress`: pings from the database reach its
 // subscribers, many subscribers share ONE database connection, and when that connection is killed the hub reconnects and tells every
 // subscriber to re-read.
 import { after, before, describe, it } from "node:test";

@@ -1,4 +1,4 @@
-// DIAGNOSTIC EXPERIMENT (docs/guides/run-in-production.md, "Behind a pooler"), not a test: it measures, it does not assert. Needs Docker and the image edoburu/pgbouncer.
+// DIAGNOSTIC EXPERIMENT (docs/guides/operate/run-in-production.md, "Behind a pooler"), not a test: it measures, it does not assert. Needs Docker and the image edoburu/pgbouncer.
 // Run with:  node --test examples/wallet-example-app/diagnostics/pgbouncer-session.diagnostic.ts   and read the `DIAG` lines.
 // The whole wallet (api, views, automations, outbox) with its connection pointed at PgBouncer 1.x in TRANSACTION mode (server pool of 4), twice: with the leader locks and LISTEN on a direct
 // session connection (`Crablet.layer(pg, { session })`), and without it. Each run samples for 8 s which backend holds each leader lock (a lock that moves between backends means the leader

@@ -18,6 +18,6 @@ A publisher must be idempotent: after a crash an event can be published again.
 
 ## Read more
 
-[Reference: delivery guarantees](../../docs/reference.md#views-the-outbox-and-automations); the [wallet example](../../examples/wallet-example-app/README.md) wires one.
+[Reference: delivery guarantees](../../docs/reference/README.md#views-the-outbox-and-automations); the [wallet example](../../examples/wallet-example-app/README.md) wires one.
 
 Unit tests: `bun test packages/outbox/test/*.test.ts`. Integration tests (real Postgres through Testcontainers, needs Docker): `node --test "packages/outbox/test/integration/*.test.ts"`.

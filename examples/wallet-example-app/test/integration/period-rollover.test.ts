@@ -1,8 +1,8 @@
-// Runs under Node (Testcontainers). Regression tests for the month rollover, the acceptance tests of docs/plans/period-rollover.md. A wallet's statement period is decided from the clock in a command's `prepare`;
+// Runs under Node (Testcontainers). Regression tests for the month rollover, the acceptance tests of docs/history/plans/period-rollover.md. A wallet's statement period is decided from the clock in a command's `prepare`;
 // when the month turns, the first command of the new month closes the old statement and opens the next. The tests below turn the month while another command is already under way, and check that no money is
 // lost: the wallet's balance in the CURRENT period must equal what was put in and taken out, and nothing may be written into a period after it was closed.
 //
-// Before `.period` these failed (measured: a deposit that decided on the old month and appended after it closed ended with 115 in the current period instead of 122; NOTES.md, "Closed periods"). The framework now
+// Before `.period` these failed (measured: a deposit that decided on the old month and appended after it closed ended with 115 in the current period instead of 122; docs/history/NOTES.md, "Closed periods"). The framework now
 // turns the period in the command's own append and puts the closing of the period a command decided in into its boundary. The window between a `prepare` that resolved the period and the model load, which the first
 // version of these tests also paused in, no longer exists: there is no `prepare`.
 import { after, before, describe, it } from "node:test";

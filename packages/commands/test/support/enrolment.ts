@@ -1,4 +1,4 @@
-// The DCB guide's second example (docs/dcb-guide.md): course enrolment, a rule no single aggregate owns.
+// The DCB guide's second example (docs/concepts/dcb-guide.md): course enrolment, a rule no single aggregate owns.
 // Shared by enrolment-guide.test.ts (in-memory) and integration/enrolment-guide-postgres.test.ts.
 // The code between the markers is what the guide shows.
 import { Effect } from "effect";

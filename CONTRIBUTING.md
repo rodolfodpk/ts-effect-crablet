@@ -22,7 +22,7 @@ bun run test:unit:coverage # the same with an lcov report at coverage/lcov.info
 bun run test:integration   # real Postgres through Testcontainers (Docker), runs under Node
 ```
 
-Coverage of both suites, merged into one report (`coverage/lcov.info`; takes about 5 minutes, Docker needed): `bun run test:coverage`. How the merge counts lines, and why: [the coverage plan](docs/plans/test-coverage.md).
+Coverage of both suites, merged into one report (`coverage/lcov.info`; takes about 5 minutes, Docker needed): `bun run test:coverage`. How the merge counts lines, and why: [the coverage plan](docs/history/plans/test-coverage.md).
 
 **Coverage may not go down.** CI fails when a package's merged line coverage falls below its entry in [`coverage-baseline.json`](coverage-baseline.json) (by more than the 0.3-point tolerance). Add tests for what you changed; when coverage went up, raise the baseline with `bun run coverage:baseline` and commit the file. Lowering a baseline is done by hand, with the reason in the commit message. Only the packages count; the examples are reported in the log but not gated. Two more rules are checked by the same step: **no source file below 90 %** unless it is listed in `fileExclusions` in that file with a reason, and **an exclusion must not be stale** (the file is gone, or is above the floor now, and the entry is removed). What coverage leaves out altogether (tests and their support, diagnostics, scripts, the examples) is in `isMeasured` in `scripts/merge-coverage.ts` and in `codecov.yml`; a test keeps the two in step.
 
@@ -45,7 +45,7 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 
 ## Where things are
 
-[`docs/reference.md#packages`](docs/reference.md#packages) lists every package and example, and each has its own README. The shape in one line: `eventstore` (the log) ->
+[`docs/reference/README.md#packages`](docs/reference/README.md#packages) lists every package and example, and each has its own README. The shape in one line: `eventstore` (the log) ->
 `commands` (events, models, commands) -> `commands-http` (REST); `event-poller` -> `views`, `outbox`, `automations` (pollers) -> `views-http` (consistent reads) and `processors-http` (the admin API).
 
 ## Common tasks
@@ -57,7 +57,7 @@ database at a chosen migration with `startTestDb({ migrations })`. A migration t
 **Change the HTTP API.** The OpenAPI descriptions in [`docs/api/`](docs/api) are checked in, and a unit test fails when they are stale. Regenerate the wallet's with
 `bun run docs:api`, and the course app's with `node scripts/generate-openapi.ts` from `examples/course-enrolment-app`. The diff is the API change.
 
-**Change an event.** Follow [Evolving events](docs/evolving-events.md). Run the wallet's `verify-events.ts` against representative data, and update the committed change-impact
+**Change an event.** Follow [Evolving events](docs/guides/build/evolving-events.md). Run the wallet's `verify-events.ts` against representative data, and update the committed change-impact
 baseline (`test/fixtures/model-impact-baseline.json` in the wallet app) with a reason for each entry.
 
 **Add or rename a metric.** Define it in `packages/metrics-otel/src/`, then run `bun run test:unit`: [`scripts/dashboard.test.ts`](scripts/dashboard.test.ts) fails until the metric has a panel in the
@@ -66,7 +66,7 @@ so a rename that leaves a panel or an alert querying the old name fails the same
 
 **Change the dashboard or the alerts.** The dashboard JSON is generated: edit the definition in [`scripts/build-dashboard.ts`](scripts/build-dashboard.ts) and run `bun run dashboard:build`; the test fails if the committed
 `ops/grafana/crablet-dashboard.json` differs. The alert rules, `ops/grafana/alerts.yaml`, are written by hand and checked by the same test. Both were tried against the `grafana/otel-lgtm` image in [`ops/compose.yaml`](ops/compose.yaml)
-([See it on a dashboard](docs/guides/dashboard.md)).
+([See it on a dashboard](docs/guides/operate/dashboard.md)).
 
 **Change the processors admin API.** [`@crablet/processors-http`](packages/processors-http/README.md) is a contract a client is typed against: add fields, never remove or retype one, and give a changed meaning a new path
 ([ADR-0020](docs/adr/0020-processors-admin-api.md)). Every endpoint stays behind `ProcessorsAuthorization`.
@@ -78,17 +78,30 @@ N=200000 node --test packages/eventstore/diagnostics/storage.diagnostic.ts    # 
 ```
 
 Each file's first lines say what it measures and which environment variables it reads. Measure with the real code paths: an approximation of a query has misled this
-project before ([the reliability report](docs/plans/reliability-and-scale-diagnostic.md) records where).
+project before ([the reliability report](docs/history/plans/reliability-and-scale-diagnostic.md) records where).
 
 ## Documentation
 
+- **Where a new page goes.** Each folder under `docs/` is one kind of document; put a page where a reader would look for it, and list it in [`docs/README.md`](docs/README.md):
+
+  | Folder | Kind | A page here... |
+  |---|---|---|
+  | `tutorial/` | learning, in order | is a step that ends with something that runs |
+  | `concepts/` | understanding | explains one idea and why it is so, and links the decision records behind it |
+  | `guides/build/` | a task while writing an application | is a checklist with code from a tested file |
+  | `guides/operate/` | a task while running one | says what to set, what to watch and what to do when it goes wrong |
+  | `reference/` | looking up | is mostly tables: options, variables, endpoints, metrics |
+  | `adr/` | a decision | is a record with a status; it is not where a reader learns the idea |
+  | `history/` | records | is a plan or the work log, kept as written |
+
+  Applications that teach go in `examples/`; programs for operating or testing them (the chaos lab, the admin page) go in `tools/`.
 - **Code in documents comes from tested files.** A block tagged `<!-- file: path#region -->` must equal the lines between `// #region name` and `// #endregion name` in
   that file; the sync tests (`guides-sync.test.ts`, `tutorial-sync.test.ts`) fail when they differ. Edit the source file, then paste the same lines into the document.
 - **Links are checked.** `docs-links.test.ts` fails on a broken relative link, a broken `#anchor`, or a documentation path in a source comment that does not exist.
 - **Decisions get a record** when they have a lasting effect on the shape of the code: add `docs/adr/NNNN-title.md` (status, context, decision, consequences) and list it in
-  [`docs/adr/README.md`](docs/adr/README.md) under the right heading. One-off findings and gotchas go in [`NOTES.md`](NOTES.md), not in a decision record.
-- **Plans are records.** A plan in `docs/plans/` is written before the work and kept after it; update its status in [`docs/plans/README.md`](docs/plans/README.md).
-- **Diagrams are Mermaid** in fenced `mermaid` blocks (GitHub draws them), kept in [`docs/architecture.md`](docs/architecture.md) (the framework) and [`docs/c4-examples.md`](docs/c4-examples.md) (the two example applications). They are not
+  [`docs/adr/README.md`](docs/adr/README.md) under the right heading. One-off findings and gotchas go in the work log, [`docs/history/NOTES.md`](docs/history/NOTES.md), not in a decision record.
+- **Plans are records.** A plan in `docs/history/plans/` is written before the work and kept after it; update its status in [`docs/history/plans/README.md`](docs/history/plans/README.md).
+- **Diagrams are Mermaid** in fenced `mermaid` blocks (GitHub draws them), kept in [`docs/concepts/architecture.md`](docs/concepts/architecture.md) (the framework) and [`docs/concepts/c4-examples.md`](docs/concepts/c4-examples.md) (the two example applications). They are not
   checked against the code, so when a flow changes, change its diagram in the same commit.
 - Prefer the same example domains as the existing documents: seat booking in the README, course enrolment in the tutorial, the wallet for the full application.
 

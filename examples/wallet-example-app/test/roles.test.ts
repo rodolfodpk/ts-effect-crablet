@@ -28,7 +28,7 @@ describe("WALLET_ROLES", () => {
   });
 });
 
-// What a process keeps in the session pool for good (docs/guides/run-in-production.md), measured idle with a pool large enough not to be the limit: the three workers and the api, 7 (3 leader
+// What a process keeps in the session pool for good (docs/guides/operate/run-in-production.md), measured idle with a pool large enough not to be the limit: the three workers and the api, 7 (3 leader
 // locks, 4 LISTEN); the three workers alone, 6; views alone, 2; the api alone, 1.
 describe("sessionConnectionsHeld", () => {
   test("is what the roles keep for good: 2 per worker role (its leader lock and its LISTEN) and 1 for the api (the views' progress hub)", () => {

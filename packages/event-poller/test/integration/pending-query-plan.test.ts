@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The "is anything this selection matches still pending in (after, upTo]?" query (`buildPendingSelectionQuery`, behind `hasPendingSelectedEvents`, which the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The "is anything this selection matches still pending in (after, upTo]?" query (`buildPendingSelectionQuery`, behind `hasPendingSelectedEvents`, which the
 // wait of a consistent read runs on every turn while a view is behind) must find the first match along the (transaction_id, position) index. Without an ORDER BY the planner took a Seq Scan of
 // crablet_events for a typical view selection (4 to 8 ms on 100,000 events, growing with the log), and for a key present on every event a Seq Scan of crablet_event_tag_keys with one probe of
 // the log per row (45 ms). A result cannot tell the two plans apart,

@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Confirms WalletOpenedAutomation actually fires
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Confirms WalletOpenedAutomation actually fires
 // through the real running app (opening a wallet over real HTTP triggers the automations
 // processor, which issues SendWelcomeNotificationCommand) - there's no dedicated read endpoint for
 // WelcomeNotificationSent, so this reads it back via EventStore.project, the same query-building

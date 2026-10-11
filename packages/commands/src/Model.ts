@@ -115,7 +115,7 @@ export interface ModelBuilder<S, Scope extends object> {
   // Just the lifecycle events' query: the natural "guard" for a command that is otherwise
   // commutative (see withLifecycleGuard in CommandDecision.ts).
   lifecycleQuery(id: string): Query.Query;
-  // Declare the model's PERIOD (docs/plans/period-rollover.md): the cycle after which one statement, shift or page is closed and the next opened with the state carried forward. The model
+  // Declare the model's PERIOD (docs/history/plans/period-rollover.md): the cycle after which one statement, shift or page is closed and the next opened with the state carried forward. The model
   // then needs no `scope`: the period is the scope, and the instance is built from the id alone (`Model.of({ id })`). On every load the framework reads the clock, finds the period "now" falls in,
   // and, if the entity's open period is an older one, returns the events that turn it (`closed` for the old, `opened` for the new, built by `close` and `open`) for the command to append in its own
   // append - atomically, under one condition - or not at all if the command appends nothing. `opened` must already have a handler (`.on(opened, ...)`) that folds what `open` carried forward.

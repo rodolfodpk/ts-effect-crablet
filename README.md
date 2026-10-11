@@ -14,14 +14,14 @@ boundary by *querying* the events its decision depends on. Two commands conflict
 ## Why
 
 - **Atomic across things, without a saga.** A transfer between two wallets, or a course with a seat limit *and* a per-student limit, is one command
-  ([DCB guide](./docs/dcb-guide.md), with a runnable race test).
+  ([DCB guide](./docs/concepts/dcb-guide.md), with a runnable race test).
 - **No contention between unrelated commands.** The boundary is derived from the events a model handles; you never write the query or pick a stream.
 - **Decisions are pure and testable without a database.** Given/When/Then scenarios run the real pipeline on an in-memory store that passes the same
   conformance suite as Postgres.
 - **Typed end to end.** Domain errors are declared and checked against `decide`; the REST API and its OpenAPI description are generated from the contracts.
 - **Reads you can trust.** A command returns a marker; a read carrying it waits until the views have that write, or answers `503`, never stale.
 - **Built to be operated.** Fenced leader election, no skipped events, event evolution checks and storage metrics, each measured
-  ([reliability report](./docs/plans/reliability-and-scale-diagnostic.md)).
+  ([reliability report](./docs/history/plans/reliability-and-scale-diagnostic.md)).
 
 ```mermaid
 flowchart LR
@@ -49,7 +49,7 @@ flowchart LR
   outbox --> ext["External systems<br/>brokers, webhooks"]
 ```
 
-More diagrams (a command's path, two commands conflicting, event to view, leadership per module, changing an event, the tables): [Architecture](./docs/architecture.md).
+More diagrams (a command's path, two commands conflicting, event to view, leadership per module, changing an event, the tables): [Architecture](./docs/concepts/architecture.md).
 
 > **Status: experimental, pre-release.** The API changes often, packages are not published to npm
 > ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). Not a fit if you are not on PostgreSQL or need a stable library today.
@@ -109,7 +109,7 @@ const BookSeat = defineCommand({
 
 The boundary is derived from the events the model handles, so `BookSeat` is consistent with "anything that could change this seat" without you
 writing a query. Two concurrent bookings of one seat cannot both succeed: the loser is retried and gets `SeatTaken`. Bookings of different seats never
-contend. ([The same thing as an Event Model](./docs/event-model-seat-booking.md).)
+contend. ([The same thing as an Event Model](./docs/concepts/event-model-seat-booking.md).)
 
 **Run it, no database needed** ([`examples/quickstart`](./examples/quickstart/src/quickstart.ts)):
 
@@ -132,16 +132,16 @@ Effect.runPromise(Effect.provide(program, AppLive));
 
 | You want to | Read |
 |---|---|
-| Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/glossary.md) for any unfamiliar word |
+| Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/reference/glossary.md) for any unfamiliar word |
 | Build something, step by step | [Tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
-| See how it fits together | [Architecture](./docs/architecture.md): diagrams of the system and the core flows; [C4 models](./docs/c4-examples.md) of the two example applications |
-| Understand the idea | [DCB guide](./docs/dcb-guide.md) |
+| See how it fits together | [Architecture](./docs/concepts/architecture.md): diagrams of the system and the core flows; [C4 models](./docs/concepts/c4-examples.md) of the two example applications |
+| Understand the idea | [DCB guide](./docs/concepts/dcb-guide.md) |
 | See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app/README.md): five commands, four views, an automation, an outbox |
 | Do one task (add a view, an automation, test, run, monitor) | [Task guides](./docs/guides/README.md) |
-| Run the wallet on a local Kubernetes cluster, watch it on a dashboard, and break it on purpose | [Run the kind lab](./docs/guides/run-the-kind-lab.md) |
-| Change an event safely | [Evolving events](./docs/evolving-events.md) |
-| Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference.md) |
+| Run the wallet on a local Kubernetes cluster, watch it on a dashboard, and break it on purpose | [Run the kind lab](./docs/guides/operate/run-the-kind-lab.md) |
+| Change an event safely | [Evolving events](./docs/guides/build/evolving-events.md) |
+| Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference/README.md) |
 | Know why it is built this way | [Design decisions](./docs/adr/README.md) (start with [ADR-0010](./docs/adr/0010-declarative-command-api.md)) |
 | Contribute | [`CONTRIBUTING.md`](./CONTRIBUTING.md): set up, run one test, common tasks |
 
-Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference.md#build--test).
+Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference/README.md#build--test).
