@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Ref } from "effect";
+import { Effect, Layer, Logger, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { makeWakeupNotifier, type WakeupNotifier } from "../src/internal/WakeupNotifier.ts";
 
@@ -63,4 +63,16 @@ describe("WakeupNotifier", () => {
     yield* notifier.signal(set("A"), set());
     yield* notifier.signal(set("B"), set());
   }).pipe(Effect.provide(TestClock.layer())) as Effect.Effect<void>));
+
+  test("a failed send logs a warning; a send interrupted because the process is stopping logs nothing", async () => {
+    const lines: Array<unknown> = [];
+    const capture = Logger.layer([Logger.make((options) => void lines.push(options.message))], { mergeWithExisting: false });
+    const notifierWith = (send: (p: string) => Effect.Effect<void, unknown>) =>
+      Effect.flatMap(makeWakeupNotifier(send, 0), (n) => n.signal(set("A"), set()));
+    await Effect.runPromise(notifierWith(() => Effect.fail("boom")).pipe(Effect.provide(Layer.mergeAll(TestClock.layer(), capture))) as Effect.Effect<void>);
+    expect(lines.map(String).filter((l) => l.includes("not sent"))).toHaveLength(1);
+    lines.length = 0;
+    await Effect.runPromise(notifierWith(() => Effect.interrupt).pipe(Effect.provide(Layer.mergeAll(TestClock.layer(), capture))) as Effect.Effect<void>);
+    expect(lines.map(String).filter((l) => l.includes("not sent"))).toHaveLength(0);
+  });
 });

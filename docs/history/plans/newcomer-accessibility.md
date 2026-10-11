@@ -152,3 +152,21 @@ Walk the path with a fresh clone and a stopwatch, as a newcomer, and write down 
 4. Answer three questions using only `docs/README.md`: where is the delivery guarantee described, which decision record explains the cursor, how do I add a view.
 
 Any step that takes more than twice its target is a documentation bug, and goes back into this plan.
+
+## The walk-through, done once by the documents' author (2026-10-11)
+
+Done by the assistant that wrote most of the current documents, so it measures what can be **run**, not how long reading takes or where a newcomer gets
+lost. A fresh clone of the branch, the commands copied from the pages as written, on one laptop with Docker running:
+
+| Step | Time to run | Matches the page? |
+|---|---|---|
+| `bun install` | 22 s | yes |
+| Quick start (`node examples/quickstart/src/quickstart.ts`) | 1 s | yes, the seven lines the README shows |
+| Tutorial step 1 (`bun test ...step1-capacity-only.test.ts`) | under 1 s | yes, 3 pass |
+| Tutorial step 2 (`docker compose up -d`, `node src/migrate.ts`, `node scripts/step2-postgres.ts`) | 4 s | **no, fixed**: the script also printed `wake-up notification not sent ... Interrupt`, a send interrupted because the process was stopping. The notifier no longer reports an interruption (`WakeupNotifier.ts`, with a test); the script now prints exactly the two lines on the page |
+| Tutorial step 3 (the server, every `curl`, `generate-openapi`) | seconds | yes; the numbers differ, as the page says; the regenerated description has no diff |
+| Tutorial step 4 (the reads, a read after a write, a bad marker) | seconds | yes |
+| Tutorial step 5 (the page) | not run | needs a browser |
+
+**Still open:** the same walk by someone who did not write the documents, timing the reading (the targets above: the README in 2 minutes, step 2 in 45),
+and the three questions answered from `docs/README.md` alone.
