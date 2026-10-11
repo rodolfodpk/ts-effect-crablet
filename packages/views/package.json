@@ -14,7 +14,11 @@
     "./ViewManagementService": "./src/ViewManagementService.ts",
     "./WaitUntilProcessed": "./src/WaitUntilProcessed.ts",
     "./ViewVerdict": "./src/ViewVerdict.ts",
-    "./ReadCheck": "./src/ReadCheck.ts"
+    "./ReadCheck": "./src/ReadCheck.ts",
+    "./ViewTable": "./src/ViewTable.ts",
+    "./ProjectedView": "./src/ProjectedView.ts",
+    "./ViewMemory": "./src/ViewMemory.ts",
+    "./ViewTableCheck": "./src/ViewTableCheck.ts"
   },
   "dependencies": {
     "effect": "4.0.2",
