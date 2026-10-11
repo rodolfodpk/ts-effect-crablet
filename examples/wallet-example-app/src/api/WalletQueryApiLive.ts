@@ -37,28 +37,61 @@ const findBalance = (sql: SqlClient.SqlClient) =>
     execute: ({ walletId }) => sql.unsafe("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [walletId])
   });
 
-interface TransactionRow {
-  readonly transaction_id: string;
-  readonly wallet_id: string;
-  readonly event_type: string;
-  readonly amount: string;
-  readonly description: string;
-  readonly occurred_at: Date;
-  // The same instant as `occurred_at`, as Postgres prints it (microseconds kept), and the row's event position: what the page cursor is made of.
-  // They must NOT be aliased to the column names: an ORDER BY name resolves to an output column first, so `event_position` would sort as text.
-  readonly occurred_at_text: string;
-  readonly event_position_text: string;
-}
+// A row of wallet_transaction_view as the database sends it. The numeric `amount` arrives as text and becomes a number here.
+// `occurred_at_text` is the same instant as `occurred_at`, as Postgres prints it (microseconds kept), and `event_position_text` the row's event position: what the page cursor is made of.
+// They must NOT be aliased to the column names: an ORDER BY name resolves to an output column first, so `event_position` would sort as text.
+const TransactionRow = Schema.Struct({
+  transaction_id: Schema.String,
+  wallet_id: Schema.String,
+  event_type: Schema.String,
+  amount: Schema.FiniteFromString,
+  description: Schema.String,
+  occurred_at: Schema.Date,
+  occurred_at_text: Schema.String,
+  event_position_text: Schema.String
+});
 
-interface SummaryRow {
-  readonly wallet_id: string;
-  readonly total_deposits: string;
-  readonly total_withdrawals: string;
-  readonly total_transfers_in: string;
-  readonly total_transfers_out: string;
-  readonly current_balance: string;
-  readonly last_transaction_at: Date | null;
-}
+const transactionColumns =
+  "transaction_id, wallet_id, event_type, amount, description, occurred_at, occurred_at::text AS occurred_at_text, event_position::text AS event_position_text";
+const transactionOrder = "ORDER BY occurred_at DESC, event_position DESC, transaction_id DESC";
+
+// One page of a wallet's transactions, newest first, by keyset; `cursor` null is the first page.
+const listTransactions = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findAll({
+    Request: Schema.Struct({
+      walletId: Schema.String,
+      limit: Schema.Number,
+      cursor: Schema.NullOr(Schema.Struct({ occurredAt: Schema.String, eventPosition: Schema.String, transactionId: Schema.String }))
+    }),
+    Result: TransactionRow,
+    execute: ({ walletId, limit, cursor }) =>
+      cursor === null
+        ? sql.unsafe(`SELECT ${transactionColumns} FROM wallet_transaction_view WHERE wallet_id = $1 ${transactionOrder} LIMIT $2`, [walletId, limit])
+        : sql.unsafe(
+            `SELECT ${transactionColumns} FROM wallet_transaction_view
+             WHERE wallet_id = $1 AND (occurred_at, event_position, transaction_id) < ($2::timestamptz, $3::bigint, $4::text)
+             ${transactionOrder} LIMIT $5`,
+            [walletId, cursor.occurredAt, cursor.eventPosition, cursor.transactionId, limit]
+          )
+  });
+
+// A row of wallet_summary_view as the database sends it; the numerics arrive as text.
+const SummaryRow = Schema.Struct({
+  wallet_id: Schema.String,
+  total_deposits: Schema.FiniteFromString,
+  total_withdrawals: Schema.FiniteFromString,
+  total_transfers_in: Schema.FiniteFromString,
+  total_transfers_out: Schema.FiniteFromString,
+  current_balance: Schema.FiniteFromString,
+  last_transaction_at: Schema.NullOr(Schema.Date)
+});
+
+const findSummary = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findOneOption({
+    Request: Schema.Struct({ walletId: Schema.String }),
+    Result: SummaryRow,
+    execute: ({ walletId }) => sql.unsafe("SELECT * FROM wallet_summary_view WHERE wallet_id = $1", [walletId])
+  });
 
 // #region read-consistency
 // The wallet's reads are consistent by default (ADR-0015): strict, and a read with no marker waits for the head of the log, so a read made
@@ -152,19 +185,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
             ({ walletId, limit, cursor }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const columns =
-                  "transaction_id, wallet_id, event_type, amount, description, occurred_at, occurred_at::text AS occurred_at_text, event_position::text AS event_position_text";
-                const order = "ORDER BY occurred_at DESC, event_position DESC, transaction_id DESC";
-                const rows = yield* Effect.orDie(
-                  cursor === null
-                    ? sql.unsafe<TransactionRow>(`SELECT ${columns} FROM wallet_transaction_view WHERE wallet_id = $1 ${order} LIMIT $2`, [walletId, limit + 1])
-                    : sql.unsafe<TransactionRow>(
-                        `SELECT ${columns} FROM wallet_transaction_view
-                         WHERE wallet_id = $1 AND (occurred_at, event_position, transaction_id) < ($2::timestamptz, $3::bigint, $4::text)
-                         ${order} LIMIT $5`,
-                        [walletId, cursor.occurredAt, cursor.eventPosition, cursor.transactionId, limit + 1]
-                      )
-                );
+                const rows = yield* Effect.orDie(listTransactions(sql)({ walletId, limit: limit + 1, cursor }));
                 const page = rows.slice(0, limit);
                 const last = page[page.length - 1];
                 return {
@@ -172,7 +193,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
                     transactionId: row.transaction_id,
                     walletId: row.wallet_id,
                     eventType: row.event_type,
-                    amount: Number(row.amount),
+                    amount: row.amount,
                     description: row.description,
                     occurredAt: row.occurred_at.toISOString()
                   })),
@@ -191,16 +212,16 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
             (params: { readonly walletId: string }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const rows = yield* Effect.orDie(sql.unsafe<SummaryRow>("SELECT * FROM wallet_summary_view WHERE wallet_id = $1", [params.walletId]));
-                const row = rows[0];
-                if (!row) return yield* Effect.fail(WalletNotFoundProblem.of(params.walletId));
+                const found = yield* Effect.orDie(findSummary(sql)({ walletId: params.walletId }));
+                if (Option.isNone(found)) return yield* Effect.fail(WalletNotFoundProblem.of(params.walletId));
+                const row = found.value;
                 return {
                   walletId: row.wallet_id,
-                  totalDeposits: Number(row.total_deposits),
-                  totalWithdrawals: Number(row.total_withdrawals),
-                  totalTransfersIn: Number(row.total_transfers_in),
-                  totalTransfersOut: Number(row.total_transfers_out),
-                  currentBalance: Number(row.current_balance),
+                  totalDeposits: row.total_deposits,
+                  totalWithdrawals: row.total_withdrawals,
+                  totalTransfersIn: row.total_transfers_in,
+                  totalTransfersOut: row.total_transfers_out,
+                  currentBalance: row.current_balance,
                   lastTransactionAt: row.last_transaction_at?.toISOString() ?? null
                 };
               })
