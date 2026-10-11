@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { Effect, Layer, Redacted } from "effect";
 import { HttpRouter } from "effect/http";
+import { SqlClient } from "effect/sql";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import { monitorStorage } from "@crablet/eventstore/Storage";
@@ -9,7 +10,7 @@ import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processor
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
 import { hasWorkers, rolesFromEnv, sessionConnectionsHeld } from "./roles.ts";
-import { serveHealth } from "./health.ts";
+import { apiHealthRoutes, serveHealth } from "./health.ts";
 import { pollingFromEnv, wakeupModeFromEnv } from "./polling.ts";
 
 const connInfo = {
@@ -72,8 +73,9 @@ async function main(): Promise<void> {
     const adminToken = process.env["WALLET_ADMIN_TOKEN"];
     const admin = adminToken === undefined || adminToken === "" ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
     if (admin !== Layer.empty) yield* Effect.log("admin API mounted at /admin/processors (bearer token from WALLET_ADMIN_TOKEN)");
+    const sql = yield* SqlClient.SqlClient;
     yield* Layer.launch(
-      HttpRouter.serve(Layer.merge(makeWalletApiLayer({ basePath: "/api/commands" }), admin)).pipe(
+      HttpRouter.serve(Layer.mergeAll(makeWalletApiLayer({ basePath: "/api/commands" }), admin, apiHealthRoutes(sql`SELECT 1`))).pipe(
         Layer.provide(NodeHttpServer.layer(createServer, { port }))
       )
     );
