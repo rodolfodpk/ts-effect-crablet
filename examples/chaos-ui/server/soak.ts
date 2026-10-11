@@ -2,11 +2,12 @@
 // if the nodes' disk runs low. Needs the lab server (server.ts) and the cluster running.
 // The load is steady (10 to maxCommands every intervalSeconds) except for short STRESS windows: at minutes 15, 45, 75, 105, ... for 5 minutes the largest burst is 1000, more than the wallet can take,
 // so a backlog builds and has to drain, and the samples show how long that takes. Short, so the storage stays modest (about 35 MB a window).
-//   node examples/chaos-ui/server/soak.ts <out.jsonl> [minutes=120] [maxCommands=100] [intervalSeconds=5]
+//   node examples/chaos-ui/server/soak.ts <out.jsonl> [minutes=120] [maxCommands=100] [intervalSeconds=5] [period=$WALLET_PERIOD or month]
+// `period` is only written to the log, to label the run: the lab's own deployment decides it (WALLET_PERIOD=minutes:5 node examples/wallet-example-app/lab/lab.ts observe).
 import { execFileSync } from "node:child_process";
 import { appendFileSync, statfsSync, writeFileSync } from "node:fs";
 
-const [out, minutesArg, maxArg, intervalArg] = process.argv.slice(2);
+const [out, minutesArg, maxArg, intervalArg, periodArg] = process.argv.slice(2);
 if (out === undefined) { console.error("usage: soak.ts <out.jsonl> [minutes] [maxCommands] [intervalSeconds]"); process.exit(2); }
 const minutes = Number(minutesArg ?? 120), maxCommands = Number(maxArg ?? 100), loadInterval = Number(intervalArg ?? 5);
 const SERVER = process.env["CHAOS_SERVER_URL"] ?? "http://127.0.0.1:5174";
@@ -24,7 +25,7 @@ const record = (entry: object) => appendFileSync(out, JSON.stringify({ at: new D
 writeFileSync(out, "");
 const startedAt = Date.now();
 const settings = { intervalSeconds: loadInterval, minCommands: 10, maxCommands, wallets: 200 };
-record({ event: "start", minutes, ...settings });
+record({ event: "start", minutes, period: periodArg ?? process.env["WALLET_PERIOD"] ?? "month", ...settings });
 record({ event: "load", ...(await call("/api/load", { on: true, ...settings })) });
 record({
   event: "run",
