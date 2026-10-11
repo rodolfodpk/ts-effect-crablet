@@ -8,6 +8,7 @@ import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyCon
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
 import { courseSeatsViewSubscription } from "../views/CourseSeatsViewProjector.ts";
+import { courseEnrolmentsViewSubscription } from "../views/CourseEnrolmentsViewProjector.ts";
 
 // `text` as a SQL LIKE pattern that matches ids STARTING with it: `\`, `%` and `_` are escaped, or "a_" would also match "ab".
 export const likePrefix = (text: string): string => `${text.replace(/[\\%_]/g, "\\$&")}%`;
@@ -41,6 +42,17 @@ const findSeats = (sql: SqlClient.SqlClient) =>
     execute: ({ courseId }) => sql.unsafe("SELECT course_id, capacity, subscribers FROM course_seats_view WHERE course_id = $1", [courseId])
   });
 // #endregion row-schema
+
+// A row of course_enrolments_view as the database sends it.
+const EnrolmentRow = Schema.Struct({ student_id: Schema.String, seat_number: Schema.Int });
+
+// The students of one course, by seat number: the read side of the hand-written projector.
+const listEnrolments = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findAll({
+    Request: Schema.Struct({ courseId: Schema.String }),
+    Result: EnrolmentRow,
+    execute: ({ courseId }) => sql.unsafe("SELECT student_id, seat_number FROM course_enrolments_view WHERE course_id = $1 ORDER BY seat_number", [courseId])
+  });
 
 // `?limit=`: absent means the default; anything but a whole number from 1 to the maximum is a 400.
 export const parseLimit = (raw: string | undefined): number | null => {
@@ -92,6 +104,22 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
                   items: page.map((row) => ({ courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers })),
                   next: rows.length > limit ? page[page.length - 1]!.course_id : null
                 };
+              })
+          )
+        )
+        // A course with no enrolments (or one that does not exist) answers an empty list: the view holds rows only for students who subscribed.
+        .handle(
+          "getEnrolments",
+          consistentRead(
+            {
+              reads: [courseEnrolmentsViewSubscription],
+              parse: (request: { readonly params: { readonly courseId: string }; readonly query: ConsistencyParams }) => Effect.succeed(request.params)
+            },
+            (params: { readonly courseId: string }) =>
+              Effect.gen(function* () {
+                const sql = yield* SqlClient.SqlClient;
+                const rows = yield* listEnrolments(sql)({ courseId: params.courseId }).pipe(Effect.orDie);
+                return { courseId: params.courseId, students: rows.map((row) => ({ studentId: row.student_id, seatNumber: row.seat_number })) };
               })
           )
         )

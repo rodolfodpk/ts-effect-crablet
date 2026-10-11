@@ -21,13 +21,14 @@ describe("course API OpenAPI document", () => {
       "/api/commands/subscribe",
       "/api/courses",
       "/api/courses/{courseId}",
+      "/api/courses/{courseId}/enrolments",
       "/api/views/changes"
     ]);
   });
 
-  test("a command route takes no query parameters; both reads take the consistency parameters and can say stale (200) or unavailable (503); the read endpoint shares the write API's CourseNotFound problem", () => {
+  test("a command route takes no query parameters; all three reads take the consistency parameters and can say stale (200) or unavailable (503); the read endpoint shares the write API's CourseNotFound problem", () => {
     for (const command of ["define_course", "subscribe"]) expect(operation(command).parameters ?? []).toEqual([]);
-    for (const path of ["/api/courses/{courseId}", "/api/courses"]) {
+    for (const path of ["/api/courses/{courseId}", "/api/courses", "/api/courses/{courseId}/enrolments"]) {
       const get = spec.paths[path].get;
       const names = (get.parameters as Array<any>).map((p) => p.name);
       for (const name of ["consistentWith", "consistency", "waitTimeout"]) expect(names).toContain(name);

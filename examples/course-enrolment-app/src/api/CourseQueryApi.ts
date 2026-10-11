@@ -22,6 +22,12 @@ export const CoursePage = Schema.Struct({
   next: Schema.NullOr(Schema.String)
 });
 
+// Who took which seat, in the order they subscribed (the enrolments view, written by a hand-written projector: src/views/CourseEnrolmentsViewProjector.ts).
+export const EnrolmentsResponse = Schema.Struct({
+  courseId: Schema.String,
+  students: Schema.Array(Schema.Struct({ studentId: Schema.String, seatNumber: Schema.Int }))
+});
+
 export const defaultPageSize = 20;
 export const maxPageSize = 100;
 
@@ -46,6 +52,14 @@ export const courseQueryGroup = HttpApiGroup.make("courseQueries")
       query: consistencyQuery,
       success: ReadSuccess(CourseResponse),
       error: [problemSchemaOf(CourseNotFound), ...readProblems]
+    })
+  )
+  .add(
+    HttpApiEndpoint.get("getEnrolments", "/api/courses/:courseId/enrolments", {
+      params: { courseId: Schema.String },
+      query: consistencyQuery,
+      success: ReadSuccess(EnrolmentsResponse),
+      error: [...readProblems]
     })
   )
   .add(

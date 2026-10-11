@@ -18,6 +18,8 @@ import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
 import { courseSeatsViewSubscription, makeCourseSeatsViewProjector } from "./views/CourseSeatsViewProjector.ts";
+import type { ViewProjector } from "@crablet/views/ViewProjector";
+import { courseEnrolmentsViewSubscription, makeCourseEnrolmentsViewProjector } from "./views/CourseEnrolmentsViewProjector.ts";
 
 // The API definition lives in CourseApi.ts (browser-safe); re-exported so existing imports keep working.
 export { courseApiInfo, makeCourseApi } from "./CourseApi.ts";
@@ -94,12 +96,14 @@ export const startCourseViews = (
   options: CourseViewsOptions = {}
 ): Effect.Effect<EventProcessorHandle<ProcessorConfig<string>, string>, never, SqlClient.SqlClient | PgClient.PgClient | EventStore> =>
   Effect.gen(function* () {
-    const projector = yield* makeCourseSeatsViewProjector();
     const delayMs = options.viewDelayMs ?? 0;
+    const delayed = (projector: ViewProjector<unknown>): ViewProjector<unknown> =>
+      delayMs > 0 ? { ...projector, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), projector.handle(events)) } : projector;
+    // Two views off the same events: the seats left (declared with defineView) and who took which seat (a hand-written projector).
     const handle = yield* makeViewsProcessor({
       config: viewsConfig,
-      projectors: [delayMs > 0 ? { ...projector, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), projector.handle(events)) } : projector],
-      subscriptions: [courseSeatsViewSubscription],
+      projectors: [delayed(yield* makeCourseSeatsViewProjector()), delayed(yield* makeCourseEnrolmentsViewProjector())],
+      subscriptions: [courseSeatsViewSubscription, courseEnrolmentsViewSubscription],
       instanceId
     });
     yield* handle.service.start;

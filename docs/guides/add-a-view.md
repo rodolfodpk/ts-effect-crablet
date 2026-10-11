@@ -51,6 +51,7 @@ not at the first event. And the same declaration runs in memory (`applyInMemory`
 `defineView` says six things: insert, update, upsert, remove, set, add (and `max`). A view that needs anything else (here, a number computed from the view's own rows, which is the count of the course's rows plus one) is a **hand-written projector**: `makeTransactionalViewProjector`
 with your own SQL, which is also what `raw((sql) => ...)` runs inside a declared view. You then do three things the framework did for you: read the payload with `decodeStored`, run the SQL on the `sql` you are given (so it commits with the view's cursor and the batch is applied once), and
 write the subscription. Nothing checks the SQL text, so write the test ([`course-enrolments-view.test.ts`](../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
+The course app registers it next to the seats view (`startCourseViews`, as in step 4) and reads it with `SqlSchema` (`GET /api/courses/:courseId/enrolments`, tested end to end in [`course-enrolments.test.ts`](../../examples/course-enrolment-app/test/integration/course-enrolments.test.ts)), so this approach has a write and a query on the same view.
 
 <!-- file: examples/course-enrolment-app/src/views/CourseEnrolmentsViewProjector.ts#hand-written -->
 ```ts
@@ -96,18 +97,18 @@ stops the processors before the connection pool closes ([Run it in production](r
 
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
 ```ts
-const viewsHandle = yield* makeViewsProcessor({
-  config: { ...defaultViewsConfig, ...polling },
-  projectors: [
-    yield* makeWalletBalanceViewProjector(),
-    yield* makeWalletTransactionViewProjector(),
-    yield* makeWalletSummaryViewProjector(),
-    yield* makeWalletStatementViewProjector()
-  ],
-  subscriptions: walletViewSubscriptions,
-  instanceId
-});
-if (roles.has("views")) yield* viewsHandle.service.start;
+    const viewsHandle = yield* makeViewsProcessor({
+      config: { ...defaultViewsConfig, ...polling },
+      projectors: [
+        yield* makeWalletBalanceViewProjector(),
+        yield* makeWalletTransactionViewProjector(),
+        yield* makeWalletSummaryViewProjector(),
+        yield* makeWalletStatementViewProjector()
+      ],
+      subscriptions: walletViewSubscriptions,
+      instanceId
+    });
+    if (roles.has("views")) yield* viewsHandle.service.start;
 ```
 
 ## 5. Read it
