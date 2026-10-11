@@ -44,24 +44,26 @@ const stored = (type: string, data: unknown, position: bigint): StoredEvent => (
 });
 
 describe("course seats view projector", () => {
-  it("applies each event once: a redelivered or older event changes nothing", async () => {
+  it("a course keeps the capacity it was first defined with, and each subscription takes one seat", async () => {
     const courseId = `c-${crypto.randomUUID().slice(0, 8)}`;
     const defined = stored(CourseDefined.type, { courseId, capacity: 3 }, 100n);
-    const first = stored(StudentSubscribed.type, { studentId: "ann", courseId }, 101n);
-    const second = stored(StudentSubscribed.type, { studentId: "bob", courseId }, 102n);
+    const redefined = stored(CourseDefined.type, { courseId, capacity: 99 }, 101n);
+    const first = stored(StudentSubscribed.type, { studentId: "ann", courseId }, 102n);
+    const second = stored(StudentSubscribed.type, { studentId: "bob", courseId }, 103n);
+    // A subscription for a course the view has not seen yet (its CourseDefined is still on its way) changes nothing.
+    const early = stored(StudentSubscribed.type, { studentId: "cy", courseId: `${courseId}-later` }, 104n);
 
-    const subscribers = await runtime.runPromise(
+    const row = await runtime.runPromise(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const projector = yield* makeCourseSeatsViewProjector();
         yield* projector.handle([defined, first]);
-        yield* projector.handle([first]); // delivered again
-        yield* projector.handle([defined, first, second]); // a whole batch again, plus one new event
-        yield* projector.handle([first]); // older than the row's last position
+        yield* projector.handle([redefined, second, early]);
         const rows = yield* sql.unsafe<{ subscribers: number; capacity: number }>("SELECT subscribers, capacity FROM course_seats_view WHERE course_id = $1", [courseId]);
-        return rows[0];
+        const later = yield* sql.unsafe<{ n: string }>("SELECT count(*)::text AS n FROM course_seats_view WHERE course_id = $1", [`${courseId}-later`]);
+        return { row: rows[0], later: later[0]!.n };
       })
     );
-    assert.deepStrictEqual(subscribers, { subscribers: 2, capacity: 3 });
+    assert.deepStrictEqual(row, { row: { subscribers: 2, capacity: 3 }, later: "0" });
   });
 });

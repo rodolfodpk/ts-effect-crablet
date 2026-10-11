@@ -1,61 +1,36 @@
-import { Effect } from "effect";
+import type { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
-import type { StoredEvent } from "@crablet/eventstore";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
-import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
-import { viewSubscriptionOf, type ViewSubscription } from "@crablet/views/ViewSubscription";
+import { defineView } from "@crablet/views/ProjectedView";
+import type { ViewProjector } from "@crablet/views/ViewProjector";
+import type { ViewSubscription } from "@crablet/views/ViewSubscription";
+import { integer, text, viewTable } from "@crablet/views/ViewTable";
 import { CourseDefined, StudentSubscribed } from "../domain/Enrolment.ts";
 import { COURSE_SEATS_VIEW } from "../CourseApi.ts";
-import { qb, run } from "./queryBuilder.ts";
 
 // The name is defined next to the API (CourseApi.ts), which must not import this server-side file.
 export { COURSE_SEATS_VIEW };
 
-// What the view listens to: the two event types that change a course's seats.
-// #region subscription
-export const courseSeatsViewSubscription: ViewSubscription = viewSubscriptionOf(COURSE_SEATS_VIEW, {
-  eventTypes: new Set([CourseDefined.type, StudentSubscribed.type])
-});
-// #endregion subscription
-
 // #region projector
-// Seats per course. Each event is applied once even if it is delivered again: the row remembers the position of the
-// last event it applied, and an event at or before that position is ignored. That is sound here because the events that
-// touch one course are written one after another (their commands share a boundary), so a course's positions only grow;
-// for events of unrelated transactions, delivery order is not position order, so key idempotency on the event instead.
-//
-// The SQL is built with Kysely against the types generated from the migrated schema (db.generated.ts): a misspelled column, a value of the wrong type or a column a migration renamed is a compile error, not a failure at the first event.
-//
-// `decodeStored` reads the payload through the event's own definition: one this definition cannot read fails the batch with a typed `EventDecodingError`
-// (position, type, issues), which the processor records against the view, instead of projecting something wrong. Casting `event.data` would validate nothing.
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    switch (event.type) {
-      case CourseDefined.type: {
-        const data = yield* CourseDefined.decodeStored(event);
-        yield* run(sql,
-          qb.insertInto("course_seats_view")
-            .values({ course_id: data.courseId, capacity: data.capacity, subscribers: 0, last_position: event.position })
-            .onConflict((oc) => oc.column("course_id").doNothing())
-        );
-        return;
-      }
-      case StudentSubscribed.type: {
-        const data = yield* StudentSubscribed.decodeStored(event);
-        yield* run(sql,
-          qb.updateTable("course_seats_view")
-            .set((eb) => ({ subscribers: eb("subscribers", "+", 1), last_position: event.position }))
-            .where("course_id", "=", data.courseId)
-            .where("last_position", "<", event.position)
-        );
-        return;
-      }
-      default:
-        return;
-    }
-  });
+// The table, as the migration (db/migration/V100, V101) made it. `checkViewTables` compares this declaration with the migrated database (test/integration/course-seats-table.test.ts), so a column a migration renames fails a test.
+export const courseSeatsTable = viewTable("course_seats_view", {
+  key: { course_id: text() },
+  columns: { capacity: integer(), subscribers: integer().default(0) }
+});
 
-export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
-  makeTransactionalViewProjector(COURSE_SEATS_VIEW, handleEvent);
+// Seats per course: what each event does to the table, and nothing else. The handlers are pure (the decoded event in, operations out); the framework reads each payload through the event's own definition
+// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and takes the subscription's event types from
+// the handlers below. A course defined twice keeps its first capacity (`ignore`); a subscription ADDS one, it never copies a total.
+// An event delivered twice is applied once, but not here: the batch and the view's cursor commit in one transaction (ADR-0023), so the processor guarantees it.
+export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
+  .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
+  .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }));
+
+export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => CourseSeatsView.projector;
 // #endregion projector
+
+// What the view listens to: the event types of its handlers (CourseDefined and StudentSubscribed).
+// #region subscription
+export const courseSeatsViewSubscription: ViewSubscription = CourseSeatsView.subscription();
+// #endregion subscription

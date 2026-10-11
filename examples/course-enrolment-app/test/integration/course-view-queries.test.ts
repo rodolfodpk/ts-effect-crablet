@@ -1,5 +1,5 @@
-// Runs under Node (Testcontainers). The seats view's queries are built with Kysely (src/views/queryBuilder.ts), which only builds them and never holds a connection: their writes must join the transaction of the `sql` the projector is given
-// (what makes a failed batch roll back with its cursor), and the types they are checked against must catch a misspelled column or a value of the wrong type. (That the projector applies each event once is in course-view.test.ts.)
+// Runs under Node (Testcontainers). The seats view is declared with defineView (src/views/CourseSeatsViewProjector.ts) and its reads are built with Kysely (src/views/queryBuilder.ts), which only builds them and never holds a connection.
+// The view's writes must join the transaction of the `sql` the projector is given (what makes a failed batch roll back with its cursor), and the types the reads are checked against must catch a misspelled column or a value of the wrong type.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
@@ -40,11 +40,11 @@ const seats = (courseId: string) =>
   runtime.runPromise(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      return (yield* sql.unsafe<{ subscribers: number; capacity: number; last_position: bigint }>("SELECT subscribers, capacity, last_position FROM course_seats_view WHERE course_id = $1", [courseId]))[0];
+      return (yield* sql.unsafe<{ subscribers: number; capacity: number }>("SELECT subscribers, capacity FROM course_seats_view WHERE course_id = $1", [courseId]))[0];
     })
   );
 
-describe("course seats view queries (Kysely)", () => {
+describe("course seats view writes and Kysely reads", () => {
   it("its writes are in the transaction of the sql it is given: if the batch's transaction rolls back, the view rolls back with it", async () => {
     const courseId = `c-${crypto.randomUUID().slice(0, 8)}`;
     const exit = await runtime.runPromiseExit(
@@ -72,7 +72,7 @@ export const typeErrors = () => {
   // @ts-expect-error a table that does not exist
   qb.selectFrom("course_seatz_view");
   // @ts-expect-error capacity is a number
-  qb.insertInto("course_seats_view").values({ course_id: "c", capacity: "three", last_position: 1n });
+  qb.insertInto("course_seats_view").values({ course_id: "c", capacity: "three" });
   // @ts-expect-error a column compared with a value of another type
   qb.selectFrom("course_seats_view").where("course_id", "=", 42);
 };

@@ -1,7 +1,7 @@
 # The database workflow
 
-From a schema change to a query the compiler checks: write the migration, generate the types from it, write the queries against them, and let the tests keep the two in step. The example is the course app, which builds its view's SQL with
-[Kysely](https://kysely.dev) ([add a view](add-a-view.md)). Crablet itself does not depend on Kysely or on any of this: the libraries take any `sql`, and an app that writes plain SQL (the wallet does) simply skips the generation step.
+From a schema change to a query the compiler checks: write the migration, generate the types from it, write the queries against them, and let the tests keep the two in step. The example is the course app, which builds its **reads** with
+[Kysely](https://kysely.dev); its view's **writes** are declared with `defineView`, whose table is compared with the migrated database by a test (below). Crablet itself does not depend on Kysely or on any of this: the libraries take any `sql`, and an app that writes plain SQL (the wallet's reads do) simply skips the generation step.
 
 [← Task guides](README.md)
 
@@ -37,6 +37,7 @@ const options = [
 |---|---|---|
 | The type check | `npm run typecheck` | a query that no longer fits the generated types |
 | The drift test | [`course-db-types.test.ts`](../../examples/course-enrolment-app/test/integration/course-db-types.test.ts), or `npm run db:types:check` | a migration changed a table and `db:types` was not run (the committed file is not what the schema generates) |
+| The declared-table test | [`course-seats-table.test.ts`](../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts) (`checkViewTables`) | a migration renamed, retyped or dropped a column the view's `viewTable` declares (or added a NOT NULL one without a default that the declaration does not know) |
 | The integration tests | `test/integration/` (Docker) | the real queries against a real Postgres, in the transaction of the view's cursor |
 | CI | `.github/workflows/ci.yml` | all of the above, so a stale file cannot be merged |
 

@@ -29,7 +29,7 @@ Its architecture as C4 diagrams (context, containers, components): [C4 models](.
 | Path | What |
 |---|---|
 | `src/domain/` | events, `WalletModel`, tags, the commands (one file each), the contracts, errors, statement periods |
-| `src/views/` | four projectors; `WalletStatementViewProjector` is the worked example of an idempotent projector |
+| `src/views/` | four views declared with `defineView` (what each event does to its tables); `WalletSummaryViewProjector` shows `upsert` with `add` and `max`, `WalletStatementViewProjector` routes by tag |
 | `src/automations/` | `WalletOpenedAutomation` - an event issues a follow-up command |
 | `src/WalletApp.ts` | composes the commands, views, automation, outbox (with a logging publisher) and the HTTP API |
 | `src/api/` | the read endpoints, keyset paging and problem bodies |
