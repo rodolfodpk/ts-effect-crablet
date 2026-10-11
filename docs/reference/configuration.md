@@ -14,7 +14,7 @@ From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `
 
 | Option | Default | What it does |
 |---|---|---|
-| `eventStore.wakeupMode` | `"coalesced"` | How appends wake the pollers. `coalesced`: one notification per window, after the commit. `inline`: one inside every append. `off`: none; the pollers see new events on their interval ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). |
+| `eventStore.wakeupMode` | `"coalesced"` | How appends wake the pollers. `coalesced`: one notification per window, after the commit. `off`: none; the pollers see new events on their interval ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). |
 | `eventStore.wakeupWindowMs` | `50` | The coalescing window. `0` sends after each commit without waiting. |
 | `audit.payload` | `"redacted"` | What the command audit stores of each input: `redacted` (fields marked `personal(...)` replaced), `full`, `none` (no payload), or `off` (no audit). |
 | `session` | none | A direct connection, same shape as `pg`, for what cannot go through a pooler in transaction mode: the leader locks and `LISTEN`. Omitted, they use `pg` ([ADR-0024](../adr/0024-session-connections-for-leader-and-listen.md)). |
@@ -39,7 +39,7 @@ environment variable.
 | `WALLET_MIGRATE` | applies migrations to a fresh database | `off`: this process applies none; a pre-deploy job does. |
 | `WALLET_POLL_MS` | `1000` | How often the processors poll while there are events. |
 | `WALLET_BACKOFF_MAX_SECONDS` | `10` | The most an idle processor waits between polls. |
-| `WALLET_WAKEUPS` | `coalesced` | `coalesced`, `inline` or `off` (see `eventStore.wakeupMode`). |
+| `WALLET_WAKEUPS` | `coalesced` | `coalesced` or `off` (see `eventStore.wakeupMode`). |
 | `WALLET_PERIOD` | `month` | The statement period: `month`, or `minutes:N` (1 to 1440) for the kind lab. Choose it for a new database. |
 | `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the processors admin API at `/admin/processors` (on the `api` role), behind this bearer token. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | Exports metrics, spans and logs over OTLP ([See it on a dashboard](../guides/operate/dashboard.md)). |

@@ -2,7 +2,8 @@
 // Run with:  node --test packages/eventstore/diagnostics/wakeup-throughput.diagnostic.ts   and read the `DIAG` lines.   SECONDS=20 CLIENTS=32 to change the run.
 // The same workload through the real EventStore in each wake-up mode: CLIENTS concurrent fibers, each doing `withWakeups(withTransaction(append one event))` in a loop for SECONDS,
 // with a distinct tag per event so no append waits on another's advisory lock. A listener is attached so notifications have a receiver, as in a running system.
-// The modes alternate (inline, coalesced, inline, coalesced) so drift of the machine shows as a difference between runs of the same mode.
+// The modes alternate (off, coalesced, off, coalesced) so drift of the machine shows as a difference between runs of the same mode. `off` is the floor: no notification at all.
+// The inline mode this used to compare (a pg_notify inside every append) was removed; its numbers are in ADR-0021.
 import { after, before, describe, it } from "node:test";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
@@ -41,10 +42,10 @@ const measure = async (label: string, config: EventStoreConfig) => {
 };
 
 describe("wake-up throughput by mode", () => {
-  it("inline, coalesced (50 ms), inline, coalesced", { timeout: 600_000 }, async () => {
-    await measure("inline #1", { wakeupMode: "inline" });
+  it("off, coalesced (50 ms), off, coalesced", { timeout: 600_000 }, async () => {
+    await measure("off #1", { wakeupMode: "off" });
     await measure("coalesced-50ms #1", { wakeupMode: "coalesced", wakeupWindowMs: 50 });
-    await measure("inline #2", { wakeupMode: "inline" });
+    await measure("off #2", { wakeupMode: "off" });
     await measure("coalesced-50ms #2", { wakeupMode: "coalesced", wakeupWindowMs: 50 });
   });
 });

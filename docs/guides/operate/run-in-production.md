@@ -88,7 +88,7 @@ Each processor polls the log by cursor, and a wake-up notification ends its wait
 |---|---|---|
 | `WALLET_POLL_MS` | the wait between polls while events keep coming (also the wait when a processor first goes idle) | 1000 |
 | `WALLET_BACKOFF_MAX_SECONDS` | the longest an idle processor waits between polls. After 3 empty polls the wait doubles each time up to this (1 s, 1, 1, 2, 4, 8, ... so about 250 s to reach 120) | 10 |
-| `WALLET_WAKEUPS` | `coalesced`, `inline` or `off` (see "Wake-ups" above) | `coalesced` |
+| `WALLET_WAKEUPS` | `coalesced` or `off` (see "Wake-ups" above) | `coalesced` |
 
 Only the leader of each module polls (six processors in the wallet). A poll with nothing new is a cursor read and a progress check, and any notification resets the backoff. In your own application these are the `pollingIntervalMs` and `backoffMaxSeconds` of each module's config.
 
@@ -119,7 +119,7 @@ whether the rule you protect needs them in one command.
 
 ### Wake-ups
 
-Pollers sleep between polls, and a `NOTIFY` wakes them early. Appends do not notify themselves: the event store collects what a transaction appended and sends **one** notification per 50 ms window, **after the commit** (`EventStoreConfig.wakeupWindowMs`; `wakeupMode: "inline"` brings back one `pg_notify` inside every append). This is what lifts the write ceiling from about 3 000 to about 5 800 appends a second on the laptop measured ([ADR-0021](../../adr/0021-wakeups-after-commit-and-coalesced.md)). `CommandExecutor` does it for you. If you call `EventStore.append` inside a transaction of your own, wrap that transaction: `eventStore.withWakeups(sql.withTransaction(...))`; without it the wake-up goes out before your commit and a poller may wake, find nothing and sleep.
+Pollers sleep between polls, and a `NOTIFY` wakes them early. Appends do not notify themselves: the event store collects what a transaction appended and sends **one** notification per 50 ms window, **after the commit** (`EventStoreConfig.wakeupWindowMs`). This is what lifted the write ceiling from about 3 000 to about 5 800 appends a second, against the earlier one `pg_notify` inside every append, on the laptop measured ([ADR-0021](../../adr/0021-wakeups-after-commit-and-coalesced.md)). `CommandExecutor` does it for you. If you call `EventStore.append` inside a transaction of your own, wrap that transaction: `eventStore.withWakeups(sql.withTransaction(...))`; without it the wake-up goes out before your commit and a poller may wake, find nothing and sleep.
 
 `wakeupMode: "off"` (`WALLET_WAKEUPS=off` in the wallet) sends nothing, and with `listenForWakeups: false` on the module configs the processors do not `LISTEN` either: new events are seen only when the polling interval comes round. Use it when you prefer a latency that is exactly the interval over a `NOTIFY` in the database.
 
