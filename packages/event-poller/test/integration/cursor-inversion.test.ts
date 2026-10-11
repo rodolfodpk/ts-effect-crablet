@@ -1,5 +1,5 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
-// Reproduces the skipped-event hole (docs/plans/poller-cursor-fix.md, phase 1), deterministically.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
+// Reproduces the skipped-event hole (docs/history/plans/poller-cursor-fix.md, phase 1), deterministically.
 //
 // `position` comes from nextval() when a row is inserted, `transaction_id` is the xid of the inserting
 // transaction, and the two can be taken in opposite orders: T1 gets the LOWER xid but the HIGHER

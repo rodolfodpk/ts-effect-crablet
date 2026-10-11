@@ -1,0 +1,250 @@
+# Diagnostic and plan: reliability and scale gaps (2026-10-04, status updated 2026-10-07)
+
+**Status:** all six steps are **done and committed**. Steps 1-3 fixed the incident-time failures (F1-F3); step 4 profiled the boundary time and built snapshots, which were then **dropped** (ADR-0018 superseded, 2026-10-07; what stays is the read horizon of `all(...)`); step 5 built event evolution (ADR-0017, Accepted) with its guide; step 6 built storage visibility and slimmed the tag table (migration V11, ADR-0019, Accepted), and V12 removes the snapshot table. Retention is deliberately not decided (ADR-0019). Each of F1-F6 was checked by re-running its experiment (see "Results of the fixes"). Nothing blocks the work; the open items are optional or later (Decisions 8, 10). The Data sections below are the diagnosis as it was **before** the fixes, kept as measured; the "after" figures are in "Results of the fixes". The experiments are re-runnable scripts (below).
+
+## Why this exists
+The architecture review (in the conversation, from reading the code) named several gaps: a leader that is not fenced, an unprotected wake-up listener, no snapshots (since built and then dropped), no event versioning, no retention. This document replaces those opinions with measurements: what is actually broken, how badly, and in what order to fix it.
+
+## Method
+- Real Postgres 18 (Testcontainers), the real `EventProcessor`, `tryAcquireGlobalLeader`, `wakeupStream`, `CommandExecutor` and event store. No mocks of the parts under test.
+- One laptop (8 cores, Docker), everything on it. Numbers are for comparing and for order of magnitude, not capacity.
+- Each experiment prints `DIAG` lines. The scripts: `packages/event-poller/diagnostics/leader-and-listener.diagnostic.ts` (D1, D1b, D1c, D2, D3, D3b, D4), `packages/commands/diagnostics/boundary-and-storage.diagnostic.ts` (E5, E5b, E5c, E5d, E7, E8; E5e and the snapshot write spike were removed with the feature, their results are kept below and in ADR-0018) `packages/eventstore/diagnostics/storage.diagnostic.ts` (E9a-E9c, ADR-0019; it runs on the schema as it was before V11 by default, `SCHEMA=current` on the shipped one; `N=200000` for a quicker run) and `packages/event-poller/diagnostics/tag-selection.diagnostic.ts` (E9d, E9e: the poller's real queries and five pollers with a writer, on the shipped schema). Run with `node --test <file>` (add `--test-name-pattern="D3b"` to pick one); they are outside the test globs, so CI does not run them.
+- **How firm each number is.** D1 and D3 are one run each. D1b is six trials (one per phase of the retry cycle) and was re-run after the scripts were moved, with the same shape. E5 is 25 commands per size. E8 was run twice (476 bytes per event both times; the append rate varied between 18,000 and 22,000/s). D2, D3b, D4 and E7 are yes/no observations. Each claim below says whether it is **measured**, **derived** (arithmetic from a measurement or a config value) or **from the code** (read, not run).
+- One of my own experiment mistakes was caught on the way and is not in the data: D1b first measured only one phase of the retry cycle (every trial killed the leader at the same point, so every trial showed about 3.6 s), and was rerun with the kill time varied.
+
+## Data
+
+### D1 - the leader's database session is killed while events keep arriving
+Two processors (A, B) on one lock and one progress row, leader retry interval 30 s (what both example apps and the library default used **at the time**; the default is 5 s since step 3), a write every 50 ms. At t=0 the session holding the advisory lock is terminated with `pg_terminate_backend`.
+
+| Measured | Result |
+|---|---|
+| The old leader after losing the lock | **kept handling events for the whole 40 s window: 723 handler calls, last call at +40.0 s** |
+| The other instance's first handled event | +27.1 s (its next retry) |
+| Events handled by BOTH instances after the kill | **232 of 728 (32 %)**, and it continues for as long as both run |
+| Longest gap between any two handler calls | 0.2 s (the zombie hid the failure) |
+| Progress cursor sampled every 20 ms (1,991 samples) | 0 moved backwards in this race |
+
+### D2 - can the cursor be written backwards?
+`updateCursor(900)` then `updateCursor(100)`: the cursor reads back **100**. There is no guard. (D1 did not hit it; D2 shows nothing prevents it.)
+
+### D1b - the leader process dies (session gone, fibers gone), follower retry interval 5 s
+Takeover after the kill, with the kill moved through the follower's retry cycle: **4.2, 3.4, 2.5, 1.8, 0.9, 0.2 s** (mean 2.2 s; a re-run gave 4.2, 3.4, 2.6, 1.8, 1.0, 0.1): the takeover time is the retry interval minus the phase, uniform in (0, retry interval]. **Derived** for the apps' 30 s interval: 0 to 30 s of no processing, about 15 s on average (the only 30 s observation, D1's, was +27.1 s, for a killed session). Every module that has a leader is affected the same way (views, outbox, automations), from the code. (Emulated: the session was terminated and the processor's fibers stopped; not an OS-level `kill -9`.)
+
+### D3 - the poller's `crablet_events` LISTEN session is killed
+Poll 1 s, backoff after 3 empty polls (x2, up to 30 s), 25 s idle, then one write:
+
+| Listener | Write -> handled |
+|---|---|
+| healthy | 51 ms |
+| session killed | **7,695 ms** |
+
+One run each. One error line is logged and nothing else. The apps use `backoffMaxSeconds: 120`, so by the same mechanism the bound is 120 s (**derived** from the config, not measured).
+
+**D3b, does a new listener ever open?** Counting `LISTEN crablet_events` sessions: 1 before the kill, **0 at +5, +10, +15, +20, +25 and +30 s**. Nothing re-establishes it (**measured**), and the code explains why: the dispatcher loop catches the stream's failure, logs it, and ends. Scope: each module (views, outbox, automations) has its own processor and its own listener, so killing one session affects that module's processors; a database restart would lose all of them.
+
+### D4 - does a reserved connection survive its session being killed?
+The question behind step 1's heartbeat. A connection reserved from the pool takes an advisory lock, then its backend is terminated: three queries on the same connection afterwards **all fail**, and the lock has no holder (**measured**).
+
+**Correction (2026-10-06): the conclusion first drawn from this was wrong.** It said a successful query on the leader's connection proves the lock is held, because "there is no silent reconnect". D4 only showed that the queries right after the kill fail. When the heartbeat was built as `SELECT 1` and D1 was re-run, the old leader still handled events: a temporary log showed the heartbeat failing once and then **succeeding again**, because the pooled connection came back on a NEW session that answers queries but does not hold the lock. So an answered query proves nothing. The shipped check asks Postgres whether THIS session holds the advisory lock (`pg_locks`, `pid = pg_backend_pid()`), and D1 then went to zero. The lesson, kept because it applies to the rest of this plan: test the property you need (holds the lock), not a proxy for it (answers a query).
+
+### E5 - command latency against the events in its boundary (strict command, model folds every event)
+| Events in the boundary | command p50 | command p95 | unconditional append, same tag |
+|---|---|---|---|
+| 0 | 2.8 ms | 8.7 ms | 0.9 ms |
+| 1,000 | 6.1 ms | 10.3 ms | 0.6 ms |
+| 10,000 | 19.5 ms | 31.1 ms | 0.8 ms |
+| 100,000 | **190 ms** | 207 ms | 0.8 ms |
+| 500,000 | **1,119 ms** | 1,242 ms | 1.1 ms |
+
+Roughly linear, about 2 microseconds per event (**measured**). The events are tiny (about 40 bytes of JSON) and were inserted in bulk, so real payloads will cost more to load. The unconditional append is constant, but it has no condition, so it does not show whether the strict command's conflict check also grows with the boundary: **where the time goes (fetching the rows, decoding them, folding them, or the append's conflict check) was measured next, in E5b below.**
+
+### E5b - where the time of a command goes (100,000 events in the boundary; p50 of 15 runs, one run of the script)
+| Part | Time | Share |
+|---|---|---|
+| Command, whole | 186 ms | 100 % |
+| Load the state (fetch, driver, row objects, decode, fold) | 180 ms | 97 % |
+| of which the database executing the read (EXPLAIN ANALYZE: index scan, 100,000 rows) | 44 ms | 24 % |
+| of which driver, network and building 100,000 row objects (fetch-and-parse-only minus database time) | ~109 ms | ~58 % |
+| of which schema decode and fold of the payloads | ~26 ms (decode alone, over the same payloads in a loop: 12 ms) | ~14 % |
+| Append with its conflict check, and the rest of the command | ~6 ms | ~3 % |
+
+**Measured**, with the split computed by subtraction (the parts were timed as separate runs, so they are approximate to a few ms). Three things follow. (1) The conflict check does not grow with the boundary: the append plus the rest is 6 ms at 100,000 events, because it only looks past the position the command loaded (**measured**). (2) The cost is moving rows: about 1.1 ms of the 1.8 ms per 1,000 events is the driver and object building, more than the database and the CPU work together (**derived** from the table). Making the decode or the fold faster cannot help much; fewer rows must be read. (3) The events are tiny (about 40 bytes of JSON) and the row has 8 columns, including `tags`, `occurred_at` and two ids that a fold rarely uses: with real payloads the share of transfer grows (**inference**, not measured). Not measured: the cost of reading fewer columns. (A snapshot did not exist when this was written; its effect is E5e.)
+
+### E5c - reading only the events after a cursor (what a snapshot leaves to read)
+In a boundary of 100,000 events, reading the last 10 through the command's read path: **0.5 ms** (p50) when nothing newer is in the log, **16 ms** (database 14.7 ms) when 400,000 events of other entities were written after it (**measured**, one run, 15 reads each). In the second case the planner reads the whole entity through the GIN tags index and filters by cursor afterwards, so the tail read is still linear in the entity's size, about a tenth of the full read (**derived**: 16 ms against 180 ms). The events were bulk-inserted in one transaction, so every row has the same transaction id and the cursor effectively compares positions only; a log with many transactions was not measured.
+
+### E5f - what reading fewer columns saves on a model load (2026-10-11)
+100,000 events in one boundary, fetch only (nothing decoded or folded), p50 of 15, two runs of the script, on the load's own query with columns removed. "Tiny" is the E5b event (one tag, about 40 bytes of JSON); "realistic" has three tags, about 400 bytes of JSON and both ids set. Percentages are of variant 1; the two figures are the two runs. **Measured**; differences under about 10% are inside the run-to-run noise (in the first run, tiny variant 2 came out 23% *slower* than variant 1).
+
+| Columns read | tiny | realistic |
+|---|---|---|
+| 1 all (what a load reads now) | 116 / 115 ms | 248 / 242 ms |
+| 2 without `correlation_id`, `causation_id` | 123% / 97% | 90% / 92% |
+| 3 and without `occurred_at` | 95% / 94% | 88% / 91% |
+| 4 and without `tags` | 91% / 80% | 77% / 78% |
+| 5 the floor (`type, data, transaction_id, position`) | 92% / 80% | 76% / 78% |
+
+- **The ceiling is about 20-25% of the fetch**, and that is with every optional column gone, including `tags` and `occurred_at`, which handlers may read. Dropping only the two ids, the one change that needs no opt-in, saves 3-10%: below the 10% bar the plan set.
+- The database's own execution time did not move (52-58 ms in every variant): the saving is in the driver and the bytes, as E5b said, but the bytes of `data` and the cursor columns stay.
+- **A bigger gap is elsewhere.** The same read through `project` (driver plus `parseRow`, nothing applied) took 152-157 ms (tiny) and 344-481 ms (realistic), against 115 and 242-248 ms raw: **40-100% on top of the raw fetch**, more than any column choice saves. Splitting the tags alone is only 5-21 ms, so the rest is something else in `parseRow` and the loop (an object per tag, `BigInt`, the per-row projector loop; also one extra query for `currentXmin`). E5h below measures it: `parseRow` explains about a third. The 344 vs 481 ms spread was from timing the two reads in separate runs; interleaved (E5h) the medians are stable.
+- **Decision (ADR-0013's bar for an API-visible compromise is not met):** do not change which columns a model load reads. The next experiment, if the load time matters, is to profile `project`'s per-row work.
+
+### E5h - where the gap between the raw fetch and `project` goes (2026-10-11)
+Realistic events, 100,000 in the boundary, 20 repetitions, three runs. Each piece of `project`'s own work (`parseRow`, the projector loop) was timed in memory on rows already fetched; the end-to-end reads were timed interleaved, so a slow moment hits both. **Measured.**
+
+| Piece | p50 (min-max) |
+|---|---|
+| `parseRow` as it is (three tags split into objects, `BigInt`, a new event object per row) | 28-38 ms (16-57) |
+| ...of which splitting the tags | about 20 ms (without it: 9-12 ms) |
+| ...of which `BigInt` | about 3-10 ms |
+| the projector loop and a `LogPosition` per row | 3-4 ms |
+| the extra `currentXmin` query | under 1 ms |
+| **end to end: raw fetch / through `project`** | **236-238 ms / 341-347 ms** (min 205-228 / 243-262) |
+
+- `parseRow` and the loop explain **about 35 ms of a 105 ms gap**. About 70 ms is **not attributed**. In the fastest runs the gap is only 25-45 ms, which `parseRow` does explain, so the extra cost sits in the slow runs of `project` (max 368-396 ms against 253-290 for the raw read). That pattern fits garbage collection of the 100,000 row objects plus 100,000 event objects plus 300,000 tag objects, but this was **not measured** (no GC trace was taken).
+- Lazy tag parsing would remove about 20 of the 35 ms, and perhaps some of the GC pressure: roughly 6% of a 340 ms read, up to about 25% if the unattributed part is GC from those objects. Not worth building before a GC trace (`node --trace-gc`) shows whether it is.
+
+### E5g - `exists` (the idempotency pre-check) against the events its query matches (2026-10-11)
+`exists` used to read every matching event with all columns, ordered, and build an object per row, to answer yes or no. It now asks the database `SELECT EXISTS (...)`, which stops at the first match. One run, p50 of 15 (**measured**, the old path timed in the same run through `project` with `existsProjector`):
+
+| Events the query matches | read everything (old) | `SELECT EXISTS` (now) |
+|---|---|---|
+| 1 | 0.5 ms | 0.22 ms |
+| 1,000 | 2.2 ms | 0.28 ms |
+| 100,000 | 150.5 ms | 0.24 ms |
+
+The new cost is flat. The old cost is linear in the matches, about 1.5 microseconds each. It only matters to commands that declare `idempotentBy` with a query that matches many events (by event type, or by a common tag); a query on one operation id matches few and was already cheap. Run with `--test-name-pattern="E5g"`.
+
+### E5d - a transfer (`all`, two accounts) when one has 100,000 events
+Before the horizon change: p50 **403 ms**, p95 572 ms; after: p50 **218 ms**, p95 281 ms (**measured**, one run each, 15 transfers; the same script before and after). The saving is the union read that `all` did only to learn a position (ADR-0018, decision 8).
+
+### E5e - the same command with a snapshot on its model (ADR-0018; the feature and this experiment were REMOVED on 2026-10-07, the result is kept as the record)
+p50 of 25 commands, one run: at 100,000 events 185 ms without a snapshot, 2.9 ms with one once taken, **19.1 ms** after 200,000 events of other entities were written following the snapshot; at 500,000 events 1,094 ms, 3.0 ms, **26.2 ms**. The first command (full fold plus the write) costs about the same as without a snapshot (193 and 941 ms). **Measured**; payloads were about 40 bytes and the bulk-inserted events share few transaction ids. The last figure is the realistic one: the tail read still walks the other entities' newer events through the tags index (E5c), so it grows with the log written after the snapshot, not with the entity's size.
+
+### E7 - an event whose stored payload no longer matches its schema is in a command's boundary
+The command **fails with a defect** (a schema decode error, not a typed failure) and **fails again on every later attempt** (**measured**): one old-shape event makes the entity unusable until its data is fixed. Over HTTP that would be the generic 500 problem (**from the code**: the handler turns an unhandled defect into it; not run over HTTP).
+
+**After step 5.1 (ADR-0017, 2026-10-06):** the same command now fails with a **typed `EventDecodingError`** naming the event (`Ticked`, position 4, transaction 765, `Missing key at entityId`), and again on the second attempt; other entities are unaffected; over HTTP it is the generic 500 without the event's name (the log line and the `crablet.eventstore.decoding_failures` counter carry it). The boundary is still refused, by design: it is never skipped. The point of the policy is that a compatible change (a defaulted field) no longer produces this at all.
+
+### E8 - cost of an event on disk (50,000 real appends, tag rows and indexes included)
+**476 bytes per event** (measured twice): 182 heap + 119 indexes + 175 for `crablet_event_tags` (37 %), for a payload of about 70 bytes of JSON, so real events cost more in the heap. 100 million events is about 48 GB; a billion about 476 GB (**derived**, assuming that payload size). Append rate on one connection in batches of 100: 18,000 to 22,000 events/s. No partitioning, retention or archival exists (**from the code and the migrations**).
+
+### E9 - what an event costs on disk and on the write path, with events shaped like the wallet's (1,000,000 events, ADR-0019)
+**Measured** (one laptop, one connection, one run; timings are p50 of 15). Events: 95 % deposits with 5 tags, 5 % transfers with 7, payloads of about 170 bytes of JSON, through the real append path in batches of 200.
+
+| | Size | Per event |
+|---|---|---|
+| `crablet_events` (heap 394 B + indexes 250 B) | 615 MiB | 644 B |
+| `crablet_event_tags` (5.1 million rows, 197 B each; heap 293 B + three indexes 711 B) | 958 MiB | 1,004 B |
+| **both** | **1,573 MiB** | **1,649 B** (the tag table is 61 %) |
+
+Derived: 100 million events of this shape are about 165 GB (about 65 GB without the tag table), a billion about 1.65 TB (644 GB). The append path ran at 5,658 events/s over the whole load; with the tag-row insert removed from the function (scratch database) 60,000 deposits ran at **18,718 events/s instead of 4,832**: the tag rows cost 74 % of append throughput here. The earlier E8 figure (476 bytes per event) was for one-tag events with a small payload; real events with several tags cost three to four times as much.
+
+The tag table is read only by the pollers' key-presence selections (`requiredTags`, `anyOfTags`) and by `eventFactsFromLog`.
+
+**A correction recorded here because it matters.** The first version of this section (E9b, hand-written SQL approximating the poller's, a one-key filter) concluded that the tag table was never meaningfully faster than scanning the events' own tags, and the plan recommended dropping it. Asked whether the pollers had been checked, I ran the check with the poller's REAL query builders and the wallet's real three-key selections (E9d), and the conclusion reversed for rare keys: **catch-up from the start on a key present in 0.01 % of events takes 0.7 ms with the tag table and 2,539 ms scanning** (growing with the log), and the "anything pending" check on a rare key over the last 5,000 events takes 5.8 ms against 162 ms. For the wallet's own common keys the table buys nothing (about 1 ms either way). Measured next (E9f, E9e): a **slim table** `(key, position)` with its primary key only has the same reads as the current one (rare key catch-up 0.6 ms), 44 % of its space (420 against 958 MiB), and 2.3 times the append throughput (9,664 against 4,186 events/s); under five concurrent pollers and a writer the writer ran at 5,368 events/s against 2,463 as built and the pollers' p95 fell from 36.7 to 9.7 ms (all with a 350 to 400 ms p99 stall in every variant, not examined). One laptop, two full runs that agreed in shape.
+
+## Diagnosis (ranked by severity and evidence)
+
+**F1. A leader that lost its lock keeps working, and nothing fences it. High. Measured: the zombie and the duplicates (D1) and the unguarded write (D2); a backwards cursor in the wild was not observed.**
+*Status (2026-10-07): **fixed in step 1.** The old leader now stops (D1: 723 handler calls after the kill became 0, events handled by both instances 232 became 0) and the cursor holds (D2: 900). Residual: a zombie can still do the one batch it was in; the outbox tracker's forward-only SQL has no test of its own.*
+*Status (2026-10-09), the residual by module: **views fixed** - the batch and its cursor commit in one transaction and the cursor move is a forward-only compare-and-set that rolls the batch back when it moves nothing (`EventProcessorDeps.atomically`; test `view-exactly-once`: 24 instead of 12 before, in the race and in the retry after a crash; about +0.26 ms per one-event tick on a local Postgres, no change draining a backlog; one run, not measured on AWS). The wallet's balance and summary views add, so before this a repeated batch doubled them (107 became 114). **Automations**: a repeat is harmless only for an idempotent command, so `automationHandlerOf` now refuses a command with no `idempotentBy`. **Outbox**: stays at-least-once, a repeat is accepted and the publisher contract says to deduplicate on `event.position`.*
+Cause (code): `LeaderHandle.isLeader()` is `!closed`, and `closed` is set only by `release()`; nothing watches the reserved connection; the processor checks `isLeader()` only at the top of a tick; `updateCursor` is an unconditional `UPDATE`. Effect: after a connection loss two leaders run, a third of events are handled twice (measured), and the cursor can go backwards (by construction, D2). By module (from the code and the design, not each measured): views are required to be idempotent (at-least-once, ADR-0012), so it is wasted work; the outbox publishes to external systems at-least-once (duplicates leave the building); automations issue follow-up commands (duplicate commands, safe only if each command is idempotent - not verified here). No metric showed it: the leadership gauge is set only when the retry loop sees a change, so it stayed at 1 on the zombie (**from the code**, not observed). Since the fix `isLeader()` turns false on loss, so the retry loop sets the gauge to 0 at its next pass (**from the code**; not observed in an experiment).
+
+**F2. Failover takes up to 30 s, 15 s on average. High for availability. Measured at a 5 s interval (D1b), derived for 30 s.**
+*Status (2026-10-07): **fixed in step 3.** Crash takeover mean 2.2 s, worst 4.2 s with the 5 s default (was derived 0-30 s, mean about 15 s); a graceful stop hands over in 0.04-0.10 s. The 5 s default and the wake on graceful release were approved on 2026-10-07 (Decisions, item 7).*
+Cause (as diagnosed): followers retried `pg_try_advisory_lock` every `leaderElectionRetryIntervalMs` (30 s everywhere); nothing woke them when the lock was released. Since step 3 the default is 5 s and a graceful release wakes them. F1 hides F2 when only the connection dies, and F2 is the whole story when the process dies.
+
+**F3. The poller's wake-up listener never recovers. Medium-High for freshness. Measured (D3, D3b).**
+*Status (2026-10-07): **fixed in step 2.** A killed listener now costs 78 ms instead of 7.7 s and a session stays open (D3, D3b). Residual: a reconnect leaves no metric or log line.*
+A lost listener silently turns every processor of that module into timed polling, with a write-to-view lag of 7.7 s in the experiment and up to 120 s in the apps' configuration (derived); a database restart loses the listeners of all modules at once. The view progress hub (ADR-0016) already solves this for its own channel; the poller's channel does not use it.
+
+**F4. Command latency grows linearly with the boundary, about 2 microseconds per event, with no snapshots. CONDITIONAL on the workload (earlier rated High; downgraded 2026-10-07): measured 19.5 ms at 10,000 events, 190 ms at 100,000, 1,119 ms at 500,000, which many systems accept. It matters only for an entity whose history grows without bound AND whose commands have a latency budget below history x 2 microseconds. The growth is measured (E5) and attributed (E5b): loading the boundary is 97 % of the command. A snapshot feature was built and then dropped (ADR-0018): 185 to 19 ms at 100,000 events and 1,094 to 26 ms at 500,000 in the realistic case (E5e), but not needed by anything here.**
+*Status (2026-10-07): **no longer addressed by a feature: snapshots were built (ADR-0018), measured (185 to 19 ms at 100,000 events, 1,094 to 26 ms at 500,000), and dropped** because the need is conditional, nothing used them, and the cheaper remedy is modelling by period. F4 stays as a documented, conditional limit.*
+A hot entity at one event per second reaches 100,000 events in about 28 hours and 500,000 in about 6 days (derived) and then costs 190 ms or 1.1 s per command (measured); a strict command's per-entity throughput is then roughly the inverse, about 5/s or 1/s (inference: strict commands on one boundary conflict and retry, not measured). Not a correctness problem. The cheaper remedy for most workloads is modelling: scope a model by period (the wallet's statements do) so an entity's boundary stays small; the example applications need no snapshots, and none uses them. A rule of thumb: the history a model can carry is its latency budget divided by 2 microseconds.
+
+**F5. One event in an old payload shape bricks its boundary, with a defect. Medium, measured (E7).**
+*Status (2026-10-07): **fixed in step 5.** The symptom is now a typed error naming the event (E7), readers decode through their definitions, the policy and its checks exist (fixtures, `verify-events`, the change-impact report). The docs are written.*
+As diagnosed: there was no tolerant reading, no typed error naming the bad event, and no check that stored events still decode.
+
+**F6. A realistic event costs about 1,650 bytes on disk, 61 % of it a tag table whose `value` column and two of three indexes nothing reads, and the tag rows are 74 % of the append cost; there is no retention story. Medium, measured (E9; E8 measured 476 bytes for one-tag events).**
+*Status (2026-10-07): **fixed in step 6.** Visibility built (`storageReport`, gauges, `monitorStorage`, a wallet script) and the tag table slimmed to `(key, position)` by migration V11 (ADR-0019, Accepted): -27 % disk, 2.7 times the append throughput on a load, reads unchanged. **Retention not decided** (a modelling question first: ADR-0019).*
+Fine for tens of millions of events either way; at 100 million the tag table alone is about 100 GB. Nothing plans for a billion.
+
+**Known and unchanged by this work (no new data):** the poller reads only below the oldest open transaction (a stall is visible to readers, ADR-0015); writers on one hot `(type, tag)` serialize (ADR-0003 measured it). The p99 of `latest` reads under writes is inconclusive (ADR-0016).
+
+## What I did not measure
+An OS-level crash of a leader process (emulated by terminating the session and stopping the fibers), a network partition or half-open TCP connection to the database, a connection pooler in transaction mode, duplicate effects of the outbox and automations directly (only a view-style processor was measured; the fence and the forward-only cursor are shared code, the outbox's own tracker has no test of its own), anything on more than one machine, whether the outbox and automations modules show the same listener lag as the views module (same engine, so expected, from the code), and the cost of the heartbeat (one `pg_locks` lookup per second per leader, not timed). For snapshots: payloads larger than about 40 bytes, a log of many small transactions (the bulk-inserted events share few transaction ids), and many entities snapshotting at once. For event evolution: the cost of `verify-events` on a large log (the random sample uses `ORDER BY random() LIMIT` per type and `all` walks the log in position order, neither timed); readers that use `event.data` in ways other than the casts I searched for (destructuring, say), and the HTTP event-log API's reading path, were not exhaustively checked; a `null` stored for a defaulted field fails decoding by design and was not exercised against real data; the change-impact report found no real bug in the wallet (all 12 findings were deliberate "not relevant"), so whether it catches mistakes in practice is unproven, and its reasons are enforced to exist, not to be true. For storage (E9): one laptop, one event shape, the append rates on a single connection (E9e adds five pollers and one writer); two full runs at 1,000,000 events that agreed in shape; a rare key measured only at 0.01 % of the log; the p99 stalls of 350 to 400 ms in every concurrent variant were not examined; the slim table has not been built (it was measured by swapping the table name in the real queries and altering the append function in a scratch database), so the equivalence test and the consumer suites have been run against the scan form (the semantic reference), not against the slim table; the migration has not been written or timed; bloat and vacuum behaviour over time, partitioning and archival, and the cost of `monitorStorage` itself were not measured.
+
+## Results of the fixes
+Each row is the same experiment re-run after the step (one run unless said; the diagnostics are re-runnable). Commits: step 1 `d59ceaf`, step 2 `8e2644b`, step 3 `d8c83d7`, step 4 `6f355c5`, `1b09360`, `d317e64`, `6022672`, `2bcdc46`, `5a25373`, `a8cbb20`, `e945a55`, `31b683c`, `dcea1d9` (ADR-0018 accepted in `8fb121d`), then step 5: spike `7eab09c`, 5.1 `c9716fa` (also accepts ADR-0017), 5.2 `2f6b751`, 5.3 `c0c554b`, 5.4 `5ef451d`, 5.5 `edb53bc`; then step 6: visibility and ADR-0019 `d467d9f`, the poller check and V11 `897f18c`; and the removal of snapshots with V12 `47f6e49`.
+
+| Experiment | Before | After |
+|---|---|---|
+| D1: old leader's handler calls after its session is killed (40 s) | 723 | **0** |
+| D1: events handled by both instances after the kill | 232 of 728 | **0** |
+| D2: cursor after writing 900 then 100 | 100 (regressed) | **900** (held) |
+| D3: write to handled after 25 s idle, listener session killed | 7,695 ms | **78 ms** (healthy 44 ms) |
+| D3b: `LISTEN crablet_events` sessions 5-30 s after the kill | 0 | **1** |
+| D1b: takeover after a crash (six phases of the retry cycle) | at the old 30 s default: uniform in 0-30 s, mean about 15 s (**derived**; measured only at 5 s: 4.2, 3.4, 2.5, 1.8, 0.9, 0.2 s) | the default is now 5 s: 4.2, 3.4, 2.6, 1.8, 1.0, 0.2 s, mean 2.2 s (**measured**; a crash cannot announce itself, so the timer bounds it) |
+| D1c (new): takeover after a graceful stop | up to the retry interval | **0.04 to 0.10 s** (mean 0.07 s) |
+| E5: command at 100,000 / 500,000 events, model without a snapshot | 190 / 1,119 ms | 185 / 1,094 ms (the control column of E5e, after the horizon's extra statement per `project`: no measurable change) |
+| E9: bytes per event, wallet-shaped events (the log, events + tag table) | 1,649 | **1,203** (-27 %; the tag table 958 -> 532 MiB) |
+| E9: loading 1,000,000 events through the append path | 177 s (5,658 events/s) | **66 s** (15,095 events/s), 2.7 times |
+| E9: poller p95 with five pollers and a writer at once | 36.7 ms (writer 2,463 events/s) | **7.0 ms** (writer 7,470 events/s); rare-key reads unchanged |
+| E7: a command over a boundary with one old-shape event | a defect (anonymous), again on every attempt | a **typed `EventDecodingError`** naming the event (type, position 4, transaction 765, `Missing key at entityId`); the HTTP answer is the generic 500, the log line and `crablet.eventstore.decoding_failures` carry the event; other entities unaffected |
+| E5d: transfer (`all`) from a 100,000-event account | 403 ms | **218 ms** |
+| E5e (feature since dropped): command with a snapshot, 100,000 / 500,000 events, other entities' events written after the snapshot | 185 / 1,094 ms | 19.1 / 26.2 ms (2.9 / 3.0 ms when nothing is written after it) |
+
+What each step shipped, in the order built:
+1. **Truthful leadership, fence, forward-only cursor.** A heartbeat on the leader's reserved connection that checks the session still holds the lock (not `SELECT 1`, see D4), `verify` on the handle, the processor checking it before the handler and before the cursor moves (no handler error recorded), the retry loop releasing a lost handle, and `updateCursor` in both trackers guarded by `(last_transaction_id, last_position) < new` (no ping when it does not advance).
+2. **A wake-up listener that reconnects.** `wakeupStream` never ends; backoff 500 ms to 30 s; one wildcard wake-up after each RE-connect; the dispatcher drains again if a stream ends anyway.
+3. **Faster failover.** Retry default 5 s (processor config, the processor's fallback, both example apps); a graceful release unlocks and sends a wildcard `pg_notify` on `crablet_events` in one statement, and a wildcard wake-up ends a follower's retry sleep.
+4. **The boundary time (ADR-0018, superseded).** Profile (E5b), tail read (E5c) and the cursor of `all` from read horizons (decision 8: proved on real Postgres, an executor-level test of the dangerous interleaving, mutation-checked; **kept**). Snapshots (opt-in per model, migrations V9 and V10, a store, the load, the executor writing after the transaction, `verifySnapshots`) were built and measured, and **dropped on 2026-10-07** (V12 removes the table; last commit containing them: `897f18c`).
+
+5. **Event evolution (ADR-0017, Accepted).** 5.1 `defineEvent.decode` reports every problem as `{ path, message }`; `EventStore.project` turns it into the typed `EventDecodingError` (logged once, counted by event type); 5.2 `decodeStored` on every definition, used by the wallet's and the course's projectors and the wallet's automation (a processor records the typed failure against itself instead of a defect being lost); 5.3 the fixtures helper (`EventFixtures`) with baselines for the wallet and course events; 5.4 `verifyEvents` (a library function and a wallet script that exits 1 on failure); 5.5 DCB rule A as a change-impact report (`ModelImpact`) with a committed baseline whose entries must carry a reason, plus `.ignores(...)` and model metadata. A compile-time variant (`.completeFor`) was spiked, worked, and was removed because it coupled slices.
+
+6. **Storage (ADR-0019, Accepted).** `storageReport` / `monitorStorage` and three gauges (`crablet.storage.*`), a wallet script `report-storage.ts`; E9 measured what an event costs (1,649 bytes, 61 % of it the tag table) and, after the first conclusion (drop the table) was corrected by running the pollers' REAL query builders, the tag table was **slimmed to `crablet_event_tag_keys (key, position)`** by migration V11 (one row per distinct key, backfilled from the events' own tags, writers paused for the length of the backfill); the builders take `{ tagKeys: "table" | "scan" }` and an equivalence test keeps the key table equal to the events' own tags. Retention not decided.
+
+## Plan
+Ordered by severity and by how cheap the fix is against the evidence. Each step ends green (`bun run typecheck`, `bun run test:unit`, the integration suites in batches), is committed on its own, and is checked by re-running its experiment. Estimates are mine.
+
+| | Step | Fixes | Evidence it worked | Cost | Depends on | Status |
+|---|---|---|---|---|---|---|
+| 1 | **Leadership that tells the truth, a fence, and a cursor that only moves forward** | F1 | D1 re-run: the old leader stops within about 2 s of the kill; events handled by both instances after that window: 0; D2: writing 100 after 900 leaves 900 | 1.5 days | - | **Done** (`d59ceaf`): 0 handler calls after the kill, 0 doubly handled, D2 holds 900. Residual: the outbox tracker's forward-only SQL has no test of its own |
+| 2 | **A wake-up listener that reconnects** (the hub's pattern, on `crablet_events`) | F3 | D3 re-run: killed-listener lag within about 2 s, not 7.7 s; a reconnect counter | 1 day | - | **Done** (`8e2644b`): 78 ms, a session stays open. The "reconnect counter" was **not built**: a reconnect leaves no metric and no log line, only the wildcard wake-up it emits (the dispatcher logs if a stream ends or fails) |
+| 3 | **Faster failover** | F2 | D1b re-run with the default configuration: mean at most about 2.5 s, worst at most 5 s | 0.5 day | 1 | **Done** (`d8c83d7`): mean 2.2 s, worst 4.2 s after a crash; 0.07 s after a graceful stop. The 5 s default and the wake on graceful release were **approved 2026-10-07** (Decisions, item 7) |
+| 4 | **Where the boundary time goes, then a design for snapshots** | F4 | profile at 100,000 events (fetch, decode, fold); then an ADR; then E5 against a target | 0.5 day to profile, 0.5 to design, about 3 to build | profile first | **Profile done; snapshots built, then dropped** (ADR-0018 superseded, 2026-10-07): the profile showed the cost is moving rows (97 % of the command is the load) and linear, about 2 microseconds per event; the snapshots worked (19 ms at 100,000 events) but the need is conditional and nothing used them. **Kept from this step:** the `all(...)` read-horizon change (403 to 218 ms for a transfer from a large account) |
+| 5 | **Event schema evolution policy: a tolerant reader, not upcasters** (decided in [ADR-0017](../../adr/0017-event-evolution-by-compatibility.md), **Accepted**) | F5 | E7 passes: an undecodable event gives a typed error naming its position and type; old shapes decode with defaults; a check that decodes stored events (`verify-events`); a DCB check that finds event types carrying a model's tags that the model does not account for (the change-impact report) | 1.5 days estimated before the spike; took longer because rule A went through a compile-time spike that was removed | an ADR | **Built** (5.1 to 5.5, see "What each step shipped"). Spike 2026-10-06 showed the policy implementable (`withDecodingDefaultKey`, tolerant reader both ways, issues that do not echo values). The docs are written (`docs/guides/build/evolving-events.md`); `verify-events` at scale is untimed |
+| 6 | **Storage visibility, then a retention decision** | F6 | table-size metrics; a decision (partitioning, whether the tag table is needed) before 100 million events | 0.5 day estimated; the tag table took much longer because the first conclusion had to be corrected twice | - | **Built.** Visibility (`Storage.ts`, `StorageMetrics`, the wallet's `report-storage.ts`) and the **slim tag-key table, migration V11** (ADR-0019, approved 2026-10-07): the log 1,649 to 1,203 bytes per event (-27 %), a 1,000,000-event load 177 s to 66 s (2.7 times), pollers' reads unchanged including rare keys, poller p95 under load 36.7 to 7.0 ms. **Retention is not decided** by design |
+
+### Step 1, the design as built (item 1 corrected, see D4)
+1. **Truthful leadership.** The leader's reserved connection is monitored (a heartbeat query on it every second, with a timeout and two consecutive failures before it counts as lost). A session lock exists only while its session does. **As first written this said a successful query on the connection proves the lock is held; that was wrong (D4, correction):** the pooled connection can come back on a new session that answers queries without the lock. What the heartbeat and `verify` run is a check that THIS session holds the advisory lock (`pg_locks`). `isLeader()` becomes false on loss and the scope is closed, so the retry loop can try again. A `verify` effect on the handle exposes the same check. D4 measured that the queries right after a kill fail; it did not establish that none succeed later. The tests of step 1 kill the leader's session and assert that `verify` turns false and `isLeader()` follows within the heartbeat window (`leader-liveness.test.ts`, mutation-checked).
+2. **A fence in the processor.** Before it hands a batch to the handler, and again before it moves the cursor, a processor verifies it still leads and, if not, stops that tick without recording a handler error. This bounds a zombie's duplicate work to one batch.
+3. **A cursor that only moves forward.** `updateCursor` (views and automations, and the outbox's own tracker) becomes `... WHERE (last_transaction_id, last_position) < new`, so a stale write changes nothing, sends no ping, and cannot regress the cursor even in the microsecond window a check cannot close. A deliberate rewind by SQL still works (that is how ADR-0012 recovers a view); the tracker's `reset` does not rewind the cursor today, so nothing in the code relies on writing it backwards.
+Residual of the fence: it bounds a zombie's duplicate work to one batch, it does not remove it: a leader that passed the check just before losing the lock can still publish that one batch (outbox) or issue its follow-up commands (automations). Risks: a false "lost" under load (mitigated by the timeout and two failures; the cost is a harmless step-down and re-acquire); the heartbeat shares the reserved connection with `verify` (serialized by the connection); a pooler in transaction mode breaks session locks and is already unsupported.
+
+### Decisions
+Resolved:
+1. ~~**Order.**~~ Done as 1, 2, 3, then profile and snapshots (4, since dropped), then 5, then 6. Reasoning kept: F4 is the one that grows with success, F1-F3 fail at incidents.
+2. ~~**ADR for step 5 before code.**~~ ADR-0017 was written, reviewed after a spike, and **Accepted** (2026-10-06).
+3. **ADR-0018 (snapshots): Accepted (2026-10-06), then DROPPED (2026-10-07)** after an evaluation of the trade-offs: conditional need, no users, a cheaper remedy (model by period), a permanent cost. Decision 8 of that ADR (the read horizon of `all`) stays. V12 drops the table.
+4. **Integration tests run with `--test-concurrency=4`**: with the default, full runs on this machine failed on 60 s test-database startup timeouts; not measured on CI.
+5. **Step 5's rule** (approved with ADR-0017, 2026-10-06): from the talk (David Schmitz, "Event Sourcing - You are doing it wrong"; the rule as pasted by the project owner, which agrees with slides 94-108 of his deck: upcaster chains shown as unmaintainable, "Weak schema to the rescue", "Prefer simple, text-based, human readable events"): **a new version of an event must be constructible from the old one.** A new field needs a sensible default and the event stays the same event; otherwise it is a **new event with a different name**. Traditional versioning, double-writes and upcasters were dropped as unmaintainable. Applied here: a tolerant reader (optional fields with defaults, never rename or remove), a typed error naming the bad event, a new event type for a breaking change, and no version column or upcasters; checked with fixtures of each type's old payloads and a `verify-events` script. DCB adds two rules: a model that stops handling an old type silently drops it from its boundary and its conflict check, so a check must find event types under a model's tags that the model does not handle; and tags are additive-only because they define the boundary. (An earlier draft proposed upcasters; that was a misreading of a summary of the talk, corrected.) The mechanical question (how to write an optional key with a decoding default in the pinned Effect Schema 4.0.0) is answered by the spike in ADR-0017: `Schema.withDecodingDefaultKey(Effect.succeed(value))`.
+6. **How DCB rule A is checked** (2026-10-07). A compile-time `.completeFor(registry)` was built and worked (it named the missing event types, cost nothing measurable to compile, and found 12 unaccounted pairs in the wallet, all deliberate), then **removed**: it coupled slices through a shared registry, which is the opposite of vertical slice architecture and bounded-context autonomy, and it narrowed the builder's type. The kept mechanism is the change-impact report with a reviewed, reasoned baseline.
+
+7. **The 5 s leader retry and wake-on-graceful-release (step 3): approved as is** (2026-10-07). It is a behaviour change (about one extra `pg_try_advisory_lock` per module per instance per 5 s, and a wildcard `crablet_events` notification on a graceful stop) with a worst-case 5 s stall after a crash. Measured: crash takeover mean 2.2 s (worst 4.2 s), graceful stop 0.04 to 0.10 s.
+
+Resolved (continued):
+9. **The tag table: slimmed to `(key, position)`, approved and built as V11** (2026-10-07). Measured on the shipped schema with the pollers' real queries; dropping it (the first recommendation) had been withdrawn because rare-key selections fall off a cliff. Known weak spots recorded in ADR-0019: the pending check for a view with matches has a p95 of 170 to 370 ms, and one selective catch-up is 6.6 ms against 1.1 ms scanning (both present before V11).
+Open, optional or later:
+10. **Retention** (ADR-0019, "Retention"): proposed to do nothing physical now and to revisit near 100 million events or when a requirement exists, starting with a rule for which models may read below which position.
+
+Still open (optional; nothing depends on them):
+8. **Whether to extend the change-impact report to subscriptions** (a view or automation that does not subscribe to a new event type shows stale data: the same hole in another place), and whether to pilot the whole of ADR-0017 on a larger multi-context sample before relying on it. Neither is built.
+
+## Remaining work
+- Commit the removal of snapshots (V12, the code, the tests, the docs). V11 and the poller check are committed (`897f18c`).
+- Optional: extend the change-impact report to subscriptions and pilot ADR-0017 on a larger multi-context sample (item 8). Later: retention (item 10).
+- Gaps: timing of the V11 backfill on a large existing table; the p99 stalls of 260 to 400 ms in every concurrent variant, and the p95 tail of the pending check for views, neither examined; a test for the outbox tracker's forward-only SQL; a metric for listener reconnects; timing of the heartbeat, of `verify-events` and of `monitorStorage`; and the unmeasured items listed above.

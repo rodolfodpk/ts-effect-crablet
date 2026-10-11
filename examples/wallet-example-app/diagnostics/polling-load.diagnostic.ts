@@ -1,4 +1,4 @@
-// DIAGNOSTIC EXPERIMENT (docs/guides/run-in-production.md, "Polling and wake-ups"), not a test: it measures, it does not assert. Real Postgres (Testcontainers, needs Docker).
+// DIAGNOSTIC EXPERIMENT (docs/guides/operate/run-in-production.md, "Polling and wake-ups"), not a test: it measures, it does not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test examples/wallet-example-app/diagnostics/polling-load.diagnostic.ts   and read the `DIAG` lines.
 //   QUICK=1 shortens every run (smoke test).   ONLY="bounded|idle" runs one profile/load pair.
 // The whole wallet (api, views, automations, outbox: six processors) on one database, under three polling profiles and three loads, with pg_stat_statements counting what reaches the database.

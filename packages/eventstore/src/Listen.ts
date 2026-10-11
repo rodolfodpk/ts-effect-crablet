@@ -42,7 +42,7 @@ const WILDCARD: DecodedPayload = { wildcard: true, types: new Set(), tagKeys: ne
 // The stream never ends and never fails: when the LISTEN connection is lost (or cannot be made) it waits, with backoff, and listens again. After
 // every RE-connect it emits one wildcard wakeup, because notifications sent while it was away are gone for good: the poller must look at the log
 // itself. (The first connect announces nothing; the poller's first tick reads the log anyway.) Before this, a lost connection ended the stream and
-// the poller stayed on its polling interval for good (docs/plans/reliability-and-scale-diagnostic.md, D3).
+// the poller stayed on its polling interval for good (docs/history/plans/reliability-and-scale-diagnostic.md, D3).
 export const wakeupStreamFrom = (listen: ListenSource, options: WakeupOptions = {}): Stream.Stream<WakeupBatch, SqlError> => {
   const retryBase = Duration.toMillis(Duration.fromInputUnsafe(options.retryBase ?? "500 millis"));
   const retryMax = Duration.toMillis(Duration.fromInputUnsafe(options.retryMax ?? "30 seconds"));

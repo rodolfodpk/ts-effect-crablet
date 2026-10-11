@@ -1,4 +1,4 @@
-// DIAGNOSTIC EXPERIMENT (docs/plans/period-follow-ups.md, B1), not a test: it measures, it does not assert. Needs Docker. Run with:
+// DIAGNOSTIC EXPERIMENT (docs/history/plans/period-follow-ups.md, B1), not a test: it measures, it does not assert. Needs Docker. Run with:
 //   node --test examples/wallet-example-app/diagnostics/period-tracking.diagnostic.ts     and read the `DIAG` lines.
 // What a model with a period pays to turn it. On the common path (the period is open) a load is one read, like any model. On the turn path it also reads the entity's tracking: EVERY opening and closing it
 // ever had, which grows with the number of periods. This builds an entity with N daily periods (an opening, a closing and one event each), then times, over 30 repetitions: the load on the common path, the

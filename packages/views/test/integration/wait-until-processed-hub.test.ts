@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. `waitUntilProcessed` on the view progress hub (ADR-0016): with a hub in the context a wait is
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. `waitUntilProcessed` on the view progress hub (ADR-0016): with a hub in the context a wait is
 // woken by the view's ping instead of polling, so it returns within milliseconds of the ping, asks the database far less while it waits, still
 // ends on a missed ping (the safety interval) and re-checks at once after a reconnect. The view's progress is moved by SQL and the pings are sent
 // through a hub over a source the test controls, so every timing here is the wait's own.

@@ -152,7 +152,7 @@ export const WalletModel = walletFold;
 // The statement id of a wallet's period: deterministic, so opening the same period twice is the same statement.
 export const statementIdOf = (walletId: string, periodKey: string): string => `wallet:${walletId}:${periodKey}`;
 
-// The CURRENT period, turned by the framework (`.period`, docs/plans/period-rollover.md): the first command of a new month closes the previous month's statement and opens the new one
+// The CURRENT period, turned by the framework (`.period`, docs/history/plans/period-rollover.md): the first command of a new month closes the previous month's statement and opens the new one
 // with the balance carried forward, in the command's own append. Commands use this; they no longer resolve a period themselves.
 // #region period-model
 export const WalletPeriodModel = walletFold.period(periodFromEnv(), {

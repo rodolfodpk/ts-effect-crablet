@@ -207,7 +207,7 @@ export const processorSources = (processors: BackgroundProcessors): Effect.Effec
 // #endregion processor-sources
 
 // Keeps the consumer gauges (lag, cursor, status) current for the three modules, for as long as the scope lives. Every instance runs it, so a processor
-// whose leader has died still shows its lag growing (docs/guides/monitor-it.md#are-the-consumers-keeping-up).
+// whose leader has died still shows its lag growing (docs/guides/operate/monitor-it.md#are-the-consumers-keeping-up).
 // #region monitor-processors
 export const monitorBackgroundProcessors = (
   processors: BackgroundProcessors,

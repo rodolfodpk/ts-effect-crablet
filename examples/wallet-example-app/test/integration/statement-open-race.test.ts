@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A wallet's first command opens its statement period (the period model, `WalletPeriodModel`, turns it in the command's own append; it used to be a `prepare` step). Commands that race on a wallet that has none yet
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. A wallet's first command opens its statement period (the period model, `WalletPeriodModel`, turns it in the command's own append; it used to be a `prepare` step). Commands that race on a wallet that has none yet
 // must open ONE statement, and an event appended ahead of a command's own must never be left committed with no audit row of a command (the chaos page's check "every transaction of events has one command
 // in the audit"). Found by the end-to-end test behind PgBouncer: the append that opens the statement had no condition, so racing commands each opened their own (179 openings for 60 wallets, plain Postgres),
 // and a racer that then ended as an idempotent repeat left its opening committed without an audit row (an idempotent result is not audited).

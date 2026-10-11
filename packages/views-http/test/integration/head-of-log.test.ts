@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. `headOfLog` is "everything committed when this was asked", in the (transaction_id, position) order every cursor uses (ADR-0012). It is now the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. `headOfLog` is "everything committed when this was asked", in the (transaction_id, position) order every cursor uses (ADR-0012). It is now the
 // fallback of the consistent read (the default path takes the head and the views' progress in one statement), but the consistency wrapper still uses it when it is given no `check`, and its query has
 // a trap of its own: an ORDER BY name resolves to an output column first, so selecting the transaction id as text under its own name would sort it as TEXT, and "999" would come after "1000".
 import { after, before, describe, it } from "node:test";

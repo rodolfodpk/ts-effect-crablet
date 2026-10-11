@@ -6,7 +6,7 @@ Accepted (2026-10-07). The visibility part and the slim tag-key table (**migrati
 
 ## Context
 
-Plan step 6 (docs/plans/reliability-and-scale-diagnostic.md, F6) asked for storage visibility and a retention decision before the log reaches 100 million events. The earlier measurement (E8: 476 bytes per event, 37 % of it the tag table) used events with one tag and a small payload. Measured again with events shaped like the wallet's (95 % deposits with 5 tags, 5 % transfers with 7 tags, payloads of about 170 bytes of JSON), 1,000,000 events through the real append path (`packages/eventstore/diagnostics/storage.diagnostic.ts`, E9; one laptop, one run, p50 of 15 for timings):
+Plan step 6 (docs/history/plans/reliability-and-scale-diagnostic.md, F6) asked for storage visibility and a retention decision before the log reaches 100 million events. The earlier measurement (E8: 476 bytes per event, 37 % of it the tag table) used events with one tag and a small payload. Measured again with events shaped like the wallet's (95 % deposits with 5 tags, 5 % transfers with 7 tags, payloads of about 170 bytes of JSON), 1,000,000 events through the real append path (`packages/eventstore/diagnostics/storage.diagnostic.ts`, E9; one laptop, one run, p50 of 15 for timings):
 
 **Where the bytes go (E9a), 1,000,000 events**
 

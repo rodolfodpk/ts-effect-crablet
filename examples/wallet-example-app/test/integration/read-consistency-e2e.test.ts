@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The wallet's reads are consistent by default (ADR-0015): a read made after a write sees
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The wallet's reads are consistent by default (ADR-0015): a read made after a write sees
 // it, with no polling and no `?waitFor`; a read can carry the write's marker; a client cannot ask for a looser read; and when a view cannot
 // catch up the read is a 503, never a stale answer.
 import { after, before, describe, it } from "node:test";

@@ -10,7 +10,7 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError";
 //
 // A session-level advisory lock lives exactly as long as the session that took it: if that connection dies (a network failure, a restart, an
 // administrator's `pg_terminate_backend`), Postgres drops the lock at once and another instance can take it. The leader must therefore KNOW when
-// its connection is gone, or two instances lead at the same time (measured: docs/plans/reliability-and-scale-diagnostic.md, D1). Two things do that:
+// its connection is gone, or two instances lead at the same time (measured: docs/history/plans/reliability-and-scale-diagnostic.md, D1). Two things do that:
 //
 //   - a HEARTBEAT: a check on the leader's own connection every `heartbeat` (default 1 s) that asks Postgres whether THIS session still holds the advisory
 //     lock (`pg_locks`, `pid = pg_backend_pid()`). A query that merely answers proves nothing: after the session is killed the pooled connection can come

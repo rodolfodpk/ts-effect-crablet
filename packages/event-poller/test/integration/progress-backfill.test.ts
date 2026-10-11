@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 // V8 backfills the transaction id half of every progress cursor with crablet_progress_cursor_xid(last_position):
 // the smaller of the xid at last_position and the smallest xid among LATER events, so an event the old
 // position cursor had not delivered yet (a lower xid, a higher position) is never put behind the new cursor.

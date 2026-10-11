@@ -152,7 +152,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     //
     // `fence`, when given, is checked before the handler runs and again before the cursor moves: a
     // zombie leader (lock lost, session dead) then stops instead of handling events the new leader
-    // handles too (docs/plans/reliability-and-scale-diagnostic.md, D1).
+    // handles too (docs/history/plans/reliability-and-scale-diagnostic.md, D1).
     const processWith = (id: I, fence: Effect.Effect<void, LeadershipLost>): Effect.Effect<number, unknown> =>
       Effect.gen(function* () {
         const config = configOf(id);
@@ -421,7 +421,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       // concurrency": a fiber created with `Effect.forkChild` becomes a *child* of whatever fiber called
       // fork, and children are automatically interrupted when their parent fiber ends - by design,
       // so you can't accidentally leak background work past the lifetime of the code block that
-      // started it (this is a real, hard-won lesson - see NOTES.md's Phase 2
+      // started it (this is a real, hard-won lesson - see docs/history/NOTES.md's Phase 2
       // write-up for the bug it caused here). `Effect.forkDetach` opts out of that supervision:
       // the fiber is attached to the runtime's root scope instead of its immediate caller, so it
       // keeps running independently for as long as the whole program runs, or until something

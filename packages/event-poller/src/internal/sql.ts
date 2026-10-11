@@ -17,7 +17,7 @@ import type { ProgressCursor } from "../ProgressCursor.ts";
 // below xmin are final, not that no row with a LOWER position is still to come. Ordering by
 // (transaction_id, position) does: every transaction with an xid below xmin has finished, so every row that
 // appears later has an xid at or above that xmin and therefore sorts after every row already delivered
-// (docs/plans/poller-cursor-fix.md, ADR-0012).
+// (docs/history/plans/poller-cursor-fix.md, ADR-0012).
 // How tag-KEY presence (requiredTags / anyOfTags) is tested: against the derived `crablet_event_tag_keys` table ("table", the default), or by looking at the
 // event's own `tags` array ("scan"). The two answer the same question: the key table holds a row per distinct key of the tags that contain '=', the key being what
 // is before the first '='. "scan" is the reference: a test compares the two on random data, and it is the one to use if the key table is ever suspected

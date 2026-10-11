@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. `readCheck`: the first look of a consistent read in ONE statement (where the log ends, where each view is, whether anything the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. `readCheck`: the first look of a consistent read in ONE statement (where the log ends, where each view is, whether anything the
 // view handles is still pending) must give the verdict the three separate statements give: the head of the log, the view's progress row, and `hasPendingSelectedEvents`, run
 // through the real `waitUntilProcessed` for the verdict. A fixed set of states, then random ones (the seed is printed; SEED=n repeats a run).
 import { after, before, describe, it } from "node:test";

@@ -1,14 +1,24 @@
-// Pins the output of the README's runnable quick start (examples/quickstart/src/quickstart.ts).
+// Pins the output of the README's runnable quick start (examples/quickstart/src/quickstart.ts), and checks that the README shows exactly that output.
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { run } from "../src/quickstart.ts";
 
-test("the quick start prints what the README says it does", async () => {
-  expect(await run()).toEqual([
-    "add 12A            -> created: SeatAdded",
-    "add 12A again      -> idempotent: nothing appended",
-    "book 12A for Ann   -> created: SeatBooked",
-    "book 12A for Bob   -> failed: SeatTaken",
-    "book 99Z for Bob   -> failed: SeatNotFound",
-    "book 12A for Cy, history: SeatAdded + SeatBooked -> failed: SeatTaken"
-  ]);
+const expected = [
+  "ann -> math  created: StudentSubscribed",
+  "bob -> math  failed: CourseFull",
+  "ann -> math  idempotent: nothing appended",
+  "ann -> art   created: StudentSubscribed",
+  "ann -> bio   created: StudentSubscribed",
+  "ann -> chem  failed: StudentAtLimit",
+  "cy -> ghost  failed: CourseNotFound"
+];
+
+test("the quick start prints both rules at work: a full course, a repeat, a student at the limit, an unknown course", async () => {
+  expect(await run()).toEqual(expected);
+});
+
+test("the README shows that output", () => {
+  const readme = readFileSync(path.resolve(import.meta.dir, "../../../README.md"), "utf8");
+  expect(readme).toContain("```\n" + expected.join("\n") + "\n```");
 });

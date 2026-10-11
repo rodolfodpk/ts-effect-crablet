@@ -1,6 +1,8 @@
 # Tutorial: course enrolment, from an in-memory test to an HTTP API
 
-*An unfamiliar word? See the [glossary](../glossary.md). All documents: [docs/README.md](../README.md).*
+*Tutorial · developers new to the project · Bun, Node 24, Docker from step 2 · about an hour*
+
+*An unfamiliar word? See the [glossary](../reference/glossary.md). All documents: [docs/README.md](../README.md).*
 
 You will build a small service where **a course holds at most N students** and **a student takes at most 3 courses**. Those two
 rules concern two different kinds of thing, yet they are decided together, atomically, without a saga and without picking an
@@ -16,7 +18,7 @@ In five steps you will:
 
 Every code block in these pages is a real file in this repository; a test fails if a block drifts from its file
 (`examples/course-enrolment-app/test/tutorial-sync.test.ts`). Reference material, if you want it: the
-[README](../../README.md), the [DCB guide](../dcb-guide.md), [ADR-0010](../adr/0010-declarative-command-api.md) and
+[README](../../README.md), the [DCB guide](../concepts/dcb-guide.md), [ADR-0010](../adr/0010-declarative-command-api.md) and
 [ADR-0011](../adr/0011-http-api-from-the-domain-model.md).
 
 **You need:** Bun 1.4 or newer, Node 24 or newer, and (from step 2) Docker. Then, once:

@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. COMPARISON: the idempotency test utility runs on the in-memory event store, and an automation's author is told to trust it.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. COMPARISON: the idempotency test utility runs on the in-memory event store, and an automation's author is told to trust it.
 // Here the same scenarios run on it AND on real Postgres, through the real CommandExecutor, and the verdicts must be the same. Each scenario also has the verdict it is
 // EXPECTED to give, so two backends agreeing on a wrong answer cannot pass.
 import { after, before, describe, it } from "node:test";

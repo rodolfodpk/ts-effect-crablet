@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A leader reserves a connection from the client's pool and holds it. When the pool has none to give (its connections are all held: by other
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. A leader reserves a connection from the client's pool and holds it. When the pool has none to give (its connections are all held: by other
 // leaders, by the LISTENs, which with @effect/sql-pg take one each), `reserve` used to wait for ever, silently: the module never led, and nothing said why. Found behind PgBouncer, with a
 // session pool of 5 against the 7 connections a process holds for good (3 leader locks, 4 LISTEN). Now the wait has a limit and fails with a message that names the pool, and it gives back
 // whatever it had taken, so a later attempt, once a connection is free, works.

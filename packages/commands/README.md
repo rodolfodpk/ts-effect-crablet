@@ -20,7 +20,7 @@ This is the package most application code imports.
 
 ## Read more
 
-The [README example](../../README.md), the [tutorial](../../docs/tutorial/README.md), the [DCB guide](../../docs/dcb-guide.md),
-[Evolving events](../../docs/evolving-events.md), [ADR-0010](../../docs/adr/0010-declarative-command-api.md), [ADR-0017](../../docs/adr/0017-event-evolution-by-compatibility.md).
+The [README example](../../README.md), the [tutorial](../../docs/tutorial/README.md), the [DCB guide](../../docs/concepts/dcb-guide.md),
+[Evolving events](../../docs/guides/build/evolving-events.md), [ADR-0010](../../docs/adr/0010-declarative-command-api.md), [ADR-0017](../../docs/adr/0017-event-evolution-by-compatibility.md).
 
 Unit tests: `bun test packages/commands/test/*.test.ts`. Integration tests (real Postgres through Testcontainers, needs Docker): `node --test "packages/commands/test/integration/*.test.ts"`. Diagnostics (outside CI): `packages/commands/diagnostics/`.

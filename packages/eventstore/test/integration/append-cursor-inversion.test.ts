@@ -1,6 +1,6 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 //
-// Phase 1 of docs/plans/poller-cursor-fix.md: does the append condition's cursor have the same
+// Phase 1 of docs/history/plans/poller-cursor-fix.md: does the append condition's cursor have the same
 // out-of-order position/xid hole as the poller's? The conflict check is
 // `position > afterPosition AND transaction_id < xmin`, and `afterPosition` is the position of the last
 // event the decision model loaded.

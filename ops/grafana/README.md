@@ -16,4 +16,4 @@ Both query Prometheus with the names the metrics get when they arrive by OTLP (a
 - **Another backend** (Datadog, New Relic, Honeycomb): the metrics and spans arrive over OTLP, but the queries are PromQL; swap them.
 
 The consumer gauges (`crablet.poller.lag_*`, `cursor_position`, `status`) exist only if the application runs
-[`monitorProcessors`](../../docs/guides/monitor-it.md#are-the-consumers-keeping-up). Every instance reports the same values, so the queries take the `max`.
+[`monitorProcessors`](../../docs/guides/operate/monitor-it.md#are-the-consumers-keeping-up). Every instance reports the same values, so the queries take the `max`.

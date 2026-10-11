@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The outbox keeps its progress per (topic, publisher), so it has its own tracker; this is what pauses a topic and what
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The outbox keeps its progress per (topic, publisher), so it has its own tracker; this is what pauses a topic and what
 // reports that the progress table has not been migrated yet.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

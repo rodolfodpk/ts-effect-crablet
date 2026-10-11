@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -84,7 +84,7 @@ describe("advisory-lock leader election parity (Phase 0, Risk B part 2)", () => 
 
   // NB: this exercises the graceful release path, not a true crash (connection dropped without
   // running pg_advisory_unlock). leader.ts doesn't currently expose raw access to force that
-  // simulation, and reusing LeaderHandle.release() here is a known simplification - see NOTES.md.
+  // simulation, and reusing LeaderHandle.release() here is a known simplification - see docs/history/NOTES.md.
   // A test that closes the reserved connection directly could cover the true crash path; this one
   // only confirms reacquisition works after release.
   it("lock is acquirable again immediately after release", async () => {

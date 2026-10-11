@@ -30,7 +30,7 @@ serve this on a port you would not hand to an operator. `reset` clears the error
 
 ## Read more
 
-[ADR-0020](../../docs/adr/0020-processors-admin-api.md), [See it on a dashboard](../../docs/guides/dashboard.md), [Monitor it](../../docs/guides/monitor-it.md#inspect-and-control-processors).
+[ADR-0020](../../docs/adr/0020-processors-admin-api.md), [See it on a dashboard](../../docs/guides/operate/dashboard.md), [Monitor it](../../docs/guides/operate/monitor-it.md#inspect-and-control-processors).
 
 Unit tests: `bun test packages/processors-http/test/*.test.ts` (no database: a fake management service, served through a web handler). The API over the wallet's real processors:
 `node --test examples/wallet-example-app/test/integration/admin-api-e2e.test.ts` (Docker).

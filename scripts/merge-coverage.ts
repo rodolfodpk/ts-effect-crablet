@@ -1,5 +1,5 @@
 // Merges line coverage from the Bun unit suite and the Node integration suite into one lcov file, with one definition of "an executable line", so the number is the same
-// locally and on Codecov (docs/plans/test-coverage.md).
+// locally and on Codecov (docs/history/plans/test-coverage.md).
 //
 //   bun scripts/merge-coverage.ts --unit coverage/unit/lcov.info --integration coverage/integration/lcov.info --out coverage/lcov.info
 //
@@ -151,7 +151,7 @@ if (import.meta.main) {
   const merged = mergeSuites(read(arg("unit")), read(arg("integration")), (file) => (existsSync(file) ? readFileSync(file, "utf8") : null));
   const out = arg("out");
   mkdirSync(path.dirname(out), { recursive: true });
-  // what is uploaded and gated is the packages only; the examples are demonstration code (docs/plans/test-coverage.md, step 2)
+  // what is uploaded and gated is the packages only; the examples are demonstration code (docs/history/plans/test-coverage.md, step 2)
   writeFileSync(out, toLcov(new Map([...merged].filter(([file]) => packageOf(file) !== null))));
   console.log(summary(merged));
 }

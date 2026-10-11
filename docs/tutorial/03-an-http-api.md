@@ -1,5 +1,7 @@
 # Step 3 - an HTTP API, and its OpenAPI description
 
+*Tutorial, step 3 of 5 · developers · step 2 · 15 minutes*
+
 [← Step 2 - Postgres, and the second rule](02-postgres-and-the-second-rule.md) · [Tutorial index](README.md) · [Step 4 - read your own writes →](04-read-your-own-writes.md)
 
 Exposing a command is one line each: you list its **contract**. Nothing else about HTTP is written:

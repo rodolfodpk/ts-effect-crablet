@@ -82,7 +82,7 @@ async function startContainerWithRetry(postgresArgs: ReadonlyArray<string> = [],
 // structure isn't buying you anything; reach for `Effect` once you're inside the system that
 // actually composes with the rest of this Effect-based codebase.
 //
-// Testcontainers-node hangs indefinitely under Bun (see NOTES.md) - this must run under Node.
+// Testcontainers-node hangs indefinitely under Bun (see docs/history/NOTES.md) - this must run under Node.
 export interface StartTestDbOptions {
   // The migration files to apply, in order (default: all of them). A test of a migration starts the database at the schema BEFORE it, puts data in, then applies
   // the migration itself: `startTestDb({ migrations: migrationFiles.slice(0, -1) })`.

@@ -16,7 +16,7 @@ export const dbConnInfoFromEnv = (): DbConnInfo => ({
 });
 
 // The most connections the pool may open (COURSES_DB_POOL). Unset: the library's own default, so a deployment that never sets it behaves as before. The pool is shared
-// by commands, reads, the view processor, and the connections this process holds for good (see "Size the pool" in docs/guides/run-in-production.md).
+// by commands, reads, the view processor, and the connections this process holds for good (see "Size the pool" in docs/guides/operate/run-in-production.md).
 export const poolSizeFromEnv = (value: string | undefined = process.env["COURSES_DB_POOL"]): number | undefined => {
   if (value === undefined || value.trim() === "") return undefined;
   const size = Number(value);

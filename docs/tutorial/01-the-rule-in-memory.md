@@ -1,5 +1,7 @@
 # Step 1 - the rule, in memory
 
+*Tutorial, step 1 of 5 · developers · Bun · 10 minutes*
+
 [Tutorial index](README.md) · [Step 2 - Postgres, and the second rule →](02-postgres-and-the-second-rule.md)
 
 There are no streams and no aggregates. You declare three things.

@@ -1,5 +1,5 @@
 // What coverage leaves out is written down in two places that must agree: the merge script (isMeasured, which decides what is in the uploaded report) and codecov.yml (the ignores,
-// the second guard on Codecov's side). If they drift, the number on Codecov stops matching the number in the log. docs/plans/test-coverage.md, step 6.
+// the second guard on Codecov's side). If they drift, the number on Codecov stops matching the number in the log. docs/history/plans/test-coverage.md, step 6.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { isMeasured } from "./merge-coverage.ts";
@@ -15,7 +15,7 @@ describe("coverage exclusions", () => {
   test("everything the merge leaves out, Codecov ignores too", () => {
     const leftOut = [
       "packages/commands/test/support/transfer.ts",
-      "packages/commands/test/quickstart.test.ts",
+      "packages/commands/test/transfer-guide.test.ts",
       "packages/eventstore/diagnostics/storage.diagnostic.ts",
       "packages/db-migrations/test/migrations.test.ts",
       "examples/course-enrolment-app/tutorial/step1-capacity-only.test.ts",

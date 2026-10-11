@@ -1,4 +1,4 @@
-// The wallet's Deposit, Withdraw and TransferMoney with a pause point, for tests of the month rollover (docs/plans/period-rollover.md). They are the real commands' rules (same contract, model, consistency
+// The wallet's Deposit, Withdraw and TransferMoney with a pause point, for tests of the month rollover (docs/history/plans/period-rollover.md). They are the real commands' rules (same contract, model, consistency
 // and decide). The clock is not a parameter any more: the framework reads the Effect `Clock`, so a test runs a command under `atClock(() => date)`. `afterLoad` runs after the model is loaded and before the
 // append - where a command that decided in one month can find, on arriving, that another has turned it.
 import { Clock, Effect } from "effect";

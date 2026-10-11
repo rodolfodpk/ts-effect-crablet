@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted, and then narrowed by the project owner: **this project is pre-release with no external consumers, so it makes no promise of API stability. A breaking change is fine whenever it is worth it.** What remains of this ADR is the vocabulary (so a change is labelled honestly) and what to do once the situation changes. The machinery it first sketched - frozen per-version snapshots, a breaking-change diff test, versioned paths - is deferred until the first external consumer exists or a 1.0 is declared (`docs/plans/api-follow-ups.md`, item B).
+Accepted, and then narrowed by the project owner: **this project is pre-release with no external consumers, so it makes no promise of API stability. A breaking change is fine whenever it is worth it.** What remains of this ADR is the vocabulary (so a change is labelled honestly) and what to do once the situation changes. The machinery it first sketched - frozen per-version snapshots, a breaking-change diff test, versioned paths - is deferred until the first external consumer exists or a 1.0 is declared (`docs/history/plans/api-follow-ups.md`, item B).
 
 ## Context
 

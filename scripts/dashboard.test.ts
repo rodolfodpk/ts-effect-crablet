@@ -1,6 +1,7 @@
-// Keeps the Grafana dashboard and the alert rules in step with @crablet/metrics-otel (docs/plans/dashboard.md, step 2). A renamed or removed metric must break
+// Keeps the Grafana dashboard and the alert rules in step with @crablet/metrics-otel (docs/history/plans/dashboard.md, step 2). A renamed or removed metric must break
 // this test, not a panel on a screen nobody is looking at.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dashboard, dashboardPath, FRESH_SECONDS, MODULE_LOCKS, render } from "./build-dashboard.ts";
 import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
@@ -21,7 +22,7 @@ interface Described { readonly id: string; readonly type: string }
 const isMetric = (v: unknown): v is Described => typeof v === "object" && v !== null && "id" in v && "type" in v && typeof (v as Described).id === "string";
 
 // Every metric the package exports, with the name or names Prometheus gives it when it arrives by OTLP. Measured against the grafana/otel-lgtm image
-// (docs/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
+// (docs/history/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
 const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
   const out = new Map<string, ReadonlyArray<string>>();
   const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics];
@@ -208,6 +209,12 @@ describe("the alert rules", () => {
       expect(r.data.map((d: any) => d.refId), r.title).toContain(r.condition);
       expect(["Alerting", "OK", "NoData"], r.title).toContain(r.noDataState);
       expect(r.annotations?.summary, r.title).toBeTruthy();
+      // Every alert says what to do: its runbook is a section of the runbooks page that exists.
+      const [file, anchor] = String(r.annotations?.runbook ?? "").split("#");
+      expect(file, r.title).toBe("docs/guides/operate/runbooks.md");
+      const headings = readFileSync(resolve(import.meta.dir, "..", file!), "utf8").split("\n").filter((l) => l.startsWith("## "))
+        .map((l) => l.slice(3).toLowerCase().replace(/[^\w\s-]/gu, "").replace(/\s/gu, "-"));
+      expect(headings, r.title).toContain(anchor);
     }
     const known = new Set([...prometheusNames().values()].flat());
     const used: Array<string> = [];

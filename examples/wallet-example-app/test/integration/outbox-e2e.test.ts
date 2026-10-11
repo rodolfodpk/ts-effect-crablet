@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Confirms appended events are actually forwarded
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Confirms appended events are actually forwarded
 // through the outbox processor to a real OutboxPublisher - using a capturing test publisher
 // (injected via startBackgroundProcessors' outboxPublishers parameter) instead of asserting on
 // console log output, which makeLogPublisher() alone would force.

@@ -23,6 +23,6 @@ adding a metric means giving it a panel or saying why not ([CONTRIBUTING](../../
 
 ## Read more
 
-[Reference: operating it](../../docs/reference.md#operating-it), [ADR-0019](../../docs/adr/0019-storage-visibility-and-the-tag-table.md).
+[Metrics reference](../../docs/reference/metrics.md), [ADR-0019](../../docs/adr/0019-storage-visibility-and-the-tag-table.md).
 
 Unit tests: `bun test packages/metrics-otel/test/*.test.ts`.

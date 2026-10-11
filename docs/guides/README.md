@@ -1,20 +1,32 @@
 # Task guides
 
-Short pages for "how do I...?". Each one is a checklist with the code from a real, tested file, so what you read is what runs. New to the project? Do the
-[tutorial](../tutorial/README.md) first; these assume you have.
+*Guides · developers and operators · the [tutorial](../tutorial/README.md) done · one page each*
+
+Short pages for "how do I...?". Each one is a checklist with code from a real, tested file, so what you read is what runs. They assume you have done the
+tutorial.
+
+## Build: while writing an application
 
 | I want to... | Guide |
 |---|---|
-| Keep a read model (a table) up to date from events | [Add a view](add-a-view.md) |
-| Change the schema and keep the queries type-checked (migrate, generate the types, test) | [The database workflow](database-workflow.md) |
-| React to an event by issuing a command | [Add an automation](add-an-automation.md) |
-| Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](expose-a-command-over-http.md) |
-| Test a command's decisions without a database | [Test a command](test-a-command.md) |
-| Close one statement or shift and open the next, per period | [Turn a period](turn-a-period.md) |
-| Run it for real: migrations, the connection, the background processors | [Run it in production](run-in-production.md) |
-| See what it is doing and what it costs | [Monitor it](monitor-it.md) |
-| Watch the poller and its consumers on a Grafana dashboard, with alerts | [See it on a dashboard](dashboard.md) |
-| Run the wallet on a local Kubernetes cluster, watch it, and break it on purpose | [Run the kind lab](run-the-kind-lab.md) |
-| Change an event that is already stored | [Evolving events](../evolving-events.md) |
+| Keep a read model (a table) up to date from events | [Add a view](build/add-a-view.md) |
+| Change the schema and keep the queries checked | [The database workflow](build/database-workflow.md) |
+| React to an event by issuing a command | [Add an automation](build/add-an-automation.md) |
+| Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](build/expose-a-command-over-http.md) |
+| Test a command's decisions without a database | [Test a command](build/test-a-command.md) |
+| Close a statement or a shift and open the next one | [Turn a period](build/turn-a-period.md) |
+| Change an event that is already stored | [Evolving events](build/evolving-events.md) |
+
+## Operate: while running it
+
+| I want to... | Guide |
+|---|---|
+| Run it for real: migrations, connections, the background processors | [Run it in production](operate/run-in-production.md) |
+| Decide the settings for a first deployment | [Configure it](operate/configure.md) |
+| Know what happens when something breaks | [Failure modes](operate/failure-modes.md) |
+| Answer an alert | [Runbooks](operate/runbooks.md) |
+| See what it is doing and what it costs | [Monitor it](operate/monitor-it.md) |
+| Watch it on a Grafana dashboard, with alerts | [See it on a dashboard](operate/dashboard.md) |
+| Run the wallet on a local Kubernetes cluster and break it on purpose | [Run the kind lab](operate/run-the-kind-lab.md) |
 
 The examples are the course-enrolment app (views, HTTP) and the wallet app (automation, background processors, tests).

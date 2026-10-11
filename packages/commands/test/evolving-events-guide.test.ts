@@ -1,4 +1,4 @@
-// Runs the code of docs/evolving-events.md (packages/commands/test/support/evolving-events.ts), so the guide shows what works.
+// Runs the code of docs/guides/build/evolving-events.md (packages/commands/test/support/evolving-events.ts), so the guide shows what works.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

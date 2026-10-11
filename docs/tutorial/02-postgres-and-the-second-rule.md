@@ -1,5 +1,7 @@
 # Step 2 - Postgres, and the second rule
 
+*Tutorial, step 2 of 5 · developers · step 1, Docker · 15 minutes*
+
 [← Step 1 - the rule, in memory](01-the-rule-in-memory.md) · [Tutorial index](README.md) · [Step 3 - an HTTP API →](03-an-http-api.md)
 
 Everything from here lives in the example package:
@@ -115,7 +117,7 @@ log(`two students race for the last seat: ${lastSeat.join(", ")}`);
 This demo races naturally, so the guarantee it shows is "exactly one winner". The framework's own tests *force* the overlap (every racer
 loads its state before any appends) for this same domain: see
 [`enrolment-guide-postgres.test.ts`](../../packages/commands/test/integration/enrolment-guide-postgres.test.ts), and the
-[DCB guide](../dcb-guide.md) for the theory.
+[DCB guide](../concepts/dcb-guide.md) for the theory.
 
 ---
 

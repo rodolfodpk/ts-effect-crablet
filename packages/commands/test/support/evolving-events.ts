@@ -1,4 +1,4 @@
-// The code of docs/evolving-events.md. Each `// #region name` ... `// #endregion name` is shown in the guide (a test keeps the two equal), and
+// The code of docs/guides/build/evolving-events.md. Each `// #region name` ... `// #endregion name` is shown in the guide (a test keeps the two equal), and
 // evolving-events-guide.test.ts runs it. Nothing here is special: it is the ordinary API.
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";

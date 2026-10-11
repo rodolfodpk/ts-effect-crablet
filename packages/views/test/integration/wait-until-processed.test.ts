@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. `waitUntilProcessed`: read your own writes from a view.
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. `waitUntilProcessed`: read your own writes from a view.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";

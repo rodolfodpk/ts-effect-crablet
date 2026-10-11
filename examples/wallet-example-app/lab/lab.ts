@@ -477,7 +477,7 @@ const podIpOf = (app: string): string => kubectl("get", "pod", "-l", `app=${app}
 
 const observe = (): void => {
   up();
-  // WALLET_PERIOD=minutes:5 node lab.ts observe: a statement period of 5 minutes, so closed statements appear while you watch (a new database only, see docs/guides/turn-a-period.md)
+  // WALLET_PERIOD=minutes:5 node lab.ts observe: a statement period of 5 minutes, so closed statements appear while you watch (a new database only, see docs/guides/build/turn-a-period.md)
   const period = process.env["WALLET_PERIOD"]?.trim() || "month";
   if (!/^(month|minutes:\d+)$/.test(period)) throw new Error(`WALLET_PERIOD must be "month" or "minutes:N", got "${period}"`);
   log(`statement period: ${period}`);
@@ -490,7 +490,7 @@ LAB observation is up. Open:
   Grafana (the Crablet dashboard)   http://localhost:3000        login admin / admin; Dashboards, "Crablet"
   The wallet API                    http://localhost:8081        e.g. http://localhost:8081/openapi.json
   The processors admin page         run this in another terminal, then open http://localhost:5173 and connect with the token  lab-token
-                                      cd examples/processors-admin-ui && ADMIN_API_URL=http://127.0.0.1:8081 bun run dev
+                                      cd tools/processors-admin-ui && ADMIN_API_URL=http://127.0.0.1:8081 bun run dev
   Postgres                          localhost:5433               user postgres, password postgres, database wallet_db
 
 The load: PAUSED until you press Start on the chaos page (then every 5 seconds, 10 to 1000 commands at once, unless you change it).  Watch it:  kubectl --context ${CTX} logs -f deploy/loadgen

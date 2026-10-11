@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A running view pings when it advances: the notification names the view and carries a
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. A running view pings when it advances: the notification names the view and carries a
 // cursor that covers the write that caused it, so a client holding the write's marker can tell when its write is in the view.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";

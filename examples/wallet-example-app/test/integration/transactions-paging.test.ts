@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The wallet's transaction list pages by keyset, not OFFSET: rows that
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The wallet's transaction list pages by keyset, not OFFSET: rows that
 // appear (or share a timestamp) while a client is paging must never be repeated or skipped. The tests write rows straight
 // into the view table, so they control timestamps and ties exactly; the HTTP route, the SQL and the cursor are the real ones.
 import { after, before, describe, it } from "node:test";

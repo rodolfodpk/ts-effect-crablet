@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. The consistency wrapper over REAL views, behind a real HttpApi: three views that apply the
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. The consistency wrapper over REAL views, behind a real HttpApi: three views that apply the
 // same event after different delays, and one read endpoint that uses all three. Checks what a client sees on the wire (status, headers,
 // problem bodies), what the OpenAPI description promises, and what the derived client resolves.
 import { after, before, describe, it } from "node:test";

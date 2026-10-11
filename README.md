@@ -8,141 +8,150 @@
 
 Event sourcing for TypeScript with **Dynamic Consistency Boundaries** (DCB), built on [Effect](https://effect.website) and PostgreSQL.
 
-There are no aggregates and no streams. Events go into one log, each tagged with what it is about, and every command chooses its own consistency
-boundary by *querying* the events its decision depends on. Two commands conflict only if one changes something the other relied on.
+## The problem
 
-## Why
+Some business rules span more than one thing. A course holds at most 30 students, *and* a student takes at most 3 courses. With aggregates, one of
+the two has to own "subscribe", and the other rule is patched with a saga, a process manager or a lock taken by hand.
 
-- **Atomic across things, without a saga.** A transfer between two wallets, or a course with a seat limit *and* a per-student limit, is one command
-  ([DCB guide](./docs/dcb-guide.md), with a runnable race test).
-- **No contention between unrelated commands.** The boundary is derived from the events a model handles; you never write the query or pick a stream.
-- **Decisions are pure and testable without a database.** Given/When/Then scenarios run the real pipeline on an in-memory store that passes the same
-  conformance suite as Postgres.
-- **Typed end to end.** Domain errors are declared and checked against `decide`; the REST API and its OpenAPI description are generated from the contracts.
-- **Reads you can trust.** A command returns a marker; a read carrying it waits until the views have that write, or answers `503`, never stale.
-- **Built to be operated.** Fenced leader election, no skipped events, event evolution checks and storage metrics, each measured
-  ([reliability report](./docs/plans/reliability-and-scale-diagnostic.md)).
+Here there are no aggregates and no streams. Events go into one log, tagged with what they are about. A command declares the events its decision
+depends on, and its append succeeds only if none of them changed since it read them. So both rules are checked in one atomic decision, and two
+commands conflict only when one changes something the other relied on. This is an implementation of the open [DCB specification](https://dcb.events/specification/).
 
-```mermaid
-flowchart LR
-  client["Client"] --> api["commands-http"]
-  api --> cmd["commands<br/>decide on a boundary"]
-  cmd -- "append if nothing newer<br/>in the boundary" --> log[("One event log<br/>PostgreSQL")]
+> **Status: experimental, pre-release.** The API changes often and the packages are not on npm yet
+> ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). To try it today, clone this repository and
+> work in it. Not a fit if you are not on PostgreSQL or need a stable library now. What is open: the [roadmap](./ROADMAP.md).
 
-  subgraph vm["views module (its own leader lock)"]
-    pv["poller<br/>own cursors"] --> views["views<br/>projectors into your tables"]
-  end
-  subgraph am["automations module (its own leader lock)"]
-    pa["poller<br/>own cursors"] --> auto["automations<br/>an event in, a command out"]
-  end
-  subgraph om["outbox module (its own leader lock)"]
-    po["poller<br/>own cursors"] --> outbox["outbox<br/>publishers per topic"]
-  end
+## Both rules, one command
 
-  log -- "at-least-once" --> pv
-  log -- "at-least-once" --> pa
-  log -- "at-least-once" --> po
-
-  views --> read["views-http<br/>reads that wait for your write"]
-  read --> client
-  auto -- "a command" --> cmd
-  outbox --> ext["External systems<br/>brokers, webhooks"]
-```
-
-More diagrams (a command's path, two commands conflicting, event to view, leadership per module, changing an event, the tables): [Architecture](./docs/architecture.md).
-
-> **Status: experimental, pre-release.** The API changes often, packages are not published to npm
-> ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). Not a fit if you are not on PostgreSQL or need a stable library today.
-
-## A command, end to end
-
-A seat must be added before it can be booked. Imports come from the workspace, e.g. `@crablet/commands/Command`.
-
+<!-- file: examples/quickstart/src/quickstart.ts#readme -->
 ```ts
-// 1. Events: their names, their payloads, and the tags they can be found by.
-const SeatAdded = defineEvent("SeatAdded", {
-  schema: Schema.Struct({ seatId: Schema.String }),
-  tags: (d) => ({ seat_id: d.seatId })
+// 1. Events: a name, a payload, and the tags an event can be found by. One fact can be found through two things.
+export const CourseDefined = defineEvent("CourseDefined", {
+  schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int }),
+  tags: (d) => ({ course_id: d.courseId })
 });
-const SeatBooked = defineEvent("SeatBooked", {
-  schema: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
-  tags: (d) => ({ seat_id: d.seatId })
-});
-
-// 2. A model: what the events mean for one seat - and, from the same declaration, which events
-//    could change that answer (the command's consistency boundary).
-const SeatModel = defineModel({ by: "seat_id", initial: () => ({ exists: false, taken: false }) })
-  .on(SeatAdded, (seat) => ({ ...seat, exists: true }))
-  .on(SeatBooked, (seat) => ({ ...seat, taken: true }));
-
-class SeatNotFound extends DomainError("SeatNotFound", {
-  fields: { seatId: Schema.String },
-  kind: "not_found"
-}) {}
-class SeatTaken extends DomainError("SeatTaken", {
-  fields: { seatId: Schema.String },
-  kind: "conflict"
-}) {}
-
-// 3. Commands: pure decisions. Nothing here touches a database.
-const AddSeat = defineCommand({
-  name: "add_seat",
-  errors: [],
-  input: Schema.Struct({ seatId: Schema.String }),
-  model: (c) => SeatModel.of({ id: c.seatId }),
-  decide: (seat, c) => (seat.exists ? noop("already added") : emit(SeatAdded(c)))
+export const StudentSubscribed = defineEvent("StudentSubscribed", {
+  schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
+  tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
 
-const BookSeat = defineCommand({
-  name: "book_seat",
-  errors: [SeatNotFound, SeatTaken],      // the domain errors it can fail with: checked against `decide`, read by the REST API
-  input: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
-  model: (c) => SeatModel.of({ id: c.seatId }),
-  decide: (seat, c) =>
-    !seat.exists
-      ? fail(new SeatNotFound({ seatId: c.seatId }))
-      : seat.taken
-        ? fail(new SeatTaken({ seatId: c.seatId }))
-        : emit(SeatBooked(c))
+// 2. Models: what the events mean for one course, and for one student. Each also says which events
+//    could change that answer, and that is the consistency boundary.
+export const CourseModel = defineModel({ by: "course_id", initial: () => ({ exists: false, capacity: 0, subscribers: 0 }) })
+  .on(CourseDefined, (c, d) => ({ ...c, exists: true, capacity: d.capacity }))
+  .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }));
+export const StudentModel = defineModel({ by: "student_id", initial: () => ({ courses: [] as ReadonlyArray<string> }) })
+  .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }));
+
+export class CourseNotFound extends DomainError("CourseNotFound", { fields: { courseId: Schema.String }, kind: "not_found" }) {}
+export class CourseFull extends DomainError("CourseFull", { fields: { courseId: Schema.String }, kind: "conflict" }) {}
+export class StudentAtLimit extends DomainError("StudentAtLimit", { fields: { studentId: Schema.String }, kind: "conflict" }) {}
+
+// 3. A command: a pure decision over BOTH models. Nothing here touches a database.
+export const Subscribe = defineCommand({
+  name: "subscribe",
+  errors: [CourseNotFound, CourseFull, StudentAtLimit], // checked against `decide`, and documented by the REST API
+  input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
+  model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
+  decide: ({ course, student }, c) =>
+    !course.exists
+      ? fail(new CourseNotFound({ courseId: c.courseId }))
+      : student.courses.includes(c.courseId)
+        ? noop("already subscribed")
+        : course.subscribers >= course.capacity
+          ? fail(new CourseFull({ courseId: c.courseId }))
+          : student.courses.length >= 3
+            ? fail(new StudentAtLimit({ studentId: c.studentId }))
+            : emit(StudentSubscribed(c))
 });
 ```
 
-The boundary is derived from the events the model handles, so `BookSeat` is consistent with "anything that could change this seat" without you
-writing a query. Two concurrent bookings of one seat cannot both succeed: the loser is retried and gets `SeatTaken`. Bookings of different seats never
-contend. ([The same thing as an Event Model](./docs/event-model-seat-booking.md).)
+The boundary of `Subscribe` is the course's events plus the student's events. It comes from the two models; you never write that query.
 
-**Run it, no database needed** ([`examples/quickstart`](./examples/quickstart/src/quickstart.ts)):
+**Run it, no database needed** ([`examples/quickstart`](./examples/quickstart/README.md)). It starts from a history where `math` has one seat:
 
 ```bash
 bun install
 node examples/quickstart/src/quickstart.ts
 ```
 
-**Against Postgres**, one layer:
+```
+ann -> math  created: StudentSubscribed
+bob -> math  failed: CourseFull
+ann -> math  idempotent: nothing appended
+ann -> art   created: StudentSubscribed
+ann -> bio   created: StudentSubscribed
+ann -> chem  failed: StudentAtLimit
+cy -> ghost  failed: CourseNotFound
+```
 
+**What a run in memory cannot show is two commands at once.** On Postgres, when two students ask for the last seat at the same moment, exactly
+one is subscribed. The other's append is refused, because the first subscription is in its boundary; its command re-runs on fresh state and fails
+with `CourseFull`. Subscriptions to other courses never wait. A test forces that overlap with a barrier
+([`enrolment-guide-postgres.test.ts`](./packages/commands/test/integration/enrolment-guide-postgres.test.ts)), and
+[tutorial step 2](./docs/tutorial/02-postgres-and-the-second-rule.md) lets you run it yourself.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Command A: Ann takes math
+  participant B as Command B: Bob takes math
+  participant L as Event log
+  participant D as Command D: Dan takes art
+
+  A->>L: read boundary: course math and student ann
+  L-->>A: CourseDefined math, 1 seat, at position 10
+  B->>L: read boundary: course math and student bob
+  L-->>B: CourseDefined math, 1 seat, at position 10
+  A->>L: append StudentSubscribed if nothing newer than 10 in its boundary
+  L-->>A: ok, position 11
+  B->>L: append StudentSubscribed if nothing newer than 10 in its boundary
+  L-->>B: refused, position 11 is tagged course math
+  Note over B: Conflict, so the whole command re-runs
+  B->>L: read boundary again
+  L-->>B: CourseDefined 10, StudentSubscribed 11
+  B->>B: decide fails with CourseFull
+  D->>L: append StudentSubscribed for art if nothing newer in its own boundary
+  L-->>D: ok, unaffected by A and B
+```
+
+**On Postgres** it is one layer. This is an excerpt: the database and its migrations are set up in [tutorial step 2](./docs/tutorial/02-postgres-and-the-second-rule.md).
+
+<!-- excerpt -->
 ```ts
 const AppLive = Crablet.layer({ host: "localhost", port: 5432, database: "app", username: "app", password: Redacted.make("secret") });
 const program = Effect.gen(function* () {
-  yield* (yield* CommandExecutor).run(BookSeat, { seatId: "12A", guest: "Ann" });  // validates, runs in a transaction, retries on conflict
+  const executor = yield* CommandExecutor;
+  yield* executor.run(Subscribe, { studentId: "ann", courseId: "math" });  // validates, runs in a transaction, retries on conflict
 });
 Effect.runPromise(Effect.provide(program, AppLive));
 ```
+
+## What you get
+
+- **One rule across several things, without a saga.** A course limit and a student limit, or a transfer between two accounts, is one command
+  ([how it works](./docs/concepts/dcb-guide.md)).
+- **Unrelated commands never wait for each other.** Two subscriptions conflict only if they share a course or a student.
+- **Decisions you can test without a database.** Given/When/Then tests run the real pipeline on an in-memory store that passes the same
+  conformance suite as the Postgres one.
+- **Types from the domain to the HTTP API.** A command lists the errors it can fail with, the compiler checks `decide` against that list, and the REST
+  API and its OpenAPI description are generated from it.
+- **After a write, your next read sees it.** A command returns a *marker*. A read that carries it waits until the views include that write, or
+  answers `503`. It never returns stale data.
+- **Built to be run.** If a node dies, another takes over within seconds, and two nodes never handle the same events as leader at once. No event is
+  skipped, and changes to stored events are checked before a deploy. Each of these is tested and measured
+  ([guarantees and evidence](./docs/evidence.md)).
+
+How the pieces fit (views, automations, the outbox, leadership), in diagrams: [Architecture](./docs/concepts/architecture.md).
 
 ## Where next
 
 | You want to | Read |
 |---|---|
-| Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/glossary.md) for any unfamiliar word |
-| Build something, step by step | [Tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
-| See how it fits together | [Architecture](./docs/architecture.md): diagrams of the system and the core flows; [C4 models](./docs/c4-examples.md) of the two example applications |
-| Understand the idea | [DCB guide](./docs/dcb-guide.md) |
-| See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app/README.md): five commands, four views, an automation, an outbox |
-| Do one task (add a view, an automation, test, run, monitor) | [Task guides](./docs/guides/README.md) |
-| Run the wallet on a local Kubernetes cluster, watch it on a dashboard, and break it on purpose | [Run the kind lab](./docs/guides/run-the-kind-lab.md) |
-| Change an event safely | [Evolving events](./docs/evolving-events.md) |
-| Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference.md) |
-| Know why it is built this way | [Design decisions](./docs/adr/README.md) (start with [ADR-0010](./docs/adr/0010-declarative-command-api.md)) |
-| Contribute | [`CONTRIBUTING.md`](./CONTRIBUTING.md): set up, run one test, common tasks |
-| Follow the work log | [`NOTES.md`](./NOTES.md) |
+| Try it | [The quick start](./examples/quickstart/README.md): one command, no database |
+| Learn it | [The tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP and OpenAPI, reading your own writes, a web page |
+| Decide if it fits | [Why not something else?](./docs/concepts/why-not.md), [questions adopters ask](./docs/concepts/faq.md), [guarantees and evidence](./docs/evidence.md) |
+| Understand it | [Consistency boundaries](./docs/concepts/dcb-guide.md) and the [architecture](./docs/concepts/architecture.md) |
+| Find anything else | [The documentation map](./docs/README.md): guides for building and operating, the reference, the decisions |
 
-Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference.md#build--test).
+Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference/README.md#build--test).

@@ -18,7 +18,7 @@ groups:
         execErrState: Error
         annotations:
           summary: "{{ $labels.processor }} is FAILED: it stopped after too many errors."
-          runbook: docs/guides/run-in-production.md
+          runbook: docs/guides/operate/runbooks.md#a-processor-has-failed
         labels: { severity: critical }
         data:
           - refId: A
@@ -37,7 +37,7 @@ groups:
         # series stays at 1 for about five minutes but stops being re-sent, so a leader is a series at 1 written in the last 120 seconds (keep in step with FRESH_SECONDS in
         # scripts/build-dashboard.ts; the exporter must re-send more often than that).
         # The query has two parts, joined with `or`, and returns NOTHING when all is well, so no data means healthy here (noDataState OK). Had it alerted on no data, a healthy system would
-        # fire (found by killing leaders: docs/plans/dashboard.md):
+        # fire (found by killing leaders: docs/history/plans/dashboard.md):
         #   - a module that has reported but has no fresh leader (a leader that crashed, between two and five minutes after);
         #   - `absent(...)`: no leadership series at all (everything that was reporting has been gone for five minutes: a total outage).
         noDataState: OK
@@ -45,7 +45,7 @@ groups:
         annotations:
           summary: "No instance leads the {{ $labels.module }} module."
           description: "Nothing is running that module's processors (or, for 'no leadership data', nothing is reporting). A leader that crashed is recognised after two minutes of silence."
-          runbook: docs/guides/run-in-production.md
+          runbook: docs/guides/operate/runbooks.md#a-module-has-no-leader
         labels: { severity: critical }
         data:
           - refId: A
@@ -68,6 +68,7 @@ groups:
         annotations:
           summary: "{{ $labels.processor }} has had events waiting for more than five minutes."
           description: "Lag in seconds is the age of the first event waiting for the processor. Edit the threshold (300 s) for a consumer that may legitimately lag."
+          runbook: docs/guides/operate/runbooks.md#a-consumer-is-behind
         labels: { severity: warning }
         data:
           - refId: A
@@ -87,6 +88,7 @@ groups:
         annotations:
           summary: "Projections, automations or outbox publishers failed in the last five minutes."
           description: "The dashboard's failure panels say which. Failures retry until the processor reaches its error limit and becomes FAILED."
+          runbook: docs/guides/operate/runbooks.md#handlers-are-failing
         labels: { severity: warning }
         data:
           - refId: A
@@ -108,8 +110,8 @@ groups:
         execErrState: Error
         annotations:
           summary: "A stored event could not be decoded by the current definitions."
-          description: "An unsafe event change (rename, retype, remove, or a changed meaning). See docs/evolving-events.md."
-          runbook: docs/evolving-events.md
+          description: "An unsafe event change (rename, retype, remove, or a changed meaning). See docs/guides/build/evolving-events.md."
+          runbook: docs/guides/operate/runbooks.md#stored-events-cannot-be-read
         labels: { severity: critical }
         data:
           - refId: A
@@ -129,6 +131,7 @@ groups:
         annotations:
           summary: "Bytes per event are above 3000 (about 1200 at the time of writing)."
           description: "The events table plus the tag table with their indexes, per event. Nothing deletes events, so growth is the thing to plan for. See ADR-0019."
+          runbook: docs/guides/operate/runbooks.md#events-cost-more-storage-than-expected
         labels: { severity: warning }
         data:
           - refId: A

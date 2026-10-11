@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. Option B for a pooler in transaction mode: a module's leader lock and every LISTEN can sit on their OWN connection (`SessionClients`,
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. Option B for a pooler in transaction mode: a module's leader lock and every LISTEN can sit on their OWN connection (`SessionClients`,
 // `Crablet.layer(pg, { session })`), while the commands, the appends and the views' transactions use the application's. The two clients carry different application names, and the
 // database says who holds what: the three leader locks and every LISTEN backend must belong to the session client, and the application's backends must hold none of them.
 // A control without the session client shows the same query finding everything on the application's client, so the test can tell the difference.

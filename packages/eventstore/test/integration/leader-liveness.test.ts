@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers) - see NOTES.md. A leader must KNOW when it has lost the lock (docs/plans/reliability-and-scale-diagnostic.md, F1, step 1):
+// Runs under Node (Testcontainers) - see docs/history/NOTES.md. A leader must KNOW when it has lost the lock (docs/history/plans/reliability-and-scale-diagnostic.md, F1, step 1):
 // a session-level advisory lock lives exactly as long as its session, so when the leader's database session dies the lock is gone and another instance
 // can take it. `isLeader()` used to stay true for ever; now a heartbeat on the leader's own connection notices, and `verify` answers on demand.
 import { after, before, describe, it } from "node:test";

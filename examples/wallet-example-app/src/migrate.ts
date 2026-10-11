@@ -49,7 +49,7 @@ export async function migrate(connInfo: MigrateConnInfo): Promise<void> {
   }
 }
 
-// The migrations are not idempotent and nothing records what was applied (docs/guides/run-in-production.md), so the entry point applies them only to a FRESH database:
+// The migrations are not idempotent and nothing records what was applied (docs/guides/operate/run-in-production.md), so the entry point applies them only to a FRESH database:
 // one without the event log. A database that has them is left as it is, which is what lets the app restart. A schema change after the first start needs your own
 // deployment tooling; this does not detect a half-applied or an older schema.
 export async function migrateIfFresh(connInfo: MigrateConnInfo): Promise<"applied" | "present"> {
@@ -67,7 +67,7 @@ export async function migrateIfFresh(connInfo: MigrateConnInfo): Promise<"applie
 }
 
 // `import.meta.main` is Bun/Deno-only - this app runs under Node (Testcontainers/pg driver
-// see NOTES.md), so the portable Node equivalent is comparing
+// see docs/history/NOTES.md), so the portable Node equivalent is comparing
 // this module's own URL against the script Node was actually invoked with.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const connInfo = {
