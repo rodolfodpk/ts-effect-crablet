@@ -95,6 +95,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | Page | What it is |
 |---|---|
 | [Design decisions](./adr/README.md) | The architecture decision records (ADRs): one file per lasting decision, with its context and consequences. |
+| [Roadmap](../ROADMAP.md) | Where the project is, the open work, and what is deliberately not decided. |
 | [Plans](./history/plans/README.md) and the [work log](./history/NOTES.md) | Records of how the work went. You do not need them to use the project. |
 | [CONTRIBUTING](../CONTRIBUTING.md) | Set up, run one test, change the schema or the API, and where a new page goes. |
 

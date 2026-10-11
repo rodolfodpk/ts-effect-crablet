@@ -19,7 +19,7 @@ commands conflict only when one changes something the other relied on. This is a
 
 > **Status: experimental, pre-release.** The API changes often and the packages are not on npm yet
 > ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). To try it today, clone this repository and
-> work in it. Not a fit if you are not on PostgreSQL or need a stable library now.
+> work in it. Not a fit if you are not on PostgreSQL or need a stable library now. What is open: the [roadmap](./ROADMAP.md).
 
 ## Both rules, one command
 

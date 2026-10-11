@@ -1,7 +1,7 @@
 # Plans
 
 These are **records**, not a roadmap. Each plan was written before a piece of work and kept after it, with what was found while doing it. Read them to see why
-something is the way it is and what was measured; you do not need them to use the project. The lasting conclusions are in the [decision records](../../adr/README.md).
+something is the way it is and what was measured; you do not need them to use the project. The lasting conclusions are in the [decision records](../../adr/README.md); what is still open is gathered in the [roadmap](../../../ROADMAP.md).
 
 | Plan | What it was for | Status |
 |---|---|---|
@@ -17,7 +17,7 @@ something is the way it is and what was measured; you do not need them to use th
 | [`mutation-testing.md`](./mutation-testing.md) | Mutation testing of the core packages: a pilot, two tiers, triage, a ratchet | **Proposed** (2026-10-08); a pilot ran in a throwaway copy, nothing in the repository |
 | [`kind-lab.md`](./kind-lab.md) | The wallet as separate deployments on a local Kubernetes cluster (kind), broken on purpose: rolling update, a pod killed, a silent network partition, a node lost, the migration race, running out of connections, a long write transaction | Run once through (2026-10-08); a baseline on a laptop. Failover loses nothing; a silent partition takes 28 s to 388 s depending on the Postgres keepalives; Flyway closes the migration race; RDS-specific behaviour not verified |
 | [`dashboard.md`](./dashboard.md) | A Grafana dashboard and alerts for the poller and its consumers, fed by OpenTelemetry; closes the lag-metric gap; an optional admin API and page to act on a processor | Done (2026-10-08): the consumer gauges, a generated dashboard with alerts and a sync test, a one-image local stack, an admin API with a generic Foldkit page, and the contributor rules; the plan lists what was not verified |
-| [`period-rollover.md`](./period-rollover.md) | A period-scoped model closes the previous period and opens the new one by itself (`.period`), in the command's own append, instead of a `prepare` the developer writes | Done for months, days and years (2026-10-09; [ADR-0025](../../adr/0025-the-framework-turns-the-period.md)); weeks, hours and zones not built |
+| [`period-rollover.md`](./period-rollover.md) | A period-scoped model closes the previous period and opens the new one by itself (`.period`), in the command's own append, instead of a `prepare` the developer writes | Done for months, days and years (2026-10-09; [ADR-0025](../../adr/0025-the-framework-turns-the-period.md)); weeks and time zones followed ([`period-follow-ups.md`](./period-follow-ups.md), B3); hours not built |
 | [`period-follow-ups.md`](./period-follow-ups.md) | What is left of `.period`: `Period.custom` test, `ctx.now`, a late-clock metric, the cost of the tracking read, zones and weeks, a guide | **In progress** (2026-10-09) |
 | [`docs-for-adopters.md`](./docs-for-adopters.md) | Documentation that answers what an adopter asks: the problem first, why not something else, the guarantees and their evidence, concepts, an operate track, reference tables, a roadmap; files moved so the folders match the layers | **In progress** (2026-10-11) |
 
