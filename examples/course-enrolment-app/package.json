@@ -9,8 +9,6 @@
   "scripts": {
     "start": "node src/index.ts",
     "migrate": "node src/migrate.ts",
-    "db:types": "node scripts/db-types.ts",
-    "db:types:check": "node scripts/db-types.ts --verify",
     "docs:api": "node scripts/generate-openapi.ts",
     "bench:reads": "node scripts/bench-reads.ts"
   },
@@ -25,11 +23,9 @@
     "@effect/platform-node": "4.0.2",
     "@effect/sql-pg": "4.0.2",
     "effect": "4.0.2",
-    "kysely": "0.29.6",
     "pg": "8.23.0"
   },
   "devDependencies": {
-    "@crablet/test-support": "workspace:*",
-    "kysely-codegen": "0.20.0"
+    "@crablet/test-support": "workspace:*"
   }
 }

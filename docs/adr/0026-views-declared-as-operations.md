@@ -37,12 +37,12 @@ A view is declared with `defineView(name, { tables }).on(Event, (data, ctx) => o
 - **The in-memory run checks the SQL compiler, not the handlers**: both sides run the same handlers, so a wrong sign in a handler is found by the behavioural tests and the lab, not by that comparison.
 - A view that uses `raw` cannot run in memory (`applyInMemory` refuses it with a clear error).
 - The database may hold other columns than the declaration: it is a check of what the code writes, not a mirror of the table.
-- Reads are out of scope. The wallet reads through `SqlSchema`, the course example through Kysely.
+- Reads are out of scope. Both examples read through `SqlSchema` (the row type is checked against the database on every read).
 - Rebuilding a view (truncate its tables and replay) is possible, since the module knows the tables, and not built.
 
 ## Alternatives considered
 
-- **Kysely** (the course example before this): typed SQL text from types generated from the migrated database. Good for reads; for projections it leaves the three points above to review, and it needs a generated file with its own workflow.
+- **Kysely** (the course example used it for its projector and its reads, then dropped it): typed SQL text from types generated from the migrated database. For projections it leaves the three points above to review; it needs a dependency, a generated file with its own workflow and drift test, and a mapped type for the driver's `BIGINT`; and where the SQL is hard (a row-value comparison, a cast) it falls back to unchecked fragments. The two styles kept are `defineView` for events that become adds, sets and removes, and plain SQL (with `SqlSchema` for reads) for the rest.
 - **Drizzle**: table objects like jOOQ's, but the schema is declared in TypeScript (a second copy of the migration unless introspected), its compiled `select` has no aliases for the camel-case row type when the
   SQL is run elsewhere, and it has its own migration tooling. A spike outside the repo confirmed the SQL it builds with no connection; the rest is from its documentation.
 - **Keep hand-written SQL.** Still possible: `makeTransactionalViewProjector` is unchanged, and `raw` runs anything.

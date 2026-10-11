@@ -46,8 +46,39 @@ export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlE
 A test compares the declared table with the migrated database ([`course-seats-table.test.ts`](../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts), `checkViewTables`): a column a migration renames or retypes fails there,
 not at the first event. And the same declaration runs in memory (`applyInMemory`, `@crablet/views/ViewMemory`), so a replayed history gives the rows a view must end with without a database.
 
-Crablet does not require this: a plain `makeTransactionalViewProjector` with your own SQL (`sql.unsafe`, or a query builder such as [Kysely](https://kysely.dev), as the course app's reads use) works the same way, with the mistakes found at runtime
-instead. Inside a declared view, `raw((sql) => ...)` runs anything on the given `sql`.
+### When the operations are not enough
+
+`defineView` says six things: insert, update, upsert, remove, set, add (and `max`). A view that needs anything else (here, a number computed from the view's own rows, which is the count of the course's rows plus one) is a **hand-written projector**: `makeTransactionalViewProjector`
+with your own SQL, which is also what `raw((sql) => ...)` runs inside a declared view. You then do three things the framework did for you: read the payload with `decodeStored`, run the SQL on the `sql` you are given (so it commits with the view's cursor and the batch is applied once), and
+write the subscription. Nothing checks the SQL text, so write the test ([`course-enrolments-view.test.ts`](../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
+
+<!-- file: examples/course-enrolment-app/src/views/CourseEnrolmentsViewProjector.ts#hand-written -->
+```ts
+// A hand-written projector, for what `defineView`'s operations cannot say: the seat number a student gets is the count of the course's rows PLUS ONE, computed by the database from the view's own table in the
+// same statement. You write the three things the framework would otherwise do: read the payload through the event's definition (`decodeStored`: an unreadable event fails the batch with a typed `EventDecodingError`),
+// run the SQL on the `sql` you are given (so it commits with the view's cursor, ADR-0023: the batch is applied once even if it is delivered twice), and say which events you want (the subscription below).
+// Nothing checks the SQL text; the integration test (test/integration/course-enrolments-view.test.ts) is what does.
+const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
+  Effect.gen(function* () {
+    if (event.type !== StudentSubscribed.type) return;
+    const data = yield* StudentSubscribed.decodeStored(event);
+    yield* sql.unsafe(
+      `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
+       SELECT $1::text, $2::text, count(*) + 1 FROM course_enrolments_view WHERE course_id = $1
+       ON CONFLICT (course_id, student_id) DO NOTHING`,
+      [data.courseId, data.studentId]
+    );
+  });
+
+export const makeCourseEnrolmentsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
+  makeTransactionalViewProjector(COURSE_ENROLMENTS_VIEW, handleEvent);
+
+export const courseEnrolmentsViewSubscription: ViewSubscription = viewSubscriptionOf(COURSE_ENROLMENTS_VIEW, {
+  eventTypes: new Set([StudentSubscribed.type])
+});
+```
+
+The choice: **events that become adds, sets and removes: `defineView`; anything else: SQL.** A query builder (Kysely, Drizzle) is optional and not used here: it would only replace the SQL string.
 
 ## 3. Say which events it wants
 

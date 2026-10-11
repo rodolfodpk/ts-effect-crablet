@@ -1,7 +1,6 @@
 # The database workflow
 
-From a schema change to a query the compiler checks: write the migration, generate the types from it, write the queries against them, and let the tests keep the two in step. The example is the course app, which builds its **reads** with
-[Kysely](https://kysely.dev); its view's **writes** are declared with `defineView`, whose table is compared with the migrated database by a test (below). Crablet itself does not depend on Kysely or on any of this: the libraries take any `sql`, and an app that writes plain SQL (the wallet's reads do) simply skips the generation step.
+From a schema change to a view that still works: write the migration, change what the code declares about the table, and let the tests find any disagreement. Crablet takes any `sql`, so none of this is required by the libraries; this is how the examples do it.
 
 [← Task guides](README.md)
 
@@ -9,46 +8,60 @@ From a schema change to a query the compiler checks: write the migration, genera
 
 Every change to a view table goes through the same steps, from `examples/course-enrolment-app`:
 
-1. **Write the migration.** A new file in `db/migration`, numbered from `V100` so it cannot clash with the framework's (`V1` to `V13`), for example `V101__course_waitlist.sql`. Add it to `appMigrationFiles` in
+1. **Write the migration.** A new file in `db/migration`, numbered from `V100` so it cannot clash with the framework's (`V1` to `V13`), for example `V103__course_waitlist.sql`. Add it to `appMigrationFiles` in
    [`migrate.ts`](../../examples/course-enrolment-app/src/migrate.ts).
 2. **Apply it to your development database.** `node src/migrate.ts`. The files are not idempotent and there is no record of what was applied, so it runs against a **fresh** database (`docker compose down -v`, then `up -d`, then migrate).
    For an existing database you apply only the files it has not had, with your own tooling ([run it in production](run-in-production.md#1-apply-the-migrations)).
-3. **Generate the types.** `npm run db:types`. It starts a throwaway Postgres (Testcontainers, so Docker must be running), applies the framework's migrations and the app's to it, and writes
-   [`src/views/db.generated.ts`](../../examples/course-enrolment-app/src/views/db.generated.ts) with [`kysely-codegen`](https://github.com/RobinBlomberg/kysely-codegen), for the `course_*` tables only.
-   It does **not** read your development or production database, so the result depends only on the migration files.
-4. **Commit the migration and the generated file together.** A reviewer then sees the schema change and what it did to the types in one diff.
-5. **Fix what the compiler reports.** `npm run typecheck` (from the repository root) lists every query written against the old shape: a renamed column, a column that is now nullable, a type that changed. Nothing is left to fail at the first event.
-6. **Write or change the queries** with the editor completing table and column names, then run the tests.
+3. **Change what the code says about the table.** A declared view has a `viewTable` (its columns, types, nullability, defaults and key); a read has a row schema (`SeatsRow` in
+   [`CourseQueryApiLive.ts`](../../examples/course-enrolment-app/src/api/CourseQueryApiLive.ts)); a hand-written projector has its SQL.
+4. **Run the tests** (Docker). They report what still disagrees with the migrated database.
 
-What step 3 runs is the generator's options, in [`scripts/db-types.ts`](../../examples/course-enrolment-app/scripts/db-types.ts):
+The read in step 3, as the course app writes it:
 
-<!-- file: examples/course-enrolment-app/scripts/db-types.ts#codegen-options -->
+<!-- file: examples/course-enrolment-app/src/api/CourseQueryApiLive.ts#row-schema -->
 ```ts
-const options = [
-  "--dialect", "postgres",
-  "--include-pattern", "course_*",
-  "--log-level", "error"
-];
+// A row of course_seats_view as the database sends it, checked on every read: a column that was renamed or changed type fails here, naming the field.
+const SeatsRow = Schema.Struct({ course_id: Schema.String, capacity: Schema.Int, subscribers: Schema.Int });
+
+// One page of courses by keyset on course_id. `after` and `q` are optional filters (null: none); the caller asks for one row more than the page, to know whether there is a next page.
+// (LIKE escapes with a backslash unless told otherwise, which is what likePrefix assumes.)
+const listSeats = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findAll({
+    Request: Schema.Struct({ after: Schema.NullOr(Schema.String), q: Schema.NullOr(Schema.String), limit: Schema.Number }),
+    Result: SeatsRow,
+    execute: ({ after, q, limit }) => {
+      const where: Array<string> = [];
+      const params: Array<string | number> = [];
+      if (after !== null) where.push(`course_id > $${params.push(after)}`);
+      if (q !== null && q !== "") where.push(`course_id LIKE $${params.push(likePrefix(q))}`);
+      return sql.unsafe(
+        `SELECT course_id, capacity, subscribers FROM course_seats_view${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY course_id LIMIT $${params.push(limit)}`,
+        params
+      );
+    }
+  });
+
+const findSeats = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findOneOption({
+    Request: Schema.Struct({ courseId: Schema.String }),
+    Result: SeatsRow,
+    execute: ({ courseId }) => sql.unsafe("SELECT course_id, capacity, subscribers FROM course_seats_view WHERE course_id = $1", [courseId])
+  });
 ```
 
 ## What keeps it honest
 
 | Check | Where | What it catches |
 |---|---|---|
-| The type check | `npm run typecheck` | a query that no longer fits the generated types |
-| The drift test | [`course-db-types.test.ts`](../../examples/course-enrolment-app/test/integration/course-db-types.test.ts), or `npm run db:types:check` | a migration changed a table and `db:types` was not run (the committed file is not what the schema generates) |
-| The declared-table test | [`course-seats-table.test.ts`](../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts) (`checkViewTables`) | a migration renamed, retyped or dropped a column the view's `viewTable` declares (or added a NOT NULL one without a default that the declaration does not know) |
-| The integration tests | `test/integration/` (Docker) | the real queries against a real Postgres, in the transaction of the view's cursor |
-| CI | `.github/workflows/ci.yml` | all of the above, so a stale file cannot be merged |
-
-The drift test generates the file again from the migrations and compares it with the committed one; it fails with the codegen's own message, and the fix is always `npm run db:types`.
+| The declared-table test | [`course-seats-table.test.ts`](../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts) (`checkViewTables`) | a migration renamed, retyped or dropped a column a `viewTable` declares, changed its nullability or default or the key, or added a NOT NULL column without a default that the declaration does not know |
+| The row schema of a read | `SqlSchema` (`Result: SeatsRow`), at every read | a column that was renamed or changed type: it fails naming the field, instead of later in a conversion (a `numeric` arrives as text and a `timestamptz` as a date: the schema converts them) |
+| The integration tests | `test/integration/` | the SQL of a hand-written projector and of every read, against a real Postgres, in the transaction of the view's cursor |
+| The type check | `bun run typecheck` | an operation on a declared table that names a column it does not have, or gives it a value of another type |
+| CI | `.github/workflows/ci.yml` | all of the above, so a disagreement cannot be merged |
 
 ## Things worth knowing
 
-- **The types describe the database, not the driver.** The generated type of a `BIGINT` reads as text, and `@effect/sql-pg` hands back a `bigint`. [`queryBuilder.ts`](../../examples/course-enrolment-app/src/views/queryBuilder.ts) corrects that with a small mapped type, so
-  the generated file stays exactly what the tool produced (which is what lets `--verify` compare it). Driver differences of that kind go there, not into the generated file.
-- **Do not edit `db.generated.ts` by hand, and do not merge it by hand.** After a merge conflict, resolve the migrations and run `npm run db:types` again.
-- **Regenerate after every migration that touches a view table**, even one that only adds a column with a default: the generated type says whether the column is required on insert.
-- **Only the app's view tables are generated** (`--include-pattern "course_*"`). The framework's tables (`crablet_events` and the others) are not Kysely's business: the library queries them itself.
-- **Production does not run any of this.** The generated file is source code. The schema reaches a real database through your deployment's migration step (a pre-deploy job, not every instance at start-up: [run it in production](run-in-production.md)), and nothing in the loop connects to it.
-- **A fragment Kysely does not model** (a row-value comparison, an `xid8` cast) goes through its `sql` template and is not checked, which is the price of an escape hatch; the integration tests are what cover it.
+- **The table is described twice**: in the migration (the truth) and in `viewTable`. `checkViewTables` is what keeps them equal; a rename is two edits and one failing test if you forget one.
+- **Only the SQL of a declared view is generated.** A hand-written projector and a read are SQL strings that nothing checks until a test runs them; write the test ([`course-enrolments-view.test.ts`](../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts) is the example).
+- **Production does not run any of this.** The schema reaches a real database through your deployment's migration step (a pre-deploy job, not every instance at start-up: [run it in production](run-in-production.md)), and nothing here connects to it.
+- **A query builder is optional.** An app that wants typed SQL (Kysely, Drizzle) can add one: the libraries do not depend on it, and a projector or a read only needs to run its SQL on the `sql` it is given.

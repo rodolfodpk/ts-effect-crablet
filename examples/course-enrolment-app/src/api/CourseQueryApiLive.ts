@@ -1,17 +1,46 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
-import { SqlClient } from "effect/sql";
+import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest, domainProblemOf } from "@crablet/commands-http/ProblemDetail";
 import { makeConsistentRead } from "@crablet/views-http";
 import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
 import { courseSeatsViewSubscription } from "../views/CourseSeatsViewProjector.ts";
-import { qb, run } from "../views/queryBuilder.ts";
 
 // `text` as a SQL LIKE pattern that matches ids STARTING with it: `\`, `%` and `_` are escaped, or "a_" would also match "ab".
 export const likePrefix = (text: string): string => `${text.replace(/[\\%_]/g, "\\$&")}%`;
+
+// #region row-schema
+// A row of course_seats_view as the database sends it, checked on every read: a column that was renamed or changed type fails here, naming the field.
+const SeatsRow = Schema.Struct({ course_id: Schema.String, capacity: Schema.Int, subscribers: Schema.Int });
+
+// One page of courses by keyset on course_id. `after` and `q` are optional filters (null: none); the caller asks for one row more than the page, to know whether there is a next page.
+// (LIKE escapes with a backslash unless told otherwise, which is what likePrefix assumes.)
+const listSeats = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findAll({
+    Request: Schema.Struct({ after: Schema.NullOr(Schema.String), q: Schema.NullOr(Schema.String), limit: Schema.Number }),
+    Result: SeatsRow,
+    execute: ({ after, q, limit }) => {
+      const where: Array<string> = [];
+      const params: Array<string | number> = [];
+      if (after !== null) where.push(`course_id > $${params.push(after)}`);
+      if (q !== null && q !== "") where.push(`course_id LIKE $${params.push(likePrefix(q))}`);
+      return sql.unsafe(
+        `SELECT course_id, capacity, subscribers FROM course_seats_view${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY course_id LIMIT $${params.push(limit)}`,
+        params
+      );
+    }
+  });
+
+const findSeats = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findOneOption({
+    Request: Schema.Struct({ courseId: Schema.String }),
+    Result: SeatsRow,
+    execute: ({ courseId }) => sql.unsafe("SELECT course_id, capacity, subscribers FROM course_seats_view WHERE course_id = $1", [courseId])
+  });
+// #endregion row-schema
 
 // `?limit=`: absent means the default; anything but a whole number from 1 to the maximum is a 400.
 export const parseLimit = (raw: string | undefined): number | null => {
@@ -57,15 +86,7 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
             ({ limit, after, q }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                // `after` and `q` are optional filters; one more row than the page is read, to know whether there is a next page. (LIKE escapes with a backslash unless told otherwise, which is what likePrefix assumes.)
-                const rows = yield* run(sql,
-                  qb.selectFrom("course_seats_view")
-                    .select(["course_id", "capacity", "subscribers"])
-                    .$if(after !== undefined, (query) => query.where("course_id", ">", after!))
-                    .$if(q !== undefined && q !== "", (query) => query.where("course_id", "like", likePrefix(q!)))
-                    .orderBy("course_id")
-                    .limit(limit + 1)
-                ).pipe(Effect.orDie);
+                const rows = yield* listSeats(sql)({ after: after ?? null, q: q ?? null, limit: limit + 1 }).pipe(Effect.orDie);
                 const page = rows.slice(0, limit);
                 return {
                   items: page.map((row) => ({ courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers })),
@@ -84,10 +105,8 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
             (params: { readonly courseId: string }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const rows = yield* run(sql,
-                  qb.selectFrom("course_seats_view").select(["course_id", "capacity", "subscribers"]).where("course_id", "=", params.courseId)
-                ).pipe(Effect.orDie);
-                const row = rows[0];
+                const found = yield* findSeats(sql)({ courseId: params.courseId }).pipe(Effect.orDie);
+                const row = Option.getOrUndefined(found);
                 if (!row) return yield* Effect.fail(domainProblemOf("not_found", new CourseNotFound({ courseId: params.courseId })));
                 return { courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers };
               })
