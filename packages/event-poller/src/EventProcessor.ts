@@ -98,6 +98,8 @@ export interface EventProcessorHandle<C extends ProcessorConfig<I>, I extends st
   readonly allBackoffSnapshots: Effect.Effect<ReadonlyMap<I, BackoffSnapshot>>;
   // The events this processor selects, by id: what its backlog is counted against (ProcessorManagementService.getBacklog).
   readonly selectionFor: (processorId: I) => EventSelection | undefined;
+  // Does this instance lead the module right now (it holds the advisory lock and has not lost it)? False before `start`, while it waits as a standby, and after `stop`.
+  readonly isLeader: Effect.Effect<boolean>;
 }
 
 const toBackoffSnapshot = (state: BackoffState): BackoffSnapshot => ({
@@ -488,6 +490,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const selectionById = new Map<I, EventSelection>(deps.configs.map((c) => [c.processorId, deps.selectionOf(c)] as const));
     const selectionFor = (processorId: I): EventSelection | undefined => selectionById.get(processorId);
-    const handle: EventProcessorHandle<C, I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor };
+    const isLeader: Effect.Effect<boolean> = Effect.map(Ref.get(leaderRef), (leader) => leader !== null && leader.isLeader());
+    const handle: EventProcessorHandle<C, I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor, isLeader };
     return handle;
   });

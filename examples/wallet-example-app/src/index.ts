@@ -10,7 +10,7 @@ import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processor
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
 import { hasWorkers, rolesFromEnv, sessionConnectionsHeld } from "./roles.ts";
-import { apiHealthRoutes, serveHealth } from "./health.ts";
+import { apiHealthRoutes, processStatus, serveHealth } from "./health.ts";
 import { pollingFromEnv, wakeupModeFromEnv } from "./polling.ts";
 
 const connInfo = {
@@ -62,11 +62,12 @@ async function main(): Promise<void> {
     // Every handle is built; only the modules named in WALLET_ROLES are started. A process with only `api` runs no loop and holds no leader lock.
     const processors = yield* startBackgroundProcessorsScoped(undefined, undefined, roles, polling);
     yield* monitorBackgroundProcessors(processors);
+    const status = processStatus(roles, { views: processors.viewsHandle.isLeader, automations: processors.automationsHandle.isLeader, outbox: processors.outboxHandle.isLeader }, Date.now());
     if (hasWorkers(roles)) yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
     yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; wake-ups: ${wakeupMode}; polling: ${polling.pollingIntervalMs} ms, idle up to ${polling.backoffMaxSeconds} s; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}; leader and LISTEN: ${sessionInfo === undefined ? "on the main connection" : `direct to ${sessionInfo.host}:${sessionInfo.port}`}`);
     if (!roles.has("api")) {
       // Workers only: no application routes, just a liveness probe.
-      yield* serveHealth(port);
+      yield* serveHealth(port, status);
       return yield* Effect.never;
     }
     // The admin API (list, pause, resume and reset the processors) exists only when WALLET_ADMIN_TOKEN is set, and is behind that bearer token.
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
     if (admin !== Layer.empty) yield* Effect.log("admin API mounted at /admin/processors (bearer token from WALLET_ADMIN_TOKEN)");
     const sql = yield* SqlClient.SqlClient;
     yield* Layer.launch(
-      HttpRouter.serve(Layer.mergeAll(makeWalletApiLayer({ basePath: "/api/commands" }), admin, apiHealthRoutes(sql`SELECT 1`))).pipe(
+      HttpRouter.serve(Layer.mergeAll(makeWalletApiLayer({ basePath: "/api/commands" }), admin, apiHealthRoutes(sql`SELECT 1`, undefined, status))).pipe(
         Layer.provide(NodeHttpServer.layer(createServer, { port }))
       )
     );

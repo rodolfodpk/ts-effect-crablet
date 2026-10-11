@@ -296,15 +296,17 @@ describe("the leadership gauge", () => {
       yield* handle.service.start;
       const tagged = { lock_key: "0", instance_id: "gauge-instance" };
       const whileLeading = yield* waitUntil(read(tagged), (v) => v === 1);
+      const handleSaysLeading = yield* handle.isLeader;
       const byProcessor = yield* read({ processor: "gauge-proc", instance_id: "gauge-instance" });
       leading = false;
       yield* TestClock.adjust("2 seconds");
       const afterLosing = yield* waitUntil(read(tagged), (v) => v === 0);
+      const handleSaysLost = yield* handle.isLeader;
       yield* handle.service.stop;
-      return { whileLeading, byProcessor, afterLosing };
+      return { whileLeading, byProcessor, afterLosing, handleSaysLeading, handleSaysLost };
     });
     const result = await Effect.runPromise(Effect.provide(program, TestClock.layer()));
-    expect(result).toEqual({ whileLeading: 1, byProcessor: 0, afterLosing: 0 });
+    expect(result).toEqual({ whileLeading: 1, byProcessor: 0, afterLosing: 0, handleSaysLeading: true, handleSaysLost: false });
   });
 });
 
