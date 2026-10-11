@@ -117,6 +117,8 @@ export const MoneyTransferred = defineEvent("MoneyTransferred", {
 export interface Wallet {
   readonly exists: boolean;
   readonly balance: number;
+  // The balance this period's statement opened with (what its closing reports as `openingBalance`).
+  readonly openingBalance: number;
 }
 
 // A wallet's state for one statement period (year/month).
@@ -132,12 +134,12 @@ export interface Wallet {
 //   comparing the wallet ids (both tags are on the event, so "has a from_wallet_id tag" says nothing).
 const walletFold = defineModel({
   by: WalletTags.WALLET_ID,
-  initial: (): Wallet => ({ exists: false, balance: 0 }),
+  initial: (): Wallet => ({ exists: false, balance: 0, openingBalance: 0 }),
   scope: (s: { year: number; month: number }) => ({ [WalletTags.YEAR]: s.year, [WalletTags.MONTH]: s.month })
 })
-  .lifecycle(WalletOpened, (_, d) => ({ exists: true, balance: d.initialBalance }))
+  .lifecycle(WalletOpened, (_, d) => ({ exists: true, balance: d.initialBalance, openingBalance: d.initialBalance }))
   .lifecycle(WalletClosed, (w) => ({ ...w, exists: false }))
-  .on(WalletStatementOpened, (w, d) => ({ ...w, balance: d.openingBalance }))
+  .on(WalletStatementOpened, (w, d) => ({ ...w, balance: d.openingBalance, openingBalance: d.openingBalance }))
   .on(DepositMade, (w, d) => ({ ...w, balance: w.balance + d.amount }))
   .on(WithdrawalMade, (w, d) => ({ ...w, balance: w.balance - d.amount }))
   .on(
@@ -169,7 +171,9 @@ export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
     walletId: p.id,
     statementId: statementIdOf(p.id, p.key),
     ...p.fields,
-    openingBalance: state.balance,
+    // Until 2026-10-11 this was `state.balance`, so closings written before then carry their closing balance here too; the statement view
+    // takes the opening balance from WalletStatementOpened, so nothing read the wrong value.
+    openingBalance: state.openingBalance,
     closingBalance: state.balance,
     closedAt: p.at
   })
