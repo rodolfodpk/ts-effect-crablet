@@ -6,7 +6,7 @@ import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
-import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
+import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
@@ -75,6 +75,9 @@ export const makeAutomationsProcessor = (
     const configs = makeAutomationProcessorConfigs(deps.config, deps.handlers);
     const handlerByName = new Map(deps.handlers.map((h) => [h.automationName, h] as const));
 
+    const wakeups = yield* Effect.service(Wakeups);
+    const countSession = yield* holdSessionOnce("the automations module", wakeups === "off" ? 1 : 2);
+
     return yield* makeEventProcessor({
       configs,
       fetcher,
@@ -84,7 +87,8 @@ export const makeAutomationsProcessor = (
       // gets called with is guaranteed to be a key in handlerByName.
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,
-      acquireLeader: tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY),
-      wakeupStream: (yield* Effect.service(Wakeups)) === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY)),
+      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

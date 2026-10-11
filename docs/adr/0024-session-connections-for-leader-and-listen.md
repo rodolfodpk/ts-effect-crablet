@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-09). Built: `SessionClients` (`@crablet/eventstore/SessionClients`), `Crablet.layer(pg, { session })`, the wallet's `WALLET_DB_SESSION_*`. Tested against the database's own bookkeeping
+**Accepted** (2026-10-09). Narrowed by [ADR-0028](0028-settings-the-framework-decides.md): the framework counts the session connections, so `sessionHolds` is gone. Built: `SessionClients` (`@crablet/eventstore/SessionClients`), `Crablet.layer(pg, { session })`, the wallet's `WALLET_DB_SESSION_*`. Tested against the database's own bookkeeping
 and, once, against PgBouncer 1.26 in Docker. Not tested against RDS Proxy or on AWS.
 
 ## Context

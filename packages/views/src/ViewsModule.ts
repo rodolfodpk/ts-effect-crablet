@@ -4,7 +4,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
-import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
+import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
@@ -51,6 +51,9 @@ export const makeViewsProcessor = (
     const configs = makeViewProcessorConfigs(deps.config, deps.subscriptions);
     const subscriptionByViewName = new Map(deps.subscriptions.map((s) => [s.viewName, s] as const));
 
+    const wakeups = yield* Effect.service(Wakeups);
+    const countSession = yield* holdSessionOnce("the views module", wakeups === "off" ? 1 : 2);
+
     return yield* makeEventProcessor({
       configs,
       fetcher,
@@ -60,9 +63,10 @@ export const makeViewsProcessor = (
       // this gets called with is guaranteed to be a key in subscriptionByViewName.
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),
-      acquireLeader: tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY),
+      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY)),
       // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
       atomically: (effect) => sql.withTransaction(effect),
-      wakeupStream: (yield* Effect.service(Wakeups)) === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });
