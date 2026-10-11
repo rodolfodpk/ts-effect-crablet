@@ -70,7 +70,7 @@ Keep ONE write primitive and build a declarative layer on top of it.
 
 ## Alternatives considered
 
-- **Stream/aggregate-per-entity (Emmett-style).** Rejected: it would abandon the reason this framework
+- **A stream or aggregate per entity.** Rejected: it would abandon the reason this framework
   exists. A stream per aggregate forces either a saga or one giant stream for a multi-entity invariant
   such as a transfer; DCB makes it one atomic command.
 - **An array of handlers** (`defineModel({ on: [on(E, ...), ...] })`). Rejected: TypeScript cannot drive a
