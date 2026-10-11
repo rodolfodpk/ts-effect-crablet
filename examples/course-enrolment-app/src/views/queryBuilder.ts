@@ -1,20 +1,16 @@
 import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler, type ColumnType } from "kysely";
 import type { SqlClient } from "effect/sql";
+import type { DB } from "./db.generated.ts";
 
 // OPTIONAL: type-checked queries for a projector, with Kysely used only to BUILD the SQL. The library (@crablet/*) does not depend on Kysely; an application that wants it adds it, as this example does
 // (docs/guides/add-a-view.md, "Type-checked queries with Kysely").
 
-// The shape of the view tables, written by hand: this app has one. A bigger schema would generate it from the migrated database (kysely-codegen) instead.
-// `last_position` is a BIGINT: @effect/sql-pg hands it back as a bigint, and a position can be written as a bigint, a number or text.
-export interface CourseSeatsViewTable {
-  readonly course_id: string;
-  readonly capacity: number;
-  readonly subscribers: ColumnType<number, number | undefined, number>; // has a default (0): optional on insert
-  readonly last_position: ColumnType<bigint, bigint | number | string, bigint | number | string>;
-}
-export interface Database {
-  readonly course_seats_view: CourseSeatsViewTable;
-}
+// The shape of the view tables is GENERATED from the migrated database (scripts/db-types.ts, `npm run db:types`): a migration that changes a view table changes db.generated.ts, and a query that no longer fits stops compiling.
+// What the database says is not always what the driver hands back: the generated type of a BIGINT reads as text, and @effect/sql-pg returns a bigint. This maps those columns to what the driver does; every other column is left as generated.
+type GeneratedInt8 = ColumnType<string, bigint | number | string, bigint | number | string>;
+type DriverInt8 = ColumnType<bigint, bigint | number | string, bigint | number | string>;
+type FromDriver<Column> = [Column] extends [GeneratedInt8] ? DriverInt8 : Column;
+export type Database = { readonly [Table in keyof DB]: { readonly [Column in keyof DB[Table]]: FromDriver<DB[Table][Column]> } };
 
 // A Kysely with a driver that never opens a connection: it compiles queries and nothing else.
 export const qb = new Kysely<Database>({

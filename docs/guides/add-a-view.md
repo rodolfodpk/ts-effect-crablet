@@ -137,7 +137,10 @@ export const makeCourseSeatsViewProjectorKysely = (): Effect.Effect<ViewProjecto
   makeTransactionalViewProjector(COURSE_SEATS_VIEW, handleEvent);
 ```
 
-The setup is [`queryBuilder.ts`](../../examples/course-enrolment-app/src/views/queryBuilder.ts): a `Kysely` with a driver that only compiles, the shape of the view tables, and a `run(sql, query)` that executes a compiled query. The tests
-([`course-view-kysely.test.ts`](../../examples/course-enrolment-app/test/integration/course-view-kysely.test.ts)) check that it behaves like the hand-written projector, that a failed batch rolls its writes back, and that a misspelled column or a value of the wrong type does not compile.
+The setup is [`queryBuilder.ts`](../../examples/course-enrolment-app/src/views/queryBuilder.ts): a `Kysely` with a driver that only compiles, and a `run(sql, query)` that executes a compiled query. The shape of the view tables is **generated from the migrated database**
+(`npm run db:types` in the example app, with [`kysely-codegen`](https://github.com/RobinBlomberg/kysely-codegen), into [`db.generated.ts`](../../examples/course-enrolment-app/src/views/db.generated.ts)), so a migration that renames or retypes a view column breaks every query that used it at compile time, not at the first event.
+A test ([`course-db-types.test.ts`](../../examples/course-enrolment-app/test/integration/course-db-types.test.ts)) fails if the committed file is not what the schema generates. The projector's tests
+([`course-view-kysely.test.ts`](../../examples/course-enrolment-app/test/integration/course-view-kysely.test.ts)) check that it behaves like the hand-written one, that a failed batch rolls its writes back, and that a misspelled column or a value of the wrong type does not compile.
 
-What it costs: one more dependency in your app, and the table types, which you write by hand (as here, for one table) or generate from the migrated database with `kysely-codegen`, and keep in step with your migrations. Kysely types the tables it is told about; a fragment it does not model (a row-value comparison, an `xid8` cast) goes through its `sql` template and is not checked.
+What it costs: one more dependency in your app (and `kysely-codegen` in development), a generation step you run after a migration, and a small mapping for what your driver returns that the database cannot tell (here, a BIGINT is a `bigint` with `@effect/sql-pg`, where the generated type says text).
+Kysely types the tables it is told about; a fragment it does not model (a row-value comparison, an `xid8` cast) goes through its `sql` template and is not checked.
