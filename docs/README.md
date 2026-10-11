@@ -30,6 +30,8 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | [Events over time](./concepts/events-over-time.md) | Changing an event, personal data, and a log that grows: what is solved and what is not. |
 | [Architecture](./concepts/architecture.md) | The system and its core flows, in diagrams. |
 | [C4 models](./concepts/c4-examples.md) | The two example applications, as context, container and component diagrams. |
+| [Why not something else?](./concepts/why-not.md) | A transaction with locks, or an event store with streams: what each gives, and when to choose them instead. |
+| [Questions adopters ask](./concepts/faq.md) | Effect, production, Postgres, speed, personal data, growth, adopting gradually, tenants, failures. |
 | [Course enrolment as an Event Model](./concepts/event-model.md) | The README's example as events, commands and a view, laid out on a timeline. |
 
 ## Build: tasks while writing an application

@@ -149,6 +149,7 @@ How the pieces fit (views, automations, the outbox, leadership), in diagrams: [A
 |---|---|
 | Try it | [The quick start](./examples/quickstart/README.md): one command, no database |
 | Learn it | [The tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP and OpenAPI, reading your own writes, a web page |
+| Decide if it fits | [Why not something else?](./docs/concepts/why-not.md), [questions adopters ask](./docs/concepts/faq.md), [guarantees and evidence](./docs/evidence.md) |
 | Understand it | [Consistency boundaries](./docs/concepts/dcb-guide.md) and the [architecture](./docs/concepts/architecture.md) |
 | Find anything else | [The documentation map](./docs/README.md): guides for building and operating, the reference, the decisions |
 
