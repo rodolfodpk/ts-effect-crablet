@@ -19,12 +19,18 @@ export class StudentAtLimit extends DomainError("StudentAtLimit", {
   fields: { studentId: Schema.String, limit: Schema.Int },
   kind: "conflict"
 }) {}
+// The id is taken by a course with a different capacity. Defining the same course again is not an error: it is "already defined".
+export class CourseAlreadyDefined extends DomainError("CourseAlreadyDefined", {
+  fields: { courseId: Schema.String, capacity: Schema.Int },
+  kind: "conflict"
+}) {}
 // #endregion errors
 
 // #region contracts
 export const DefineCourseContract = commandContract({
   name: "define_course",
-  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) })
+  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
+  errors: [CourseAlreadyDefined]
 });
 
 export const SubscribeContract = commandContract({

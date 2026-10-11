@@ -91,11 +91,18 @@
             }
           },
           "409": {
-            "description": "CommandConflict",
+            "description": "CommandConflict | WalletAlreadyExistsProblem",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommandConflictEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CommandConflictEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WalletAlreadyExistsProblem"
+                    }
+                  ]
                 }
               }
             }
@@ -1601,6 +1608,56 @@
               "walletId",
               "currentBalance",
               "requestedAmount"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errorType",
+          "fields"
+        ],
+        "additionalProperties": false
+      },
+      "WalletAlreadyExistsProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Conflict"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              409
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errorType": {
+            "type": "string",
+            "enum": [
+              "WalletAlreadyExists"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "walletId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "walletId"
             ],
             "additionalProperties": false
           }

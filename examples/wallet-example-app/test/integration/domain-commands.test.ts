@@ -11,14 +11,13 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { OpenWallet, type OpenWalletCommand } from "../../src/domain/commands/OpenWalletCommand.ts";
 import { Deposit, type DepositCommand } from "../../src/domain/commands/DepositCommand.ts";
 import { Withdraw, type WithdrawCommand } from "../../src/domain/commands/WithdrawCommand.ts";
 import { TransferMoney, type TransferMoneyCommand } from "../../src/domain/commands/TransferMoneyCommand.ts";
 import { CloseWallet, type CloseWalletCommand } from "../../src/domain/commands/CloseWalletCommand.ts";
-import { WalletNotFound, InsufficientFunds } from "../../src/domain/errors/WalletErrors.ts";
+import { WalletAlreadyExists, WalletNotFound, InsufficientFunds } from "../../src/domain/errors/WalletErrors.ts";
 
 // Deliberately no applyAppMigrations() here (unlike statement-view.test.ts and the E2E suite) -
 // these tests only touch EventStore/CommandExecutor, never the app-specific view tables
@@ -61,22 +60,25 @@ const openWallet = (walletId: string, owner = "Alice", initialBalance = 0) =>
   );
 
 describe("wallet domain command handlers (real Postgres)", () => {
-  it("OpenWalletCommand: creates a wallet, fails with Duplicate on a duplicate open", async () => {
+  it("OpenWalletCommand: creates a wallet; the same open again is already opened; another owner under the id fails WalletAlreadyExists", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const first = await openWallet(walletId, "Alice", 100);
     assert.strictEqual(first.wasIdempotent, false);
 
+    const again = await openWallet(walletId, "Alice", 100);
+    assert.strictEqual(again.wasIdempotent, true);
+
     const outcome = await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        const command: OpenWalletCommand = { walletId, owner: "Alice", initialBalance: 100 };
+        const command: OpenWalletCommand = { walletId, owner: "Mallory", initialBalance: 100 };
         return yield* executor.run(OpenWallet, command).pipe(
           Effect.map(() => "success" as const),
-          Effect.catchTag("Duplicate", (e) => Effect.succeed(e))
+          Effect.catchTag("WalletAlreadyExists", (e) => Effect.succeed(e))
         );
       })
     );
-    assert.ok(outcome instanceof Duplicate, `expected Duplicate, got ${JSON.stringify(outcome)}`);
+    assert.ok(outcome instanceof WalletAlreadyExists, `expected WalletAlreadyExists, got ${JSON.stringify(outcome)}`);
   });
 
   it("DepositCommand: increases the balance; fails WalletNotFound for a nonexistent wallet", async () => {

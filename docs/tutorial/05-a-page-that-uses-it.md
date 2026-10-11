@@ -144,7 +144,8 @@ export const Problem = Schema.Union([
   Schema.TaggedStruct("CourseNotFound", { courseId: Schema.String }),
   Schema.TaggedStruct("CourseFull", { courseId: Schema.String, capacity: Schema.Int }),
   Schema.TaggedStruct("StudentAtLimit", { studentId: Schema.String, limit: Schema.Int }),
-  // The framework's own refusals: a 400 (the input did not parse) and a 409 (for example, a course that already exists).
+  Schema.TaggedStruct("CourseAlreadyDefined", { courseId: Schema.String, capacity: Schema.Int }),
+  // The framework's own refusals: a 400 (the input did not parse) and a 409 (the decision was made on state that changed, and the retries ran out).
   Schema.TaggedStruct("Rejected", { title: Schema.String, detail: Schema.String }),
   // The derived client checks a request against the API's own Schema BEFORE sending it, and checks the answer against the
   // response Schema; either failure is a SchemaError whose message names the field (`at ["capacity"]`). (The server's own 400
@@ -176,6 +177,8 @@ export const problemFromError = (error: CallError): Problem => {
         return { _tag: "CourseFull", courseId: error.fields.courseId, capacity: error.fields.capacity };
       case "StudentAtLimit":
         return { _tag: "StudentAtLimit", studentId: error.fields.studentId, limit: error.fields.limit };
+      case "CourseAlreadyDefined":
+        return { _tag: "CourseAlreadyDefined", courseId: error.fields.courseId, capacity: error.fields.capacity };
       default: {
         // a new declared error with no case above does not compile: `error` would not be `never`
         const unhandled: never = error;

@@ -54,7 +54,8 @@ A command has two parts. Its **contract** - its name, its input Schema and the d
 ```ts
 export const DefineCourseContract = commandContract({
   name: "define_course",
-  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) })
+  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
+  errors: [CourseAlreadyDefined]
 });
 
 export const SubscribeContract = commandContract({

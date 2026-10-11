@@ -84,7 +84,8 @@ content-type: application/problem+json
 
 The refusal is an RFC 7807 problem. You wrote no code for it: the status comes from the error's `kind` (`conflict` -> 409,
 `not_found` -> 404), the body carries the error's own fields, and the response is `application/problem+json`. A payload that does not
-match the command's input is a 400 problem that names every failing field by path (`errors`, never the value you sent), and defining a course twice is the framework's 409:
+match the command's input is a 400 problem that names every failing field by path (`errors`, never the value you sent). Defining the same course again is a
+retry and answers 200 ("already defined"); a different capacity under an id that is taken is `CourseAlreadyDefined`, a 409 that `define_course` declares. Two refusals:
 
 ```bash
 curl -s -X POST localhost:8080/api/commands/define_course \

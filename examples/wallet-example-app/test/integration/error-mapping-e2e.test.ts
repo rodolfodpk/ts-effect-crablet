@@ -70,15 +70,19 @@ describe("wallet error mapping E2E (RFC 7807 problem details over real HTTP)", (
     assert.deepStrictEqual(body["fields"], { walletId, currentBalance: 20, requestedAmount: 500 });
   });
 
-  it("opening the same wallet twice -> 409 conflict (Idempotent onDuplicate: THROW)", async () => {
+  it("opening the same wallet again -> 200 already opened; another owner under that id -> 409 WalletAlreadyExists", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const first = await post("open_wallet", { walletId, owner: "Eve", initialBalance: 0 });
     assert.strictEqual(first.status, 201);
 
-    const second = await post("open_wallet", { walletId, owner: "Eve", initialBalance: 0 });
-    assert.strictEqual(second.status, 409);
-    const body = (await second.json()) as Record<string, unknown>;
-    assert.strictEqual(body["violationCode"], "IDEMPOTENCY_VIOLATION");
+    const again = await post("open_wallet", { walletId, owner: "Eve", initialBalance: 0 });
+    assert.strictEqual(again.status, 200);
+
+    const other = await post("open_wallet", { walletId, owner: "Mallory", initialBalance: 0 });
+    assert.strictEqual(other.status, 409);
+    const body = (await other.json()) as Record<string, unknown>;
+    assert.strictEqual(body["errorType"], "WalletAlreadyExists");
+    assert.deepStrictEqual(body["fields"], { walletId });
   });
 
   it("transfer from a nonexistent wallet -> 404 naming that wallet", async () => {

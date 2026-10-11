@@ -4,11 +4,12 @@
 import * as Schema from "effect/Schema";
 import { commandContract } from "@crablet/commands/Contract";
 import { personal } from "@crablet/commands/Personal";
-import { InsufficientFunds, WalletNotFound } from "./errors/WalletErrors.ts";
+import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "./errors/WalletErrors.ts";
 import { NonBlank, NonNegative, Positive } from "./WalletInputs.ts";
 
 export const OpenWalletContract = commandContract({
   name: "open_wallet",
+  errors: [WalletAlreadyExists],
   input: Schema.Struct({ walletId: NonBlank, owner: personal(NonBlank), initialBalance: NonNegative })
 });
 

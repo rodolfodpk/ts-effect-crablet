@@ -5,7 +5,7 @@
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail, noop } from "@crablet/commands/Command";
-import { CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
+import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
 import { defineEvent } from "@crablet/commands/Event";
 import { all, defineModel } from "@crablet/commands/Model";
 
@@ -38,16 +38,20 @@ export const StudentModel = defineModel({ by: "student_id", initial: () => ({ co
 // #endregion models
 
 // The errors and the public contracts are in enrolment.contract.ts (so a browser can import them without the rules below); re-exported for the server code.
-export { CourseFull, CourseNotFound, StudentAtLimit } from "./enrolment.contract.ts";
+export { CourseAlreadyDefined, CourseFull, CourseNotFound, StudentAtLimit } from "./enrolment.contract.ts";
 export { DefineCourseContract, SubscribeContract } from "./enrolment.contract.ts";
 
 // #region define-course
 export const DefineCourse = defineCommand({
   ...DefineCourseContract,
-  // defining the same course twice is a conflict, not a silent no-op
-  idempotentBy: (c) => CourseDefined.where({ course_id: c.courseId }),
-  onDuplicate: "fail",
-  decide: (_, c) => emit(CourseDefined(c))
+  // The same course again is a retry ("already defined"); another course under the same id is a conflict.
+  model: (c) => CourseModel.of({ id: c.courseId }),
+  decide: (course, c) =>
+    !course.exists
+      ? emit(CourseDefined(c))
+      : course.capacity === c.capacity
+        ? noop("already defined")
+        : fail(new CourseAlreadyDefined({ courseId: c.courseId, capacity: course.capacity }))
 });
 // #endregion define-course
 
