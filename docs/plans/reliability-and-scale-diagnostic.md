@@ -74,6 +74,22 @@ Roughly linear, about 2 microseconds per event (**measured**). The events are ti
 ### E5c - reading only the events after a cursor (what a snapshot leaves to read)
 In a boundary of 100,000 events, reading the last 10 through the command's read path: **0.5 ms** (p50) when nothing newer is in the log, **16 ms** (database 14.7 ms) when 400,000 events of other entities were written after it (**measured**, one run, 15 reads each). In the second case the planner reads the whole entity through the GIN tags index and filters by cursor afterwards, so the tail read is still linear in the entity's size, about a tenth of the full read (**derived**: 16 ms against 180 ms). The events were bulk-inserted in one transaction, so every row has the same transaction id and the cursor effectively compares positions only; a log with many transactions was not measured.
 
+### E5f - what reading fewer columns saves on a model load (2026-10-11)
+100,000 events in one boundary, fetch only (nothing decoded or folded), p50 of 15, two runs of the script, on the load's own query with columns removed. "Tiny" is the E5b event (one tag, about 40 bytes of JSON); "realistic" has three tags, about 400 bytes of JSON and both ids set. Percentages are of variant 1; the two figures are the two runs. **Measured**; differences under about 10% are inside the run-to-run noise (in the first run, tiny variant 2 came out 23% *slower* than variant 1).
+
+| Columns read | tiny | realistic |
+|---|---|---|
+| 1 all (what a load reads now) | 116 / 115 ms | 248 / 242 ms |
+| 2 without `correlation_id`, `causation_id` | 123% / 97% | 90% / 92% |
+| 3 and without `occurred_at` | 95% / 94% | 88% / 91% |
+| 4 and without `tags` | 91% / 80% | 77% / 78% |
+| 5 the floor (`type, data, transaction_id, position`) | 92% / 80% | 76% / 78% |
+
+- **The ceiling is about 20-25% of the fetch**, and that is with every optional column gone, including `tags` and `occurred_at`, which handlers may read. Dropping only the two ids, the one change that needs no opt-in, saves 3-10%: below the 10% bar the plan set.
+- The database's own execution time did not move (52-58 ms in every variant): the saving is in the driver and the bytes, as E5b said, but the bytes of `data` and the cursor columns stay.
+- **A bigger gap is elsewhere.** The same read through `project` (driver plus `parseRow`, nothing applied) took 152-157 ms (tiny) and 344-481 ms (realistic), against 115 and 242-248 ms raw: **40-100% on top of the raw fetch**, more than any column choice saves. Splitting the tags alone is only 5-21 ms, so the rest is something else in `parseRow` and the loop (an object per tag, `BigInt`, the per-row projector loop; also one extra query for `currentXmin`). The cause is **not yet measured**; the spread between the two realistic runs (344 vs 481 ms) says it is also noisy.
+- **Decision (ADR-0013's bar for an API-visible compromise is not met):** do not change which columns a model load reads. The next experiment, if the load time matters, is to profile `project`'s per-row work.
+
 ### E5g - `exists` (the idempotency pre-check) against the events its query matches (2026-10-11)
 `exists` used to read every matching event with all columns, ordered, and build an object per row, to answer yes or no. It now asks the database `SELECT EXISTS (...)`, which stops at the first match. One run, p50 of 15 (**measured**, the old path timed in the same run through `project` with `existsProjector`):
 

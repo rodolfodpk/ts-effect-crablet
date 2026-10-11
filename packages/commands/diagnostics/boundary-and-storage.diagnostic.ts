@@ -1,6 +1,6 @@
 // DIAGNOSTIC EXPERIMENTS (docs/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/commands/diagnostics/boundary-and-storage.diagnostic.ts   and read the `DIAG` lines.
-// E5: command latency against the number of events in its boundary. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
+// E5: command latency against the number of events in its boundary. E5f: what reading fewer columns saves. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
 // E8: what an event costs on disk (events heap and indexes, the tag table). The folder is outside the test globs, so CI does not run it.
 import { after, before, describe, it } from "node:test";
 import { performance } from "node:perf_hooks";
@@ -99,6 +99,46 @@ describe("DIAG", () => {
     await measure("log = this entity only (plus earlier experiments' rows)");
     await insertRaw("noise", 400_000, '{"entityId":"noise"}');
     await measure("plus 400,000 events of other entities written after it");
+  });
+
+  it("E5f: what reading fewer columns saves on a model load (100,000 events in one boundary, tiny and realistic payloads)", { timeout: 600_000 }, async () => {
+    const N = 100_000, reps = 15;
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const time = async (f: () => Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return pct(xs, 50); };
+    const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
+    // a realistic event: three tags, about 400 bytes of payload, correlation and causation ids set
+    const realistic = JSON.stringify({ entityId: "colsbig", reference: "ref-0000000000000000", note: "x".repeat(250), amount: 1250, currency: "EUR", counterparty: { id: "c-1", name: "Counterparty Name" } });
+    await insertRaw("cols", N, '{"entityId":"cols"}');
+    await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(
+      "INSERT INTO crablet_events (type, tags, data, transaction_id, correlation_id, causation_id) SELECT 'Ticked', ARRAY['entity_id=colsbig','tenant=acme-corp','request_id=' || md5(g::text)], $1::jsonb, pg_current_xact_id(), gen_random_uuid(), g FROM generate_series(1, $2) g", [realistic, N])));
+    await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+    const variants: ReadonlyArray<readonly [string, string]> = [
+      ["1 all columns (what a load reads now)", "type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id"],
+      ["2 without correlation_id, causation_id", "type, tags, data, transaction_id::text AS transaction_id, position, occurred_at"],
+      ["3 without the ids and occurred_at", "type, tags, data, transaction_id::text AS transaction_id, position"],
+      ["4 without the ids, occurred_at and tags", "type, data, transaction_id::text AS transaction_id, position"],
+      ["5 floor: type, data, position, transaction_id only", "type, data, transaction_id::text AS transaction_id, position"]
+    ];
+    for (const [label, entity] of [["tiny payload, one tag", "cols"], ["realistic payload, three tags, ids set", "colsbig"]] as const) {
+      const where = `tags @> ARRAY['entity_id=${entity}']::text[]`;
+      const query = (cols: string) => `SELECT ${cols}, (transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled FROM crablet_events WHERE ${where} ORDER BY crablet_events.transaction_id, position ASC`;
+      const model = (await import("../src/Model.ts")).defineModel({ by: "entity_id", initial: () => ({ n: 0 }) }).on(Ticked, (s) => ({ n: s.n + 1 })).of({ id: entity });
+      // through `project`: fetch + driver + parseRow, the same path E5b's "fetch and parse only" times
+      const viaProject = await time(() => run(Effect.flatMap(EventStore, (es) => es.project(model.query, LogPosition.zero(), [noop]))));
+      console.log(`DIAG E5f [${label}] through project (driver + parseRow, nothing applied): p50 ${viaProject.toFixed(0)} ms`);
+      let all = 0;
+      for (const [name, cols] of variants) {
+        const ms = await time(() => run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(query(cols)))));
+        if (all === 0) all = ms;
+        const plan = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ "QUERY PLAN": ReadonlyArray<{ "Execution Time": number }> }>(`EXPLAIN (ANALYZE, FORMAT JSON) ${query(cols)}`)));
+        console.log(`DIAG E5f [${label}] raw fetch, variant ${name}: p50 ${ms.toFixed(0)} ms (${(100 * ms / all).toFixed(0)}% of variant 1) | database execution ${plan[0]!["QUERY PLAN"][0]!["Execution Time"].toFixed(0)} ms`);
+      }
+      // parseRow's tag work alone: split every tag of every row (what `parseRow` does), over rows already fetched
+      const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ tags: string[] }>(query("tags"))));
+      const t0 = performance.now(); let kept = 0;
+      for (const r of rows) for (const raw of r.tags) { const i = raw.indexOf("="); kept += (i < 0 ? { key: raw, value: "" } : { key: raw.slice(0, i), value: raw.slice(i + 1) }).key.length; }
+      console.log(`DIAG E5f [${label}] splitting the tags of ${rows.length} rows (parseRow's tag work, in memory): ${(performance.now() - t0).toFixed(0)} ms (${kept} key chars)`);
+    }
   });
 
   it("E5g: `exists` (the idempotency pre-check) against the number of events its query matches: the old read-everything path (project + existsProjector) and the SELECT EXISTS now used", { timeout: 600_000 }, async () => {
