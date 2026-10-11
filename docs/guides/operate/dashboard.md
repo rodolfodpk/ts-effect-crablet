@@ -1,5 +1,7 @@
 # See it on a dashboard
 
+*Guide · operators · [Monitor it](monitor-it.md), Docker · 20 minutes*
+
 A Grafana dashboard and alert rules for a Crablet application, fed by OpenTelemetry: the poller and its consumers (lag, status, leader), failures, the write side and storage.
 You can try it in two minutes with the wallet example, then wire the same three things into your own application.
 

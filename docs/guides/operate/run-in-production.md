@@ -1,5 +1,7 @@
 # Run it in production
 
+*Guide · developers and operators · the [tutorial](../../tutorial/README.md) step 2 · 30 minutes*
+
 What an application has to do to run for real: apply the schema, open one connection layer, start the background processors, and stop them before the pool closes.
 The example is the course app's [`index.ts`](../../../examples/course-enrolment-app/src/index.ts).
 

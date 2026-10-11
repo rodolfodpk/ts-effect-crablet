@@ -1,5 +1,7 @@
 # Evolving events: change an event without rewriting the log
 
+*Guide · developers changing a stored event · [events over time](../../concepts/events-over-time.md) · 20 minutes*
+
 Events are facts. Once written they are never updated, so the log holds **every shape an event has ever been written in**, and the code that reads it
 today must still understand all of them. This guide is how to change an event safely, what happens when something cannot be read, and the checks that
 tell you before production does. The decision and its reasoning are in [ADR-0017](../../adr/0017-event-evolution-by-compatibility.md); every block of code

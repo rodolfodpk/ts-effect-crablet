@@ -1,5 +1,7 @@
 # Expose a command over HTTP
 
+*Guide · developers · the [tutorial](../../tutorial/README.md) step 3 · 10 minutes*
+
 You list the command's **contract** (its name, input Schema and domain errors) and get `POST /api/commands/<name>`, validated against the input, with every failure
 documented in a generated OpenAPI description. No HTTP code is written per command. The example is the course app; [tutorial step 3](../../tutorial/03-an-http-api.md)
 runs it with `curl`.

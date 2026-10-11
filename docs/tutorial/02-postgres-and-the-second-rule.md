@@ -1,5 +1,7 @@
 # Step 2 - Postgres, and the second rule
 
+*Tutorial, step 2 of 5 · developers · step 1, Docker · 15 minutes*
+
 [← Step 1 - the rule, in memory](01-the-rule-in-memory.md) · [Tutorial index](README.md) · [Step 3 - an HTTP API →](03-an-http-api.md)
 
 Everything from here lives in the example package:

@@ -1,5 +1,7 @@
 # Glossary
 
+*Reference · anyone · none · look up*
+
 Plain-words definitions, in the order you meet them. Each links to where the term is taught.
 
 ## The idea

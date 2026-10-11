@@ -1,5 +1,7 @@
 # Monitor it
 
+*Guide · operators · [Run it in production](run-in-production.md) · 15 minutes*
+
 What to watch, and how. The framework records its measurements as Effect `Metric`s ([`@crablet/metrics-otel`](../../../packages/metrics-otel/README.md)); **this repository does not
 ship an exporter**, so wire Effect's OpenTelemetry (or another) metrics exporter in your application. Nothing below needs one except the gauges.
 

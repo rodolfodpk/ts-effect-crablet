@@ -41,13 +41,13 @@ environment variable.
 | `WALLET_BACKOFF_MAX_SECONDS` | `10` | The most an idle processor waits between polls. |
 | `WALLET_WAKEUPS` | `coalesced` | `coalesced`, `inline` or `off` (see `eventStore.wakeupMode`). |
 | `WALLET_PERIOD` | `month` | The statement period: `month`, or `minutes:N` (1 to 1440) for the kind lab. Choose it for a new database. |
-| `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the processors admin API at `/admin/processors`, behind this bearer token. |
+| `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the processors admin API at `/admin/processors` (on the `api` role), behind this bearer token. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | Exports metrics, spans and logs over OTLP ([See it on a dashboard](../guides/operate/dashboard.md)). |
 
 ## The wallet's health endpoints
 
 | Endpoint | Served by | Answers |
 |---|---|---|
-| `GET /healthz` | every role | the process is alive; says nothing about the database |
+| `GET /healthz` | every role (a process without `api` serves only this and `/status`) | the process is alive; says nothing about the database |
 | `GET /readyz` | the `api` role | ready: a `SELECT 1` answered within 2 seconds, else `503` |
 | `GET /status` | every role | JSON: its roles, uptime, and for each module whether it runs it and leads it now |

@@ -1,5 +1,7 @@
 # Test a command
 
+*Guide · developers · the [tutorial](../../tutorial/README.md) step 1 · 10 minutes*
+
 A command is a pure decision, so you can test it with no database and no Docker. `given(...history)` builds an in-memory store holding that history, and
 `.when(Command, input)` runs the **real** pipeline against it: input validation, the idempotency check, loading the model, `decide` and the conditional append.
 

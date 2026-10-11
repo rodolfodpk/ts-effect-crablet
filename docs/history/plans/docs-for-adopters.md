@@ -1,6 +1,6 @@
 # Plan: documentation that convinces adopters
 
-**Status:** in progress (2026-10-11). Written after a review of the documents as a technical editor; the decisions below were taken by the owner the same day. Each phase is its own commit.
+**Status:** done (2026-10-11), all phases, each its own commit. Written after a review of the documents as a technical editor; the decisions below were taken by the owner the same day. Changes made while building it: the evidence page was committed before the positioning page (the FAQ links it); the guide sync now requires every TypeScript block to be tagged, with `<!-- excerpt -->` for a sketch, so a guide without code is allowed; `docs/event-model-seat-booking.md` became `concepts/event-model.md` for course enrolment. **Not done:** the stopwatch walk-through by someone who did not write the documents (see Verification).
 
 ## Context
 

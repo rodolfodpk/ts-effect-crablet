@@ -1,5 +1,7 @@
 # Clean up, and where next
 
+*Tutorial, the end · developers · step 5, or any step · 2 minutes*
+
 [← Step 5 - a page that uses it](05-a-page-that-uses-it.md) · [Tutorial index](README.md)
 
 Stop the server and the page (Ctrl-C) and remove the database:

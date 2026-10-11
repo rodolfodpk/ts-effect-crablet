@@ -1,5 +1,7 @@
 # C4 models of the examples
 
+*Concept · anyone reading the examples · [architecture](architecture.md) · 10 minutes*
+
 The [C4 model](https://c4model.com) describes a system at three zoom levels: **context** (the system among its users and neighbours), **containers** (the separately running
 parts: applications and databases), and **components** (the parts inside one container). These are the models of the two applications you can run. For the framework's own flows, see
 [Architecture](./architecture.md); for the code, the READMEs of [`course-enrolment-app`](../../examples/course-enrolment-app/README.md),

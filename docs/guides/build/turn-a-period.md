@@ -1,5 +1,7 @@
 # Turn a period
 
+*Guide · developers with per-period state · [commands and models](../../reference/commands.md) · 15 minutes*
+
 Some state is kept **per period**: a wallet's statement for a month, a till's shift, a ledger page. When the first command of a new period arrives, the old period must be closed and the new one opened with the
 state carried forward ("closing the books"). Declare the period once on the model and the framework turns it **inside the command's own append**, under the command's own condition: the turn and the command's
 events are written together or not at all, two commands racing to turn it cannot both do it, and a command that decided in a period that has closed since conflicts and runs again in the new one.

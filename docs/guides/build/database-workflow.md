@@ -1,5 +1,7 @@
 # The database workflow
 
+*Guide · developers changing the schema · [Add a view](add-a-view.md) · 10 minutes*
+
 From a schema change to a view that still works: write the migration, change what the code declares about the table, and let the tests find any disagreement. Crablet takes any `sql`, so none of this is required by the libraries; this is how the examples do it.
 
 [← Task guides](../README.md)

@@ -1,5 +1,7 @@
 # Tutorial: course enrolment, from an in-memory test to an HTTP API
 
+*Tutorial · developers new to the project · Bun, Node 24, Docker from step 2 · about an hour*
+
 *An unfamiliar word? See the [glossary](../reference/glossary.md). All documents: [docs/README.md](../README.md).*
 
 You will build a small service where **a course holds at most N students** and **a student takes at most 3 courses**. Those two

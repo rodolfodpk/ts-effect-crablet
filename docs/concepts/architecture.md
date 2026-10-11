@@ -1,5 +1,7 @@
 # Architecture
 
+*Concept · anyone · the [README](../../README.md) read · 15 minutes*
+
 How the pieces fit, and how the core features work, in diagrams. Every diagram is a map of code that exists: the names are real packages, modules and tables. For the reasons behind
 each design, follow the links to the [decision records](../adr/README.md); for the words, see the [glossary](../reference/glossary.md).
 

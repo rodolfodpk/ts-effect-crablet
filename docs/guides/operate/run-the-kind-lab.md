@@ -1,5 +1,7 @@
 # Run the kind lab
 
+*Guide · anyone who wants to see failover · Docker, kind, kubectl · an hour*
+
 Run the wallet as separate deployments on a local Kubernetes cluster, watch it on a Grafana dashboard and a Processors page, and break it on purpose from the chaos page. This is a **lab**: it measures and demonstrates; it is not how you deploy to production
 ([Run it in production](run-in-production.md) is). What it showed the first time is in [the lab record](../../history/plans/kind-lab.md).
 
