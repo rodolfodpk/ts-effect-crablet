@@ -1,15 +1,16 @@
 // DIAGNOSTIC EXPERIMENTS (docs/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/commands/diagnostics/boundary-and-storage.diagnostic.ts   and read the `DIAG` lines.
-// E5: command latency against the number of events in its boundary. E7: what a command does when an event in its boundary no longer matches its schema.
+// E5: command latency against the number of events in its boundary. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
 // E8: what an event costs on disk (events heap and indexes, the tag table). The folder is outside the test globs, so CI does not run it.
 import { after, before, describe, it } from "node:test";
 import { performance } from "node:perf_hooks";
 import { Effect, Exit, ManagedRuntime, Redacted } from "effect";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
-import { EventStore } from "@crablet/eventstore";
+import { EventStore, existsProjector } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
+import * as Query from "@crablet/eventstore/Query";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as Crablet from "../src/Crablet.ts";
 import { CommandExecutor } from "../src/CommandExecutor.ts";
@@ -98,6 +99,21 @@ describe("DIAG", () => {
     await measure("log = this entity only (plus earlier experiments' rows)");
     await insertRaw("noise", 400_000, '{"entityId":"noise"}');
     await measure("plus 400,000 events of other entities written after it");
+  });
+
+  it("E5g: `exists` (the idempotency pre-check) against the number of events its query matches: the old read-everything path (project + existsProjector) and the SELECT EXISTS now used", { timeout: 600_000 }, async () => {
+    const reps = 15;
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const time = async (f: () => Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return pct(xs, 50); };
+    let have = 0;
+    for (const n of [1, 1_000, 100_000]) {
+      await insertRaw("ex", n - have, '{"entityId":"ex"}'); have = n;
+      await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+      const q = Query.forEventAndTag("Ticked", "entity_id", "ex");
+      const before = await time(() => run(Effect.flatMap(EventStore, (es) => es.project(q, LogPosition.zero(), [existsProjector()]))));
+      const now = await time(() => run(Effect.flatMap(EventStore, (es) => es.exists(q))));
+      console.log(`DIAG E5g query matching ${String(n).padStart(7)} events: read everything (old) p50 ${before.toFixed(1)} ms | SELECT EXISTS (now) p50 ${now.toFixed(2)} ms`);
+    }
   });
 
   it("E5d: a transfer (a model over TWO accounts, `all`) when one of them has 100,000 events", { timeout: 600_000 }, async () => {

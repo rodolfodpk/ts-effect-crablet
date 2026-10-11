@@ -1,6 +1,6 @@
 import { EventDecodingFailure, decodingErrorOf } from "../EventDecoding.ts";
 import { Effect, Exit, Layer, Semaphore } from "effect";
-import { EventStore, existsProjector, type EventStoreService, type StoredEvent } from "../EventStore.ts";
+import { EventStore, type EventStoreService, type StoredEvent } from "../EventStore.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
@@ -108,7 +108,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const service: EventStoreService = {
     append,
     project,
-    exists: (query) => Effect.map(Effect.catchTag(project(query, LogPositionNS.zero(), [existsProjector()]), "EventDecodingError", (e) => Effect.die(e)), (r) => r.state),
+    exists: (query) => Effect.sync(() => log.some((event) => queryMatches(query, event))),
     withWakeups: (effect) => effect // nothing to wake in memory
   };
 

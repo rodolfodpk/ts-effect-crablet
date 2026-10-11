@@ -132,6 +132,24 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     }
   },
   {
+    name: "exists agrees with reading: by type alone, by tag alone, with items OR-ed, and with no informative item",
+    run: async (h) => {
+      const id = uid();
+      const a = `ConfXA${id}`;
+      const b = `ConfXB${id}`;
+      // nothing of these types or with this tag exists yet
+      assert.equal(await existsQuery(h, Query.of(item([a], []))), false);
+      assert.equal(await existsQuery(h, Query.of(item([], [["k", id]]))), false);
+      await append(h, [ev(a, [["k", id]]), ev(b, [["j", id]])]);
+      assert.equal(await existsQuery(h, Query.of(item([a], []))), true, "type only");
+      assert.equal(await existsQuery(h, Query.of(item([], [["k", id]]))), true, "tag only");
+      assert.equal(await existsQuery(h, Query.of(item([a], [["j", id]]))), false, "one item's type with another item's tag matches nothing");
+      assert.equal(await existsQuery(h, Query.of([item([a], [["j", id]]), item([b], [["j", id]])])), true, "items are OR-ed");
+      // reading a query with no informative item matches every event, and so does exists (the log has events now)
+      for (const q of [Query.of([]), Query.of(item([], []))]) assert.equal(await existsQuery(h, q), true);
+    }
+  },
+  {
     name: "concurrency: an event matching the query NEWER than the position refuses the append, and nothing is stored",
     run: async (h) => {
       const id = uid();

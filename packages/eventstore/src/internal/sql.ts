@@ -142,6 +142,55 @@ export interface StoredEventRow {
   readonly settled?: boolean;
 }
 
+// The WHERE clause (with its leading space, or "" for no filter) and parameters for the events matching a query after a position.
+const whereOf = (query: Query, after: LogPosition): { readonly whereSql: string; readonly params: ReadonlyArray<unknown> } => {
+  const params: Array<unknown> = [];
+  const clauses: Array<string> = [];
+  let paramIndex = 1;
+
+  let positionClause = "";
+  if (after.position > 0n) {
+    if (after.transactionId !== null && after.transactionId !== "0") {
+      // A cursor from a previous load: (transaction_id, position) order, the order its events came back in.
+      positionClause = `(transaction_id, position) > ($${paramIndex++}::xid8, $${paramIndex++}::bigint)`;
+      params.push(after.transactionId, after.position.toString());
+    } else {
+      positionClause = `position > $${paramIndex++}`;
+      params.push(after.position.toString());
+    }
+  }
+
+  for (const item of query.items) {
+    const parts: Array<string> = [];
+    if (item.eventTypes.length > 0) {
+      parts.push(`type = ANY($${paramIndex++})`);
+      params.push(item.eventTypes);
+    }
+    if (item.tags.length > 0) {
+      const prefix = parts.length > 0 ? " AND " : "";
+      parts.push(`${prefix}tags @> $${paramIndex++}::text[]`);
+      params.push(flatTagStrings(item.tags));
+    }
+    if (parts.length > 0) clauses.push(`(${parts.join("")})`);
+  }
+
+  const orClause = clauses.length > 0 ? `(${clauses.join(" OR ")})` : "";
+
+  let whereSql = "";
+  if (positionClause && orClause) whereSql = ` WHERE ${positionClause} AND ${orClause}`;
+  else if (positionClause) whereSql = ` WHERE ${positionClause}`;
+  else if (orClause) whereSql = ` WHERE ${orClause}`;
+  return { whereSql, params };
+};
+
+// Is there at least one event matching the query? The database stops at the first match: no rows are fetched, ordered or built.
+export const existsEvents = (sql: SqlClient.SqlClient, query: Query): Effect.Effect<boolean, SqlError> =>
+  Effect.gen(function* () {
+    const { whereSql, params } = whereOf(query, { position: 0n, occurredAt: null, transactionId: null });
+    const rows = yield* sql.unsafe<{ found: boolean }>(`SELECT EXISTS (SELECT 1 FROM crablet_events${whereSql}) AS found`, params);
+    return rows[0]!.found;
+  });
+
 // Reads the events matching a query after a position.
 export const queryEvents = (
   sql: SqlClient.SqlClient,
@@ -149,42 +198,7 @@ export const queryEvents = (
   after: LogPosition
 ): Effect.Effect<ReadonlyArray<StoredEventRow>, SqlError> =>
   Effect.gen(function* () {
-    const params: Array<unknown> = [];
-    const clauses: Array<string> = [];
-    let paramIndex = 1;
-
-    let positionClause = "";
-    if (after.position > 0n) {
-      if (after.transactionId !== null && after.transactionId !== "0") {
-        // A cursor from a previous load: (transaction_id, position) order, the order its events came back in.
-        positionClause = `(transaction_id, position) > ($${paramIndex++}::xid8, $${paramIndex++}::bigint)`;
-        params.push(after.transactionId, after.position.toString());
-      } else {
-        positionClause = `position > $${paramIndex++}`;
-        params.push(after.position.toString());
-      }
-    }
-
-    for (const item of query.items) {
-      const parts: Array<string> = [];
-      if (item.eventTypes.length > 0) {
-        parts.push(`type = ANY($${paramIndex++})`);
-        params.push(item.eventTypes);
-      }
-      if (item.tags.length > 0) {
-        const prefix = parts.length > 0 ? " AND " : "";
-        parts.push(`${prefix}tags @> $${paramIndex++}::text[]`);
-        params.push(flatTagStrings(item.tags));
-      }
-      if (parts.length > 0) clauses.push(`(${parts.join("")})`);
-    }
-
-    const orClause = clauses.length > 0 ? `(${clauses.join(" OR ")})` : "";
-
-    let whereSql = "";
-    if (positionClause && orClause) whereSql = ` WHERE ${positionClause} AND ${orClause}`;
-    else if (positionClause) whereSql = ` WHERE ${positionClause}`;
-    else if (orClause) whereSql = ` WHERE ${orClause}`;
+    const { whereSql, params } = whereOf(query, after);
 
     const sqlText =
       // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.

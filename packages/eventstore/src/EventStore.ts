@@ -222,12 +222,8 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
         return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin } };
       });
 
-    const exists = (query: Query): Effect.Effect<boolean, SqlError> =>
-      Effect.map(
-        // `existsProjector` never decodes a payload, so no decoding error can come out of it
-        Effect.catchTag(project(query, LogPositionNS.zero(), [existsProjector()]), "EventDecodingError", (e) => Effect.die(e)),
-        (r) => r.state
-      );
+    // Asks the database for a yes or no (it stops at the first match) instead of reading every matching event.
+    const exists = (query: Query): Effect.Effect<boolean, SqlError> => Sql.existsEvents(sql, query);
 
     // Instrumented once here, at the single write primitive.
     const appendWith = (

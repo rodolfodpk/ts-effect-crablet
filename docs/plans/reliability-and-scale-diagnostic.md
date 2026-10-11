@@ -74,6 +74,17 @@ Roughly linear, about 2 microseconds per event (**measured**). The events are ti
 ### E5c - reading only the events after a cursor (what a snapshot leaves to read)
 In a boundary of 100,000 events, reading the last 10 through the command's read path: **0.5 ms** (p50) when nothing newer is in the log, **16 ms** (database 14.7 ms) when 400,000 events of other entities were written after it (**measured**, one run, 15 reads each). In the second case the planner reads the whole entity through the GIN tags index and filters by cursor afterwards, so the tail read is still linear in the entity's size, about a tenth of the full read (**derived**: 16 ms against 180 ms). The events were bulk-inserted in one transaction, so every row has the same transaction id and the cursor effectively compares positions only; a log with many transactions was not measured.
 
+### E5g - `exists` (the idempotency pre-check) against the events its query matches (2026-10-11)
+`exists` used to read every matching event with all columns, ordered, and build an object per row, to answer yes or no. It now asks the database `SELECT EXISTS (...)`, which stops at the first match. One run, p50 of 15 (**measured**, the old path timed in the same run through `project` with `existsProjector`):
+
+| Events the query matches | read everything (old) | `SELECT EXISTS` (now) |
+|---|---|---|
+| 1 | 0.5 ms | 0.22 ms |
+| 1,000 | 2.2 ms | 0.28 ms |
+| 100,000 | 150.5 ms | 0.24 ms |
+
+The new cost is flat. The old cost is linear in the matches, about 1.5 microseconds each. It only matters to commands that declare `idempotentBy` with a query that matches many events (by event type, or by a common tag); a query on one operation id matches few and was already cheap. Run with `--test-name-pattern="E5g"`.
+
 ### E5d - a transfer (`all`, two accounts) when one has 100,000 events
 Before the horizon change: p50 **403 ms**, p95 572 ms; after: p50 **218 ms**, p95 281 ms (**measured**, one run each, 15 transfers; the same script before and after). The saving is the union read that `all` did only to learn a position (ADR-0018, decision 8).
 
