@@ -7,7 +7,7 @@
 // stops (--seconds is ignored). If a burst takes longer than the interval, the next starts at once.
 //
 // And it can be steered while it runs: --control-port 9090 serves GET /status and POST /config, so the interval, the range, the number of wallets and start/pause change without restarting
-// the process (the kind lab's chaos page does this; see examples/chaos-ui). It binds to all interfaces of the pod, which is what a port-forward needs; run it only where that is fine.
+// the process (the kind lab's chaos page does this; see examples/chaos-ui). With --start-paused it waits for a start (POST /config {"running": true}) instead of sending at once. It binds to all interfaces of the pod, which is what a port-forward needs; run it only where that is fine.
 import { createServer } from "node:http";
 
 const arg = (name: string, fallback: string): string => {
@@ -19,6 +19,7 @@ const seconds = Number(arg("seconds", "120"));
 const rate = Number(arg("rate", "20"));
 const burstEvery = Number(arg("burst-every", "0"));
 const controlPort = Number(arg("control-port", "0"));
+const startPaused = process.argv.includes("--start-paused");
 
 const statuses = new Map<string, number>();
 const post = async (command: string, body: unknown): Promise<void> => {
@@ -29,7 +30,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // What can be changed while it runs.
 const config = {
-  running: true,
+  running: !startPaused,
   intervalSeconds: burstEvery > 0 ? burstEvery : 5,
   minCommands: Number(arg("burst-min", "1")),
   maxCommands: Number(arg("burst-max", "100")),

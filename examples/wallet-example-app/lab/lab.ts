@@ -2,7 +2,7 @@
 // #region usage
 //   node examples/wallet-example-app/lab/lab.ts up             create the cluster (3 nodes), build and load the image
 //   node examples/wallet-example-app/lab/lab.ts run <name>...  run scenarios (each starts from an empty database and a fresh deployment); no names = all
-//   node examples/wallet-example-app/lab/lab.ts observe       up, then a deployment you can watch: Grafana, a load of 10 to 1000 commands every 5 s, the admin API (prints the addresses)
+//   node examples/wallet-example-app/lab/lab.ts observe       up, then a deployment you can watch: Grafana, a load generator (paused until started, 10 to 1000 commands every 5 s), the admin API (prints the addresses)
 //   node examples/wallet-example-app/lab/lab.ts down           delete the cluster
 // Needs Docker, kind and kubectl (1.30 or later: `kubectl debug --profile=netadmin`). BUILD=0 reuses the image already built.
 // #endregion usage
@@ -487,7 +487,7 @@ LAB observation is up. Open:
                                       cd examples/processors-admin-ui && ADMIN_API_URL=http://127.0.0.1:8081 bun run dev
   Postgres                          localhost:5433               user postgres, password postgres, database wallet_db
 
-The load: every 5 seconds, 10 to 1000 commands at once.  Watch it:  kubectl --context ${CTX} logs -f deploy/loadgen
+The load: PAUSED until you press Start on the chaos page (then every 5 seconds, 10 to 1000 commands at once, unless you change it).  Watch it:  kubectl --context ${CTX} logs -f deploy/loadgen
 Break something while you watch (the dashboard and the admin page show it):
   kubectl --context ${CTX} delete pod -l role=workers --grace-period=0 --force     (kill the workers; one takes over)
   kubectl --context ${CTX} rollout restart deployment/wallet-workers                (a rolling update)

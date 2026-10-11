@@ -12,5 +12,5 @@ spec:
         - name: loadgen
           image: crablet-wallet:lab
           imagePullPolicy: Never
-          command: ["node", "scripts/load.ts", "--url", "http://wallet-api:8080", "--burst-every", "5", "--burst-min", "10", "--burst-max", "1000", "--wallets", "200", "--control-port", "9090"]
+          command: ["node", "scripts/load.ts", "--url", "http://wallet-api:8080", "--burst-every", "5", "--burst-min", "10", "--burst-max", "1000", "--wallets", "200", "--control-port", "9090", "--start-paused"]
           ports: [{ containerPort: 9090 }]

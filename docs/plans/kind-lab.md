@@ -16,7 +16,7 @@ To run it, see the guide [Run the kind lab](../guides/run-the-kind-lab.md); this
 
 ## Watching it
 
-`node examples/wallet-example-app/lab/lab.ts observe` brings up the cluster with Grafana, the wallet (2 API pods, 2 workers) and a load generator that sends, every 5 seconds, a uniformly random number of commands from 10 to 1000
+`node examples/wallet-example-app/lab/lab.ts observe` brings up the cluster with Grafana, the wallet (2 API pods, 2 workers) and a load generator that starts **paused** (Start on the chaos page) and then sends, every 5 seconds, a uniformly random number of commands from 10 to 1000
 (`scripts/load.ts --burst-every 5 --burst-min 10 --burst-max 1000 --wallets 200`: deposits, withdrawals and transfers, with a few that fail on purpose). It prints the addresses; they are:
 
 | What | Where | Login |

@@ -45,7 +45,7 @@ What the script accepts (the same lines are at the top of `examples/wallet-examp
 // Needs Docker, kind and kubectl (1.30 or later: `kubectl debug --profile=netadmin`). BUILD=0 reuses the image already built.
 ```
 
-The load generator starts at once, at its default: **every 5 seconds, 10 to 1000 commands**. On this wallet that is more than it can take (see "Know before you start"); the first thing to do is lower it (step 4).
+The load generator starts **paused**: nothing is sent until you press Start on the chaos page. Its default is **every 5 seconds, 10 to 1000 commands**, which is more than this wallet can take (see "Know before you start"), so lower it (step 4) before you start it.
 
 ## 3. Open the pages
 
