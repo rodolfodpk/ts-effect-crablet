@@ -1,6 +1,10 @@
 // Runs under Node (Testcontainers) - see NOTES.md. Postgres-backed unit test of
 // WalletStatementViewProjector specifically, driven directly (hand-built StoredEvent fixtures fed
 // to projector.handle([...])), not through the full views/commands/HTTP pipeline.
+//
+// What one delivery does to the view is tested here. That a batch delivered TWICE is applied once is not the projector's job any more: the view's batch and its cursor commit in one
+// transaction (ADR-0023), so it is the processor's, and it is tested there (packages/views/test/integration/view-exactly-once.test.ts and projected-view.test.ts, which crashes between the
+// view's commit and the cursor and retries). Calling projector.handle twice by hand does apply twice.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -93,7 +97,7 @@ describe("WalletStatementViewProjector (real Postgres)", () => {
     assert.strictEqual(row!.closed_at, null);
   });
 
-  it("DepositMade increases total_deposits and transaction_count exactly once, even if redelivered", async () => {
+  it("DepositMade increases total_deposits and transaction_count by the amount, and a second deposit adds to it", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const statementId = `wallet:${walletId}:2026-07`;
     await handle([
@@ -115,11 +119,16 @@ describe("WalletStatementViewProjector (real Postgres)", () => {
     assert.strictEqual(Number(rowAfterFirst!.total_deposits), 50);
     assert.strictEqual(rowAfterFirst!.transaction_count, 1);
 
-    // Redelivery of the exact same StoredEvent (same position) must not double-count.
-    await handle([deposit]);
-    const rowAfterRedelivery = await statementRow(statementId);
-    assert.strictEqual(Number(rowAfterRedelivery!.total_deposits), 50);
-    assert.strictEqual(rowAfterRedelivery!.transaction_count, 1);
+    await handle([
+      fakeEvent(
+        WalletEvents.DEPOSIT_MADE,
+        { wallet_id: walletId, deposit_id: "d2", year: "2026", month: "7", statement_id: statementId },
+        { depositId: "d2", walletId, amount: 25, newBalance: 75, depositedAt: new Date().toISOString(), description: "x" }
+      )
+    ]);
+    const rowAfterSecond = await statementRow(statementId);
+    assert.strictEqual(Number(rowAfterSecond!.total_deposits), 75);
+    assert.strictEqual(rowAfterSecond!.transaction_count, 2);
   });
 
   it("WithdrawalMade increases total_withdrawals and transaction_count", async () => {
@@ -198,7 +207,7 @@ describe("WalletStatementViewProjector (real Postgres)", () => {
     assert.strictEqual(toRow!.transaction_count, 1);
   });
 
-  it("WalletStatementClosed sets closing_balance and closed_at exactly once", async () => {
+  it("WalletStatementClosed sets closing_balance and closed_at", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const statementId = `wallet:${walletId}:2026-06`;
     await handle([
@@ -219,10 +228,6 @@ describe("WalletStatementViewProjector (real Postgres)", () => {
     assert.strictEqual(Number(row!.closing_balance), 55);
     assert.ok(row!.closed_at !== null);
 
-    // Redelivery must not error or double-apply (junction gate already recorded this position).
-    await handle([closed]);
-    const rowAfter = await statementRow(statementId);
-    assert.strictEqual(Number(rowAfter!.closing_balance), 55);
   });
 
   it("a transaction event with no statement_id tag is a graceful no-op, not a crash", async () => {

@@ -1,86 +1,43 @@
 import { Effect } from "effect";
-import { SqlClient } from "effect/sql";
+import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
-import type { StoredEvent } from "@crablet/eventstore";
-import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import { defineView } from "@crablet/views/ProjectedView";
+import type { ViewProjector } from "@crablet/views/ViewProjector";
+import { decimal, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
 import * as Wallet from "../domain/WalletModel.ts";
-import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Running totals per
-// wallet. `current_balance` is always SET to the event's own carried balance (naturally
-// idempotent, same as WalletBalanceViewProjector); the running total_* columns are incremented,
-// with `last_transaction_at = GREATEST(...)` guarding only the timestamp against moving backward
-// on an out-of-order redelivery - accepted limitation: unlike WalletStatementViewProjector,
-// there's no junction table here, so a genuine redelivery could double-count a total_* column.
+export const walletSummaryTable = viewTable("wallet_summary_view", {
+  key: { wallet_id: text() },
+  columns: {
+    total_deposits: decimal().default(0),
+    total_withdrawals: decimal().default(0),
+    total_transfers_in: decimal().default(0),
+    total_transfers_out: decimal().default(0),
+    current_balance: decimal().default(0),
+    last_transaction_at: timestamptz().nullable()
+  }
+});
+
+// Running totals per wallet. Every column is ADDED to (`upsert` with `add`): the totals by the amount, `current_balance` by the signed change (deposit +, withdrawal -, transfer out - and in +).
+// NOT the `newBalance` recorded in the event: that is the balance of the moment the command was decided, and a credit that committed in between makes it stale (deposits are concurrent), so
+// copying it loses updates. Only the opening event sets `current_balance` (`replace`: the first thing a wallet's row says).
+// `last_transaction_at` only moves forward (`max`, `GREATEST` in SQL), so an out-of-order delivery cannot move it back.
+// A repeated batch is applied once because the view's batch and its cursor commit together (ADR-0023); there is no junction table.
 // Deliberately no FK to wallet_balance_view (both are independent async projections off the same event stream, so summary's own projector can process
 // WalletOpened before balance's does).
-const upsertOnOpen = (
-  sql: SqlClient.SqlClient,
-  walletId: string,
-  initialBalance: number
-): Effect.Effect<void, SqlError, never> =>
-  Effect.asVoid(
-    sql.unsafe(
-      `INSERT INTO wallet_summary_view (wallet_id, current_balance)
-       VALUES ($1, $2)
-       ON CONFLICT (wallet_id) DO UPDATE SET current_balance = EXCLUDED.current_balance`,
-      [walletId, initialBalance]
-    )
-  );
+export const WalletSummaryView = defineView("wallet-summary-view", { tables: [walletSummaryTable] })
+  .on(Wallet.WalletOpened, (d) => walletSummaryTable.insert({ wallet_id: d.walletId, current_balance: d.initialBalance }, { onConflict: "replace" }))
+  .on(Wallet.DepositMade, (d) =>
+    walletSummaryTable.upsert({ wallet_id: d.walletId }, { add: { total_deposits: d.amount, current_balance: d.amount }, max: { last_transaction_at: d.depositedAt } })
+  )
+  .on(Wallet.WithdrawalMade, (d) =>
+    walletSummaryTable.upsert({ wallet_id: d.walletId }, { add: { total_withdrawals: d.amount, current_balance: -d.amount }, max: { last_transaction_at: d.withdrawnAt } })
+  )
+  .on(Wallet.MoneyTransferred, (d) => [
+    walletSummaryTable.upsert({ wallet_id: d.fromWalletId }, { add: { total_transfers_out: d.amount, current_balance: -d.amount }, max: { last_transaction_at: d.transferredAt } }),
+    walletSummaryTable.upsert({ wallet_id: d.toWalletId }, { add: { total_transfers_in: d.amount, current_balance: d.amount }, max: { last_transaction_at: d.transferredAt } })
+  ])
+  .on(Wallet.WalletClosed, (d) => walletSummaryTable.remove({ wallet_id: d.walletId }));
 
-const incrementColumn = (
-  sql: SqlClient.SqlClient,
-  column: "total_deposits" | "total_withdrawals" | "total_transfers_in" | "total_transfers_out",
-  walletId: string,
-  amount: number,
-  // the change to the balance, with its sign: the balance is the sum of these. NOT the `newBalance` recorded in the event: that is the balance of the moment the command was decided, and a credit that
-  // committed in between makes it stale (deposits are concurrent), so copying it loses updates.
-  balanceChange: number,
-  occurredAt: string
-): Effect.Effect<void, SqlError, never> =>
-  Effect.asVoid(
-    sql.unsafe(
-      `INSERT INTO wallet_summary_view (wallet_id, ${column}, current_balance, last_transaction_at)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (wallet_id) DO UPDATE SET
-         ${column} = wallet_summary_view.${column} + EXCLUDED.${column},
-         current_balance = wallet_summary_view.current_balance + EXCLUDED.current_balance,
-         last_transaction_at = GREATEST(wallet_summary_view.last_transaction_at, EXCLUDED.last_transaction_at)`,
-      [walletId, amount, balanceChange, occurredAt]
-    )
-  );
-
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-  switch (event.type) {
-    case WalletEvents.WALLET_OPENED: {
-      const data = yield* Wallet.WalletOpened.decodeStored(event);
-      return yield* upsertOnOpen(sql, data.walletId, data.initialBalance);
-    }
-    case WalletEvents.DEPOSIT_MADE: {
-      const data = yield* Wallet.DepositMade.decodeStored(event);
-      return yield* incrementColumn(sql, "total_deposits", data.walletId, data.amount, data.amount, data.depositedAt);
-    }
-    case WalletEvents.WITHDRAWAL_MADE: {
-      const data = yield* Wallet.WithdrawalMade.decodeStored(event);
-      return yield* incrementColumn(sql, "total_withdrawals", data.walletId, data.amount, -data.amount, data.withdrawnAt);
-    }
-    case WalletEvents.MONEY_TRANSFERRED: {
-      const data = yield* Wallet.MoneyTransferred.decodeStored(event);
-      return yield* Effect.gen(function* () {
-        yield* incrementColumn(sql, "total_transfers_out", data.fromWalletId, data.amount, -data.amount, data.transferredAt);
-        yield* incrementColumn(sql, "total_transfers_in", data.toWalletId, data.amount, data.amount, data.transferredAt);
-      });
-    }
-    case WalletEvents.WALLET_CLOSED: {
-      const data = yield* Wallet.WalletClosed.decodeStored(event);
-      return yield* Effect.asVoid(sql.unsafe("DELETE FROM wallet_summary_view WHERE wallet_id = $1", [data.walletId]));
-    }
-    default:
-      return;
-  }
-  });
-
-export const makeWalletSummaryViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
-  makeTransactionalViewProjector("wallet-summary-view", handleEvent);
+export const makeWalletSummaryViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => WalletSummaryView.projector;

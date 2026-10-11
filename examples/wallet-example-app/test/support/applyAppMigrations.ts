@@ -12,7 +12,8 @@ const migrationFiles = [
   "V101__wallet_transaction_view.sql",
   "V102__wallet_summary_view.sql",
   "V103__wallet_statement_view.sql",
-  "V104__wallet_transaction_view_page_index.sql"
+  "V104__wallet_transaction_view_page_index.sql",
+  "V105__drop_statement_transactions.sql"
 ] as const;
 
 // `startTestDb()` (@crablet/test-support) only applies @crablet/db-migrations' own core schema -

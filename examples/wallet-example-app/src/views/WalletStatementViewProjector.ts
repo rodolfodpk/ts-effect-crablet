@@ -1,134 +1,69 @@
 import { Effect } from "effect";
-import { SqlClient } from "effect/sql";
+import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
-import type { StoredEvent } from "@crablet/eventstore";
-import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
-import * as WalletTags from "../domain/WalletTags.ts";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import { defineView, type ViewContext } from "@crablet/views/ProjectedView";
+import type { ViewProjector } from "@crablet/views/ViewProjector";
+import { decimal, integer, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
+import * as WalletTags from "../domain/WalletTags.ts";
 import * as Wallet from "../domain/WalletModel.ts";
-import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// The most edge-case-heavy projector in the app. Maintains
-// wallet_statement_view (one row per (wallet, period) statement) + the statement_transactions
-// junction table.
-//
-// Idempotency strategy, deliberately stronger than `ON CONFLICT DO NOTHING` on the statement row
-// alone: for every event that *updates* running totals (not the initial open), first INSERT INTO
-// statement_transactions (statement_id, event_position) - only if THAT insert actually happens
-// (not a redelivery of an already-folded-in event) do we apply the totals update. This is what
-// makes re-processing the same batch (a crash between handling and progress-commit, or a
-// redelivered StoredEvent) safe - a delivery that redoes the junction insert is a no-op, not a
-// double-counted total.
-const tagValue = (event: StoredEvent, key: string): string | undefined => event.tags.find((t) => t.key === key)?.value;
-
-const recordProcessedEvent = (
-  sql: SqlClient.SqlClient,
-  statementId: string,
-  position: bigint
-): Effect.Effect<boolean, SqlError, never> =>
-  sql
-    .unsafe<{ ok: number }>(
-      "INSERT INTO statement_transactions (statement_id, event_position) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING 1 AS ok",
-      [statementId, position.toString()]
-    )
-    .pipe(Effect.map((rows) => rows.length > 0));
-
-const handleStatementOpened = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    const data = yield* Wallet.WalletStatementOpened.decodeStored(event);
-    yield* sql.unsafe(
-      `INSERT INTO wallet_statement_view (statement_id, wallet_id, year, month, day, hour, opening_balance, opened_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (statement_id) DO NOTHING`,
-      [data.statementId, data.walletId, data.year, data.month ?? null, data.day ?? null, data.hour ?? null, data.openingBalance, data.openedAt]
-    );
-  });
-
-const handleStatementClosed = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    const data = yield* Wallet.WalletStatementClosed.decodeStored(event);
-    const isNew = yield* recordProcessedEvent(sql, data.statementId, event.position);
-    if (!isNew) return;
-    yield* sql.unsafe("UPDATE wallet_statement_view SET closing_balance = $1, closed_at = $2 WHERE statement_id = $3", [
-      data.closingBalance,
-      data.closedAt,
-      data.statementId
-    ]);
-  });
-
-const handleDepositMade = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    const data = yield* Wallet.DepositMade.decodeStored(event);
-    const statementId = tagValue(event, WalletTags.STATEMENT_ID);
-    if (!statementId) return;
-    const isNew = yield* recordProcessedEvent(sql, statementId, event.position);
-    if (!isNew) return;
-    yield* sql.unsafe(
-      "UPDATE wallet_statement_view SET total_deposits = total_deposits + $1, transaction_count = transaction_count + 1 WHERE statement_id = $2",
-      [data.amount, statementId]
-    );
-  });
-
-const handleWithdrawalMade = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    const data = yield* Wallet.WithdrawalMade.decodeStored(event);
-    const statementId = tagValue(event, WalletTags.STATEMENT_ID);
-    if (!statementId) return;
-    const isNew = yield* recordProcessedEvent(sql, statementId, event.position);
-    if (!isNew) return;
-    yield* sql.unsafe(
-      "UPDATE wallet_statement_view SET total_withdrawals = total_withdrawals + $1, transaction_count = transaction_count + 1 WHERE statement_id = $2",
-      [data.amount, statementId]
-    );
-  });
-
-// A transfer touches two wallets, each with its own statement_id (see WalletTags.ts's primer) -
-// each side is recorded/updated independently, so one side succeeding doesn't depend on the other.
-const handleMoneyTransferred = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    const data = yield* Wallet.MoneyTransferred.decodeStored(event);
-    const fromStatementId = tagValue(event, WalletTags.FROM_STATEMENT_ID);
-    const toStatementId = tagValue(event, WalletTags.TO_STATEMENT_ID);
-
-    if (fromStatementId) {
-      const isNew = yield* recordProcessedEvent(sql, fromStatementId, event.position);
-      if (isNew) {
-        yield* sql.unsafe(
-          "UPDATE wallet_statement_view SET total_transfers_out = total_transfers_out + $1, transaction_count = transaction_count + 1 WHERE statement_id = $2",
-          [data.amount, fromStatementId]
-        );
-      }
-    }
-    if (toStatementId) {
-      const isNew = yield* recordProcessedEvent(sql, toStatementId, event.position);
-      if (isNew) {
-        yield* sql.unsafe(
-          "UPDATE wallet_statement_view SET total_transfers_in = total_transfers_in + $1, transaction_count = transaction_count + 1 WHERE statement_id = $2",
-          [data.amount, toStatementId]
-        );
-      }
-    }
-  });
-
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> => {
-  switch (event.type) {
-    case WalletEvents.WALLET_STATEMENT_OPENED:
-      return handleStatementOpened(event, sql);
-    case WalletEvents.WALLET_STATEMENT_CLOSED:
-      return handleStatementClosed(event, sql);
-    case WalletEvents.DEPOSIT_MADE:
-      return handleDepositMade(event, sql);
-    case WalletEvents.WITHDRAWAL_MADE:
-      return handleWithdrawalMade(event, sql);
-    case WalletEvents.MONEY_TRANSFERRED:
-      return handleMoneyTransferred(event, sql);
-    default:
-      return Effect.void;
+export const walletStatementTable = viewTable("wallet_statement_view", {
+  key: { statement_id: text() },
+  columns: {
+    wallet_id: text(),
+    year: integer(),
+    month: integer().nullable(),
+    day: integer().nullable(),
+    hour: integer().nullable(),
+    opening_balance: decimal(),
+    closing_balance: decimal().nullable(),
+    total_deposits: decimal().default(0),
+    total_withdrawals: decimal().default(0),
+    total_transfers_in: decimal().default(0),
+    total_transfers_out: decimal().default(0),
+    transaction_count: integer().default(0),
+    opened_at: timestamptz(),
+    closed_at: timestamptz().nullable()
   }
+});
+
+// One row per (wallet, period) statement. The statement a transaction belongs to is the `statement_id` TAG on the event (a transfer has two, one per wallet: from_statement_id and to_statement_id, see
+// WalletTags.ts's primer), so each event adds its amount to the totals of the statement it names; an event with no such tag is skipped.
+//
+// Opened is `ignore` (opening the same statement twice is the same statement); Closed sets the closing balance and instant. The totals are `add`s: a repeated batch is applied once because the
+// view's batch and its cursor commit together (ADR-0023). (This view used to keep a junction table of the events it had folded in, `statement_transactions`; V105 drops it.)
+const bump = (ctx: ViewContext, tag: string, column: "total_deposits" | "total_withdrawals" | "total_transfers_in" | "total_transfers_out", amount: number) => {
+  const statementId = ctx.tag(tag);
+  return statementId === undefined
+    ? undefined
+    : walletStatementTable.update({ statement_id: statementId }, { add: { [column]: amount, transaction_count: 1 } });
 };
 
-export const makeWalletStatementViewProjector = (): Effect.Effect<
-  ViewProjector<SqlError | EventDecodingError>,
-  never,
-  SqlClient.SqlClient
-> => makeTransactionalViewProjector("wallet-statement-view", handleEvent);
+export const WalletStatementView = defineView("wallet-statement-view", { tables: [walletStatementTable] })
+  .on(Wallet.WalletStatementOpened, (d) =>
+    walletStatementTable.insert(
+      {
+        statement_id: d.statementId,
+        wallet_id: d.walletId,
+        year: d.year,
+        month: d.month ?? null,
+        day: d.day ?? null,
+        hour: d.hour ?? null,
+        opening_balance: d.openingBalance,
+        opened_at: d.openedAt
+      },
+      { onConflict: "ignore" }
+    )
+  )
+  .on(Wallet.WalletStatementClosed, (d) =>
+    walletStatementTable.update({ statement_id: d.statementId }, { set: { closing_balance: d.closingBalance, closed_at: d.closedAt } })
+  )
+  .on(Wallet.DepositMade, (d, ctx) => bump(ctx, WalletTags.STATEMENT_ID, "total_deposits", d.amount))
+  .on(Wallet.WithdrawalMade, (d, ctx) => bump(ctx, WalletTags.STATEMENT_ID, "total_withdrawals", d.amount))
+  .on(Wallet.MoneyTransferred, (d, ctx) => [
+    bump(ctx, WalletTags.FROM_STATEMENT_ID, "total_transfers_out", d.amount),
+    bump(ctx, WalletTags.TO_STATEMENT_ID, "total_transfers_in", d.amount)
+  ]);
+
+export const makeWalletStatementViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => WalletStatementView.projector;

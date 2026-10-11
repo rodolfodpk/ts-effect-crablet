@@ -135,7 +135,7 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
     );
   });
 
-  it("summary view: running totals increment, current_balance is set, GREATEST guards last_transaction_at", async () => {
+  it("summary view: running totals and current_balance are added to, GREATEST guards last_transaction_at", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     await run(
       Effect.gen(function* () {
