@@ -51,6 +51,8 @@ export const Message = defineMessageUnion({
   ToggledVerifyAfter: {},
   ClickedStartRun: {},
   ClickedStopRun: {},
+  ClickedPauseRun: {},
+  ClickedResumeRun: {},
 
   ClickedKill: { pod: Schema.String },
   ClickedVerify: {},
@@ -174,6 +176,8 @@ export const update = (model: Model, message: Message) =>
       return typeof request === "string" ? failed(model, request) : send(model, "/api/run", request, "Start the run");
     },
     ClickedStopRun: () => send(model, "/api/run/stop", {}, "Stop the run"),
+    ClickedPauseRun: () => send(model, "/api/run/pause", { paused: true }, "Pause the run"),
+    ClickedResumeRun: () => send(model, "/api/run/pause", { paused: false }, "Resume the run"),
 
     ClickedKill: ({ pod }) => send(model, "/api/kill", { pod }, `Kill ${pod}`),
     ClickedVerify: () => send(model, "/api/verify", {}, "Verify"),
@@ -246,7 +250,7 @@ export const healthOf = (s: State_): Health => {
 export const ago = (now: string, at: string): string => `${formatDuration((Date.parse(now) - Date.parse(at)) / 1000)} ago`;
 
 // What kind of line a log entry is, for its colour: what was done to the system, what was undone, or the system's answer.
-export const logKind = (text: string): "fault" | "heal" | "info" => (/^(fault:|killed|cut |paused|rolling)/.test(text) ? "fault" : /^(healed|resumed|run (finished|stopped|started)|reset)/.test(text) ? "heal" : "info");
+export const logKind = (text: string): "fault" | "heal" | "info" => (/^(fault:|killed|cut |paused|rolling)/.test(text) ? "fault" : /^(healed|resumed|run (finished|stopped|started|resumed)|reset)/.test(text) ? "heal" : "info");
 
 const chip = (h: HtmlBuilder<Message>, kind: string, text: string) => h.span([h.Class(`chip ${kind}`)], [h.span([h.Class("dot")], []), text]);
 
@@ -382,12 +386,13 @@ const runCard = (model: Model, s: State_, h: HtmlBuilder<Message>) => {
         [h.Class("actions")],
         [
           run.running ? h.button([h.Class("btn danger"), h.OnClick(Message.ClickedStopRun())], ["Stop the run"]) : h.button([h.Class("btn primary"), h.OnClick(Message.ClickedStartRun())], ["Start the run"]),
-          ...(run.running ? [h.span([h.Class("muted")], [`${run.faults} faults so far, ${formatDuration(remaining)} left`])] : [])
+          ...(run.running ? [run.paused ? h.button([h.Class("btn primary"), h.OnClick(Message.ClickedResumeRun())], ["Resume the run"]) : h.button([h.Class("btn"), h.OnClick(Message.ClickedPauseRun())], ["Pause the run"])] : []),
+          ...(run.running ? [h.span([h.Class("muted")], [`${run.faults} faults so far, ${formatDuration(remaining)} left${run.paused ? " (the clock is held)" : ""}`])] : [])
         ]
       ),
       ...(run.running ? [h.div([h.Class("progress"), h.AriaLabel("Run progress")], [h.div([h.Class("progress-bar"), h.Style({ width: `${progress.toFixed(1)}%` })], [])])] : [])
     ],
-    run.running ? chip(h, "busy", "running") : chip(h, "paused", "idle")
+    run.running ? (run.paused ? chip(h, "paused", "run paused") : chip(h, "busy", "running")) : chip(h, "paused", "idle")
   );
 };
 

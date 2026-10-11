@@ -21,7 +21,7 @@ cd examples/chaos-ui && bun run dev          # the page, on http://localhost:517
 - **Links** to the Grafana dashboard (opened on the last 15 minutes), the Processors page and the list of wallets.
 - **Load**: start and pause the load generator, and set the seconds between bursts, the fewest and the most commands in a burst, and the number of wallets. It changes while the generator runs, with no restart
   (the generator serves `POST /config` on its control port; the server reaches it with a port-forward).
-- **Chaos run**: choose the faults, how many minutes, how often, and how long a cut or a pause lasts. Each fault is one of the chosen ones, at random, and each is logged with how long another pod took to lead.
+- **Chaos run**: choose the faults, how many minutes, how often, and how long a cut or a pause lasts. Start, **Pause** (no new fault until you resume; one in progress still heals, and the clock is held, so the minutes are minutes of running) and Stop. Each fault is one of the chosen ones, at random, and each is logged with how long another pod took to lead.
   The faults: kill the leader of a module, kill a worker or an API pod, a rolling update of the workers, cut the views leader from Postgres (packets dropped, then healed), pause a view.
 - **What happened**: what was done to the system (red) and what was undone (green), each with its time and how long ago. Every line is also posted to Grafana as an annotation tagged `chaos`, so the dashboard
   shows a vertical mark at each fault.

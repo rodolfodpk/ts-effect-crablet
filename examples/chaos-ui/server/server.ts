@@ -12,7 +12,7 @@ import type { ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 import pg from "pg";
 import { Schema } from "effect";
-import { Ack, KillPod, ResetDatabase, SetLoad, StartRun, State, Verification, scenarios } from "../src/contract.ts";
+import { Ack, KillPod, PauseRun, ResetDatabase, SetLoad, StartRun, State, Verification, scenarios } from "../src/contract.ts";
 import type { Check, Load, Pod } from "../src/contract.ts";
 import { dataChecks } from "./checks.ts";
 
@@ -168,7 +168,7 @@ const loadStatus = async (): Promise<Load> => {
 // ---- chaos runs ------------------------------------------------------------------------------------------------------------------------------------------------
 
 type LogEntry = { at: string; text: string; ok: boolean };
-const run = { running: false, scenarios: [] as string[], minutes: 0, intervalSeconds: 0, holdSeconds: 0, startedAt: null as string | null, endsAt: null as string | null, faults: 0, log: [] as LogEntry[] };
+const run = { running: false, paused: false, scenarios: [] as string[], minutes: 0, intervalSeconds: 0, holdSeconds: 0, startedAt: null as string | null, endsAt: null as string | null, faults: 0, log: [] as LogEntry[] };
 let stopRequested = false;
 const note = (text: string, ok = true) => { run.log.push({ at: now(), text, ok }); if (run.log.length > 200) run.log.shift(); annotate(text, [ok ? "ok" : "problem"]); };
 
@@ -232,7 +232,7 @@ const faults: Record<string, (hold: number) => Promise<void>> = {
   "pause-view": (hold) => pauseView(hold)
 };
 
-const interruptibleSleep = async (ms: number) => { const end = Date.now() + ms; while (Date.now() < end && !stopRequested) await sleep(250); };
+const interruptibleSleep = async (ms: number) => { const end = Date.now() + ms; while (Date.now() < end && !stopRequested && !run.paused) await sleep(250); };
 
 const startRun = (request: StartRun): string | null => {
   if (run.running) return "a run is already going";
@@ -244,14 +244,24 @@ const startRun = (request: StartRun): string | null => {
   if (!(request.holdSeconds >= 5 && request.holdSeconds <= 300)) return "the hold must be from 5 to 300 seconds";
   stopRequested = false;
   Object.assign(run, {
-    running: true, scenarios: [...request.scenarios], minutes: request.minutes, intervalSeconds: request.intervalSeconds, holdSeconds: request.holdSeconds,
+    running: true, paused: false, scenarios: [...request.scenarios], minutes: request.minutes, intervalSeconds: request.intervalSeconds, holdSeconds: request.holdSeconds,
     startedAt: now(), endsAt: new Date(Date.now() + request.minutes * 60_000).toISOString(), faults: 0, log: []
   });
   note(`run started: ${request.scenarios.join(", ")} for ${request.minutes} min, a fault every ${request.intervalSeconds} s`);
   void (async () => {
     try {
-      const endMs = Date.parse(run.endsAt!);
+      let endMs = Date.parse(run.endsAt!);
+      let startMs = Date.parse(run.startedAt!);
       while (!stopRequested && Date.now() < endMs) {
+        if (run.paused) {
+          // held: the clock stops, so the run's minutes are minutes of running (and the page's progress and time left stay where they were)
+          const t0 = Date.now();
+          await sleep(250);
+          const waited = Date.now() - t0;
+          endMs += waited; startMs += waited;
+          run.endsAt = new Date(endMs).toISOString(); run.startedAt = new Date(startMs).toISOString();
+          continue;
+        }
         const id = pickRandom(request.scenarios)!;
         note(`fault: ${scenarios.find((s) => s.id === id)?.label ?? id}`);
         try { await faults[id]!(request.holdSeconds); } catch (e) { note(`${id} failed: ${errorText(e)}`, false); }
@@ -260,6 +270,7 @@ const startRun = (request: StartRun): string | null => {
       }
     } finally {
       run.running = false;
+      run.paused = false;
       note(stopRequested ? "run stopped" : "run finished");
       if (request.verifyAfter) startVerify();
     }
@@ -421,6 +432,12 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     if (url === "/api/run") return send(200, ack(startRun(Schema.decodeUnknownSync(StartRun)(body)), "run started"));
     if (url === "/api/run/stop") { stopRequested = true; return send(200, ack(run.running ? null : "no run is going", "stopping after the current fault")); }
+    if (url === "/api/run/pause") {
+      const { paused } = Schema.decodeUnknownSync(PauseRun)(body);
+      if (!run.running) return send(200, ack("no run is going", ""));
+      if (run.paused !== paused) { run.paused = paused; note(paused ? "run paused: no new fault until it is resumed (one in progress still heals)" : "run resumed"); }
+      return send(200, ack(null, paused ? "run paused" : "run resumed"));
+    }
     if (url === "/api/kill") {
       const { pod } = Schema.decodeUnknownSync(KillPod)(body);
       const target = (await listPods()).find((p) => p.name === pod);

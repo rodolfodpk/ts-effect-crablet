@@ -33,6 +33,8 @@ export const LogEntry = Schema.Struct({ at: Schema.String, text: Schema.String, 
 
 export const Run = Schema.Struct({
   running: Schema.Boolean,
+  // no new fault while true (a fault in progress still heals); the run's clock is held, so its minutes are minutes of running
+  paused: Schema.Boolean,
   scenarios: Schema.Array(Schema.String),
   minutes: Schema.Finite,
   intervalSeconds: Schema.Finite,
@@ -107,6 +109,8 @@ export const StartRun = Schema.Struct({
 export type StartRun = typeof StartRun.Type;
 
 export const KillPod = Schema.Struct({ pod: Schema.String });
+// Hold (true) or continue (false) the run: no new fault while held.
+export const PauseRun = Schema.Struct({ paused: Schema.Boolean });
 // Start (on) or pause the generator; the numbers apply when it starts. Changing them while it runs restarts it.
 export const SetLoad = Schema.Struct({ on: Schema.Boolean, intervalSeconds: Schema.Finite, minCommands: Schema.Finite, maxCommands: Schema.Finite, wallets: Schema.Finite });
 export type SetLoad = typeof SetLoad.Type;

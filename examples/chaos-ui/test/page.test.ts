@@ -17,7 +17,7 @@ const state = (over: Partial<State> = {}): State => ({
     { name: "postgres-a", role: "postgres", phase: "Running", ready: true, restarts: 0, node: "crablet-lab-control-plane", ageSeconds: 600 }
   ],
   leaders: { views: "wallet-workers-a", automations: "wallet-workers-a", outbox: null },
-  run: { running: false, scenarios: [], minutes: 0, intervalSeconds: 0, holdSeconds: 0, startedAt: null, endsAt: null, faults: 0, log: [] },
+  run: { running: false, paused: false, scenarios: [], minutes: 0, intervalSeconds: 0, holdSeconds: 0, startedAt: null, endsAt: null, faults: 0, log: [] },
   verify: { running: false, step: "", result: null },
   pulse: { commandsPerSecond: 12.3, eventsPerSecond: 15, pendingEvents: 40, behindSeconds: 0.4 },
   load: { running: true, intervalSeconds: 5, minCommands: 10, maxCommands: 1000, wallets: 200, bursting: false, lastBurst: "514 commands in 3012 ms" },
@@ -128,6 +128,11 @@ describe("the page over time", () => {
     );
   });
 
+  test("pausing and resuming the run send their requests", () => {
+    Story.story(update, Story.given<Model>(shown(state())), Story.message(Message.ClickedPauseRun()), Story.Command.expectExact(Send({ path: "/api/run/pause", body: JSON.stringify({ paused: true }), label: "Pause the run" })), ...answered());
+    Story.story(update, Story.given<Model>(shown(state())), Story.message(Message.ClickedResumeRun()), Story.Command.expectExact(Send({ path: "/api/run/pause", body: JSON.stringify({ paused: false }), label: "Resume the run" })), ...answered());
+  });
+
   test("a scenario is chosen and unchosen by its checkbox", () => {
     Story.story(
       update,
@@ -181,6 +186,14 @@ describe("the page on screen", () => {
       (Scene.expect(Scene.role("button", { name: "Kill wallet-api-a" })) as any).toExist(),
       (Scene.expect(Scene.role("button", { name: "Kill postgres-a" })) as any).not.toExist()
     );
+  });
+
+  test("a run going offers Pause, a paused one offers Resume, and an idle one offers neither", () => {
+    const going = { running: true, paused: false, scenarios: ["kill-api"], minutes: 5, intervalSeconds: 30, holdSeconds: 20, startedAt: "2026-10-09T12:00:00.000Z", endsAt: "2026-10-09T12:05:00.000Z", faults: 1, log: [] };
+    const button = (name: string) => Scene.role("button", { name });
+    Scene.scene({ update, view }, Scene.given<Model>(shown(state({ run: going }))), (Scene.expect(button("Pause the run")) as any).toExist(), (Scene.expect(button("Resume the run")) as any).not.toExist());
+    Scene.scene({ update, view }, Scene.given<Model>(shown(state({ run: { ...going, paused: true } }))), (Scene.expect(button("Resume the run")) as any).toExist(), (Scene.expect(button("Pause the run")) as any).not.toExist());
+    Scene.scene({ update, view }, Scene.given<Model>(shown(state())), (Scene.expect(button("Pause the run")) as any).not.toExist(), (Scene.expect(button("Resume the run")) as any).not.toExist());
   });
 
   test("a finished verification shows each check with its verdict", () => {
