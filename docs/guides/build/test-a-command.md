@@ -54,7 +54,7 @@ What you can assert on the result of `.when`:
 `given(...)` takes events; a scenario value can run several `when`s in a row, and `.log` is everything in the store afterwards (empty after a refusal, because a failed
 command's changes are rolled back).
 
-A `.when` that ends `"idempotent"` leaves the log as it was, `prepare`'s appends included: the real executor rolls that transaction back too (an idempotent result writes no audit row, so committing would leave events with no command behind them).
+A `.when` that ends `"idempotent"` leaves the log as it was: the real executor rolls that transaction back too (an idempotent result writes no audit row).
 
 ## What this does not cover
 

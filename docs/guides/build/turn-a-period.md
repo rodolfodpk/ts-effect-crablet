@@ -43,7 +43,7 @@ export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
 - Both events need the model's binding tag (`wallet_id`) and the tags of the level (`year`, `month`): without them a period's query would never find its own opening, and every command would open it again. The
   framework checks this the first time it turns a period and names the missing tag.
 
-## Write the command without a `prepare`
+## Write the command
 
 The model is built from the id alone; the state `decide` receives carries `period: { key, fields, tags }`. Put `period.tags` on the events the command appends, and stamp them with `now`: it is the instant the period
 was decided at, so a timestamp and a period agree, also under a test clock.

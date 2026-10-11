@@ -14,7 +14,7 @@ From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `
 
 | Option | Default | What it does |
 |---|---|---|
-| `eventStore.wakeupMode` | `"coalesced"` | How appends wake the pollers. `coalesced`: one notification per window, after the commit. `off`: none; the pollers see new events on their interval ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). |
+| `eventStore.wakeupMode` | `"coalesced"` | How appends wake the pollers. `coalesced`: one notification per window, after the commit. `off`: none; the pollers see new events on their interval, and the views, automations and outbox modules do not `LISTEN` ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md), [ADR-0028](../adr/0028-settings-the-framework-decides.md)). |
 | `eventStore.wakeupWindowMs` | `50` | The coalescing window. `0` sends after each commit without waiting. |
 | `audit.payload` | `"redacted"` | What the command audit stores of each input: `redacted` (fields marked `personal(...)` replaced), `full`, `none` (no payload), or `off` (no audit). |
 | `session` | none | A direct connection, same shape as `pg`, for what cannot go through a pooler in transaction mode: the leader locks and `LISTEN`. Omitted, they use `pg` ([ADR-0024](../adr/0024-session-connections-for-leader-and-listen.md)). |

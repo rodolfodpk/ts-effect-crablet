@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (API redesign, Phases 1-6). Narrowed by [ADR-0027](0027-a-taken-id-is-decided-not-flagged.md): `onDuplicate` is removed.
+Accepted (API redesign, Phases 1-6). Narrowed by [ADR-0027](0027-a-taken-id-is-decided-not-flagged.md) (`onDuplicate` is removed) and [ADR-0029](0029-a-lookup-cannot-write-and-is-protected.md) (`prepare` becomes a read-only, protected `resolve`).
 
 ## Context
 
