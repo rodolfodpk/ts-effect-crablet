@@ -1,5 +1,7 @@
 # Dynamic Consistency Boundaries: one decision, several entities
 
+*Concept · anyone who knows aggregates, or none · the [README](../../README.md) read · 15 minutes*
+
 *An unfamiliar word? See the [glossary](../reference/glossary.md). All documents: [docs/README.md](../README.md).*
 
 Most event-sourcing frameworks make you pick an *aggregate* up front: every event belongs to one stream, and

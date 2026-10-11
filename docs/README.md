@@ -24,6 +24,10 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | Page | The idea |
 |---|---|
 | [Consistency boundaries (the DCB guide)](./concepts/dcb-guide.md) | A command declares the events its decision depends on; two commands conflict only when one changes what the other relied on. |
+| [Views and delivery](./concepts/views-and-delivery.md) | What reaches a view, an automation or an outbox publisher, and how often: no event skipped, at least once, a view's batch applied once. |
+| [Reading your own writes](./concepts/read-your-writes.md) | A command returns a marker; a read that carries it includes the write, or answers `503`. Pings for clients that did not write. |
+| [Background processors](./concepts/background-processors.md) | One leader per module, fenced; what happens when an instance dies; one process or several deployments. |
+| [Events over time](./concepts/events-over-time.md) | Changing an event, personal data, and a log that grows: what is solved and what is not. |
 | [Architecture](./concepts/architecture.md) | The system and its core flows, in diagrams. |
 | [C4 models](./concepts/c4-examples.md) | The two example applications, as context, container and component diagrams. |
 | [Course enrolment as an Event Model](./concepts/event-model.md) | The README's example as events, commands and a view, laid out on a timeline. |

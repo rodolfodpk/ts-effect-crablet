@@ -800,7 +800,7 @@ on the cluster delays every poller (views, outbox, automations) until it finishe
 
 `effect`, `@effect/sql-pg`, `@effect/platform-node` all pinned to `4.0.0` (they were `4.0.0-rc.118` until the stable release on 2026-10-01; the bump needed no code change); `@effect/sql` and
 `@effect/platform` dropped (now `effect/sql`, `effect/http`, `effect/http-api`). Decision and the full
-list of non-obvious changes: [ADR-0009](../adr/0009-effect-4-release-candidate.md). Everything
+list of non-obvious changes: [ADR-0009](../adr/0009-build-on-effect-4-pinned.md). Everything
 passes: typecheck, 84 unit tests, 89 integration tests (3 consecutive clean runs).
 
 Things that only failed at runtime, not in the type checker (worth remembering for the next bump):

@@ -22,9 +22,9 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Position** - the number an event gets in the log when it is stored.
 - **Cursor** - how far a consumer has read: a `(transaction_id, position)` pair, not a bare position, so a late-committing transaction is never skipped. [ADR-0012](../adr/0012-transaction-position-cursors.md)
 - **Horizon** - a cursor placed before everything a read could have missed. `all(...)` uses the earliest horizon of its members as its cursor. [ADR-0018](../adr/0018-model-snapshots.md) (decision 8)
-- **Poller** - the loop that reads new events after a cursor and hands them to a handler. Views, the outbox and automations are pollers. [Reference](./README.md#views-the-outbox-and-automations)
+- **Poller** - the loop that reads new events after a cursor and hands them to a handler. Views, the outbox and automations are pollers. [Views and delivery](../concepts/views-and-delivery.md)
 - **Leader** - the one process that runs a **module**'s pollers (all the views, or all the automations, or all the outbox publishers), chosen by a PostgreSQL advisory lock held for the session: one lock per module, not per processor. [Architecture](../concepts/architecture.md#one-lock-per-module-one-leader-per-lock), [ADR-0006](../adr/0006-leader-election-via-sql-reserve.md)
-- **Fence** - the check, before a handler runs and before the cursor moves, that this process still holds its module's lock, so a stale leader cannot deliver or rewind.
+- **Fence** - the check, before a handler runs and before the cursor moves, that this process still holds its module's lock, so a stale leader cannot deliver or rewind. [Background processors](../concepts/background-processors.md)
 - **At-least-once** - an event may be delivered again after a crash, but is never skipped.
 - **LISTEN/NOTIFY** - PostgreSQL's wake-up channel; it tells pollers that something new exists. It only wakes them; the cursor is what guarantees nothing is missed. [ADR-0005](../adr/0005-listen-notify-implementation.md)
 - **Wake-up window** - how the event store sends the wake-up: not inside every append, but once per window (50 ms by default) after the commit, carrying the union of what was appended; the first one after an idle spell goes at once. `wakeupMode: "off"` sends none. [ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)
@@ -35,7 +35,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 - **View** - a read model kept in a table by a projector. It updates asynchronously. [Tutorial step 4](../tutorial/04-read-your-own-writes.md)
 - **Projector** - the handler that turns events into view rows (`ViewProjector`).
-- **Marker** - a token a command returns saying where in the log its write ended. A read that carries it (`?consistentWith=<marker>`) waits until the views have that write. [ADR-0015](../adr/0015-read-consistency-by-marker.md)
+- **Marker** - a token a command returns saying where in the log its write ended. A read that carries it (`?consistentWith=<marker>`) waits until the views have that write. [Reading your own writes](../concepts/read-your-writes.md)
 - **Strict read** - the default: the answer is right or a `503`, never stale.
 - **Outbox** - events published to something outside the database, per topic, from the same log and with the same delivery guarantees. [Reference](./README.md#packages)
 - **Automation** - a reaction: when an event appears, issue a follow-up command.
