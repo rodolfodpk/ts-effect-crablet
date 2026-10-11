@@ -1,7 +1,7 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { HttpApiBuilder } from "effect/http-api";
-import { SqlClient } from "effect/sql";
+import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import { makeConsistentRead } from "@crablet/views-http";
 import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
@@ -10,12 +10,32 @@ import { WalletNotFoundProblem } from "./WalletProblems.ts";
 import { decodeWalletCursor, encodeWalletCursor } from "./WalletListPaging.ts";
 import { decodeTransactionCursor, encodeTransactionCursor, maxPageSize, parseLimit } from "./TransactionPaging.ts";
 
-interface BalanceRow {
-  readonly wallet_id: string;
-  readonly owner: string;
-  readonly balance: string;
-  readonly last_updated_at: Date;
-}
+// A row of wallet_balance_view as the database sends it, checked on every read: a column that was renamed or changed type fails here, naming the field, and not later in a conversion.
+// `balance` is a numeric, which the driver sends as text: it becomes a number here.
+const BalanceRow = Schema.Struct({
+  wallet_id: Schema.String,
+  owner: Schema.String,
+  balance: Schema.FiniteFromString,
+  last_updated_at: Schema.Date
+});
+
+// One page of the list, by keyset on wallet_id; `after` null is the first page.
+const listBalances = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findAll({
+    Request: Schema.Struct({ after: Schema.NullOr(Schema.String), limit: Schema.Number }),
+    Result: BalanceRow,
+    execute: ({ after, limit }) =>
+      after === null
+        ? sql.unsafe("SELECT * FROM wallet_balance_view ORDER BY wallet_id LIMIT $1", [limit])
+        : sql.unsafe("SELECT * FROM wallet_balance_view WHERE wallet_id > $1 ORDER BY wallet_id LIMIT $2", [after, limit])
+  });
+
+const findBalance = (sql: SqlClient.SqlClient) =>
+  SqlSchema.findOneOption({
+    Request: Schema.Struct({ walletId: Schema.String }),
+    Result: BalanceRow,
+    execute: ({ walletId }) => sql.unsafe("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [walletId])
+  });
 
 interface TransactionRow {
   readonly transaction_id: string;
@@ -81,15 +101,11 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
             ({ limit, after }: { readonly limit: number; readonly after: string | null }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const rows = yield* Effect.orDie(
-                  after === null
-                    ? sql.unsafe<BalanceRow>("SELECT * FROM wallet_balance_view ORDER BY wallet_id LIMIT $1", [limit + 1])
-                    : sql.unsafe<BalanceRow>("SELECT * FROM wallet_balance_view WHERE wallet_id > $1 ORDER BY wallet_id LIMIT $2", [after, limit + 1])
-                );
+                const rows = yield* Effect.orDie(listBalances(sql)({ after, limit: limit + 1 }));
                 const page = rows.slice(0, limit);
                 const last = page[page.length - 1];
                 return {
-                  wallets: page.map((row) => ({ walletId: row.wallet_id, owner: row.owner, balance: Number(row.balance), lastUpdatedAt: row.last_updated_at.toISOString() })),
+                  wallets: page.map((row) => ({ walletId: row.wallet_id, owner: row.owner, balance: row.balance, lastUpdatedAt: row.last_updated_at.toISOString() })),
                   next: rows.length > limit && last !== undefined ? encodeWalletCursor(last.wallet_id) : null
                 };
               })
@@ -102,13 +118,13 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
             (params: { readonly walletId: string }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const rows = yield* Effect.orDie(sql.unsafe<BalanceRow>("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [params.walletId]));
-                const row = rows[0];
-                if (!row) return yield* Effect.fail(WalletNotFoundProblem.of(params.walletId));
+                const found = yield* Effect.orDie(findBalance(sql)({ walletId: params.walletId }));
+                if (Option.isNone(found)) return yield* Effect.fail(WalletNotFoundProblem.of(params.walletId));
+                const row = found.value;
                 return {
                   walletId: row.wallet_id,
                   owner: row.owner,
-                  balance: Number(row.balance),
+                  balance: row.balance,
                   lastUpdatedAt: row.last_updated_at.toISOString()
                 };
               })
