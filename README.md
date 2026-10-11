@@ -132,16 +132,9 @@ Effect.runPromise(Effect.provide(program, AppLive));
 
 | You want to | Read |
 |---|---|
-| Find anything | [Documentation map](./docs/README.md), and the [glossary](./docs/reference/glossary.md) for any unfamiliar word |
-| Build something, step by step | [Tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP + OpenAPI, read-your-writes, a UI |
-| See how it fits together | [Architecture](./docs/concepts/architecture.md): diagrams of the system and the core flows; [C4 models](./docs/concepts/c4-examples.md) of the two example applications |
-| Understand the idea | [DCB guide](./docs/concepts/dcb-guide.md) |
-| See a full application | [`examples/wallet-example-app`](./examples/wallet-example-app/README.md): five commands, four views, an automation, an outbox |
-| Do one task (add a view, an automation, test, run, monitor) | [Task guides](./docs/guides/README.md) |
-| Run the wallet on a local Kubernetes cluster, watch it on a dashboard, and break it on purpose | [Run the kind lab](./docs/guides/operate/run-the-kind-lab.md) |
-| Change an event safely | [Evolving events](./docs/guides/build/evolving-events.md) |
-| Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference/README.md) |
-| Know why it is built this way | [Design decisions](./docs/adr/README.md) (start with [ADR-0010](./docs/adr/0010-declarative-command-api.md)) |
-| Contribute | [`CONTRIBUTING.md`](./CONTRIBUTING.md): set up, run one test, common tasks |
+| Try it | [The quick start](./examples/quickstart/README.md): one command, no database |
+| Learn it | [The tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP and OpenAPI, reading your own writes, a web page |
+| Understand it | [Consistency boundaries](./docs/concepts/dcb-guide.md) and the [architecture](./docs/concepts/architecture.md) |
+| Find anything else | [The documentation map](./docs/README.md): guides for building and operating, the reference, the decisions |
 
 Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference/README.md#build--test).
