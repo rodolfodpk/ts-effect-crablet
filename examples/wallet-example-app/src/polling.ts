@@ -4,8 +4,6 @@
 export interface Polling {
   readonly pollingIntervalMs: number;
   readonly backoffMaxSeconds: number;
-  // false (WALLET_WAKEUPS=off): the processors do not LISTEN; they see new events only on their interval.
-  readonly listenForWakeups?: boolean;
 }
 export const defaultPolling: Polling = { pollingIntervalMs: 1000, backoffMaxSeconds: 10 };
 

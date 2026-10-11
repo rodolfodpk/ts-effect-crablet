@@ -20,7 +20,7 @@ before(async () => {
   await applyAppMigrations(db.connInfo);
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: "wallet-off" });
   runtime = ManagedRuntime.make(Layer.provideMerge(Layer.mergeAll(CommandExecutorLive, makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive), pgLayer) as unknown as Layer.Layer<CoreServices, never>);
-  app = await startWalletAppForTest(runtime, undefined, undefined, { polling: { pollingIntervalMs: 200, backoffMaxSeconds: 1, listenForWakeups: false } });
+  app = await startWalletAppForTest(runtime, undefined, undefined, { polling: { pollingIntervalMs: 200, backoffMaxSeconds: 1 } });
 }, { timeout: 60_000 });
 after(async () => { await app.stop(); await runtime.dispose(); await db.stop(); });
 

@@ -166,7 +166,11 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
 // satisfy it. `yield* SqlClient.SqlClient` just below is exactly this: "ask the ambient context
 // for the SqlClient service" (it's requested inline, right where it's needed, and TypeScript tracks that
 // requirement in the enclosing function's `R` type parameter automatically).
-export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effect(
+// Whether this process's event store sends wake-ups (ADR-0021, ADR-0028): `makeEventStoreLayer` provides it, and the views, automations and outbox modules read it, so they
+// LISTEN only when something will be sent. One setting, not one per module. (A `Reference` has a default, so code built without the layer behaves as "coalesced".)
+export const Wakeups = Context.Reference<"coalesced" | "off">("crablet/Wakeups", { defaultValue: () => "coalesced" });
+
+export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merge(Layer.succeed(Wakeups, config.wakeupMode ?? "coalesced"), Layer.effect(
   EventStore,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -291,7 +295,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
 
     return service;
   })
-);
+));
 
 // The default: coalesced wake-ups, 50 ms window (ADR-0021).
 export const EventStoreLive = makeEventStoreLayer();
