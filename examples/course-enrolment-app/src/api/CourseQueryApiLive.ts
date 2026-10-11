@@ -8,12 +8,7 @@ import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyCon
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
 import { courseSeatsViewSubscription } from "../views/CourseSeatsViewProjector.ts";
-
-interface SeatsRow {
-  readonly course_id: string;
-  readonly capacity: number;
-  readonly subscribers: number;
-}
+import { qb, run } from "../views/queryBuilder.ts";
 
 // `text` as a SQL LIKE pattern that matches ids STARTING with it: `\`, `%` and `_` are escaped, or "a_" would also match "ab".
 export const likePrefix = (text: string): string => `${text.replace(/[\\%_]/g, "\\$&")}%`;
@@ -62,11 +57,14 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
             ({ limit, after, q }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const rows = yield* sql.unsafe<SeatsRow>(
-                  `SELECT course_id, capacity, subscribers FROM course_seats_view
-                   WHERE ($1::text IS NULL OR course_id > $1) AND ($2::text IS NULL OR course_id LIKE $2 ESCAPE '\\')
-                   ORDER BY course_id LIMIT $3`,
-                  [after ?? null, q === undefined || q === "" ? null : likePrefix(q), limit + 1]
+                // `after` and `q` are optional filters; one more row than the page is read, to know whether there is a next page. (LIKE escapes with a backslash unless told otherwise, which is what likePrefix assumes.)
+                const rows = yield* run(sql,
+                  qb.selectFrom("course_seats_view")
+                    .select(["course_id", "capacity", "subscribers"])
+                    .$if(after !== undefined, (query) => query.where("course_id", ">", after!))
+                    .$if(q !== undefined && q !== "", (query) => query.where("course_id", "like", likePrefix(q!)))
+                    .orderBy("course_id")
+                    .limit(limit + 1)
                 ).pipe(Effect.orDie);
                 const page = rows.slice(0, limit);
                 return {
@@ -86,9 +84,9 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
             (params: { readonly courseId: string }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
-                const rows = yield* sql.unsafe<SeatsRow>("SELECT course_id, capacity, subscribers FROM course_seats_view WHERE course_id = $1", [
-                  params.courseId
-                ]).pipe(Effect.orDie);
+                const rows = yield* run(sql,
+                  qb.selectFrom("course_seats_view").select(["course_id", "capacity", "subscribers"]).where("course_id", "=", params.courseId)
+                ).pipe(Effect.orDie);
                 const row = rows[0];
                 if (!row) return yield* Effect.fail(domainProblemOf("not_found", new CourseNotFound({ courseId: params.courseId })));
                 return { courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers };

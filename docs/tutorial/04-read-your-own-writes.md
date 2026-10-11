@@ -12,6 +12,8 @@ are left?" could see the old answer. Add a **view** - a table kept up to date by
 // touch one course are written one after another (their commands share a boundary), so a course's positions only grow;
 // for events of unrelated transactions, delivery order is not position order, so key idempotency on the event instead.
 //
+// The SQL is built with Kysely against the types generated from the migrated schema (db.generated.ts): a misspelled column, a value of the wrong type or a column a migration renamed is a compile error, not a failure at the first event.
+//
 // `decodeStored` reads the payload through the event's own definition: one this definition cannot read fails the batch with a typed `EventDecodingError`
 // (position, type, issues), which the processor records against the view, instead of projecting something wrong. Casting `event.data` would validate nothing.
 const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
@@ -19,19 +21,20 @@ const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effec
     switch (event.type) {
       case CourseDefined.type: {
         const data = yield* CourseDefined.decodeStored(event);
-        yield* sql.unsafe(
-          `INSERT INTO course_seats_view (course_id, capacity, subscribers, last_position) VALUES ($1, $2, 0, $3)
-           ON CONFLICT (course_id) DO NOTHING`,
-          [data.courseId, data.capacity, event.position.toString()]
+        yield* run(sql,
+          qb.insertInto("course_seats_view")
+            .values({ course_id: data.courseId, capacity: data.capacity, subscribers: 0, last_position: event.position })
+            .onConflict((oc) => oc.column("course_id").doNothing())
         );
         return;
       }
       case StudentSubscribed.type: {
         const data = yield* StudentSubscribed.decodeStored(event);
-        yield* sql.unsafe(
-          `UPDATE course_seats_view SET subscribers = subscribers + 1, last_position = $2
-           WHERE course_id = $1 AND last_position < $2`,
-          [data.courseId, event.position.toString()]
+        yield* run(sql,
+          qb.updateTable("course_seats_view")
+            .set((eb) => ({ subscribers: eb("subscribers", "+", 1), last_position: event.position }))
+            .where("course_id", "=", data.courseId)
+            .where("last_position", "<", event.position)
         );
         return;
       }

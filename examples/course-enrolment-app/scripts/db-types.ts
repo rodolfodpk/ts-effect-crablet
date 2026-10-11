@@ -14,12 +14,15 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const generatedFile = path.join(root, "src", "views", "db.generated.ts");
 const codegen = createRequire(import.meta.url).resolve("kysely-codegen/dist/cli/bin.js");
 
-// Only this app's view tables (not the event store's). `int8` is mapped to our own Int8 (src/views/pgTypes.ts): @effect/sql-pg gives a BIGINT back as a bigint, where kysely-codegen's default says text.
+// Only this app's view tables (not the event store's). No type overrides: kysely-codegen's override options need the TypeScript compiler API, which TypeScript 7 does not expose, and what the driver hands back that the database
+// cannot tell (a BIGINT is a bigint with @effect/sql-pg) is corrected in src/views/queryBuilder.ts, so this file stays exactly what the tool writes.
+// #region codegen-options
 const options = [
   "--dialect", "postgres",
   "--include-pattern", "course_*",
   "--log-level", "error"
 ];
+// #endregion codegen-options
 
 // `outFile` is where the types are written, or the file that is checked: the committed one unless a test says otherwise.
 export const generateDbTypes = async (mode: "write" | "verify", outFile: string = generatedFile): Promise<void> => {

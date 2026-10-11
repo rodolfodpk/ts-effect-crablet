@@ -1,5 +1,5 @@
-// Runs under Node (Testcontainers). The seats view's projector with its SQL built by Kysely (src/views/CourseSeatsViewProjectorKysely.ts): it must behave exactly like the hand-written one, and its writes must join the transaction
-// of the `sql` it is given, because Kysely here only builds the query and never holds a connection.
+// Runs under Node (Testcontainers). The seats view's queries are built with Kysely (src/views/queryBuilder.ts), which only builds them and never holds a connection: their writes must join the transaction of the `sql` the projector is given
+// (what makes a failed batch roll back with its cursor), and the types they are checked against must catch a misspelled column or a value of the wrong type. (That the projector applies each event once is in course-view.test.ts.)
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
@@ -9,7 +9,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { CourseDefined, StudentSubscribed } from "../../src/domain/Enrolment.ts";
-import { makeCourseSeatsViewProjectorKysely } from "../../src/views/CourseSeatsViewProjectorKysely.ts";
+import { makeCourseSeatsViewProjector } from "../../src/views/CourseSeatsViewProjector.ts";
 import { qb } from "../../src/views/queryBuilder.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -44,30 +44,13 @@ const seats = (courseId: string) =>
     })
   );
 
-describe("course seats view projector, SQL built by Kysely", () => {
-  it("applies each event once: a redelivered or older event changes nothing (the same behaviour as the hand-written projector)", async () => {
-    const courseId = `c-${crypto.randomUUID().slice(0, 8)}`;
-    const defined = stored(CourseDefined.type, { courseId, capacity: 3 }, 100n);
-    const first = stored(StudentSubscribed.type, { studentId: "ann", courseId }, 101n);
-    const second = stored(StudentSubscribed.type, { studentId: "bob", courseId }, 102n);
-    await runtime.runPromise(
-      Effect.gen(function* () {
-        const projector = yield* makeCourseSeatsViewProjectorKysely();
-        yield* projector.handle([defined, first]);
-        yield* projector.handle([first]); // delivered again
-        yield* projector.handle([defined, first, second]); // a whole batch again, plus one new event
-        yield* projector.handle([first]); // older than the row's last position
-      })
-    );
-    assert.deepStrictEqual(await seats(courseId), { subscribers: 2, capacity: 3, last_position: 102n });
-  });
-
+describe("course seats view queries (Kysely)", () => {
   it("its writes are in the transaction of the sql it is given: if the batch's transaction rolls back, the view rolls back with it", async () => {
     const courseId = `c-${crypto.randomUUID().slice(0, 8)}`;
     const exit = await runtime.runPromiseExit(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        const projector = yield* makeCourseSeatsViewProjectorKysely();
+        const projector = yield* makeCourseSeatsViewProjector();
         // what the processor does: the batch and the cursor in one transaction, which here fails after the projector has written
         yield* sql.withTransaction(
           Effect.gen(function* () {

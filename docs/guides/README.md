@@ -6,6 +6,7 @@ Short pages for "how do I...?". Each one is a checklist with the code from a rea
 | I want to... | Guide |
 |---|---|
 | Keep a read model (a table) up to date from events | [Add a view](add-a-view.md) |
+| Change the schema and keep the queries type-checked (migrate, generate the types, test) | [The database workflow](database-workflow.md) |
 | React to an event by issuing a command | [Add an automation](add-an-automation.md) |
 | Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](expose-a-command-over-http.md) |
 | Test a command's decisions without a database | [Test a command](test-a-command.md) |

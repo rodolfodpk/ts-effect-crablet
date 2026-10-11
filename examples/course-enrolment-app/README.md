@@ -20,8 +20,8 @@ node src/index.ts           # the API on :8080 (set PORT to change it; COURSES_D
 |---|---|
 | `src/domain/` | events, models, the two contracts (`enrolment.contract.ts`) and the commands |
 | `src/CourseApi.ts`, `src/CourseApp.ts` | the API declared from contracts, and the server that implements it |
-| `src/views/`, `src/api/` | the seat-map view and the read endpoints |
-| `scripts/` | `generate-openapi.ts` (writes [`docs/api/course-enrolment-openapi.json`](../../docs/api/course-enrolment-openapi.json)), `step2-postgres.ts`, `bench-reads.ts` (what a consistent read costs; needs Docker) |
+| `src/views/`, `src/api/` | the seat-map view and the read endpoints; their queries are built with Kysely (`queryBuilder.ts`) against the types generated from the migrations (`db.generated.ts`, [the database workflow](../../docs/guides/database-workflow.md)) |
+| `scripts/` | `db-types.ts` (`npm run db:types` writes `src/views/db.generated.ts`, `npm run db:types:check` verifies it), `generate-openapi.ts` (writes [`docs/api/course-enrolment-openapi.json`](../../docs/api/course-enrolment-openapi.json)), `step2-postgres.ts`, `bench-reads.ts` (what a consistent read costs; needs Docker) |
 | `tutorial/` | the step 1 test the tutorial shows |
 | `test/` | unit tests, including the one that keeps the tutorial's code equal to these files; `test/integration/` needs Docker |
 
