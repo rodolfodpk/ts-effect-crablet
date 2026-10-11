@@ -49,7 +49,7 @@ What you can assert on the result of `.when`:
 
 - `outcome`: `"created"` (events were appended) or `"idempotent"` (the operation had already been done; nothing appended);
 - `events`: the events that were appended, with `type`, `data` and `tags`;
-- `error`: a domain error, `InvalidInput` for a bad payload, or `Duplicate` and `Conflict` from the append.
+- `error`: a domain error, `InvalidInput` for a bad payload, or `Conflict` from the append.
 
 `given(...)` takes events; a scenario value can run several `when`s in a row, and `.log` is everything in the store afterwards (empty after a refusal, because a failed
 command's changes are rolled back).

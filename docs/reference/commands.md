@@ -17,8 +17,7 @@ From `@crablet/commands/Command`.
 | `model` | no | none | `(input, prepared) => Model.of({ id })`, or `all({ a: ..., b: ... })` for several. Gives `decide` its state and the command its boundary. Without it, `decide` gets `undefined` and the default consistency is `concurrent()`. |
 | `errors` | for each domain error | `[]` | The `DomainError` classes `decide` or `prepare` can fail with. A missing class is a compile error that names it. The HTTP layer documents and maps them. |
 | `consistency` | no | `strict()` | `strict()`: anything in the boundary changed since loading refuses the append. `concurrent({ guard })`: safe to run in parallel with itself; only the `guard` events can conflict (deposits). |
-| `idempotentBy` | no | none | `(input) => Event.where({ ... })`. If a matching event exists, the command is "already done". Checked before `decide`, and again at the append. Required for a command an automation issues. |
-| `onDuplicate` | no | `"return"` | What a repeat answers: `"return"` reports success, `"fail"` fails with `Duplicate` (for example "open a wallet that already exists"). |
+| `idempotentBy` | no | none | `(input) => Event.where({ ... })`, keyed on something that identifies one **request** (a deposit id, a transfer id). If a matching event exists, the command is "already done" (200). Checked before `decide`, and again at the append. Required for a command an automation issues. For an id the caller chose (a wallet, a course), decide instead: see below. |
 | `retries` | no | `3` | How many times a `Conflict` re-runs the whole command on fresh state. `0` turns retrying off. |
 | `prepare` | no | none | `(input, eventStore) => Effect`. An effectful step inside the command's transaction, before the model is loaded. Give any append in it a condition. Do not use it to turn a period; declare `.period` on the model. |
 
@@ -29,6 +28,12 @@ From `@crablet/commands/Command`.
 | `emit(event, ...)` | `created`: the events are appended under the consistency condition | `201` with a `marker` |
 | `noop(reason)` | `idempotent`: nothing appended | `200` |
 | `fail(new SomeError(...))` | the domain error; nothing appended | the status of the error's `kind` (below) |
+
+## An id that is already taken
+
+When the caller chooses the id of what a command creates, decide it from a model: nothing there, emit; the same request again (the fields sent are the
+ones stored), `noop` ("already done", 200); something else under that id, fail with a declared domain error of kind `conflict` (409). The wallet's
+`OpenWallet` and the course app's `DefineCourse` do this ([ADR-0027](../adr/0027-a-taken-id-is-decided-not-flagged.md)).
 
 ## Domain error kinds
 
@@ -47,7 +52,6 @@ A `DomainError` declares a `kind`, which decides its HTTP status. It is document
 |---|---|---|
 | `InvalidInput` | the input does not match the schema; lists every failing field | `400` |
 | `Conflict` | the boundary changed, and the retries ran out | `409` |
-| `Duplicate` | a repeat, with `onDuplicate: "fail"` | `409` |
 | `EventDecodingError` | a stored event in the boundary does not fit its current definition | `500` (logged with the event; never skipped) |
 
 ## `defineModel`

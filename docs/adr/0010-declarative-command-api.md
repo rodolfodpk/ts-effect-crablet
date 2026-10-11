@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (API redesign, Phases 1-6)
+Accepted (API redesign, Phases 1-6). Narrowed by [ADR-0027](0027-a-taken-id-is-decided-not-flagged.md): `onDuplicate` is removed.
 
 ## Context
 
