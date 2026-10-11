@@ -53,6 +53,13 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | Watch it on a Grafana dashboard, with alerts | [See it on a dashboard](./guides/operate/dashboard.md) |
 | Run it on a local Kubernetes cluster and break it on purpose | [Run the kind lab](./guides/operate/run-the-kind-lab.md) |
 
+## Evidence: can I trust it?
+
+| Page | What is in it |
+|---|---|
+| [Guarantees and evidence](./evidence.md) | Each guarantee, the test that checks it, the numbers measured and the known limits. |
+| [Reliability and scale report](./history/plans/reliability-and-scale-diagnostic.md), [the kind lab](./history/plans/kind-lab.md) | The full records behind the numbers. |
+
 ## Reference: look things up
 
 | Page | What is in it |
@@ -77,7 +84,6 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | Page | What it is |
 |---|---|
 | [Design decisions](./adr/README.md) | The architecture decision records (ADRs): one file per lasting decision, with its context and consequences. |
-| [Reliability and scale report](./history/plans/reliability-and-scale-diagnostic.md) | What was measured under failure and at scale, and what was fixed. |
 | [Plans](./history/plans/README.md) and the [work log](./history/NOTES.md) | Records of how the work went. You do not need them to use the project. |
 | [CONTRIBUTING](../CONTRIBUTING.md) | Set up, run one test, change the schema or the API, and where a new page goes. |
 

@@ -54,7 +54,7 @@ List the commands' **contracts** (`commandContract({ name, input, errors })`) an
 - **Storage.** `storageReport()` and `monitorStorage()` (`@crablet/eventstore/Storage`) report the size of the log and its indexes, and `metrics-otel`
   exposes them as `crablet.storage.*` gauges; `examples/wallet-example-app/scripts/report-storage.ts` prints the report. A tag-key table keeps the pollers'
   tag filters cheap (about 1.2 KB per event in all). Nothing deletes events, and retention is not decided ([ADR-0019](../adr/0019-storage-visibility-and-the-tag-table.md)).
-- **Evidence.** What was measured, what broke and what was fixed: [`docs/history/plans/reliability-and-scale-diagnostic.md`](../history/plans/reliability-and-scale-diagnostic.md).
+- **Evidence.** What is guaranteed, how each guarantee is tested, and what was measured: [guarantees and evidence](../evidence.md).
 
 ## Packages
 

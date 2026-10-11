@@ -1,0 +1,51 @@
+# Guarantees and evidence
+
+*Evidence · anyone deciding whether to trust it · the [README](../README.md) read · 10 minutes*
+
+What the framework guarantees, the test that checks each guarantee, what was measured, and the limits that are known. Every number here has a source
+in the project's records, and the records say how firm each one is. All measurements were taken on one laptop with Docker, so treat them as an order
+of magnitude, not as capacity.
+
+## The guarantees, and what checks them
+
+| Guarantee | What it means | Checked by |
+|---|---|---|
+| **No lost update within a boundary** | Two commands whose boundaries overlap cannot both decide on the same state; the second is refused and re-run on fresh state. | Race tests on Postgres that hold every racer at a barrier until all have loaded, so the overlap is forced, not hoped for: [`enrolment-guide-postgres.test.ts`](../packages/commands/test/integration/enrolment-guide-postgres.test.ts), [`transfer-guide-postgres.test.ts`](../packages/commands/test/integration/transfer-guide-postgres.test.ts), [`dcb-examples-postgres.test.ts`](../packages/commands/test/integration/dcb-examples-postgres.test.ts) |
+| **No contention between disjoint boundaries** | Commands that share no events never conflict. | The same race tests, with retries turned off. |
+| **The in-memory store behaves like Postgres** | Tests written with `given(...)` mean what they say. | One conformance suite, [`conformance/cases.ts`](../packages/eventstore/test/conformance/cases.ts), run against both stores. |
+| **No event is skipped** | Every event a view, automation or publisher selects reaches it, even one committed late. | A transaction that commits out of order is forced in [`cursor-inversion.test.ts`](../packages/event-poller/test/integration/cursor-inversion.test.ts); concurrent writers in [`cursor-concurrent-writers.test.ts`](../packages/event-poller/test/integration/cursor-concurrent-writers.test.ts). The design is [ADR-0012](./adr/0012-transaction-position-cursors.md). |
+| **A view applies a repeated batch once** | A crash or two leaders on one batch do not double a view's numbers. | [`view-exactly-once.test.ts`](../packages/views/test/integration/view-exactly-once.test.ts): fails without the change, passes with it ([ADR-0023](./adr/0023-view-batch-and-cursor-in-one-transaction.md)). |
+| **One leader, fenced** | A process that lost its lock stops before it handles or moves a cursor. | The leader experiments in the reliability report (D1, D2), re-run after the fix; the kind lab. |
+| **Reads are never silently stale** | A read with a marker includes the write, or answers `503`. | The read-consistency tests in `packages/views-http` and the wallet's end-to-end test. |
+| **A stored event that no longer fits is never misread** | It fails with a typed `EventDecodingError` naming it, and is never skipped. | The event-evolution tests and experiment E7 ([ADR-0017](./adr/0017-event-evolution-by-compatibility.md)). |
+
+**How good the tests are.** Line coverage of the packages, merged from the unit and the integration suites, is gated in CI (99.7 % when the gate was set).
+Coverage only says a line ran, so the correctness core was also broken by hand on purpose, 17 times: three breaks survived, and all three were real
+gaps, now closed ([test coverage](./history/plans/test-coverage.md)). Mutation testing by a tool is [proposed](./history/plans/mutation-testing.md), not built.
+
+## Numbers
+
+| What | Measured | Source |
+|---|---|---|
+| Loading 1,000,000 events through the append path | about **15,000 events/s** | reliability report, E9 |
+| Size of an event with several tags, with its indexes and tag rows | about **1.2 KB** | reliability report, E9 |
+| A transfer (`all` over two accounts) from an account with 100,000 events | **218 ms** | reliability report, E5d |
+| Takeover after a leader **crashes** | within the retry interval: 0.2 to 4.2 s with the 5 s default (six runs) | reliability report, D1b |
+| Takeover after a **graceful stop** | **0.04 to 0.10 s** | reliability report, D1c |
+| Takeover when a leader **pod is killed** in Kubernetes | **0.4 s**, nothing lost | kind lab, `kill` |
+| Takeover after a **silent network partition** | **13 to 29 s** with Postgres keepalives 10/5/3; **388 s** with the keepalives RDS ships | kind lab, `partition-*` |
+| A stale leader's handler calls after losing its session | **0** (723 before the fix) | reliability report, D1 |
+| Acknowledged commands missing from the views after a rolling update, a killed pod, a lost node or a partition | **0** in every scenario | kind lab |
+
+The full records, with every experiment, what was wrong before each fix and how firm each number is:
+[the reliability and scale report](./history/plans/reliability-and-scale-diagnostic.md) and [the kind lab](./history/plans/kind-lab.md).
+
+## Known limits
+
+- **One PostgreSQL database.** There is no sharding or partitioning of the log.
+- **No retention.** Events are never deleted, and erasing personal data from the log is not built ([events over time](./concepts/events-over-time.md)).
+- **A long write transaction delays every view** until it ends, because no event is delivered while an older transaction is still open. Monitor idle-in-transaction sessions.
+- **A silent network partition is the slow failover case.** The lock is freed only when Postgres gives up on the connection, so the keepalive settings decide the delay. A lease with a deadline is a named follow-up.
+- **Running out of connections is quiet.** In the kind lab a fifth of the commands failed and nothing in the pods said why. Keep pool size times replicas under `max_connections` ([size the pool](./guides/operate/run-in-production.md#size-the-pool)).
+- **The start-up migration of the examples is not safe with several instances at once.** Use a migration job; Flyway passed the same race three times out of three (kind lab, `flyway-race`).
+- **Not verified on a managed cloud database.** RDS Proxy and RDS-specific behaviour were not tested.

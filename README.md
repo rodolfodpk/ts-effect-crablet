@@ -138,8 +138,8 @@ Effect.runPromise(Effect.provide(program, AppLive));
 - **After a write, your next read sees it.** A command returns a *marker*. A read that carries it waits until the views include that write, or
   answers `503`. It never returns stale data.
 - **Built to be run.** If a node dies, another takes over within seconds, and two nodes never handle the same events as leader at once. No event is
-  skipped, and changes to stored events are checked before a deploy. Each of these was measured
-  ([reliability report](./docs/history/plans/reliability-and-scale-diagnostic.md)).
+  skipped, and changes to stored events are checked before a deploy. Each of these is tested and measured
+  ([guarantees and evidence](./docs/evidence.md)).
 
 How the pieces fit (views, automations, the outbox, leadership), in diagrams: [Architecture](./docs/concepts/architecture.md).
 
