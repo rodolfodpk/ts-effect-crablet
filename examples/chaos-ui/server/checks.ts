@@ -2,7 +2,7 @@
 // was paused and the processors caught up (server.ts does that first); on a moving system a mismatch can be a read between two commits.
 //
 // The wallet's own rules decide what to check. Credits are `concurrent` (deposits commute with everything but a close), so the balance an event records is a snapshot of the moment it was decided and
-// may be stale BY DESIGN: a debit conflicts with other debits, not with a credit that commits meanwhile. That is reported as information. What must hold is on the log itself: the sum of the moves,
+// may be stale BY DESIGN (a debit is strict, so its own recorded balance is exact; a credit is not). That is reported as information. What must hold is on the log itself: the sum of the moves,
 // never negative; and whatever is built from the log (the views) must agree with that sum, which a projection that copies the recorded snapshot instead of applying the amount does not.
 import type { Client } from "pg";
 import type { Check } from "../src/contract.ts";
@@ -79,6 +79,32 @@ export const dataChecks = async (client: Client): Promise<ReadonlyArray<Check>> 
   const txView = await one(`SELECT (SELECT count(*) FROM wallet_transaction_view) AS rows,
       (SELECT count(*) FROM crablet_events WHERE type IN ('DepositMade', 'WithdrawalMade')) + 2 * (SELECT count(*) FROM crablet_events WHERE type = 'MoneyTransferred') AS expected`);
   add("The transaction view has a row for every move of money", n(txView["rows"]) === n(txView["expected"]), `${plural(n(txView["rows"]), "row")} in the view, ${plural(n(txView["expected"]), "row")} from the log`);
+
+  // 9. the balance a statement opens or closes with is the sum of the wallet's moves before that event. A late deposit that slips into a month after it was closed, or a period turned from a stale state, shows here.
+  // (Closed statements exist only once a month has turned: a lab that runs inside one month compares the opening balances only.)
+  const statements = await client.query(`
+    WITH moves AS MATERIALIZED (
+      SELECT transaction_id, position, data->>'walletId' AS wallet_id, (data->>'initialBalance')::numeric AS delta FROM crablet_events WHERE type = 'WalletOpened'
+      UNION ALL SELECT transaction_id, position, data->>'walletId', (data->>'amount')::numeric FROM crablet_events WHERE type = 'DepositMade'
+      UNION ALL SELECT transaction_id, position, data->>'walletId', -(data->>'amount')::numeric FROM crablet_events WHERE type = 'WithdrawalMade'
+      UNION ALL SELECT transaction_id, position, data->>'fromWalletId', -(data->>'amount')::numeric FROM crablet_events WHERE type = 'MoneyTransferred'
+      UNION ALL SELECT transaction_id, position, data->>'toWalletId', (data->>'amount')::numeric FROM crablet_events WHERE type = 'MoneyTransferred'
+    ), edges AS (
+      SELECT type, transaction_id, position, data->>'walletId' AS wallet_id,
+             CASE type WHEN 'WalletStatementOpened' THEN (data->>'openingBalance')::numeric ELSE (data->>'closingBalance')::numeric END AS recorded
+        FROM crablet_events WHERE type IN ('WalletStatementOpened', 'WalletStatementClosed')
+    ), compared AS (
+      SELECT e.*, (SELECT coalesce(sum(m.delta), 0) FROM moves m WHERE m.wallet_id = e.wallet_id AND (m.transaction_id, m.position) < (e.transaction_id, e.position)) AS expected FROM edges e
+    )
+    SELECT type, count(*) AS total, count(*) FILTER (WHERE recorded <> expected) AS wrong FROM compared GROUP BY 1`);
+  const edge = (type: string) => statements.rows.find((r: Record<string, unknown>) => r["type"] === type) as Record<string, unknown> | undefined;
+  const opened = n(edge("WalletStatementOpened")?.["total"] ?? 0), closed = n(edge("WalletStatementClosed")?.["total"] ?? 0);
+  const wrongEdges = n(edge("WalletStatementOpened")?.["wrong"] ?? 0) + n(edge("WalletStatementClosed")?.["wrong"] ?? 0);
+  add(
+    "A statement opens and closes with the sum of the log",
+    wrongEdges === 0,
+    `${plural(opened, "statement")} opened and ${closed} closed${closed === 0 ? " (no month has turned yet)" : ""}: ${wrongEdges} with an opening or closing balance other than the sum of the wallet's moves before it`
+  );
 
   // for information: events whose recorded balance is not the running sum, which is allowed (a credit committed between the decision and the append)
   const stale = await one(`${MOVES} SELECT count(*) FILTER (WHERE type = 'DepositMade') AS deposits, count(*) FILTER (WHERE type = 'DepositMade' AND recorded <> balance) AS stale_deposits,

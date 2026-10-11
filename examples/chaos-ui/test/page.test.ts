@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import * as AsyncData from "foldkit/asyncData";
 import { Scene, Story } from "foldkit/test";
-import { FetchState, Message, Send, ServerState, ago, clock, describeProblem, formatDuration, healthOf, init, leaderChanges, logKind, parseLoad, parseRun, update, view, type Model } from "../src/main.ts";
+import { FetchState, Message, Send, ServerState, ago, clock, describeProblem, diskLevel, disagreements, formatBytes, formatDuration, healthOf, init, leaderChanges, logKind, parseLoad, parseRun, update, view, type Model } from "../src/main.ts";
 import type { State } from "../src/contract.ts";
 
 expect.extend(Scene.sceneMatchers as never);
@@ -17,6 +17,8 @@ const state = (over: Partial<State> = {}): State => ({
     { name: "postgres-a", role: "postgres", phase: "Running", ready: true, restarts: 0, node: "crablet-lab-control-plane", ageSeconds: 600 }
   ],
   leaders: { views: "wallet-workers-a", automations: "wallet-workers-a", outbox: null },
+  reports: [],
+  storage: null,
   run: { running: false, paused: false, scenarios: [], minutes: 0, intervalSeconds: 0, holdSeconds: 0, startedAt: null, endsAt: null, faults: 0, log: [] },
   verify: { running: false, step: "", result: null },
   pulse: { commandsPerSecond: 12.3, eventsPerSecond: 15, pendingEvents: 40, behindSeconds: 0.4 },
@@ -67,6 +69,27 @@ describe("what the page notices", () => {
 });
 
 describe("is it healthy", () => {
+  test("sizes read in the largest unit, and the disk is bad under 10 GB or 10 %", () => {
+    expect(formatBytes(77 * 1024 ** 2)).toBe("77.0 MB");
+    expect(formatBytes(135 * 1024 ** 3)).toBe("135 GB");
+    expect(diskLevel(135 * 1024 ** 3, 197 * 1024 ** 3)).toBe("ok");
+    expect(diskLevel(20 * 1024 ** 3, 197 * 1024 ** 3)).toBe("warn");
+    expect(diskLevel(22 * 1024 ** 3, 200 * 1024 ** 3)).toBe("warn");
+    expect(diskLevel(9 * 1024 ** 3, 197 * 1024 ** 3)).toBe("bad");
+    expect(healthOf(state({ leaders: { views: "a", automations: "a", outbox: "a" }, storage: { databaseBytes: 1, walBytes: 1, nodeDiskFreeBytes: 5 * 1024 ** 3, nodeDiskSizeBytes: 100 * 1024 ** 3 } })).level).toBe("bad");
+  });
+
+  test("a pod and the database that agree about leadership raise nothing; a pod that claims what the lock says another holds is a warning", () => {
+    const m = (module: "views" | "automations" | "outbox", leading: boolean) => ({ module, runs: true, leading });
+    const leaders = { views: "a", automations: "a", outbox: "a" };
+    const agree = [{ pod: "a", answered: true, uptimeSeconds: 5, modules: [m("views", true), m("automations", true), m("outbox", true)] }, { pod: "b", answered: true, uptimeSeconds: 5, modules: [m("views", false), m("automations", false), m("outbox", false)] }];
+    expect(disagreements(state({ leaders, reports: agree }))).toEqual([]);
+    const claims = [agree[0]!, { pod: "b", answered: true, uptimeSeconds: 5, modules: [m("views", true), m("automations", false), m("outbox", false)] }];
+    expect(disagreements(state({ leaders, reports: claims }))).toEqual(["b says it leads views, the lock is held by a"]);
+    expect(healthOf(state({ leaders, reports: claims })).level).toBe("warn");
+    expect(disagreements(state({ leaders, reports: [{ pod: "a", answered: false, uptimeSeconds: 0, modules: [] }] }))).toEqual([]);
+  });
+
   test("a system with leaders, ready pods, nothing behind and the load running is healthy, with no reasons", () => {
     expect(healthOf(state({ leaders: { views: "a", automations: "a", outbox: "a" } }))).toEqual({ level: "ok", reasons: [] });
   });

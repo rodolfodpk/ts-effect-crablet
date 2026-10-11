@@ -229,12 +229,23 @@ export const clock = (iso: string): string => iso.slice(11, 19);
 
 type State_ = typeof State.Type;
 
+// Where a pod's own account of its leadership and the database's (who holds the advisory lock) differ: a pod that says it leads what the lock says another holds, or the reverse. A pod that did not answer says nothing.
+export const disagreements = (s: State_): ReadonlyArray<string> =>
+  (["views", "automations", "outbox"] as const).flatMap((module) => {
+    const holder = s.leaders[module];
+    const claims = s.reports.filter((r) => r.answered && r.modules.some((m) => m.module === module && m.leading)).map((r) => r.pod);
+    const wrong = claims.filter((pod) => pod !== holder);
+    return wrong.length > 0 ? [`${wrong.join(", ")} says it leads ${module}, the lock is held by ${holder ?? "nobody"}`] : holder !== null && s.reports.some((r) => r.answered) && !claims.includes(holder) && s.reports.some((r) => r.pod === holder && r.answered) ? [`${holder} holds the ${module} lock but does not say it leads`] : [];
+  });
+
 // IS IT HEALTHY? One look, with the reasons: what an on-call person needs before reading anything else. "bad" is something that is broken now; "warn" is something to watch.
 export type Health = { readonly level: "ok" | "warn" | "bad"; readonly reasons: ReadonlyArray<string> };
 export const healthOf = (s: State_): Health => {
   const bad: string[] = [];
   const warn: string[] = [];
   for (const [module, pod] of Object.entries(s.leaders)) if (pod === null) bad.push(`nobody leads ${module}`);
+  const disagree = disagreements(s);
+  if (disagree.length > 0) warn.push(`a pod and the database disagree about leadership (${disagree.join("; ")})`);
   const notReady = s.pods.filter((p) => (p.role === "api" || p.role === "workers") && p.phase !== "Terminating" && !p.ready);
   if (notReady.length > 0) bad.push(`${notReady.length === 1 ? "a pod is" : `${notReady.length} pods are`} not ready (${notReady.map((p) => p.name.replace(/^wallet-/, "")).join(", ")})`);
   if (s.pulse.behindSeconds !== null && s.pulse.behindSeconds >= 30) bad.push(`a processor is ${formatDuration(s.pulse.behindSeconds)} behind`);
@@ -242,8 +253,25 @@ export const healthOf = (s: State_): Health => {
   if (s.pulse.behindSeconds === null) warn.push("the admin API did not answer (it may be busy)");
   const restarted = s.pods.filter((p) => (p.role === "api" || p.role === "workers") && p.restarts > 0);
   if (restarted.length > 0) warn.push(`${restarted.length === 1 ? "a pod has" : `${restarted.length} pods have`} restarted`);
+  if (s.storage?.nodeDiskFreeBytes != null && s.storage.nodeDiskSizeBytes != null) {
+    const level = diskLevel(s.storage.nodeDiskFreeBytes, s.storage.nodeDiskSizeBytes);
+    if (level === "bad") bad.push(`the nodes' disk is nearly full (${formatBytes(s.storage.nodeDiskFreeBytes)} free)`);
+    else if (level === "warn") warn.push(`the nodes' disk is filling (${formatBytes(s.storage.nodeDiskFreeBytes)} free)`);
+  }
   if (!s.load.running) warn.push("the load is paused");
   return bad.length > 0 ? { level: "bad", reasons: [...bad, ...warn] } : warn.length > 0 ? { level: "warn", reasons: warn } : { level: "ok", reasons: [] };
+};
+
+export const formatBytes = (bytes: number): string => {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+};
+// The disk is a problem when under 10 GB or 10 % is left, worth watching under 25 GB or 20 %.
+export const diskLevel = (free: number, size: number): "ok" | "warn" | "bad" => {
+  const gb = 1024 ** 3;
+  return free < 10 * gb || free / size < 0.1 ? "bad" : free < 25 * gb || free / size < 0.2 ? "warn" : "ok";
 };
 
 // How long ago, from the server's clock.
@@ -333,7 +361,7 @@ const podsCard = (s: State_, h: HtmlBuilder<Message>) =>
                       h.td([h.Class("num")], [String(pod.restarts)]),
                       h.td([h.Class("mono muted")], [pod.node.replace("crablet-lab-", "")]),
                       h.td([h.Class("num muted")], [formatDuration(pod.ageSeconds)]),
-                      h.td([h.Class("actions-cell")], pod.role === "api" || pod.role === "workers" ? [h.button([h.Class("btn small danger"), h.AriaLabel(`Kill ${pod.name}`), h.OnClick(Message.ClickedKill({ pod: pod.name }))], ["Kill"])] : [])
+                      h.td([h.Class("actions-cell")], pod.role === "api" || pod.role === "workers" ? [...(pod.phase === "Running" ? [h.a([h.Class("muted"), h.Href(`/api/pod/${pod.name}/healthz`), h.Target("_blank"), h.Rel("noreferrer")], ["healthz"]), " ", h.a([h.Class("muted"), h.Href(`/api/pod/${pod.name}/status`), h.Target("_blank"), h.Rel("noreferrer")], ["status"]), " ", ...(pod.role === "api" ? [h.a([h.Class("muted"), h.Href(`/api/pod/${pod.name}/readyz`), h.Target("_blank"), h.Rel("noreferrer")], ["readyz"]), " "] : [])] : []), h.button([h.Class("btn small danger"), h.AriaLabel(`Kill ${pod.name}`), h.OnClick(Message.ClickedKill({ pod: pod.name }))], ["Kill"])] : [])
                     ]
                   )
                 )
@@ -345,6 +373,47 @@ const podsCard = (s: State_, h: HtmlBuilder<Message>) =>
     ],
     h.span([h.Class("muted")], [`${s.pods.length} pods`])
   );
+
+// The modules each pod runs and leads, by what the pod itself says (GET /status), with a flag where the database says otherwise.
+const modulesCard = (s: State_, h: HtmlBuilder<Message>) => {
+  const modules = ["views", "automations", "outbox"] as const;
+  const wrong = disagreements(s);
+  return card(
+    h,
+    "Modules by pod",
+    [
+      h.div(
+        [h.Class("table-wrap")],
+        [
+          h.table(
+            [h.Class("pods"), h.AriaLabel("Modules by pod")],
+            [
+              h.thead([], [h.tr([], ["Pod", ...modules, "Up"].map((title) => h.th([h.Scope("col")], [title])))]),
+              h.tbody(
+                [],
+                s.reports.map((r) =>
+                  h.tr(
+                    [],
+                    [
+                      h.td([h.Class("mono")], [r.pod]),
+                      ...modules.map((module) => {
+                        const m = r.modules.find((x) => x.module === module);
+                        return h.td([], [!r.answered ? chip(h, "bad", "no answer") : m === undefined || !m.runs ? h.span([h.Class("muted")], ["not run here"]) : m.leading ? chip(h, s.leaders[module] === r.pod ? "ok" : "bad", "leads") : chip(h, "paused", "standby")]);
+                      }),
+                      h.td([h.Class("num muted")], [r.answered ? formatDuration(r.uptimeSeconds) : ""])
+                    ]
+                  )
+                )
+              )
+            ]
+          )
+        ]
+      ),
+      ...(wrong.length > 0 ? [h.p([h.Class("note")], [`The pod and the database disagree: ${wrong.join("; ")}.`])] : [])
+    ],
+    h.span([h.Class("muted")], ["each pod's own account (GET /status)"])
+  );
+};
 
 const runCard = (model: Model, s: State_, h: HtmlBuilder<Message>) => {
   const run = s.run;
@@ -517,12 +586,15 @@ const content = (model: Model, s: State_, h: HtmlBuilder<Message>) =>
           pulseTile(h, "events waiting for processors", s.pulse.pendingEvents === null ? "?" : s.pulse.pendingEvents.toLocaleString("en"), s.pulse.pendingEvents === null ? "plain" : s.pulse.pendingEvents > 5000 ? "bad" : s.pulse.pendingEvents > 500 ? "warn" : "ok"),
           pulseTile(h, "slowest processor behind by", s.pulse.behindSeconds === null ? "?" : formatDuration(s.pulse.behindSeconds), s.pulse.behindSeconds === null ? "plain" : s.pulse.behindSeconds >= 30 ? "bad" : s.pulse.behindSeconds >= 5 ? "warn" : "ok"),
           pulseTile(h, "commands in the log", s.commands.toLocaleString("en")),
-          pulseTile(h, "events in the log", s.events.toLocaleString("en"))
+          pulseTile(h, "events in the log", s.events.toLocaleString("en")),
+          pulseTile(h, "database size (WAL " + (s.storage === null ? "?" : formatBytes(s.storage.walBytes)) + ")", s.storage === null ? "?" : formatBytes(s.storage.databaseBytes)),
+          pulseTile(h, "free on the nodes' disk", s.storage?.nodeDiskFreeBytes == null ? "?" : formatBytes(s.storage.nodeDiskFreeBytes), s.storage?.nodeDiskFreeBytes == null || s.storage.nodeDiskSizeBytes == null ? "plain" : diskLevel(s.storage.nodeDiskFreeBytes, s.storage.nodeDiskSizeBytes))
         ]
       ),
       loadCard(model, s, h),
       h.div([h.Class("two")], [runCard(model, s, h), logCard(s, model, h)]),
       podsCard(s, h),
+      modulesCard(s, h),
       verifyCard(s, h),
       dangerCard(model, h)
     ]

@@ -29,6 +29,11 @@ export type Pod = typeof Pod.Type;
 // The pod that holds each module's leader lock, or null when none does.
 export const Leaders = Schema.Struct({ views: Schema.NullOr(Schema.String), automations: Schema.NullOr(Schema.String), outbox: Schema.NullOr(Schema.String) });
 
+// What a pod says about itself on GET /status: the modules it runs and whether it leads each. `answered` is false when the pod did not answer (the other fields are then empty).
+export const ModuleReport = Schema.Struct({ module: Schema.Literals(["views", "automations", "outbox"]), runs: Schema.Boolean, leading: Schema.Boolean });
+export const PodReport = Schema.Struct({ pod: Schema.String, answered: Schema.Boolean, uptimeSeconds: Schema.Finite, modules: Schema.Array(ModuleReport) });
+export type PodReport = typeof PodReport.Type;
+
 export const LogEntry = Schema.Struct({ at: Schema.String, text: Schema.String, ok: Schema.Boolean });
 
 export const Run = Schema.Struct({
@@ -83,16 +88,28 @@ export const Pulse = Schema.Struct({
 });
 export type Pulse = typeof Pulse.Type;
 
+// How much room the data takes and has left: the database (without its write-ahead log, and with it) and the disk of the kind nodes it lives on (null when it could not be read).
+export const Storage = Schema.Struct({
+  databaseBytes: Schema.Finite,
+  walBytes: Schema.Finite,
+  nodeDiskFreeBytes: Schema.NullOr(Schema.Finite),
+  nodeDiskSizeBytes: Schema.NullOr(Schema.Finite)
+});
+export type Storage = typeof Storage.Type;
+
 export const State = Schema.Struct({
   // the server's clock (ISO): the page dates what it sees with it, and measures a run's progress against it
   now: Schema.String,
   context: Schema.String,
   pods: Schema.Array(Pod),
   leaders: Leaders,
+  // each API and worker pod's own account of what it runs and leads, to set beside `leaders` (what Postgres says)
+  reports: Schema.Array(PodReport),
   run: Run,
   verify: Verify,
   load: Load,
   pulse: Pulse,
+  storage: Schema.NullOr(Storage),
   commands: Schema.Finite,
   events: Schema.Finite
 });

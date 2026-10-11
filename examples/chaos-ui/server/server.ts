@@ -13,10 +13,11 @@ import { createServer } from "node:http";
 import pg from "pg";
 import { Schema } from "effect";
 import { Ack, KillPod, PauseRun, ResetDatabase, SetLoad, StartRun, State, Verification, scenarios } from "../src/contract.ts";
-import type { Check, Load, Pod } from "../src/contract.ts";
+import type { Check, Load, Pod, PodReport } from "../src/contract.ts";
 import { dataChecks } from "./checks.ts";
 
 const CONTEXT = "kind-crablet-lab";
+const CLUSTER_NAME = CONTEXT.replace(/^kind-/, "");
 const PORT = Number(process.env["CHAOS_PORT"] ?? 5174);
 const API = process.env["WALLET_API_URL"] ?? "http://127.0.0.1:8081";
 const ADMIN_TOKEN = process.env["WALLET_ADMIN_TOKEN"] ?? "lab-token";
@@ -391,18 +392,52 @@ const pulseOf = (commands: number, events: number) => {
   return { commandsPerSecond: rate(commands, first.commands), eventsPerSecond: rate(events, first.events), pendingEvents: behind.pending, behindSeconds: behind.seconds };
 };
 
+// What each running API and worker pod says about itself (GET /status, through the Kubernetes API proxy); a pod that does not answer in 3 seconds is reported as not answering.
+const reportOf = async (pod: PodView): Promise<PodReport> => {
+  const none = { pod: pod.name, answered: false, uptimeSeconds: 0, modules: [] };
+  try {
+    const body = JSON.parse(await kubectl(["get", "--raw", `/api/v1/namespaces/default/pods/${pod.name}:8080/proxy/status`], 3_000)) as { uptimeSeconds: number; modules: PodReport["modules"] };
+    return { pod: pod.name, answered: true, uptimeSeconds: body.uptimeSeconds, modules: body.modules };
+  } catch { return none; }
+};
+
+// The disk of the kind nodes (one VM disk, shared): read through the control plane's container, at most every 30 seconds.
+let diskCache: { at: number; free: number | null; size: number | null } = { at: 0, free: null, size: null };
+const nodeDisk = (): Promise<{ free: number | null; size: number | null }> => {
+  if (Date.now() - diskCache.at < 30_000) return Promise.resolve(diskCache);
+  return new Promise((resolve) => {
+    execFile("docker", ["exec", `${CLUSTER_NAME}-control-plane`, "df", "-Pk", "/var"], { timeout: 5000 }, (error, stdout) => {
+      const cols = error ? [] : (stdout.trim().split("\n")[1] ?? "").split(/\s+/);
+      const size = Number(cols[1]), free = Number(cols[3]);
+      diskCache = { at: Date.now(), free: Number.isFinite(free) && cols.length > 3 ? free * 1024 : null, size: Number.isFinite(size) && cols.length > 3 ? size * 1024 : null };
+      resolve(diskCache);
+    });
+  });
+};
+const storageOf = async (): Promise<typeof State.Type["storage"]> => {
+  const [db, disk] = await Promise.all([
+    withDb(async (c) => (await c.query("SELECT pg_database_size(current_database())::float AS db, (SELECT coalesce(sum(size), 0) FROM pg_ls_waldir())::float AS wal")).rows[0] as { db: number; wal: number }).catch(() => null),
+    nodeDisk()
+  ]);
+  return db === null ? null : { databaseBytes: db.db, walBytes: db.wal, nodeDiskFreeBytes: disk.free, nodeDiskSizeBytes: disk.size };
+};
+
 const snapshot = async (): Promise<typeof State.Type> => {
   const pods = await listPods();
-  const [leaders, load, counts] = await Promise.all([
+  const [leaders, load, counts, reports, storage] = await Promise.all([
     allLeaders(pods).catch(() => ({ views: null, automations: null, outbox: null })),
     loadStatus(),
-    withDb(async (c) => (await c.query("SELECT (SELECT count(*) FROM crablet_commands)::float AS commands, (SELECT count(*) FROM crablet_events)::float AS events")).rows[0] as { commands: number; events: number }).catch(() => ({ commands: 0, events: 0 }))
+    withDb(async (c) => (await c.query("SELECT (SELECT count(*) FROM crablet_commands)::float AS commands, (SELECT count(*) FROM crablet_events)::float AS events")).rows[0] as { commands: number; events: number }).catch(() => ({ commands: 0, events: 0 })),
+    Promise.all(pods.filter((p) => (p.role === "api" || p.role === "workers") && p.phase === "Running").map(reportOf)),
+    storageOf()
   ]);
   return {
     now: now(),
     context: CONTEXT,
     pods: pods.map(({ ip: _ip, ...pod }) => pod),
     leaders,
+    reports,
+    storage,
     run: { ...run, scenarios: [...run.scenarios], log: [...run.log] },
     verify: { running: verify.running || resetting, step: resetting ? "emptying the database" : verify.step, result: verify.result },
     load,
@@ -428,6 +463,15 @@ const server = createServer(async (req, res) => {
     const url = req.url ?? "";
     if (req.method === "GET" && url === "/api/state") return send(200, Schema.encodeSync(State)(await snapshot()));
     if (req.method === "GET" && url === "/api/scenarios") return send(200, scenarios);
+    const probe = /^\/api\/pod\/([a-z0-9.-]+)\/(healthz|readyz|status)$/.exec(url);
+    if (req.method === "GET" && probe !== null) {
+      // the pod's own endpoint, reached through the Kubernetes API proxy (pod IPs are not reachable from the host); 8080 is the port of the wallet pods
+      const [, name, path] = probe;
+      const target = (await listPods()).find((p) => p.name === name);
+      if (target === undefined || (target.role !== "api" && target.role !== "workers")) return res.writeHead(404, { "content-type": "text/plain" }).end(`no wallet pod ${name}\n`);
+      const text = await kubectl(["get", "--raw", `/api/v1/namespaces/default/pods/${name}:8080/proxy/${path}`], 10_000).catch((e: unknown) => `${path} did not answer: ${errorText(e)}`);
+      return res.writeHead(200, { "content-type": "text/plain" }).end(`${name} ${path}: ${text}\n`);
+    }
     if (req.method !== "POST") return send(404, { error: "not found" });
     const body = await readBody(req);
     if (url === "/api/run") return send(200, ack(startRun(Schema.decodeUnknownSync(StartRun)(body)), "run started"));
