@@ -143,6 +143,5 @@ Effect.runPromise(Effect.provide(program, AppLive));
 | Look up options, packages, guarantees, operations, build and test | [Reference](./docs/reference.md) |
 | Know why it is built this way | [Design decisions](./docs/adr/README.md) (start with [ADR-0010](./docs/adr/0010-declarative-command-api.md)) |
 | Contribute | [`CONTRIBUTING.md`](./CONTRIBUTING.md): set up, run one test, common tasks |
-| Follow the work log | [`NOTES.md`](./NOTES.md) |
 
 Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference.md#build--test).

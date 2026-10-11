@@ -8,8 +8,7 @@ bun install                                  # once, at the repository root
 node examples/quickstart/src/quickstart.ts
 ```
 
-You should see the six lines shown in the [main README](../../README.md) (the repeat of `add 12A` does nothing; the second booking of `12A` fails with `SeatTaken`;
-booking `99Z` fails with `SeatNotFound`).
+It prints six lines: the repeat of `add 12A` does nothing, the second booking of `12A` fails with `SeatTaken`, and booking `99Z` fails with `SeatNotFound`.
+The test `examples/quickstart/test/quickstart.test.ts` pins them.
 
-Read next: the [tutorial](../../docs/tutorial/README.md), which turns the same ideas into a service on Postgres. The test `examples/quickstart/test/quickstart.test.ts`
-checks the output above.
+Read next: the [tutorial](../../docs/tutorial/README.md), which turns the same ideas into a service on Postgres.
