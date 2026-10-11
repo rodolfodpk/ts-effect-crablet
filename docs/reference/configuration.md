@@ -3,7 +3,7 @@
 *Reference · developers and operators · [Run it in production](../guides/operate/run-in-production.md) · look up*
 
 What the framework's layer accepts, and the environment variables of the wallet example, which is the reference for a deployed application. How to
-choose values: [Run it in production](../guides/operate/run-in-production.md).
+choose values: [Configure it](../guides/operate/configure.md).
 
 ## `Crablet.layer(pg, options)`
 

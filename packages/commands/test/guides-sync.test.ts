@@ -31,10 +31,13 @@ for (const guide of guides) {
   const blocks = [...doc.matchAll(/<!-- file: (\S+?)#(\S+?) -->\n```(\w+)\n([\s\S]*?)\n```/gu)].map((m) => ({ file: m[1]!, name: m[2]!, code: dedent(m[4]!) }));
 
   describe(`${guide}: code blocks equal the files they come from`, () => {
-    test("there are tagged blocks (so removing the tags cannot make this test pass vacuously)", () => {
-      // the index of the task guides has no code of its own
-      if (guide.endsWith("guides/README.md")) return expect(blocks.length).toBe(0);
-      expect(blocks.length).toBeGreaterThanOrEqual(guide.endsWith("evolving-events.md") ? 3 : 1);
+    test("every TypeScript block is tagged (so removing a tag cannot make this test pass vacuously)", () => {
+      // A guide with no TypeScript (the index, a runbook) has nothing to check; one that shows code must take all of it from tested files.
+      // A short sketch that is not a file is marked `<!-- excerpt -->` on the line before it, so leaving one untested is a visible choice.
+      const lines = doc.split("\n");
+      const fences = lines.filter((l, i) => /^```(?:ts|typescript)$/u.test(l) && lines[i - 1] !== "<!-- excerpt -->").length;
+      expect(blocks.length).toBe(fences);
+      if (guide.endsWith("evolving-events.md")) expect(blocks.length).toBeGreaterThanOrEqual(3);
     });
     for (const block of blocks) {
       test(`${block.file}#${block.name}`, () => {

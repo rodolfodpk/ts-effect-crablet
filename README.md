@@ -117,6 +117,7 @@ sequenceDiagram
 
 **On Postgres** it is one layer. This is an excerpt: the database and its migrations are set up in [tutorial step 2](./docs/tutorial/02-postgres-and-the-second-rule.md).
 
+<!-- excerpt -->
 ```ts
 const AppLive = Crablet.layer({ host: "localhost", port: 5432, database: "app", username: "app", password: Redacted.make("secret") });
 const program = Effect.gen(function* () {

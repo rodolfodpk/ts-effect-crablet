@@ -65,7 +65,7 @@ Grafana dashboard (or an alert), or an entry in `NO_PANEL` in that test with the
 so a rename that leaves a panel or an alert querying the old name fails the same test. Declare the metric's **labels** in `LABELS` in that test, from where it is recorded: a panel or an alert that groups or filters by a label its metric does not carry fails too (leadership is per module, tagged `lock_key`, not per processor; a query grouping by `processor` there "had data" and was wrong).
 
 **Change the dashboard or the alerts.** The dashboard JSON is generated: edit the definition in [`scripts/build-dashboard.ts`](scripts/build-dashboard.ts) and run `bun run dashboard:build`; the test fails if the committed
-`ops/grafana/crablet-dashboard.json` differs. The alert rules, `ops/grafana/alerts.yaml`, are written by hand and checked by the same test. Both were tried against the `grafana/otel-lgtm` image in [`ops/compose.yaml`](ops/compose.yaml)
+`ops/grafana/crablet-dashboard.json` differs. The alert rules, `ops/grafana/alerts.yaml`, are written by hand and checked by the same test, which also requires each rule's `runbook` to be a section of [`docs/guides/operate/runbooks.md`](docs/guides/operate/runbooks.md). Both were tried against the `grafana/otel-lgtm` image in [`ops/compose.yaml`](ops/compose.yaml)
 ([See it on a dashboard](docs/guides/operate/dashboard.md)).
 
 **Change the processors admin API.** [`@crablet/processors-http`](packages/processors-http/README.md) is a contract a client is typed against: add fields, never remove or retype one, and give a changed meaning a new path
@@ -96,7 +96,7 @@ project before ([the reliability report](docs/history/plans/reliability-and-scal
 
   Applications that teach go in `examples/`; programs for operating or testing them (the chaos lab, the admin page) go in `tools/`.
 - **Code in documents comes from tested files.** A block tagged `<!-- file: path#region -->` must equal the lines between `// #region name` and `// #endregion name` in
-  that file; the sync tests (`guides-sync.test.ts`, `tutorial-sync.test.ts`) fail when they differ. Edit the source file, then paste the same lines into the document.
+  that file; the sync tests (`guides-sync.test.ts`, `tutorial-sync.test.ts`) fail when they differ. Edit the source file, then paste the same lines into the document. Every TypeScript block in a guide or the README is tagged; a short sketch that is not a file is marked `<!-- excerpt -->` on the line before it.
 - **Links are checked.** `docs-links.test.ts` fails on a broken relative link, a broken `#anchor`, or a documentation path in a source comment that does not exist.
 - **Decisions get a record** when they have a lasting effect on the shape of the code: add `docs/adr/NNNN-title.md` (status, context, decision, consequences) and list it in
   [`docs/adr/README.md`](docs/adr/README.md) under the right heading. One-off findings and gotchas go in the work log, [`docs/history/NOTES.md`](docs/history/NOTES.md), not in a decision record.

@@ -51,6 +51,9 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | I want to... | Guide |
 |---|---|
 | Run it for real: migrations, connections, the background processors | [Run it in production](./guides/operate/run-in-production.md) |
+| Decide the settings for a first deployment | [Configure it](./guides/operate/configure.md) |
+| Know what happens when something breaks | [Failure modes](./guides/operate/failure-modes.md) |
+| Answer an alert | [Runbooks](./guides/operate/runbooks.md) |
 | See what it is doing and what it costs | [Monitor it](./guides/operate/monitor-it.md) |
 | Watch it on a Grafana dashboard, with alerts | [See it on a dashboard](./guides/operate/dashboard.md) |
 | Run it on a local Kubernetes cluster and break it on purpose | [Run the kind lab](./guides/operate/run-the-kind-lab.md) |

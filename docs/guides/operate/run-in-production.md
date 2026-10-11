@@ -138,6 +138,7 @@ with the split below, 15 of 15 worked, p50 47 ms. (Run PgBouncer against the dat
 
 **Give the leader and LISTEN a direct connection**, to the database's own endpoint (the writer, not a reader, not the pooler), and keep the pooler for the rest:
 
+<!-- excerpt -->
 ```ts
 Crablet.layer(
   { host: "pgbouncer.internal", port: 6432, /* ...the application's connection, through the pooler */ },

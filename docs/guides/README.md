@@ -22,6 +22,9 @@ tutorial.
 | I want to... | Guide |
 |---|---|
 | Run it for real: migrations, connections, the background processors | [Run it in production](operate/run-in-production.md) |
+| Decide the settings for a first deployment | [Configure it](operate/configure.md) |
+| Know what happens when something breaks | [Failure modes](operate/failure-modes.md) |
+| Answer an alert | [Runbooks](operate/runbooks.md) |
 | See what it is doing and what it costs | [Monitor it](operate/monitor-it.md) |
 | Watch it on a Grafana dashboard, with alerts | [See it on a dashboard](operate/dashboard.md) |
 | Run the wallet on a local Kubernetes cluster and break it on purpose | [Run the kind lab](operate/run-the-kind-lab.md) |
