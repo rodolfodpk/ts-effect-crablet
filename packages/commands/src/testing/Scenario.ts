@@ -16,13 +16,13 @@ import type { ExecutionResult } from "../ExecutionResult.ts";
 //     expect(result.outcome).toBe("created");
 //     expect(result.events.map((e) => e.type)).toEqual(["Incremented"]);
 //
-// The command runs through the REAL pipeline (input validation -> idempotency check -> prepare -> load
+// The command runs through the REAL pipeline (input validation -> idempotency check -> resolve -> load
 // -> decide -> conditional append, with conflict retry) against the in-memory store, whose append
 // conditions and idempotency behave like Postgres (proved by the conformance suite). A `Given` is the
 // history the store starts with; each `when` runs one command in an all-or-nothing transaction, and
 // later `when`s see earlier ones' effects.
 //
-// An idempotent outcome rolls the `when` back, `prepare`'s appends included, as the real executor does.
+// An idempotent outcome rolls the `when` back, as the real executor does.
 //
 // What it cannot show is concurrency: nothing interleaves, so conflict retries never happen here. Test
 // races against Postgres (see packages/commands/test/integration/command-run.test.ts).
@@ -41,7 +41,7 @@ export interface ScenarioResult<Err> {
   // "created": events were appended. "idempotent": the operation was already done (or decided nothing).
   // "failed": see `error`.
   readonly outcome: ScenarioOutcome;
-  // Exactly the events this `when` appended (including any its `prepare` step appended); empty on failure.
+  // Exactly the events this `when` appended; empty on failure.
   readonly events: ReadonlyArray<StoredEvent>;
   // The command's typed failure: a domain error from `decide`, `InvalidInput` or `Conflict`.
   readonly error: Err | InvalidInput | Conflict | undefined;
@@ -75,7 +75,7 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
       const input = yield* command.decodeInput(rawInput);
       // One attempt = one transaction (exclusive, rolled back on failure); retried on Conflict like the
       // real executor, though in-memory a Conflict cannot occur.
-      // An idempotent result rolls the attempt back, `prepare`'s appends included, exactly like the real executor (CommandExecutor.ts); the result is carried out of the transaction.
+      // An idempotent result rolls the attempt back, exactly like the real executor (CommandExecutor.ts); the result is carried out of the transaction.
       const attempt = store.transaction(
         Effect.flatMap(runHandler(command.handler, input), (result) => (result.wasIdempotent ? Effect.fail(new RolledBackIdempotent(result)) : Effect.succeed(result)))
       );

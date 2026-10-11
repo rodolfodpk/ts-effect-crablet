@@ -11,7 +11,7 @@ export type CloseWalletCommand = Schema.Schema.Type<(typeof CloseWalletContract)
 export const CloseWallet = defineCommand({
   ...CloseWalletContract,
   model: (c) => WalletLifecycleModel.of({ id: c.walletId }),
-  decide: (wallet, c, _prepared, { now }) =>
+  decide: (wallet, c, { now }) =>
     wallet.exists
       ? emit(WalletClosed({ walletId: c.walletId, closedAt: now.toISOString() }))
       : fail(new WalletNotFound({ walletId: c.walletId }))

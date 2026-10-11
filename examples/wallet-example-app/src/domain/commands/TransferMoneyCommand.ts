@@ -15,7 +15,7 @@ export type TransferMoneyCommand = Schema.Schema.Type<(typeof TransferMoneyContr
 export const TransferMoney = defineCommand({
   ...TransferMoneyContract,
   model: (c) => all({ from: WalletPeriodModel.of({ id: c.fromWalletId }), to: WalletPeriodModel.of({ id: c.toWalletId }) }),
-  decide: ({ from, to }, c, _prepared, { now }) =>
+  decide: ({ from, to }, c, { now }) =>
     !from.exists
       ? fail(new WalletNotFound({ walletId: c.fromWalletId }))
       : !to.exists

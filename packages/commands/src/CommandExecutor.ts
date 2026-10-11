@@ -111,10 +111,10 @@ export const withConflictRetry = <A, E, R>(
     )
   );
 
-// Two commands that each make several appends can acquire the append locks of different entities in
-// opposite order (V5 writer-side locking). Postgres aborts one of them (SQLSTATE 40P01, deadlock_detected)
-// and rolls its transaction back - exactly the situation a `Conflict` retry handles: the whole command is
-// re-run in a fresh transaction.
+// A command makes one append, whose writer locks (V5) are taken in sorted order, so two commands cannot deadlock each other. An
+// application transaction that appends several times in its own order can still deadlock with a command; Postgres aborts one of them
+// (SQLSTATE 40P01, deadlock_detected) and rolls its transaction back. When that is the command, it is exactly the situation a
+// `Conflict` retry handles: the whole command is re-run in a fresh transaction (test/integration/deadlock-retry.test.ts).
 const isDeadlock = (error: unknown): boolean =>
   typeof error === "object" &&
   error !== null &&
@@ -152,8 +152,9 @@ export const CommandExecutorLive = Layer.effect(
         Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(
           Effect.gen(function* () {
             const result = yield* runHandler(handler, command);
-            // An idempotent result (a repeat, or a decision that does nothing) has done nothing, so nothing of this attempt may stay: roll the transaction back, `prepare`'s appends included.
-            // Committing it would leave those events with no command behind them, because an idempotent result writes no audit row. The failure is caught just below, outside the wake-up.
+            // An idempotent result (a repeat, or a decision that does nothing) has done nothing, so nothing of this attempt may stay: roll the transaction back. A command cannot append
+            // before its decision (`resolve` only reads), so today there is nothing to undo; the rollback keeps it that way if that ever changes, because an idempotent result writes no
+            // audit row and anything committed would have no command behind it. The failure is caught just below, outside the wake-up.
             if (result.wasIdempotent) return yield* Effect.fail(new RolledBackIdempotent(result));
             // A command that appended events leaves an audit row IN THE SAME transaction (see CommandAudit.ts):
             // a rolled-back command leaves no row.

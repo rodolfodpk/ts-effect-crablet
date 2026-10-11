@@ -84,8 +84,8 @@ describe("checkAutomationIdempotency", () => {
       input,
       errors: [WalletNotOpen],
       idempotentBy: (c) => Notified.where({ deposit_id: c.depositId }),
-      prepare: (c, es) => es.exists(Opened.where({ wallet_id: c.walletId })),
-      decide: (_, c, isOpen) => (isOpen ? emit(Notified(c)) : fail(new WalletNotOpen({ walletId: c.walletId })))
+      resolve: (c, read) => read.exists(Opened.where({ wallet_id: c.walletId })),
+      decide: (_, c, { resolved: isOpen }) => (isOpen ? emit(Notified(c)) : fail(new WalletNotOpen({ walletId: c.walletId })))
     });
 
     const without = await checkAutomationIdempotency(automationOf(needsWallet), triggers);

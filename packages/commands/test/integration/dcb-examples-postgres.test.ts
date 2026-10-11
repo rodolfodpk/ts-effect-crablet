@@ -40,7 +40,7 @@ const errorOf = (exit: any) => exit.cause?.reasons?.find((r: any) => r._tag === 
 const exitAll = (effects: ReadonlyArray<Effect.Effect<any, any, any>>) =>
   Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length });
 const uid = () => crypto.randomUUID().slice(0, 8);
-// Every racer has LOADED (in `prepare`) before any appends, so the commands really overlap. The recorded
+// Every racer has LOADED (a barrier right after its load) before any appends, so the commands really overlap. The recorded
 // conflict retries prove it: the losers were refused at append time and re-decided.
 const retriesOf = (commandType: string) =>
   Effect.map(Metric.value(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: commandType })), (m) => m.count);

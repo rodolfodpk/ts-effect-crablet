@@ -15,7 +15,7 @@ export const barrier = (parties: number) =>
 
 // Wraps a model so that `wait` runs right AFTER the model has loaded and BEFORE the command decides and
 // appends. With a `barrier(n)` as `wait`, n commands have all loaded before any of them appends - the one
-// place a barrier can force a race (a barrier in `prepare` runs BEFORE the load, so a fast command could
+// place a barrier can force a race (a barrier in `resolve` runs BEFORE the load, so a fast command could
 // still load, decide and append before a slow one has even loaded).
 export const afterLoad = <S>(model: ModelInstance<S>, wait: Effect.Effect<void>): ModelInstance<S> => ({
   ...model,

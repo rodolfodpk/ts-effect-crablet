@@ -12,7 +12,7 @@ export type OpenWalletCommand = Schema.Schema.Type<(typeof OpenWalletContract)["
 export const OpenWallet = defineCommand({
   ...OpenWalletContract,
   model: (c) => WalletOpeningModel.of({ id: c.walletId }),
-  decide: ({ opened }, c, _prepared, { now }) =>
+  decide: ({ opened }, c, { now }) =>
     opened === null
       ? emit(WalletOpened({ ...c, openedAt: now.toISOString() }))
       : opened.owner === c.owner && opened.initialBalance === c.initialBalance

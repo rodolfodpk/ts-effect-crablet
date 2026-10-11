@@ -1,5 +1,5 @@
 // Runs under Node (Testcontainers). The DCB guide's transfer example against real Postgres: races are
-// made deterministic with a barrier in `prepare`, so every racer has LOADED before any appends.
+// made deterministic with a barrier right after the model loads (`afterLoad`), so every racer has LOADED before any appends.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Deferred, Effect, Redacted, Ref } from "effect";
