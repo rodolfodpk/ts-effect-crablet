@@ -16,10 +16,6 @@ import type { LogPosition } from "@crablet/eventstore/LogPosition";
 // switch becomes a type error rather than a silent runtime gap. This same `_tag` mechanism is what
 // `Data.TaggedError` generates for error types (see eventstore's AppendErrors.ts).
 
-// What to do when the idempotency check finds the operation was already done: report it as a
-// successful "idempotent" result (the default, safe for retries), or fail with `Duplicate`.
-export type OnDuplicate = "THROW" | "RETURN_IDEMPOTENT";
-
 // Every way of appending is one shape: events plus an `AppendCondition`. The condition carries the
 // two independent checks the SQL append supports - a concurrency check (was anything matching
 // `concurrencyQuery` appended after `afterPosition`?) and an idempotency check (does anything
@@ -29,7 +25,6 @@ export interface Append {
   readonly _tag: "Append";
   readonly events: ReadonlyArray<AppendEvent>;
   readonly condition: AppendConditionType;
-  readonly onDuplicate: OnDuplicate;
   // Which kind of `Conflict` the executor reports if the concurrency check refuses the append:
   // "boundary" when the condition is the decision model itself, "guard" when it is a lifecycle
   // guard on an otherwise commutative command.
@@ -50,22 +45,18 @@ const make = (
   events: ReadonlyArray<AppendEvent>,
   condition: AppendConditionType,
   conflictKind: "boundary" | "guard" = "boundary"
-): Append => ({ _tag: "Append", events, condition, onDuplicate: "RETURN_IDEMPOTENT", conflictKind });
+): Append => ({ _tag: "Append", events, condition, conflictKind });
 
 // Commutative: safe to run in parallel with itself - no concurrency check at all.
 export const commutative = (...events: ReadonlyArray<AppendEvent>): Append => make(events, AppendCondition.empty());
 
-// Add an idempotency check to ANY append (commutative, guarded or strict): refuse, or report
-// "already done", if anything matching `query` already exists. The check runs before the
+// Add an idempotency check to ANY append (commutative, guarded or strict): report "already done"
+// if anything matching `query` already exists. The check runs before the
 // concurrency check, so a retry after the state has moved on is "already done", not a spurious
 // conflict.
-export const withIdempotencyQuery = (
-  decision: Append,
-  query: QueryType,
-  onDuplicate: OnDuplicate = "RETURN_IDEMPOTENT"
-): Append => {
+export const withIdempotencyQuery = (decision: Append, query: QueryType): Append => {
   if (Query.isEmpty(query)) throw new Error("idempotency query must not be empty");
-  return { ...decision, condition: { ...decision.condition, idempotencyQuery: query }, onDuplicate };
+  return { ...decision, condition: { ...decision.condition, idempotencyQuery: query } };
 };
 
 // Commutative with a selective lifecycle guard. Parallel operations of the same type (e.g.

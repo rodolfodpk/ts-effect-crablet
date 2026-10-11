@@ -3,7 +3,6 @@ import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore, type EventStoreService } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
-import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
@@ -113,8 +112,6 @@ export interface Command<
   // How many times the executor re-runs the whole command (fresh transaction, fresh load) after a
   // `Conflict`, before giving up with that `Conflict`.
   readonly retries: number;
-  // Whether a repeat of an already-done operation is reported as success or as `Duplicate`.
-  readonly duplicates: "return" | "fail";
   // Whether the command declared `idempotentBy`. An automation requires it: its batch can be handled twice (a crash, a zombie leader), and only an
   // idempotent command makes that harmless.
   readonly idempotent: boolean;
@@ -128,7 +125,6 @@ export const defineCommand = <
   D extends Decision<any> = Decision<never>,
   P = undefined,
   PE = never,
-  OD extends "return" | "fail" = "return",
   const Es extends ReadonlyArray<AnyDomainErrorClass> = []
 >(def: {
   readonly name: string;
@@ -152,18 +148,14 @@ export const defineCommand = <
   // checked before `prepare`/`decide` ever run: on a retry the state has moved on (e.g. the balance is
   // already reduced), so re-deciding could wrongly fail. It is also re-checked atomically at append.
   readonly idempotentBy?: (input: Schema.Schema.Type<I>) => QueryType;
-  // A repeat is reported as a successful "already done" ("return", the default, safe for retries) or
-  // fails with `Duplicate` ("fail", e.g. "open a wallet that already exists").
-  readonly onDuplicate?: OD;
   // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
   readonly decide: (state: S, input: Schema.Schema.Type<I>, prepared: P, context: DecideContext) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
-}): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE | (OD extends "fail" ? Duplicate : never), I, Es> => {
+}): Command<Schema.Schema.Type<I>, ErrorOf<D> | PE, I, Es> => {
   type In = Schema.Schema.Type<I>;
   // The audit table stores the name in a column limited to 64 characters: fail at definition time, not mid-request.
   if (def.name.length < 1 || def.name.length > 64) throw new Error(`command name must be 1-64 characters, got ${def.name.length}: "${def.name}"`);
-  const duplicates: "return" | "fail" = def.onDuplicate ?? "return";
 
   const decode = Schema.decodeUnknownEffect(def.input as unknown as Schema.Decoder<unknown>) as (
     raw: unknown,
@@ -183,11 +175,7 @@ export const defineCommand = <
         if (Query.isEmpty(idempotency)) {
           return yield* Effect.die(new Error(`command "${def.name}": idempotentBy returned an empty query`));
         }
-        if (yield* eventStore.exists(idempotency)) {
-          return duplicates === "fail"
-            ? yield* Effect.fail(new Duplicate({ message: `Duplicate operation: "${def.name}" was already done` }))
-            : CD.noOp("DUPLICATE_OPERATION");
-        }
+        if (yield* eventStore.exists(idempotency)) return CD.noOp("DUPLICATE_OPERATION");
       }
 
       // 2. Prepare, 3. load the model.
@@ -223,10 +211,8 @@ export const defineCommand = <
       } else {
         append = CD.commutative(...events);
       }
-      return idempotency !== null
-        ? CD.withIdempotencyQuery(append, idempotency, duplicates === "fail" ? "THROW" : "RETURN_IDEMPOTENT")
-        : append;
-    })) as CommandHandler<In, ErrorOf<D> | PE | SqlError | (OD extends "fail" ? Duplicate : never)>;
+      return idempotency !== null ? CD.withIdempotencyQuery(append, idempotency) : append;
+    })) as CommandHandler<In, ErrorOf<D> | PE | SqlError>;
 
-  return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, duplicates, idempotent: def.idempotentBy !== undefined };
+  return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, idempotent: def.idempotentBy !== undefined };
 };

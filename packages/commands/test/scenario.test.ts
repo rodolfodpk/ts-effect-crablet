@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { concurrent, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError, InvalidInput } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
@@ -88,21 +87,6 @@ describe("given / when: command logic without a database", () => {
     expect(repeat.reason).toBe("DUPLICATE_OPERATION");
     expect(repeat.events).toEqual([]);
     expect(scenario.log.map((e) => e.type)).toEqual(["Opened", "Withdrawn"]);
-  });
-
-  test('onDuplicate "fail": a repeat fails with Duplicate', async () => {
-    const Strict = defineCommand({
-      name: "withdraw-once",
-      input: Schema.Struct({ id: Schema.String, amount: Positive, opId: Schema.String }),
-      model: (c) => AccountModel.of({ id: c.id }),
-      idempotentBy: (c) => Withdrawn.where({ op_id: c.opId }),
-      onDuplicate: "fail",
-      decide: (_, c) => emit(Withdrawn(c))
-    });
-    const scenario = given(Opened({ id: "a1", initial: 100 }));
-    await scenario.when(Strict, { id: "a1", amount: 1, opId: "op1" });
-    const again = await scenario.when(Strict, { id: "a1", amount: 1, opId: "op1" });
-    expect(again.error).toBeInstanceOf(Duplicate);
   });
 
   test("a command that fails AFTER its prepare step appended something leaves no trace (transaction rollback)", async () => {

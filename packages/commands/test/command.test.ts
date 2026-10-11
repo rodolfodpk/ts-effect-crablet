@@ -152,7 +152,7 @@ describe("defineCommand: consistency -> append condition", () => {
 });
 
 describe("defineCommand: idempotency", () => {
-  const withIdem = (extra: Partial<{ consistency: () => ReturnType<typeof strict>; onDuplicate: "return" | "fail" }> = {}) =>
+  const withIdem = (extra: Partial<{ consistency: () => ReturnType<typeof strict> }> = {}) =>
     defineCommand({
       name: "inc",
       input,
@@ -209,22 +209,11 @@ describe("defineCommand: idempotency", () => {
     expect(calls).toEqual([]);
   });
 
-  test('onDuplicate "fail": a repeat fails with Duplicate instead', async () => {
+  test("an append with an idempotency query carries it; an append without one has none", async () => {
     const fake = makeInMemoryEventStore();
     open(fake);
-    fake.seed(Incremented({ id: "c1", by: 1, opId: "op1" }));
-    const C = withIdem({ onDuplicate: "fail" });
-    expect(await failureOf(fake, C.handler(cmd))).toBeInstanceOf(Duplicate);
-    expect(C.duplicates).toBe("fail");
-  });
-
-  test('an append built for onDuplicate "fail" tells the executor to throw; the default returns', async () => {
-    const fake = makeInMemoryEventStore();
-    open(fake);
-    const fail_ = await succeeded(fake, withIdem({ onDuplicate: "fail" }).handler(cmd));
-    const ret = await succeeded(fake, withIdem().handler(cmd));
-    expect(fail_._tag === "Append" && fail_.onDuplicate).toBe("THROW");
-    expect(ret._tag === "Append" && ret.onDuplicate).toBe("RETURN_IDEMPOTENT");
+    const idem = await succeeded(fake, withIdem().handler(cmd));
+    expect(idem._tag === "Append" && idem.condition.idempotencyQuery !== undefined && idem.condition.idempotencyQuery !== null).toBe(true);
   });
 });
 
@@ -260,9 +249,8 @@ describe("defineCommand: input", () => {
     expect(Exit.isFailure(missing)).toBe(true);
   });
 
-  test("defaults: 3 conflict retries, repeats are idempotent successes", () => {
+  test("defaults: 3 conflict retries", () => {
     expect(Increment.retries).toBe(3);
-    expect(Increment.duplicates).toBe("return");
     expect(Increment.name).toBe("increment");
     expect(defineCommand({ name: "x", input, retries: 0, decide: () => noop() }).retries).toBe(0);
   });
@@ -323,9 +311,9 @@ describe("defineCommand: inferred types", () => {
     assertType<Equal<HandlerErr<typeof Increment>, NotOpen | TooLarge | SqlErr>>();
     // a refusal type that decide cannot produce is NOT in the union
     assertType<Equal<(typeof Increment)["handler"] extends (...a: any[]) => Effect.Effect<any, infer E, any> ? (Duplicate extends E ? true : false) : never, false>>();
-    // onDuplicate: "fail" adds Duplicate; prepare's failures are added too
-    const WithDup = defineCommand({ name: "d", input, onDuplicate: "fail", decide: () => noop() });
-    assertType<Equal<(Duplicate extends HandlerErr<typeof WithDup> ? true : false), true>>();
+    // a repeat found by idempotentBy is a success, never a failure; prepare's failures are added
+    const WithIdem = defineCommand({ name: "d", input, idempotentBy: (c) => Incremented.where({ op_id: c.opId }), decide: () => noop() });
+    assertType<Equal<(Duplicate extends HandlerErr<typeof WithIdem> ? true : false), false>>();
     const WithPrepare = defineCommand({ name: "p", input, prepare: () => Effect.fail("boom" as const), decide: () => noop() });
     assertType<Equal<(("boom") extends HandlerErr<typeof WithPrepare> ? true : false), true>>();
     // the input type comes from the schema

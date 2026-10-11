@@ -10,7 +10,7 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import { Conflict } from "@crablet/eventstore/AppendErrors";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import { CommandExecutor, CommandExecutorLive } from "../../src/CommandExecutor.ts";
@@ -72,15 +72,13 @@ const makeBarrier = (parties: number) =>
 
 type Barrier = { readonly wait: Effect.Effect<void> };
 
-const bookSeat = (opts: { barrier?: Barrier; retries?: number; idempotent?: "return" | "fail" } = {}) =>
+const bookSeat = (opts: { barrier?: Barrier; retries?: number; idempotent?: boolean } = {}) =>
   defineCommand({
     name: "book_seat",
     errors: [SeatTaken],
     input: bookingInput,
     model: (c) => (opts.barrier ? afterLoad(SeatModel.of({ id: c.seatId }), opts.barrier.wait) : SeatModel.of({ id: c.seatId })),
-    ...(opts.idempotent !== undefined
-      ? { idempotentBy: (c: { bookingId: string }) => SeatBooked.where({ booking_id: c.bookingId }), onDuplicate: opts.idempotent }
-      : {}),
+    ...(opts.idempotent === true ? { idempotentBy: (c: { bookingId: string }) => SeatBooked.where({ booking_id: c.bookingId }) } : {}),
     retries: opts.retries ?? 3,
     decide: (seat, c) => (seat.taken ? fail(new SeatTaken({ seatId: c.seatId })) : emit(SeatBooked(c)))
   });
@@ -161,7 +159,7 @@ describe("CommandExecutor.run: idempotency with strict consistency", () => {
   it("the same booking submitted twice concurrently: one Created, one Idempotent, one event (not a Conflict)", async () => {
     const s = seat();
     const barrier = await run(makeBarrier(2));
-    const cmd = bookSeat({ barrier, retries: 0, idempotent: "return" });
+    const cmd = bookSeat({ barrier, retries: 0, idempotent: true });
     const input = booking(s);
     const exits = await exitsOf([
       Effect.flatMap(CommandExecutor, (e) => e.run(cmd, input)),
@@ -174,7 +172,7 @@ describe("CommandExecutor.run: idempotency with strict consistency", () => {
 
   it("a later repeat is an idempotent success, even though the seat is now taken (the check runs before decide)", async () => {
     const s = seat();
-    const cmd = bookSeat({ idempotent: "return" });
+    const cmd = bookSeat({ idempotent: true });
     const input = booking(s);
     const first = await run(Effect.flatMap(CommandExecutor, (e) => e.run(cmd, input)));
     assert.equal(first.wasIdempotent, false);
@@ -183,26 +181,6 @@ describe("CommandExecutor.run: idempotency with strict consistency", () => {
     // a DIFFERENT booking of the taken seat is a genuine domain refusal
     const other = await exitsOf([Effect.flatMap(CommandExecutor, (e) => e.run(cmd, booking(s)))]);
     assert.ok(failureOf(other[0]) instanceof SeatTaken);
-  });
-
-  it('onDuplicate "fail": a repeat fails with Duplicate, sequentially and when racing', async () => {
-    const s = seat();
-    const cmd = bookSeat({ idempotent: "fail" });
-    const input = booking(s);
-    await run(Effect.flatMap(CommandExecutor, (e) => e.run(cmd, input)));
-    const repeat = await exitsOf([Effect.flatMap(CommandExecutor, (e) => e.run(cmd, input))]);
-    assert.ok(failureOf(repeat[0]) instanceof Duplicate);
-
-    const s2 = seat();
-    const barrier = await run(makeBarrier(2));
-    const racing = bookSeat({ barrier, idempotent: "fail", retries: 0 });
-    const input2 = booking(s2);
-    const exits = await exitsOf([
-      Effect.flatMap(CommandExecutor, (e) => e.run(racing, input2)),
-      Effect.flatMap(CommandExecutor, (e) => e.run(racing, input2))
-    ]);
-    assert.equal(exits.filter((e) => e._tag === "Success").length, 1);
-    assert.ok(failureOf(exits.find((e) => e._tag === "Failure")) instanceof Duplicate);
   });
 });
 

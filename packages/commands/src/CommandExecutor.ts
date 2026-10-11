@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
-import { type AppendTooLarge, Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import { type AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command } from "./Command.ts";
 import { recordCommand } from "./CommandAudit.ts";
@@ -25,8 +25,8 @@ export interface CommandExecutorService {
   // Both re-run the whole command - a fresh transaction and a fresh load - up to `command.retries`
   // times when the append is refused with `Conflict` (a peer changed something in the boundary since
   // this run loaded it); `decide` is pure and the transaction rolled back, so retrying is safe. Only a
-  // `Conflict` is retried, and the last one is reported if the retries run out. `Duplicate` can only
-  // fail a command that declared `onDuplicate: "fail"`; otherwise a repeat is an idempotent success.
+  // `Conflict` is retried, and the last one is reported if the retries run out. A repeat that
+  // `idempotentBy` finds is an idempotent success.
   readonly run: <In, Err>(
     command: Command<In, Err>,
     input: unknown
@@ -65,7 +65,7 @@ class RolledBackIdempotent {
 export const runHandler = <T, E>(
   handler: CommandHandler<T, E>,
   command: T
-): Effect.Effect<ExecutionResult, E | AppendTooLarge | Conflict | Duplicate | SqlError, EventStore> =>
+): Effect.Effect<ExecutionResult, E | AppendTooLarge | Conflict | SqlError, EventStore> =>
   Effect.gen(function* () {
     const eventStore = yield* EventStore;
     const decision = yield* handler(command);
@@ -87,9 +87,8 @@ export const runHandler = <T, E>(
             : conflict
         )
       ),
-      Effect.catchTag("Duplicate", (duplicate) =>
-        decision.onDuplicate === "THROW" ? Effect.fail(duplicate) : Effect.succeed("idempotent" as const)
-      )
+      // the idempotency query matched at the append: the operation was already done
+      Effect.catchTag("Duplicate", () => Effect.succeed("idempotent" as const))
     );
 
     return outcome === "idempotent" ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION") : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
@@ -129,15 +128,14 @@ export const CommandExecutorLive = Layer.effect(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
 
-    // One attempt: the handler and its append inside one transaction. `Duplicate` is reported here for
-    // every command; `runDecoded` turns it into an idempotent success unless the command opted in.
+    // One attempt: the handler and its append inside one transaction.
     const execute = <T, E>(
       definition: Command<T, E>,
       command: T,
       handler: CommandHandler<T, E>
     ): Effect.Effect<
       ExecutionResult,
-      E | AppendTooLarge | Conflict | Duplicate | SqlError,
+      E | AppendTooLarge | Conflict | SqlError,
       EventStore | CommandAuditStore | SqlClient.SqlClient
     > =>
       // sql.withTransaction(effect) runs `effect` inside one Postgres transaction, committing on
@@ -184,13 +182,7 @@ export const CommandExecutorLive = Layer.effect(
         command.retries,
         execute(command, input, command.handler),
         Metric.update(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }), 1)
-        // The executor reports `Duplicate` for every command, but only a command that declared
-        // `onDuplicate: "fail"` can produce one that should reach the caller: for any other command
-        // the executor has already turned it into an idempotent success, so none can arrive here.
       ).pipe(
-        Effect.catchTag("Duplicate", (duplicate) =>
-          command.duplicates === "fail" ? Effect.fail(duplicate) : Effect.die(duplicate)
-        ),
         // One span for the whole execution, retries included: the attempts and the appends inside it are its children, and its failure is the command's outcome.
         Effect.withSpan("crablet.command", { attributes: { "crablet.command.name": command.name, "crablet.command.max_retries": command.retries } }),
         Effect.annotateLogs({ command: command.name })

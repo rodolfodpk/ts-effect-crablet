@@ -1,7 +1,7 @@
 import { Cause, Clock, Effect, Exit } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
-import type { Conflict, Duplicate } from "@crablet/eventstore/AppendErrors";
+import type { Conflict } from "@crablet/eventstore/AppendErrors";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import type { Command } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
@@ -43,8 +43,8 @@ export interface ScenarioResult<Err> {
   readonly outcome: ScenarioOutcome;
   // Exactly the events this `when` appended (including any its `prepare` step appended); empty on failure.
   readonly events: ReadonlyArray<StoredEvent>;
-  // The command's typed failure: a domain error from `decide`, `InvalidInput`, `Conflict` or `Duplicate`.
-  readonly error: Err | InvalidInput | Conflict | Duplicate | undefined;
+  // The command's typed failure: a domain error from `decide`, `InvalidInput` or `Conflict`.
+  readonly error: Err | InvalidInput | Conflict | undefined;
   // For an idempotent outcome, why nothing was appended.
   readonly reason: string | null;
 }

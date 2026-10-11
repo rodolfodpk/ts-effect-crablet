@@ -53,16 +53,15 @@ after(async () => {
   await db.stop();
 });
 
-// onDuplicate "fail": opening the same wallet twice is a genuine conflict (409), not a silent no-op.
+// A command that appends: the happy path, and the contract tests below.
 const OpenWalletContract = commandContract({ name: "open_wallet", input: Schema.Struct({ walletId: Schema.String }) });
 const OpenWallet = defineCommand({
   ...OpenWalletContract,
   idempotentBy: (c) => Query.forEventAndTag("WalletOpened", "wallet_id", c.walletId),
-  onDuplicate: "fail",
   decide: (_, c) => emit(AppendEvent.of("WalletOpened", "wallet_id", c.walletId, {}))
 });
 
-// default onDuplicate: a repeat is an idempotent success (200).
+// A repeat is an idempotent success (200).
 const SendConfirmationContract = commandContract({ name: "send_confirmation", input: Schema.Struct({ orderId: Schema.String }) });
 const SendConfirmation = defineCommand({
   ...SendConfirmationContract,
@@ -181,30 +180,6 @@ describe("commands-http integration (real Postgres)", () => {
       assert.strictEqual(body.lastPosition, null, "a repeat appended nothing");
       assert.strictEqual(body.lastTransactionId, null);
       assert.strictEqual(body.marker, null, "a repeat appended nothing, so it has no marker (yet)");
-    });
-  });
-
-  it("DCB conflict: duplicate open_wallet returns 409 with violationCode/hint", { timeout: 20_000 }, async () => {
-    const runId = crypto.randomUUID();
-    const walletId = `wallet-conflict-${runId}`;
-    await withServer({}, async (baseUrl) => {
-      const post = () =>
-        fetch(`${baseUrl}/api/commands/open_wallet`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletId })
-        });
-
-      const first = await post();
-      assert.strictEqual(first.status, 201);
-
-      const second = await post();
-      assert.strictEqual(second.status, 409);
-      const body = await jsonBody(second);
-      assert.strictEqual(body.status, 409);
-      assert.ok(typeof body.violationCode === "string" && body.violationCode.length > 0);
-      assert.strictEqual(body.matchingEventsCount, undefined, "the count was dropped from the wire format");
-      assert.ok(body.hint);
     });
   });
 
@@ -435,13 +410,13 @@ describe("commands-http from contracts (real Postgres)", () => {
   const post = (baseUrl: string, name: string, body: unknown) =>
     fetch(`${baseUrl}/api/commands/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-  it("a command declared from its contract runs: 201, and a repeat of an idempotent-by-fail command is the framework's 409", { timeout: 20_000 }, async () => {
+  it("a command declared from its contract runs: 201, and a repeat is an idempotent 200", { timeout: 20_000 }, async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     await serve(makeCommandApiLive(contracts, implementations, {}), async (baseUrl) => {
       assert.strictEqual((await post(baseUrl, "open_wallet", { walletId })).status, 201);
       const again = await post(baseUrl, "open_wallet", { walletId });
-      assert.strictEqual(again.status, 409);
-      assert.strictEqual((await jsonBody(again))["violationCode"], "IDEMPOTENCY_VIOLATION");
+      assert.strictEqual(again.status, 200);
+      assert.strictEqual((await jsonBody(again))["status"], "IDEMPOTENT");
     });
   });
 
