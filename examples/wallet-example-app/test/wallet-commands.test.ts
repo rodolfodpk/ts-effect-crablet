@@ -2,6 +2,7 @@
 // then what happened. Runs the real pipeline (validation, idempotency check, statement-period prepare,
 // model load, decide, conditional append) against the in-memory event store.
 import { describe, expect, test } from "bun:test";
+import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { InvalidInput } from "@crablet/commands/Errors";
 import { given } from "@crablet/commands/testing/Scenario";
@@ -120,6 +121,33 @@ describe("Withdraw", () => {
     expect(retry.outcome).toBe("idempotent");
     // while a NEW withdrawal of the same amount is refused
     expect((await s.when(Withdraw, wd("w1", "x2", 30))).error).toBeInstanceOf(InsufficientFunds);
+  });
+});
+
+// Two deposits decided at the same moment from a balance of 100 are both accepted (deposits are concurrent), and the second records a STALE newBalance: 120, not 130, because it never saw the first.
+// The history is built from the real deposit events, with the second one's newBalance replaced by what a concurrent writer would have recorded.
+const withStaleDeposit = async () => {
+  const s = given(opened("w1", 100));
+  const first = await s.when(Deposit, dep("w1", "dA", 10)); // newBalance 110
+  const second = await s.when(Deposit, dep("w1", "dB", 20)); // newBalance 130 when run after the first
+  const asAppended = (events: typeof first.events, newBalance?: number): ReadonlyArray<AppendEvent> =>
+    events.map((e) => ({ type: e.type, tags: e.tags, eventData: newBalance === undefined ? e.data : { ...(e.data as object), newBalance } }));
+  expect(first.events.at(-1)!.data).toMatchObject({ newBalance: 110 });
+  expect(second.events.at(-1)!.data).toMatchObject({ amount: 20, newBalance: 130 });
+  return given(opened("w1", 100), ...asAppended(first.events), ...asAppended(second.events, 120));
+};
+
+describe("a withdrawal after concurrent deposits that recorded a stale newBalance", () => {
+  test("decides on the sum of the amounts (130), not on the stale 120: a withdrawal of 125 succeeds", async () => {
+    const r = await (await withStaleDeposit()).when(Withdraw, wd("w1", "x1", 125));
+    expect(r.outcome).toBe("created");
+    expect(r.events.at(-1)!.data).toMatchObject({ amount: 125, newBalance: 5 });
+  });
+
+  test("and one of 135 is refused with the true balance, 130", async () => {
+    const r = await (await withStaleDeposit()).when(Withdraw, wd("w1", "x1", 135));
+    expect(r.error).toBeInstanceOf(InsufficientFunds);
+    expect(r.error).toMatchObject({ walletId: "w1", currentBalance: 130, requestedAmount: 135 });
   });
 });
 

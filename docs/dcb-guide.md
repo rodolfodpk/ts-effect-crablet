@@ -218,6 +218,22 @@ A command that can safely run in parallel with itself - say a deposit, which onl
 this for deposits; see `examples/wallet-example-app/src/domain/commands/`. The full-size version of the transfer,
 with statement periods and lifecycle checks, is `TransferMoneyCommand.ts` there.
 
+### A worked example: two deposits, then a withdrawal
+
+The wallet's deposit is `concurrent`, its withdrawal is strict (it checks the balance, so it conflicts with any change to the wallet's period). Take a wallet holding 100:
+
+| Step | What happens |
+|---|---|
+| 1 | Deposit A (+10) and deposit B (+20) both read 100, at the same moment. They do not conflict, so both commit. |
+| 2 | A records `newBalance` 110. B records `newBalance` **120**, which is stale: it never saw A. The sum of the amounts is 130. |
+| 3 | A withdrawal of 125 arrives. The model **folds the amounts** (100 + 10 + 20 = 130), never the recorded `newBalance`, so it decides on the right balance and succeeds, recording `newBalance` 5. |
+| 4 | If the withdrawal read the wallet *before* B committed, its append fails with a `Conflict` (something in the wallet changed since it read), and it is retried: it reads again, sees 130 and decides again. |
+| 5 | The balance view applies each amount (`balance = balance + amount`), so it also ends at 5, in whatever order the events arrive. |
+
+So a `newBalance` in an event is the balance **as its writer saw it**, and it can be stale for a credit; it is never the source of truth. What the system trusts is the sum of the amounts, in the commands and in the views.
+A debit's `newBalance` is exact, because a debit conflicts with any change to the wallet that commits between its read and its append. In the kind lab's two-hour soak, 2,916 of 38,747 deposits recorded a stale `newBalance`, 0 of 34,479 debits did,
+and the balance and summary views matched the sum of the log exactly ([the lab guide](guides/run-the-kind-lab.md), [add a view](guides/add-a-view.md)).
+
 ## How this relates to the DCB specification
 
 The [DCB specification](https://dcb.events/specification/) defines one append condition,

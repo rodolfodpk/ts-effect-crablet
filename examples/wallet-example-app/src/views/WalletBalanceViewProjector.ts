@@ -7,15 +7,15 @@ import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import * as Wallet from "../domain/WalletModel.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
-// Deposit/Withdrawal/
-// Transfer always SET the balance to the event's own carried `newBalance`/`fromBalance`/
-// `toBalance` (never increment) - naturally idempotent under redelivery, no junction table needed
-// (unlike WalletStatementViewProjector, which increments running totals and does need one).
+// The balance is the SUM of the changes, not a copy of the `newBalance` in the event: every deposit, withdrawal and transfer adds or subtracts its amount (`balance = balance + amount`).
+// Deposits are concurrent: the number a deposit records is the balance of the moment it was decided, and a credit that committed in between makes it stale. Copying it overwrote the right balance
+// with an old one (the kind lab's consistency check found 22 to 28 wallets of several hundred wrong that way).
+//
+// An increment is not idempotent by itself, but the view's batch and its cursor commit in one transaction (ViewsModule: `atomically`, ADR-0023), so a batch handled twice is applied once.
+// (WalletStatementViewProjector keeps a junction table as well, for its running totals.)
 //
 // WalletClosed deletes the row - the ViewSubscription (WalletViewConfig.ts) deliberately subscribes
 // to WalletClosed for this view.
-// The balance is the SUM of the changes, not a copy of the `newBalance` in the event. Deposits are concurrent: the number a deposit records is the balance of the moment it was decided, and a credit
-// that committed in between makes it stale. Copying it overwrote the right balance with an old one (the kind lab's consistency check found 22 to 28 wallets of several hundred wrong that way).
 const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
   Effect.gen(function* () {
   switch (event.type) {

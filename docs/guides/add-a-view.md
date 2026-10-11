@@ -5,6 +5,10 @@ but a projector's writes commit in the same transaction as the view's cursor, so
 projector is given** ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md)). A projector that writes anywhere else (another database, a service) must still be
 **idempotent**. The example is the course app's seat counter.
 
+**Apply the change an event carries, not a total it recorded.** A commutative command (the wallet's deposit) does not wait for other deposits, so the balance it writes into its event is the balance it saw when it decided, and
+a deposit that committed in between makes it stale (the kind lab counted 2,916 of 38,747 deposits that way in a two-hour soak, and 0 of 34,479 debits). A view that copies that number loses money; one that adds the amount
+(`balance = balance + amount`) is right in any order. The wallet's balance view did copy it at first, and the kind lab's consistency check found 22 to 28 wallets wrong.
+
 [← Task guides](README.md)
 
 ## 1. Create the table
