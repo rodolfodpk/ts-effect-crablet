@@ -38,7 +38,7 @@ Every instance reports the same values, so aggregate with `max`, never `sum`. Th
 
 ## What to watch
 
-Suggestions, by what each metric tells you:
+Suggestions, by what each metric tells you. Every metric and span, with what it measures, is listed in the [metrics reference](../../reference/metrics.md).
 
 | Metric | What it tells you |
 |---|---|
@@ -79,4 +79,4 @@ Each module has a management service (`ViewManagementService`, `AutomationManage
 poller service can pause, resume and reset a processor. They are plain Effect services. To reach them over HTTP, mount [`@crablet/processors-http`](../../../packages/processors-http/README.md): a list with status, failures, cursor and
 backlog, and pause, resume and reset, behind an authorization you provide ([ADR-0020](../../adr/0020-processors-admin-api.md)). Reset clears the error count and restarts the processor; it does not move its cursor.
 
-Delivery guarantees to keep in mind while reading these numbers: [reference](../../reference/README.md#views-the-outbox-and-automations).
+Delivery guarantees to keep in mind while reading these numbers: [views and delivery](../../concepts/views-and-delivery.md).

@@ -66,7 +66,13 @@ This is the one full map of the documents. Each folder holds one kind of documen
 
 | Page | What is in it |
 |---|---|
-| [Reference](./reference/README.md) | Command options, delivery guarantees, the HTTP layer, operating it, the packages, build and test. |
+| [Commands and models](./reference/commands.md) | `defineCommand` options, what `decide` returns, error kinds and statuses, `defineModel`, `defineEvent`. |
+| [Views](./reference/views.md) | `defineView` operations, column types, processor settings. |
+| [HTTP](./reference/http.md) | Endpoints, command answers, read-consistency parameters and settings. |
+| [Configuration](./reference/configuration.md) | `Crablet.layer` options, the wallet's environment variables and health endpoints. |
+| [Metrics and spans](./reference/metrics.md) | Every metric and span the packages record. |
+| [Database tables](./reference/tables.md) | The tables the framework owns. |
+| [Packages, build and test](./reference/README.md#packages) | Every package and example, and the commands to build and test. |
 | [Glossary](./reference/glossary.md) | Every word the documents use, in one sentence each. |
 | [`wallet-openapi.json`](./api/wallet-openapi.json), [`course-enrolment-openapi.json`](./api/course-enrolment-openapi.json) | The generated HTTP APIs of the two example applications. |
 | Package and example READMEs | Each folder under [`packages/`](../packages), [`examples/`](../examples) and [`tools/`](../tools) has one, listed in the [reference](./reference/README.md#packages). |

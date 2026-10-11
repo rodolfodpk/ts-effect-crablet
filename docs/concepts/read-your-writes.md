@@ -31,7 +31,7 @@ allows it ([ADR-0015](../adr/0015-read-consistency-by-marker.md), decisions 4 an
 
 ## Clients that did not write
 
-A page that shows data someone else may change listens to a feed of **pings** (`GET /api/views/changes`, server-sent events). A ping says "this view
+A page that shows data someone else may change listens to a feed of **pings** (server-sent events; the course app serves it at `GET /api/views/changes`). A ping says "this view
 moved" and carries no data; the page reads again through the same endpoints, with the same authorization ([ADR-0014](../adr/0014-live-updates-by-ping.md)).
 
 - A ping is sent only after the view's data and cursor have committed, so it never announces data a read cannot find yet.

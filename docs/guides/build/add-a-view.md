@@ -1,6 +1,6 @@
 # Add a view
 
-A view is a table kept up to date from events by a **projector**. It updates asynchronously. Delivery is at-least-once ([reference](../../reference/README.md#views-the-outbox-and-automations)),
+A view is a table kept up to date from events by a **projector**. It updates asynchronously. Delivery is at-least-once ([views and delivery](../../concepts/views-and-delivery.md)),
 but a projector's writes commit in the same transaction as the view's cursor, so a batch handled twice is applied once, **as long as the writes go through the `sql` the
 projector is given** ([ADR-0023](../../adr/0023-view-batch-and-cursor-in-one-transaction.md)). A projector that writes anywhere else (another database, a service) must still be
 **idempotent**. The example is the course app's seat counter.

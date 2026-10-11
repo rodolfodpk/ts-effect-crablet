@@ -37,4 +37,4 @@ Its architecture as C4 diagrams (context, containers, components): [C4 models](.
 | `scripts/` | `generate-openapi.ts` (`bun run docs:api` at the root; writes [`docs/api/wallet-openapi.json`](../../docs/api/wallet-openapi.json)), `verify-events.ts` (decode stored events with the current definitions; run it in CI before a deploy that changes an event), `report-storage.ts` (the space the library's tables use) |
 | `test/` | unit tests and `test/integration/` (Docker) |
 
-Read more: [Evolving events](../../docs/guides/build/evolving-events.md) (what `verify-events` and `model-impact.test.ts` are for), [Reference: operating it](../../docs/reference/README.md#operating-it).
+Read more: [Evolving events](../../docs/guides/build/evolving-events.md) (what `verify-events` and `model-impact.test.ts` are for), [Run it in production](../../docs/guides/operate/run-in-production.md), [configuration](../../docs/reference/configuration.md).

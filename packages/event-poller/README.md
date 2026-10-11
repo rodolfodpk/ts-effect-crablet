@@ -19,7 +19,7 @@ shared so the three modules get the same guarantees.
 
 ## Read more
 
-[Reference: delivery guarantees](../../docs/reference/README.md#views-the-outbox-and-automations), [ADR-0007](../../docs/adr/0007-event-poller-fiber-model.md),
+[Delivery guarantees](../../docs/concepts/views-and-delivery.md), [ADR-0007](../../docs/adr/0007-event-poller-fiber-model.md),
 [ADR-0012](../../docs/adr/0012-transaction-position-cursors.md), [Reliability and scale report](../../docs/history/plans/reliability-and-scale-diagnostic.md).
 You normally use it through [views](../views/README.md), [outbox](../outbox/README.md) or [automations](../automations/README.md).
 

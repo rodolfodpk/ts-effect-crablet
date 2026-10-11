@@ -10,7 +10,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Dynamic Consistency Boundary (DCB)** - the set of events a command's decision depends on, chosen by the command itself by querying, instead of fixed in advance as an aggregate. Two commands conflict only if one adds an event the other's boundary would have included. [DCB guide](../concepts/dcb-guide.md)
 - **Model** - what events mean for one entity or rule: a pure fold from events to state (`defineModel`). The same declaration gives the boundary, so the fold and the boundary cannot drift apart. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
 - **`all(...)`** - combines several models into one decision (both wallets of a transfer). Its boundary is the union of theirs. [DCB guide](../concepts/dcb-guide.md)
-- **Command** - a named, pure decision: from the loaded state and the input, it emits events, refuses with a domain error, or does nothing (`defineCommand`). [Reference](./README.md#what-a-command-can-say)
+- **Command** - a named, pure decision: from the loaded state and the input, it emits events, refuses with a domain error, or does nothing (`defineCommand`). [Reference](./commands.md)
 - **Domain error** - a refusal that belongs to the business (`CourseFull`), declared on the command, with a `kind` the HTTP layer maps to a status code.
 - **Append condition** - "append these events only if nothing matching this query is newer than this position". It makes the check and the write one atomic step. [ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md)
 - **Conflict** - the append condition failed because the boundary changed. The command is re-run with fresh state (`retries`, default 3).
@@ -52,4 +52,4 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **`verify-events`** - a script you run (not something the application runs): it decodes stored events with the current definitions and reports the ones that cannot be read, the tags a definition derives that the stored event lacks, and event types in the log that no definition accounts for. Read-only; meant for CI against a copy of production. [Evolving events](../guides/build/evolving-events.md#the-checks)
 - **Change-impact report** - lists, for each model, which event types it handles, ignores or lacks, compared with a committed baseline whose entries need a reason. [Evolving events](../guides/build/evolving-events.md#the-checks)
 - **Tag-key table** - `crablet_event_tag_keys`: one row per event and tag key, which keeps the pollers' tag filters cheap. [ADR-0019](../adr/0019-storage-visibility-and-the-tag-table.md)
-- **Storage report** - `storageReport()`: the sizes of the log and its indexes, also exposed as `crablet.storage.*` gauges. [Reference](./README.md#operating-it)
+- **Storage report** - `storageReport()`: the sizes of the log and its indexes, also exposed as `crablet.storage.*` gauges. [Reference](./metrics.md)
