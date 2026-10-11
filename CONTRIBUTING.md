@@ -32,11 +32,11 @@ style of the file you are in.
 ### Run one test
 
 ```bash
-bun test packages/commands/test/quickstart.test.ts                      # a unit test
+bun test examples/quickstart/test/quickstart.test.ts                    # a unit test
 node --test packages/eventstore/test/integration/storage.test.ts        # an integration test (needs Docker)
 ```
 
-Unit tests live in `packages/*/test/` and `examples/*/test/`; integration tests in a `test/integration/` folder next to them. Integration tests run under **Node**, not
+Unit tests live in `packages/*/test/`, `examples/*/test/` and `tools/*/test/`; integration tests in a `test/integration/` folder next to them. Integration tests run under **Node**, not
 Bun, because the Testcontainers PostgreSQL module hangs under Bun. Each integration file starts its own container (`startTestDb` from
 [`@crablet/test-support`](packages/test-support/README.md)).
 
@@ -103,7 +103,8 @@ project before ([the reliability report](docs/history/plans/reliability-and-scal
 - **Plans are records.** A plan in `docs/history/plans/` is written before the work and kept after it; update its status in [`docs/history/plans/README.md`](docs/history/plans/README.md).
 - **Diagrams are Mermaid** in fenced `mermaid` blocks (GitHub draws them), kept in [`docs/concepts/architecture.md`](docs/concepts/architecture.md) (the framework) and [`docs/concepts/c4-examples.md`](docs/concepts/c4-examples.md) (the two example applications). They are not
   checked against the code, so when a flow changes, change its diagram in the same commit.
-- Prefer the same example domains as the existing documents: seat booking in the README, course enrolment in the tutorial, the wallet for the full application.
+- Use the same example domains as the existing documents: course enrolment to teach (the README, the quick start, the tutorial), the wallet for the full application, and the
+  transfer between two accounts in the DCB guide.
 
 ## Making a change
 

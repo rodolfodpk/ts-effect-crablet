@@ -115,30 +115,30 @@ command is audited when auditing is on. See [ADR-0003](../adr/0003-non-commutati
 
 ## Two commands that conflict
 
-This is the idea of dynamic consistency boundaries. Two bookings of the same seat share a boundary, so one of them must lose; a booking of a different seat shares nothing with
-either and never waits.
+This is the idea of dynamic consistency boundaries. Two subscriptions to the last seat of the same course share a boundary (the course's events), so one of
+them must lose. A subscription to a different course, by a different student, shares nothing with either and never waits.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant A as Command A: book 12A for Ann
-  participant B as Command B: book 12A for Bob
+  participant A as Command A: Ann takes math
+  participant B as Command B: Bob takes math
   participant L as Event log
-  participant D as Command D: book 99Z for Dan
+  participant D as Command D: Dan takes art
 
-  A->>L: read boundary of seat 12A
-  L-->>A: SeatAdded at position 10
-  B->>L: read boundary of seat 12A
-  L-->>B: SeatAdded at position 10
-  A->>L: append SeatBooked if nothing newer than 10
+  A->>L: read boundary: course math and student ann
+  L-->>A: CourseDefined math, 1 seat, at position 10
+  B->>L: read boundary: course math and student bob
+  L-->>B: CourseDefined math, 1 seat, at position 10
+  A->>L: append StudentSubscribed if nothing newer than 10 in its boundary
   L-->>A: ok, position 11
-  B->>L: append SeatBooked if nothing newer than 10
-  L-->>B: refused, SeatBooked at 11 is newer
+  B->>L: append StudentSubscribed if nothing newer than 10 in its boundary
+  L-->>B: refused, position 11 is tagged course math
   Note over B: Conflict, so the whole command re-runs
-  B->>L: read boundary of seat 12A
-  L-->>B: SeatAdded 10, SeatBooked 11
-  B->>B: decide fails with SeatTaken
-  D->>L: append SeatBooked for 99Z if nothing newer in its own boundary
+  B->>L: read boundary again
+  L-->>B: CourseDefined 10, StudentSubscribed 11
+  B->>B: decide fails with CourseFull
+  D->>L: append StudentSubscribed for art if nothing newer in its own boundary
   L-->>D: ok, unaffected by A and B
 ```
 

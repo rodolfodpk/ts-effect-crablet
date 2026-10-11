@@ -26,7 +26,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | [Consistency boundaries (the DCB guide)](./concepts/dcb-guide.md) | A command declares the events its decision depends on; two commands conflict only when one changes what the other relied on. |
 | [Architecture](./concepts/architecture.md) | The system and its core flows, in diagrams. |
 | [C4 models](./concepts/c4-examples.md) | The two example applications, as context, container and component diagrams. |
-| [The seat booking as an Event Model](./concepts/event-model-seat-booking.md) | Events, commands and views, laid out on a timeline. |
+| [Course enrolment as an Event Model](./concepts/event-model.md) | The README's example as events, commands and a view, laid out on a timeline. |
 
 ## Build: tasks while writing an application
 

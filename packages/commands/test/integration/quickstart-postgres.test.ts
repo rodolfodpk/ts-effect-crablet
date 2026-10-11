@@ -1,5 +1,4 @@
-// Runs under Node (Testcontainers). The README quick start (same event, model and command as
-// quickstart.test.ts) run for real: `CommandExecutor.run` inside a Postgres transaction.
+// Runs under Node (Testcontainers). The smallest command (one event, one model) run for real: `CommandExecutor.run` inside a Postgres transaction.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Redacted } from "effect";
@@ -13,7 +12,7 @@ import { DomainError } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { defineModel } from "../../src/Model.ts";
 
-// ---- the README quick start ----
+// ---- the smallest command ----
 const SeatBooked = defineEvent("SeatBooked", {
   schema: Schema.Struct({ seatId: Schema.String, guest: Schema.String }),
   tags: (d) => ({ seat_id: d.seatId })

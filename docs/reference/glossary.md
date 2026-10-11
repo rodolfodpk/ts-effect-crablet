@@ -4,14 +4,14 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 ## The idea
 
-- **Event** - a fact that happened, immutable, stored in one log shared by everything (`SeatBooked`, `DepositMade`). Defined with `defineEvent`: a name, a payload schema and the tags it can be found by. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
-- **Tag** - a `key=value` label on an event saying what it is about (`seat_id=12A`). Events are found by their tags; there are no streams. [DCB guide](../concepts/dcb-guide.md)
+- **Event** - a fact that happened, immutable, stored in one log shared by everything (`StudentSubscribed`, `DepositMade`). Defined with `defineEvent`: a name, a payload schema and the tags it can be found by. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
+- **Tag** - a `key=value` label on an event saying what it is about (`course_id=math`). Events are found by their tags; there are no streams. [DCB guide](../concepts/dcb-guide.md)
 - **Query** - a set of "event types, with these tags" items that selects events from the log.
 - **Dynamic Consistency Boundary (DCB)** - the set of events a command's decision depends on, chosen by the command itself by querying, instead of fixed in advance as an aggregate. Two commands conflict only if one adds an event the other's boundary would have included. [DCB guide](../concepts/dcb-guide.md)
 - **Model** - what events mean for one entity or rule: a pure fold from events to state (`defineModel`). The same declaration gives the boundary, so the fold and the boundary cannot drift apart. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
 - **`all(...)`** - combines several models into one decision (both wallets of a transfer). Its boundary is the union of theirs. [DCB guide](../concepts/dcb-guide.md)
 - **Command** - a named, pure decision: from the loaded state and the input, it emits events, refuses with a domain error, or does nothing (`defineCommand`). [Reference](./README.md#what-a-command-can-say)
-- **Domain error** - a refusal that belongs to the business (`SeatTaken`), declared on the command, with a `kind` the HTTP layer maps to a status code.
+- **Domain error** - a refusal that belongs to the business (`CourseFull`), declared on the command, with a `kind` the HTTP layer maps to a status code.
 - **Append condition** - "append these events only if nothing matching this query is newer than this position". It makes the check and the write one atomic step. [ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md)
 - **Conflict** - the append condition failed because the boundary changed. The command is re-run with fresh state (`retries`, default 3).
 - **Idempotent** - repeating the operation has no further effect. A command can declare `idempotentBy`; delivery by the pollers is at-least-once, so an automation's command must declare it (`automationHandlerOf` refuses one that does not), an outbox publisher should deduplicate on `event.position`, and a view's projector is covered when it writes through the `sql` it is given (its batch and cursor commit together, ADR-0023).

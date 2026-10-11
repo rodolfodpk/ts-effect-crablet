@@ -15,7 +15,7 @@ describe("coverage exclusions", () => {
   test("everything the merge leaves out, Codecov ignores too", () => {
     const leftOut = [
       "packages/commands/test/support/transfer.ts",
-      "packages/commands/test/quickstart.test.ts",
+      "packages/commands/test/transfer-guide.test.ts",
       "packages/eventstore/diagnostics/storage.diagnostic.ts",
       "packages/db-migrations/test/migrations.test.ts",
       "examples/course-enrolment-app/tutorial/step1-capacity-only.test.ts",
