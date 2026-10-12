@@ -208,8 +208,8 @@ const scenarios: ReadonlyArray<Scenario> = [
         input,
         errors: [WalletNotOpen],
         idempotentBy: (c) => w.Notified.where({ deposit_id: c.depositId }),
-        prepare: (c, es) => es.exists(w.Opened.where({ wallet_id: c.walletId })),
-        decide: (_, c, isOpen) => (isOpen ? emit(w.Notified(c)) : fail(new WalletNotOpen({ walletId: c.walletId })))
+        resolve: (c, read) => read.exists(w.Opened.where({ wallet_id: c.walletId })),
+        decide: (_, c, { resolved: isOpen }) => (isOpen ? emit(w.Notified(c)) : fail(new WalletNotOpen({ walletId: c.walletId })))
       });
       return { automation: w.automationOf(needsWallet), triggers: w.sameWallet };
     },
@@ -224,8 +224,8 @@ const scenarios: ReadonlyArray<Scenario> = [
         input,
         errors: [WalletNotOpen],
         idempotentBy: (c) => w.Notified.where({ deposit_id: c.depositId }),
-        prepare: (c, es) => es.exists(w.Opened.where({ wallet_id: c.walletId })),
-        decide: (_, c, isOpen) => (isOpen ? emit(w.Notified(c)) : fail(new WalletNotOpen({ walletId: c.walletId })))
+        resolve: (c, read) => read.exists(w.Opened.where({ wallet_id: c.walletId })),
+        decide: (_, c, { resolved: isOpen }) => (isOpen ? emit(w.Notified(c)) : fail(new WalletNotOpen({ walletId: c.walletId })))
       });
       return { automation: w.automationOf(needsWallet), triggers: w.sameWallet, given: [w.Opened({ walletId: `w1-${uid}` })] };
     },

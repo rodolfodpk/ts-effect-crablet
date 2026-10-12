@@ -1,9 +1,8 @@
 // The wallet's commands, tested BDD-style with NO database: given a history, when a command arrives,
-// then what happened. Runs the real pipeline (validation, idempotency check, statement-period prepare,
+// then what happened. Runs the real pipeline (validation, idempotency check, the statement period,
 // model load, decide, conditional append) against the in-memory event store.
 import { describe, expect, test } from "bun:test";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
-import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { InvalidInput } from "@crablet/commands/Errors";
 import { given } from "@crablet/commands/testing/Scenario";
 import { CloseWallet } from "../src/domain/commands/CloseWalletCommand.ts";
@@ -11,8 +10,8 @@ import { Deposit } from "../src/domain/commands/DepositCommand.ts";
 import { OpenWallet } from "../src/domain/commands/OpenWalletCommand.ts";
 import { TransferMoney } from "../src/domain/commands/TransferMoneyCommand.ts";
 import { Withdraw } from "../src/domain/commands/WithdrawCommand.ts";
-import { InsufficientFunds, WalletNotFound } from "../src/domain/errors/WalletErrors.ts";
-import { WalletOpened } from "../src/domain/WalletModel.ts";
+import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "../src/domain/errors/WalletErrors.ts";
+import { WalletClosed, WalletOpened } from "../src/domain/WalletModel.ts";
 
 const at = new Date().toISOString();
 const opened = (walletId: string, initialBalance: number) => WalletOpened({ walletId, owner: "Ann", initialBalance, openedAt: at });
@@ -28,9 +27,23 @@ describe("OpenWallet", () => {
     expect(r.events[0]!.data).toMatchObject({ walletId: "w1", owner: "Ann", initialBalance: 50 });
   });
 
-  test("opening an existing wallet fails with Duplicate (a genuine conflict, not a silent no-op)", async () => {
-    const r = await given(opened("w1", 0)).when(OpenWallet, { walletId: "w1", owner: "Ann", initialBalance: 50 });
-    expect(r.error).toBeInstanceOf(Duplicate);
+  test("the same open again is a retry: already opened, nothing appended", async () => {
+    const r = await given(opened("w1", 50)).when(OpenWallet, { walletId: "w1", owner: "Ann", initialBalance: 50 });
+    expect(r.outcome).toBe("idempotent");
+    expect(r.events).toEqual([]);
+  });
+
+  test("a different wallet under an id that is taken is refused with WalletAlreadyExists", async () => {
+    for (const other of [{ owner: "Bob", initialBalance: 50 }, { owner: "Ann", initialBalance: 0 }]) {
+      const r = await given(opened("w1", 50)).when(OpenWallet, { walletId: "w1", ...other });
+      expect(r.error).toBeInstanceOf(WalletAlreadyExists);
+      expect(r.events).toEqual([]);
+    }
+  });
+
+  test("a closed wallet's id is not reused", async () => {
+    const r = await given(opened("w1", 50), WalletClosed({ walletId: "w1", closedAt: at })).when(OpenWallet, { walletId: "w1", owner: "Bob", initialBalance: 0 });
+    expect(r.error).toBeInstanceOf(WalletAlreadyExists);
   });
 
   test("blank names and a negative initial balance are invalid input", async () => {

@@ -29,7 +29,7 @@ The checked-in descriptions of the two examples: [`wallet-openapi.json`](../api/
 | `400` | the input does not match the schema, or a domain error of kind `invalid` | a problem: every failing field, or the error's fields |
 | `403` | a domain error of kind `forbidden` | a problem with the error's fields |
 | `404` | a domain error of kind `not_found` | a problem with the error's fields |
-| `409` | a domain error of kind `conflict`; a `Conflict` after the retries ran out; a `Duplicate` | a problem; a DCB conflict has its own shape |
+| `409` | a domain error of kind `conflict`; a `Conflict` after the retries ran out | a problem; a DCB conflict has its own shape, with `violationCode` `DCB_VIOLATION` or `GUARD_VIOLATION` |
 | `500` | anything unexpected, including a stored event that cannot be read | a generic problem; the message is not echoed |
 
 Every problem is `application/problem+json` (RFC 7807) and documented per command in the OpenAPI description.

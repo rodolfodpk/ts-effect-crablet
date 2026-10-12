@@ -93,9 +93,8 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       const correlationId = yield* resolveCorrelationId;
 
       // Only the command-execution call itself runs inside CorrelationContext - request parsing and
-      // validation above deliberately do not. A `Conflict` (stale decision) or a `Duplicate` (command
-      // opted into failing on repeats) becomes a 409 `CommandConflict` - neither is ever this command's own
-      // domain error. A declared domain error is presented by its KIND with its own fields (see
+      // validation above deliberately do not. A `Conflict` (a stale decision, after the retries) becomes a
+      // 409 `CommandConflict` - it is never this command's own domain error. A declared domain error is presented by its KIND with its own fields (see
       // ProblemDetail.ts). Anything still unrecognized falls through, unchanged, to the terminal
       // `toProblemDetail` catch-all below (a generic 500).
       const executor = yield* CommandExecutor;
@@ -103,7 +102,6 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
         Effect.catchTag("Conflict", (e) =>
           Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION"))
         ),
-        Effect.catchTag("Duplicate", (e) => Effect.fail(CommandConflict.of(e.message, "IDEMPOTENCY_VIOLATION"))),
         Effect.catch((error) => {
           if (error instanceof CommandConflict) return Effect.fail(error);
           const kind = kindOf(error);

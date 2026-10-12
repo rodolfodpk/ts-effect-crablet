@@ -31,11 +31,19 @@ describe("problemFromError", () => {
     });
   });
 
-  test("the framework's own refusals (a course that already exists, a bad input) keep their title and detail", () => {
-    expect(problemFromError(CommandConflict.of('Duplicate operation: "define_course" was already done', "IDEMPOTENCY_VIOLATION"))).toEqual({
+  test("a course id that is taken carries the existing capacity", () => {
+    expect(problemFromError({ ...body, title: "Conflict", errorType: "CourseAlreadyDefined", fields: { courseId: "math", capacity: 30 } })).toEqual({
+      _tag: "CourseAlreadyDefined",
+      courseId: "math",
+      capacity: 30
+    });
+  });
+
+  test("the framework's own refusals (a decision on stale state, a bad input) keep their title and detail", () => {
+    expect(problemFromError(CommandConflict.of("Concurrent modification detected", "DCB_VIOLATION"))).toEqual({
       _tag: "Rejected",
       title: "Conflict",
-      detail: 'Duplicate operation: "define_course" was already done'
+      detail: "Concurrent modification detected"
     });
     expect(problemFromError(CommandApiBadRequest.of("Invalid payload for command: define_course"))).toEqual({
       _tag: "Rejected",

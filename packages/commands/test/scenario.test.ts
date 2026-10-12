@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { concurrent, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError, InvalidInput } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
@@ -17,7 +16,6 @@ const Withdrawn = defineEvent("Withdrawn", {
   schema: Schema.Struct({ id: Schema.String, amount: Schema.Number, opId: Schema.String }),
   tags: (d) => ({ account_id: d.id, op_id: d.opId })
 });
-const Audited = defineEvent("Audited", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ account_id: d.id }) });
 
 const AccountModel = defineModel({ by: "account_id", initial: () => ({ open: false, balance: 0 }) })
   .lifecycle(Opened, (_, d) => ({ open: true, balance: d.initial }))
@@ -90,75 +88,31 @@ describe("given / when: command logic without a database", () => {
     expect(scenario.log.map((e) => e.type)).toEqual(["Opened", "Withdrawn"]);
   });
 
-  test('onDuplicate "fail": a repeat fails with Duplicate', async () => {
-    const Strict = defineCommand({
-      name: "withdraw-once",
-      input: Schema.Struct({ id: Schema.String, amount: Positive, opId: Schema.String }),
-      model: (c) => AccountModel.of({ id: c.id }),
-      idempotentBy: (c) => Withdrawn.where({ op_id: c.opId }),
-      onDuplicate: "fail",
-      decide: (_, c) => emit(Withdrawn(c))
-    });
-    const scenario = given(Opened({ id: "a1", initial: 100 }));
-    await scenario.when(Strict, { id: "a1", amount: 1, opId: "op1" });
-    const again = await scenario.when(Strict, { id: "a1", amount: 1, opId: "op1" });
-    expect(again.error).toBeInstanceOf(Duplicate);
-  });
-
-  test("a command that fails AFTER its prepare step appended something leaves no trace (transaction rollback)", async () => {
-    const Audit = defineCommand({
-      name: "audited-withdraw",
+  test("a refused command leaves no trace", async () => {
+    const Refuse = defineCommand({
+      name: "refuse",
       errors: [NoSuchAccount],
       input: Schema.Struct({ id: Schema.String }),
-      // prepare writes an audit event - then decide refuses
-      prepare: (c, es) => es.append([Audited({ id: c.id })]),
-      decide: (_, c) => fail(new NoSuchAccount({ id: c.id })),
-      consistency: () => concurrent()
+      decide: (_, c) => fail(new NoSuchAccount({ id: c.id }))
     });
     const scenario = given(Opened({ id: "a1", initial: 5 }));
-    const result = await scenario.when(Audit, { id: "a1" });
+    const result = await scenario.when(Refuse, { id: "a1" });
     expect(result.error).toBeInstanceOf(NoSuchAccount);
-    expect(scenario.log.map((e) => e.type)).toEqual(["Opened"]); // the audit event was rolled back
+    expect(scenario.log.map((e) => e.type)).toEqual(["Opened"]);
     expect(scenario.store.appended).toHaveLength(0);
   });
 
-  test("a successful command keeps what its prepare step appended, alongside its own events", async () => {
-    const Audit = defineCommand({
-      name: "audited",
-      input: Schema.Struct({ id: Schema.String, amount: Positive, opId: Schema.String }),
-      prepare: (c, es) => es.append([Audited({ id: c.id })]),
-      model: (c) => AccountModel.of({ id: c.id }),
-      decide: (_, c) => emit(Withdrawn(c))
-    });
-    const result = await given(Opened({ id: "a1", initial: 5 })).when(Audit, { id: "a1", amount: 1, opId: "x" });
-    expect(result.outcome).toBe("created");
-    expect(result.events.map((e) => e.type)).toEqual(["Audited", "Withdrawn"]);
-  });
-
-  test("a command that ends idempotent after its prepare step appended something leaves nothing behind (the transaction is rolled back, as in production)", async () => {
-    const Leaky = defineCommand({
-      name: "leaky",
-      input: Schema.Struct({ id: Schema.String }),
-      prepare: (c, es) => es.append([Audited({ id: c.id })]),
-      model: (c) => AccountModel.of({ id: c.id }),
-      decide: () => noop("NOTHING_TO_DO")
-    });
-    const scenario = given(Opened({ id: "a1", initial: 5 }));
-    const result = await scenario.when(Leaky, { id: "a1" });
-    expect(result.outcome).toBe("idempotent");
-    expect(result.events).toEqual([]);
-    expect(scenario.log.map((e) => e.type)).toEqual(["Opened"]);
-  });
-
-  test("an idempotent outcome whose prepare step appended nothing is fine", async () => {
+  test("a lookup in resolve reaches decide; an idempotent outcome after it appends nothing", async () => {
     const Quiet = defineCommand({
       name: "quiet",
       input: Schema.Struct({ id: Schema.String }),
-      prepare: (c, es) => es.exists(Opened.where({ account_id: c.id })),
-      decide: () => noop("NOTHING_TO_DO")
+      resolve: (c, read) => read.exists(Opened.where({ account_id: c.id })),
+      decide: (_, c, { resolved }) => (resolved ? noop("NOTHING_TO_DO") : fail(new NoSuchAccount({ id: c.id }))),
+      errors: [NoSuchAccount]
     });
     const result = await given(Opened({ id: "a1", initial: 5 })).when(Quiet, { id: "a1" });
     expect(result.outcome).toBe("idempotent");
+    expect((await given().when(Quiet, { id: "a1" })).error).toBeInstanceOf(NoSuchAccount);
   });
 
   test("a bug in a command (a defect) fails the test loudly instead of becoming a result", async () => {

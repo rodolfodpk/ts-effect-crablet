@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { EVENTS_CHANNEL } from "@crablet/eventstore";
+import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
@@ -63,6 +63,6 @@ export const makeViewsProcessor = (
       acquireLeader: tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY),
       // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
       atomically: (effect) => sql.withTransaction(effect),
-      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: (yield* Effect.service(Wakeups)) === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

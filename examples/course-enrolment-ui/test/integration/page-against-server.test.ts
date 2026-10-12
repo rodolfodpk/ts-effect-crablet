@@ -149,13 +149,13 @@ describe("the page, driven against the real course app", () => {
     busy = await subscribe(busy, student, fifth);
     assert.deepStrictEqual(subscribeFailure(busy), { _tag: "StudentAtLimit", studentId: student, limit: 3 });
 
-    // defining a course twice is the framework's conflict
-    const again = await defineCourse(model, course, 1);
+    // another capacity under a course id that is taken
+    const again = await defineCourse(model, course, 2);
     assert.ok(AsyncData.isFailure(again.define.result));
     const failure = AsyncData.match(again.define.result, {
       onIdle: () => null, onLoading: () => null, onRefreshing: () => null, onStale: () => null, onSuccess: () => null, onFailure: (p) => p
     });
-    assert.strictEqual(failure?._tag, "Rejected");
+    assert.deepStrictEqual(failure, { _tag: "CourseAlreadyDefined", courseId: course, capacity: 1 });
   });
 
   it("a lookup of a course that was never defined is 'no such course'; of one just written without the marker, 'not in the seat map yet'", { timeout: 30_000 }, async () => {

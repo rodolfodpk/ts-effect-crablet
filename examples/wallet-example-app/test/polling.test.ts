@@ -17,10 +17,10 @@ describe("WALLET_POLL_MS and WALLET_BACKOFF_MAX_SECONDS", () => {
 });
 
 describe("WALLET_WAKEUPS", () => {
-  test("unset is coalesced; the three modes are accepted; anything else stops the start-up", () => {
+  test("unset is coalesced; the two modes are accepted; anything else (the removed inline included) stops the start-up", () => {
     expect(wakeupModeFromEnv(undefined)).toBe("coalesced");
     expect(wakeupModeFromEnv(" off ")).toBe("off");
-    expect(wakeupModeFromEnv("inline")).toBe("inline");
-    expect(() => wakeupModeFromEnv("never")).toThrow('WALLET_WAKEUPS must be coalesced, inline or off, got "never"');
+    expect(() => wakeupModeFromEnv("inline")).toThrow('WALLET_WAKEUPS must be coalesced or off, got "inline"');
+    expect(() => wakeupModeFromEnv("never")).toThrow('WALLET_WAKEUPS must be coalesced or off, got "never"');
   });
 });

@@ -190,3 +190,10 @@ export const WalletLifecycleModel = defineModel({
 })
   .lifecycle(WalletOpened, () => ({ exists: true }))
   .lifecycle(WalletClosed, () => ({ exists: false }));
+
+// Whether a wallet id was ever opened, and with what - for opening one. A closed wallet still counts: its id is not reused.
+// It keeps the owner and the initial balance so that a retry of the same open is told apart from a different wallet under the same id.
+export const WalletOpeningModel = defineModel({
+  by: WalletTags.WALLET_ID,
+  initial: () => ({ opened: null as { readonly owner: string; readonly initialBalance: number } | null })
+}).on(WalletOpened, (_, d) => ({ opened: { owner: d.owner, initialBalance: d.initialBalance } }));

@@ -34,7 +34,7 @@ const sessionInfo = sessionHost === undefined || sessionHost === "" ? undefined 
 const port = Number(process.env["PORT"] ?? 8080);
 const poolSize = poolSizeFromEnv();
 const wakeupMode = wakeupModeFromEnv(); // WALLET_WAKEUPS
-const polling = { ...pollingFromEnv(), listenForWakeups: wakeupMode !== "off" }; // WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS
+const polling = pollingFromEnv(); // WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS; with WALLET_WAKEUPS=off the processors do not LISTEN (they follow the event store)
 const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (ADR-0022)
 const sessionHolds = sessionConnectionsHeld(roles); // what this process's roles keep in the session pool for good
 

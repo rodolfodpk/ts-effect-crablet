@@ -51,10 +51,9 @@ export class CommandApiBadRequest extends Schema.Class<CommandApiBadRequest>("Co
   }
 }
 
-// A refused append: the command's decision went stale (`Conflict`, after its retries ran out) or it
-// repeated an operation it declared must fail (`Duplicate`). See CommandApiLive.ts for the translation.
-// `violationCode` says which check refused it: DCB_VIOLATION (the decision model changed),
-// GUARD_VIOLATION (a lifecycle guard changed) or IDEMPOTENCY_VIOLATION (already done).
+// A refused append: the command's decision went stale (`Conflict`, after its retries ran out). See CommandApiLive.ts for the
+// translation. `violationCode` says which check refused it: DCB_VIOLATION (the decision model changed) or GUARD_VIOLATION (a
+// lifecycle guard changed). An id that is already taken is not this: a command decides it and fails with its own domain error.
 export class CommandConflict extends Schema.Class<CommandConflict>("CommandConflict")(
   {
     type: Schema.Literal(CommandApiDcbConcurrencyType),

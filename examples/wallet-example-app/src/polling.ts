@@ -4,8 +4,6 @@
 export interface Polling {
   readonly pollingIntervalMs: number;
   readonly backoffMaxSeconds: number;
-  // false (WALLET_WAKEUPS=off): the processors do not LISTEN; they see new events only on their interval.
-  readonly listenForWakeups?: boolean;
 }
 export const defaultPolling: Polling = { pollingIntervalMs: 1000, backoffMaxSeconds: 10 };
 
@@ -16,13 +14,13 @@ const wholeNumber = (name: string, value: string | undefined, fallback: number, 
   return n;
 };
 
-export type WakeupMode = "coalesced" | "inline" | "off";
-// WALLET_WAKEUPS: how appends tell the processors about new events. coalesced (default): one notification per 50 ms window, after the commit. inline: one inside every append (the old behavior).
+export type WakeupMode = "coalesced" | "off";
+// WALLET_WAKEUPS: how appends tell the processors about new events. coalesced (default): one notification per 50 ms window, after the commit.
 // off: none, and the processors do not LISTEN either; the polling interval is then the latency.
 export const wakeupModeFromEnv = (value: string | undefined = process.env["WALLET_WAKEUPS"]): WakeupMode => {
   if (value === undefined || value.trim() === "") return "coalesced";
   const mode = value.trim();
-  if (mode !== "coalesced" && mode !== "inline" && mode !== "off") throw new Error(`WALLET_WAKEUPS must be coalesced, inline or off, got "${value}"`);
+  if (mode !== "coalesced" && mode !== "off") throw new Error(`WALLET_WAKEUPS must be coalesced or off, got "${value}"`);
   return mode;
 };
 

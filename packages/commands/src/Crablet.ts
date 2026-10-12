@@ -32,7 +32,7 @@ export type Services = CommandExecutor | EventStore | CommandAuditStore | SqlCli
 // `options.audit` sets what the command audit stores (see CommandAudit.ts): `{ payload: "redacted" | "none" | "full" | "off" }`,
 // "redacted" by default.
 export interface CrabletOptions {
-  // How appends tell pollers about new events: `{ wakeupMode: "coalesced" | "inline" | "off", wakeupWindowMs }` (see EventStoreConfig). Default: coalesced, 50 ms.
+  // How appends tell pollers about new events: `{ wakeupMode: "coalesced" | "off", wakeupWindowMs }` (see EventStoreConfig). Default: coalesced, 50 ms.
   readonly eventStore?: EventStoreConfig;
   readonly audit?: Partial<AuditConfig>;
   // A direct connection to the database for what cannot go through a pooler in transaction mode (PgBouncer): a module's leader (a session-level advisory lock) and LISTEN.

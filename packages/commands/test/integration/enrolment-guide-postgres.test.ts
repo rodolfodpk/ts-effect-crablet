@@ -1,5 +1,5 @@
 // Runs under Node (Testcontainers). The DCB guide's enrolment example against real Postgres; every race
-// uses a barrier in `prepare`, so all racers have LOADED before any of them appends.
+// uses a barrier right after the model loads (`afterLoad`), so all racers have LOADED before any of them appends.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Deferred, Effect, Redacted, Ref } from "effect";

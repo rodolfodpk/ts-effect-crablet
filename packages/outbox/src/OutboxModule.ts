@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { EVENTS_CHANNEL } from "@crablet/eventstore";
+import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
@@ -57,6 +57,6 @@ export const makeOutboxProcessor = (
       selectionOf: (config) => topicByName.get(TopicPublisherPair.fromKey(config.processorId).topic)!,
       instanceId,
       acquireLeader: tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY),
-      wakeupStream: deps.config.listenForWakeups === false ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: (yield* Effect.service(Wakeups)) === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

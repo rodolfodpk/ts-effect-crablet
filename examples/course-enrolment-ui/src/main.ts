@@ -344,6 +344,8 @@ export const describeProblem = (problem: Problem): string => {
       return `Course "${problem.courseId}" is full (${problem.capacity} seats, all taken).`;
     case "StudentAtLimit":
       return `${problem.studentId} is already in ${problem.limit} courses, the most one student can take.`;
+    case "CourseAlreadyDefined":
+      return `There is already a course called "${problem.courseId}", with ${problem.capacity} seats.`;
     case "Rejected":
       return `${problem.title}: ${problem.detail}`;
     case "NotInSeatMapYet":

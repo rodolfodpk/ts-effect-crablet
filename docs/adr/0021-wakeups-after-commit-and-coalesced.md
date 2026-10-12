@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-08). Built. The evidence in "Context" comes from `pgbench` runs against `postgres:18.6-alpine` with a prototype; the figures for the implementation are in "Result of the implementation". Decision 6 (a bounded idle backoff) is done in the wallet: its default `backoffMaxSeconds` is now 10 (2026-10-08), measured in the guide's "Polling and wake-ups".
+**Accepted** (2026-10-08). Built. Narrowed by [ADR-0028](0028-settings-the-framework-decides.md): the `inline` mode is removed, and the modules follow the event store's mode instead of a `listenForWakeups` setting each. The evidence in "Context" comes from `pgbench` runs against `postgres:18.6-alpine` with a prototype; the figures for the implementation are in "Result of the implementation". Decision 6 (a bounded idle backoff) is done in the wallet: its default `backoffMaxSeconds` is now 10 (2026-10-08), measured in the guide's "Polling and wake-ups".
 
 ## Context
 

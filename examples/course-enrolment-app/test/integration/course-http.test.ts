@@ -73,12 +73,15 @@ describe("tutorial step 3: the HTTP API", () => {
     assert.deepStrictEqual(statuses, [201, 201, 201, 409]);
   });
 
-  it("defining the same course twice is the framework's 409 conflict; a bad payload is a 400 problem", async () => {
+  it("defining the same course again is 200 (already defined); another capacity under the id is a 409 CourseAlreadyDefined; a bad payload is a 400 problem", async () => {
     const courseId = `dup-${uid()}`;
     assert.strictEqual((await post("define_course", { courseId, capacity: 3 })).status, 201);
-    const dup = await post("define_course", { courseId, capacity: 3 });
-    assert.strictEqual(dup.status, 409);
-    assert.strictEqual((await json(dup))["violationCode"], "IDEMPOTENCY_VIOLATION");
+    assert.strictEqual((await post("define_course", { courseId, capacity: 3 })).status, 200);
+    const other = await post("define_course", { courseId, capacity: 5 });
+    assert.strictEqual(other.status, 409);
+    const otherBody = await json(other);
+    assert.strictEqual(otherBody["errorType"], "CourseAlreadyDefined");
+    assert.deepStrictEqual(otherBody["fields"], { courseId, capacity: 3 });
 
     const bad = await post("define_course", { courseId: "x", capacity: 0 });
     assert.strictEqual(bad.status, 400);

@@ -16,7 +16,8 @@ Its own file, importing nothing that decides anything, so a browser can import i
 ```ts
 export const DefineCourseContract = commandContract({
   name: "define_course",
-  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) })
+  input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
+  errors: [CourseAlreadyDefined]
 });
 
 export const SubscribeContract = commandContract({

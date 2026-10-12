@@ -152,7 +152,7 @@ describe("defineCommand: consistency -> append condition", () => {
 });
 
 describe("defineCommand: idempotency", () => {
-  const withIdem = (extra: Partial<{ consistency: () => ReturnType<typeof strict>; onDuplicate: "return" | "fail" }> = {}) =>
+  const withIdem = (extra: Partial<{ consistency: () => ReturnType<typeof strict> }> = {}) =>
     defineCommand({
       name: "inc",
       input,
@@ -192,7 +192,7 @@ describe("defineCommand: idempotency", () => {
     eq(await cond(() => concurrent({ guard }), true), AppendCondition.of(pos, guard, idem));
   });
 
-  test("the check runs BEFORE prepare and decide: a repeat neither re-prepares nor re-decides", async () => {
+  test("the check runs BEFORE resolve and decide: a repeat neither re-resolves nor re-decides", async () => {
     const fake = makeInMemoryEventStore();
     open(fake);
     fake.seed(Incremented({ id: "c1", by: 1, opId: "op1" })); // the operation was already done
@@ -200,7 +200,7 @@ describe("defineCommand: idempotency", () => {
     const C = defineCommand({
       name: "inc",
       input,
-      prepare: () => Effect.sync(() => void calls.push("prepare")),
+      resolve: () => Effect.sync(() => void calls.push("resolve")),
       model: (c) => CounterModel.of({ id: c.id }),
       idempotentBy: (c) => Incremented.where({ op_id: c.opId }),
       decide: (_, c) => (calls.push("decide"), emit(Incremented(c)))
@@ -209,44 +209,123 @@ describe("defineCommand: idempotency", () => {
     expect(calls).toEqual([]);
   });
 
-  test('onDuplicate "fail": a repeat fails with Duplicate instead', async () => {
+  test("an append with an idempotency query carries it; an append without one has none", async () => {
     const fake = makeInMemoryEventStore();
     open(fake);
-    fake.seed(Incremented({ id: "c1", by: 1, opId: "op1" }));
-    const C = withIdem({ onDuplicate: "fail" });
-    expect(await failureOf(fake, C.handler(cmd))).toBeInstanceOf(Duplicate);
-    expect(C.duplicates).toBe("fail");
-  });
-
-  test('an append built for onDuplicate "fail" tells the executor to throw; the default returns', async () => {
-    const fake = makeInMemoryEventStore();
-    open(fake);
-    const fail_ = await succeeded(fake, withIdem({ onDuplicate: "fail" }).handler(cmd));
-    const ret = await succeeded(fake, withIdem().handler(cmd));
-    expect(fail_._tag === "Append" && fail_.onDuplicate).toBe("THROW");
-    expect(ret._tag === "Append" && ret.onDuplicate).toBe("RETURN_IDEMPOTENT");
+    const idem = await succeeded(fake, withIdem().handler(cmd));
+    expect(idem._tag === "Append" && idem.condition.idempotencyQuery !== undefined && idem.condition.idempotencyQuery !== null).toBe(true);
   });
 });
 
-describe("defineCommand: prepare", () => {
-  test("runs after the idempotency check, sees the input and the store, and feeds model and decide", async () => {
+describe("defineCommand: resolve", () => {
+  // A lookup: a card names a counter. The command is given the card; the model it decides on is the counter's.
+  const CardIssued = defineEvent("CardIssued", { schema: Schema.Struct({ card: Schema.String, counter: Schema.String }), tags: (d) => ({ card_number: d.card }) });
+  const CardModel = defineModel({ by: "card_number", initial: () => ({ counter: null as string | null }) }).on(CardIssued, (_, d) => ({ counter: d.counter }));
+  const byCard = Schema.Struct({ card: Schema.String, by: Positive, opId: Schema.String });
+  const viaCard = { card: "k1", by: 1, opId: "op1" };
+  const lookUp = (c: { card: string }, read: import("../src/Command.ts").ResolveReader) => Effect.map(read.load(CardModel.of({ id: c.card })), (card) => card.counter ?? "none");
+  const items = (q: { readonly items: ReadonlyArray<unknown> }) => q.items;
+  const conditionOf = async (fake: InMemoryEventStore, C: { handler: (i: any) => Effect.Effect<any, any, EventStore> }) => {
+    const d = await succeeded(fake, C.handler(viaCard));
+    if (d._tag !== "Append") throw new Error("expected an append");
+    return d.condition as AppendCondition.AppendCondition;
+  };
+
+  test("runs after the idempotency check, and its result reaches model, consistency and decide as `resolved`", async () => {
     const fake = makeInMemoryEventStore();
     open(fake, "c9");
+    fake.seed(CardIssued({ card: "k1", counter: "c9" }));
     const seen: Array<unknown> = [];
     const C = defineCommand({
-      name: "p",
-      input,
-      prepare: (c, es) => Effect.map(es.exists(CounterModel.lifecycleQuery(c.id)), (exists) => ({ target: "c9", exists })),
-      model: (c, p) => (seen.push(["model", p]), CounterModel.of({ id: p.target })),
-      decide: (counter, c, p) => (seen.push(["decide", p, counter.open]), emit(Incremented({ ...c, id: p.target })))
+      name: "r",
+      input: byCard,
+      resolve: lookUp,
+      model: (_, { resolved }) => (seen.push(["model", resolved]), CounterModel.of({ id: resolved })),
+      consistency: (_, { resolved }) => (seen.push(["consistency", resolved]), strict()),
+      decide: (counter, c, { resolved }) => (seen.push(["decide", resolved, counter.open]), emit(Incremented({ id: resolved, by: c.by, opId: c.opId })))
     });
-    await succeeded(fake, C.handler(cmd));
-    expect(seen).toEqual([["model", { target: "c9", exists: false }], ["decide", { target: "c9", exists: false }, true]]);
+    await succeeded(fake, C.handler(viaCard));
+    expect(seen).toEqual([["model", "c9"], ["decide", "c9", true], ["consistency", "c9"]]);
   });
 
-  test("a failure in prepare is the command's failure", async () => {
+  test("strict: the condition covers the model's boundary AND what resolve read", async () => {
     const fake = makeInMemoryEventStore();
-    const C = defineCommand({ name: "p", input, prepare: () => Effect.fail("nope" as const), decide: () => noop() });
+    open(fake, "c9");
+    fake.seed(CardIssued({ card: "k1", counter: "c9" }));
+    const C = defineCommand({
+      name: "r", input: byCard, resolve: lookUp,
+      model: (_, { resolved }) => CounterModel.of({ id: resolved }),
+      decide: (_, c, { resolved }) => emit(Incremented({ id: resolved, by: c.by, opId: c.opId }))
+    });
+    const condition = await conditionOf(fake, C);
+    expect(items(condition.concurrencyQuery)).toEqual([...items(CounterModel.of({ id: "c9" }).query), ...items(CardModel.of({ id: "k1" }).query)]);
+  });
+
+  test("concurrent with a guard: what resolve read joins the guard", async () => {
+    const fake = makeInMemoryEventStore();
+    open(fake, "c9");
+    fake.seed(CardIssued({ card: "k1", counter: "c9" }));
+    const guard = CounterModel.lifecycleQuery("c9");
+    const C = defineCommand({
+      name: "r", input: byCard, resolve: lookUp,
+      model: (_, { resolved }) => CounterModel.of({ id: resolved }),
+      consistency: () => concurrent({ guard }),
+      decide: (_, c, { resolved }) => emit(Incremented({ id: resolved, by: c.by, opId: c.opId }))
+    });
+    const condition = await conditionOf(fake, C);
+    expect(items(condition.concurrencyQuery)).toEqual([...items(guard), ...items(CardModel.of({ id: "k1" }).query)]);
+  });
+
+  test("concurrent without a guard, and no model: what resolve read becomes the guard", async () => {
+    const fake = makeInMemoryEventStore();
+    fake.seed(CardIssued({ card: "k1", counter: "c9" }));
+    const C = defineCommand({
+      name: "r", input: byCard, resolve: lookUp,
+      decide: (_, c, { resolved }) => emit(Incremented({ id: resolved, by: c.by, opId: c.opId }))
+    });
+    const condition = await conditionOf(fake, C);
+    expect(items(condition.concurrencyQuery)).toEqual(items(CardModel.of({ id: "k1" }).query));
+  });
+
+  test("exists reads join the condition too", async () => {
+    const fake = makeInMemoryEventStore();
+    fake.seed(CardIssued({ card: "k1", counter: "c9" }));
+    const issued = CardIssued.where({ card_number: "k1" });
+    const C = defineCommand({
+      name: "r", input: byCard,
+      resolve: (c, read) => read.exists(CardIssued.where({ card_number: c.card })),
+      decide: (_, c, { resolved }) => (resolved ? emit(Incremented({ id: "c9", by: c.by, opId: c.opId })) : noop())
+    });
+    const condition = await conditionOf(fake, C);
+    expect(items(condition.concurrencyQuery)).toEqual(items(issued));
+  });
+
+  test("a lookup over an event the command appends cannot be a guard, so the condition is strict over it (and nothing throws)", async () => {
+    const fake = makeInMemoryEventStore();
+    open(fake, "c9");
+    const C = defineCommand({
+      name: "r", input: byCard,
+      resolve: (_, read) => Effect.map(read.load(CounterModel.of({ id: "c9" })), (c) => c.value),
+      consistency: () => concurrent(),
+      decide: (_, c) => emit(Incremented({ id: "c9", by: c.by, opId: c.opId }))
+    });
+    const condition = await conditionOf(fake, C);
+    expect(items(condition.concurrencyQuery)).toEqual(items(CounterModel.of({ id: "c9" }).query));
+  });
+
+  test("the reader cannot write", () => {
+    defineCommand({
+      name: "r", input: byCard,
+      // @ts-expect-error - a ResolveReader has no append
+      resolve: (c, read) => read.append([CardIssued({ card: c.card, counter: "x" })]),
+      decide: () => noop()
+    });
+    expect(true).toBe(true);
+  });
+
+  test("a failure in resolve is the command's failure", async () => {
+    const fake = makeInMemoryEventStore();
+    const C = defineCommand({ name: "r", input, resolve: () => Effect.fail("nope" as const), decide: () => noop() });
     expect(await failureOf(fake, C.handler(cmd))).toBe("nope");
   });
 });
@@ -260,15 +339,14 @@ describe("defineCommand: input", () => {
     expect(Exit.isFailure(missing)).toBe(true);
   });
 
-  test("defaults: 3 conflict retries, repeats are idempotent successes", () => {
+  test("defaults: 3 conflict retries", () => {
     expect(Increment.retries).toBe(3);
-    expect(Increment.duplicates).toBe("return");
     expect(Increment.name).toBe("increment");
     expect(defineCommand({ name: "x", input, retries: 0, decide: () => noop() }).retries).toBe(0);
   });
 });
 
-// ---- compile-time: the error type is inferred from decide/prepare, never written by hand ----------
+// ---- compile-time: the error type is inferred from decide/resolve, never written by hand ----------
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 const assertType = <_T extends true>() => {};
 type HandlerErr<C extends { handler: (...a: any[]) => Effect.Effect<any, any, any> }> = Effect.Error<ReturnType<C["handler"]>>;
@@ -304,11 +382,11 @@ describe("defineCommand: declared errors", () => {
     expect(defineCommand({ name: "x", input, errors: [NotOpen, TooLarge, Other], decide: (_, c) => failsWith(c.id) }).errors).toHaveLength(3);
   });
 
-  test("prepare cannot fail with an undeclared domain error either", () => {
+  test("resolve cannot fail with an undeclared domain error either", () => {
     // @ts-expect-error - NotOpen is not declared
-    defineCommand({ name: "p", input, prepare: (c) => Effect.fail(new NotOpen({ id: c.id })), decide: () => noop() });
+    defineCommand({ name: "p", input, resolve: (c) => Effect.fail(new NotOpen({ id: c.id })), decide: () => noop() });
     expect(
-      defineCommand({ name: "p", input, errors: [NotOpen], prepare: (c) => Effect.fail(new NotOpen({ id: c.id })), decide: () => noop() }).errors
+      defineCommand({ name: "p", input, errors: [NotOpen], resolve: (c) => Effect.fail(new NotOpen({ id: c.id })), decide: () => noop() }).errors
     ).toEqual([NotOpen]);
   });
 
@@ -323,11 +401,11 @@ describe("defineCommand: inferred types", () => {
     assertType<Equal<HandlerErr<typeof Increment>, NotOpen | TooLarge | SqlErr>>();
     // a refusal type that decide cannot produce is NOT in the union
     assertType<Equal<(typeof Increment)["handler"] extends (...a: any[]) => Effect.Effect<any, infer E, any> ? (Duplicate extends E ? true : false) : never, false>>();
-    // onDuplicate: "fail" adds Duplicate; prepare's failures are added too
-    const WithDup = defineCommand({ name: "d", input, onDuplicate: "fail", decide: () => noop() });
-    assertType<Equal<(Duplicate extends HandlerErr<typeof WithDup> ? true : false), true>>();
-    const WithPrepare = defineCommand({ name: "p", input, prepare: () => Effect.fail("boom" as const), decide: () => noop() });
-    assertType<Equal<(("boom") extends HandlerErr<typeof WithPrepare> ? true : false), true>>();
+    // a repeat found by idempotentBy is a success, never a failure; resolve's failures are added
+    const WithIdem = defineCommand({ name: "d", input, idempotentBy: (c) => Incremented.where({ op_id: c.opId }), decide: () => noop() });
+    assertType<Equal<(Duplicate extends HandlerErr<typeof WithIdem> ? true : false), false>>();
+    const WithResolve = defineCommand({ name: "p", input, resolve: () => Effect.fail("boom" as const), decide: () => noop() });
+    assertType<Equal<(("boom") extends HandlerErr<typeof WithResolve> ? true : false), true>>();
     // the input type comes from the schema
     const typed: Parameters<typeof Increment.handler>[0] = { id: "x", by: 1, opId: "y" };
     expect(typed.by).toBe(1);

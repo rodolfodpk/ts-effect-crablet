@@ -7,8 +7,8 @@ import { Data } from "effect";
 //   tripped: "boundary" (the decision model itself changed) or "guard" (a lifecycle guard on an
 //   otherwise commutative command changed). Usually the right response is to reload and retry.
 // - `Duplicate`: an event matching the condition's idempotency query already exists - the same
-//   operation was already done. Whether that is an error or a silent "already done" is the
-//   command's `onDuplicate` policy (see commands' CommandDecision.ts), not this module's call.
+//   operation was already done. The command executor reports it as an idempotent success ("already
+//   done"); only a caller of `EventStore.append` itself sees this error.
 //
 // PATTERN PRIMER - `Data.TaggedError`, Effect's typed, checked-exception-like errors. Every
 // `Effect<A, E, R>` has an explicit error type `E` right in its signature (see EventStore.ts's

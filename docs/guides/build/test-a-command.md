@@ -49,12 +49,12 @@ What you can assert on the result of `.when`:
 
 - `outcome`: `"created"` (events were appended) or `"idempotent"` (the operation had already been done; nothing appended);
 - `events`: the events that were appended, with `type`, `data` and `tags`;
-- `error`: a domain error, `InvalidInput` for a bad payload, or `Duplicate` and `Conflict` from the append.
+- `error`: a domain error, `InvalidInput` for a bad payload, or `Conflict` from the append.
 
 `given(...)` takes events; a scenario value can run several `when`s in a row, and `.log` is everything in the store afterwards (empty after a refusal, because a failed
 command's changes are rolled back).
 
-A `.when` that ends `"idempotent"` leaves the log as it was, `prepare`'s appends included: the real executor rolls that transaction back too (an idempotent result writes no audit row, so committing would leave events with no command behind them).
+A `.when` that ends `"idempotent"` leaves the log as it was: the real executor rolls that transaction back too (an idempotent result writes no audit row).
 
 ## What this does not cover
 

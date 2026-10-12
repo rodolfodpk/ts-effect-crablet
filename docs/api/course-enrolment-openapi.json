@@ -91,11 +91,18 @@
             }
           },
           "409": {
-            "description": "CommandConflict",
+            "description": "CommandConflict | CourseAlreadyDefinedProblem",
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommandConflictEncoded"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CommandConflictEncoded"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CourseAlreadyDefinedProblem"
+                    }
+                  ]
                 }
               }
             }
@@ -1256,6 +1263,60 @@
           "lastPosition",
           "lastTransactionId",
           "marker"
+        ],
+        "additionalProperties": false
+      },
+      "CourseAlreadyDefinedProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Conflict"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              409
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errorType": {
+            "type": "string",
+            "enum": [
+              "CourseAlreadyDefined"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "courseId": {
+                "type": "string"
+              },
+              "capacity": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "courseId",
+              "capacity"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errorType",
+          "fields"
         ],
         "additionalProperties": false
       }

@@ -1,20 +1,30 @@
 // The final two-rule domain (src/domain/Enrolment.ts) in memory: no Docker.
 import { describe, expect, test } from "bun:test";
-import { Duplicate } from "@crablet/eventstore/AppendErrors";
 import { InvalidInput } from "@crablet/commands/Errors";
 import { given } from "@crablet/commands/testing/Scenario";
-import { CourseFull, CourseNotFound, DefineCourse, StudentAtLimit, Subscribe } from "../src/domain/Enrolment.ts";
+import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourse, StudentAtLimit, Subscribe } from "../src/domain/Enrolment.ts";
 
 const define = (courseId: string, capacity: number) => ({ courseId, capacity });
 const sub = (studentId: string, courseId: string) => ({ studentId, courseId });
 
 describe("define_course", () => {
-  test("defines a course; defining it twice is a conflict (Duplicate), not a silent no-op", async () => {
+  test("defines a course; defining the same course again is a retry: already defined, nothing appended", async () => {
     const s = given();
     const first = await s.when(DefineCourse, define("math", 30));
     expect(first.outcome).toBe("created");
     expect(first.events.map((e) => e.type)).toEqual(["CourseDefined"]);
-    expect((await s.when(DefineCourse, define("math", 30))).error).toBeInstanceOf(Duplicate);
+    const again = await s.when(DefineCourse, define("math", 30));
+    expect(again.outcome).toBe("idempotent");
+    expect(again.events).toEqual([]);
+  });
+
+  test("another course under an id that is taken is refused with CourseAlreadyDefined, carrying the existing capacity", async () => {
+    const s = given();
+    await s.when(DefineCourse, define("math", 30));
+    const other = await s.when(DefineCourse, define("math", 10));
+    expect(other.error).toBeInstanceOf(CourseAlreadyDefined);
+    expect(other.error).toMatchObject({ courseId: "math", capacity: 30 });
+    expect(other.events).toEqual([]);
   });
 
   test("a capacity below 1 is invalid input", async () => {

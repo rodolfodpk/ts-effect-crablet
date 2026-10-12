@@ -33,7 +33,7 @@ export const pausableDeposit = (afterLoad?: Pause) =>
     model: (c: any) => afterLoadOf(WalletPeriodModel.of({ id: c.walletId }), afterLoad),
     consistency: (c: any) => concurrent({ guard: WalletPeriodModel.lifecycleQuery(c.walletId) }),
     idempotentBy: (c: any) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
-    decide: (wallet: any, c: any, _prepared: unknown, { now }: { now: Date }) =>
+    decide: (wallet: any, c: any, { now }: { now: Date }) =>
       wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, periodTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
   } as never);
 
@@ -42,7 +42,7 @@ export const pausableWithdraw = (afterLoad?: Pause) =>
     ...WithdrawContract,
     model: (c: any) => afterLoadOf(WalletPeriodModel.of({ id: c.walletId }), afterLoad),
     idempotentBy: (c: any) => WithdrawalMade.where({ [WalletTags.WITHDRAWAL_ID]: c.withdrawalId }),
-    decide: (wallet: any, c: any, _prepared: unknown, { now }: { now: Date }) =>
+    decide: (wallet: any, c: any, { now }: { now: Date }) =>
       !wallet.exists
         ? fail(new WalletNotFound({ walletId: c.walletId }))
         : wallet.balance < c.amount
@@ -54,7 +54,7 @@ export const pausableTransfer = (afterLoad?: Pause) =>
   defineCommand({
     ...TransferMoneyContract,
     model: (c: any) => afterLoadOf(all({ from: WalletPeriodModel.of({ id: c.fromWalletId }), to: WalletPeriodModel.of({ id: c.toWalletId }) }), afterLoad),
-    decide: ({ from, to }: any, c: any, _prepared: unknown, { now }: { now: Date }) =>
+    decide: ({ from, to }: any, c: any, { now }: { now: Date }) =>
       !from.exists
         ? fail(new WalletNotFound({ walletId: c.fromWalletId }))
         : !to.exists

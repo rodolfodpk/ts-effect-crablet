@@ -13,7 +13,6 @@ import type { Query } from "./Query.ts";
 import * as LogPositionNS from "./LogPosition.ts";
 import type { LogPosition } from "./LogPosition.ts";
 import { AppendTooLarge, Conflict, Duplicate, MAX_APPEND_EVENTS } from "./AppendErrors.ts";
-import { encodePayload } from "./NotifyPayload.ts";
 import * as Sql from "./internal/sql.ts";
 import { makeWakeupNotifier, PendingWakeups } from "./internal/WakeupNotifier.ts";
 
@@ -97,16 +96,16 @@ export interface EventStoreService {
   // Runs `effect` and, once it has SUCCEEDED, sends the wake-up for every event it appended (ADR-0021). Put it OUTSIDE the transaction that commits those events: the
   // notification must go out after the commit, or a poller wakes, finds nothing and sleeps. `CommandExecutor` does this for every command attempt. An application that appends
   // inside a transaction of its own wraps that transaction: `eventStore.withWakeups(sql.withTransaction(...))`. If `effect` fails nothing is sent. An `append` made outside any
-  // `withWakeups` sends its wake-up when it returns. In `wakeupMode: "inline"` this is the identity (the append itself notifies).
+  // `withWakeups` sends its wake-up when it returns. With `wakeupMode: "off"` this is the identity.
   readonly withWakeups: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
 // How the event store tells pollers that events were appended (ADR-0021).
 export interface EventStoreConfig {
-  // "coalesced" (default): appends do not notify; one notification per `wakeupWindowMs`, sent after the commit. "inline": `pg_notify` inside every append, as before.
+  // "coalesced" (default): appends do not notify; one notification per `wakeupWindowMs`, sent after the commit.
   // "off": nothing is ever sent; the pollers see new events only when their own interval (and idle backoff) comes round. Choose it to take the NOTIFY out of the database entirely
   // and accept the polling interval as the latency.
-  readonly wakeupMode?: "coalesced" | "inline" | "off";
+  readonly wakeupMode?: "coalesced" | "off";
   // The coalescing window (default 50). 0 sends after each commit without waiting.
   readonly wakeupWindowMs?: number;
 }
@@ -167,11 +166,14 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
 // satisfy it. `yield* SqlClient.SqlClient` just below is exactly this: "ask the ambient context
 // for the SqlClient service" (it's requested inline, right where it's needed, and TypeScript tracks that
 // requirement in the enclosing function's `R` type parameter automatically).
-export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effect(
+// Whether this process's event store sends wake-ups (ADR-0021, ADR-0028): `makeEventStoreLayer` provides it, and the views, automations and outbox modules read it, so they
+// LISTEN only when something will be sent. One setting, not one per module. (A `Reference` has a default, so code built without the layer behaves as "coalesced".)
+export const Wakeups = Context.Reference<"coalesced" | "off">("crablet/Wakeups", { defaultValue: () => "coalesced" });
+
+export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merge(Layer.succeed(Wakeups, config.wakeupMode ?? "coalesced"), Layer.effect(
   EventStore,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const inline = config.wakeupMode === "inline";
     const off = config.wakeupMode === "off";
     const windowMs = config.wakeupWindowMs ?? 50;
     if (!Number.isFinite(windowMs) || windowMs < 0) return yield* Effect.die(`wakeupWindowMs must be 0 or more, got ${windowMs}`);
@@ -240,10 +242,10 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
       const tagKeys = new Set(events.flatMap((e) => e.tags.map((t) => t.key)));
       return EventStoreMetrics.observe(
         EventStoreMetrics.append,
-        Sql.appendEventsIf(sql, events, condition, inline ? { notifyChannel: EVENTS_CHANNEL, notifyPayload: encodePayload(eventTypes, tagKeys) } : {}).pipe(
-          // Not inline: remember what was appended for the wake-up. Inside `withWakeups` it waits for the commit; outside, it is sent now.
+        Sql.appendEventsIf(sql, events, condition, {}).pipe(
+          // Remember what was appended for the wake-up. Inside `withWakeups` it waits for the commit; outside, it is sent now.
           Effect.tap(() =>
-            inline || off
+            off
               ? Effect.void
               : Effect.flatMap(Effect.service(PendingWakeups), (pending) => {
                   if (pending === null) return notifier.signal(eventTypes, tagKeys);
@@ -280,7 +282,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
       project(query, after, projectors).pipe(Effect.withSpan("crablet.eventstore.project", { attributes: { "crablet.project.query_items": query.items.length } }))) as EventStoreService["project"];
 
     const withWakeups = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-      inline || off
+      off
         ? effect
         : Effect.suspend(() => {
             const pending: PendingWakeups = { types: new Set(), tagKeys: new Set() };
@@ -293,7 +295,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.effe
 
     return service;
   })
-);
+));
 
 // The default: coalesced wake-ups, 50 ms window (ADR-0021).
 export const EventStoreLive = makeEventStoreLayer();

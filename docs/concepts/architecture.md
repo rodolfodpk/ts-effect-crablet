@@ -177,7 +177,7 @@ sequenceDiagram
 
 The wake-up is only a hint: if it is lost, the next poll finds the events anyway (the poll interval is the fallback). It is sent by the process that wrote, **after** the commit, and **coalesced**: the first one after an idle spell goes at once, and the
 ones that follow within a window (50 ms by default) are merged into a single notification carrying the union of their event types and tag keys ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). One notification inside every append had capped the writes at about 3 000 a second; this
-measured about twice that. `wakeupMode: "inline"` brings the old behaviour back, and `"off"` sends nothing (the pollers' own interval is then the latency, and they do not `LISTEN`). The cursor is a `(transaction_id, position)` pair rather than a bare position,
+measured about twice that. `wakeupMode: "off"` sends nothing (the pollers' own interval is then the latency, and they do not `LISTEN`). The cursor is a `(transaction_id, position)` pair rather than a bare position,
 because a transaction with a lower id can commit after one with a higher position; a bare position would skip its events for ever ([ADR-0012](../adr/0012-transaction-position-cursors.md)).
 The same loop drives the outbox (`publishBatch`) and automations (`decide`, then run a command).
 
