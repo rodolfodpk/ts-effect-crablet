@@ -65,6 +65,19 @@ to run it. How its append conditions map onto the specification, and what it add
 [the DCB guide](./dcb-guide.md#how-this-relates-to-the-dcb-specification). Other implementations of the specification are listed at
 [dcb.events](https://dcb.events/).
 
+## What you take on if you adopt it
+
+Choosing this means accepting costs a plain database does not have:
+
+- **A pre-release dependency.** No stability promise yet, and no npm package: you work from a clone of this repository ([roadmap](../../ROADMAP.md#before-a-10)).
+- **Effect.** The API is written in Effect's terms. Defining events, models and commands needs little of it, but wiring and running an application is Effect code, and so is your own
+  integration with it ([FAQ](./faq.md#do-i-need-to-know-effect)).
+- **A different way to model.** You think in facts and the tags they are found by, not in tables or aggregates, and your team has to learn that.
+- **Background processes to run.** Views, automations and the outbox run as processors with a leader, a cursor and a lag; you monitor them and answer their alerts
+  ([operate](../guides/operate/runbooks.md)). A transaction has none of this.
+- **A log that only grows.** Events are never deleted, and erasing a person's data from it is not built yet ([events over time](./events-over-time.md)).
+- **One database engine.** PostgreSQL, including its advisory locks and `LISTEN`, if you want the background processors to fail over.
+
 ## When not to use it
 
 - **You need a stable library now.** This is pre-release; the API changes often and the packages are not on npm.

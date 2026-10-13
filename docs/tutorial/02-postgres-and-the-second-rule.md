@@ -16,6 +16,8 @@ node src/migrate.ts       # creates the framework's tables and this app's own. R
 Migrations applied.
 ```
 
+If `docker compose up -d` fails because port 5432 is taken, start the database on another port with `COURSES_DB_PORT=5433 docker compose up -d` and put the same `COURSES_DB_PORT=5433` in front of every command in this step and the next ones ([if something fails](README.md#if-something-fails)).
+
 The domain in `src/domain/Enrolment.ts` is the **final** one: step 1's rule plus the student limit. This is the DCB moment - compare
 with step 1. The events and models now look at each other from two sides:
 
