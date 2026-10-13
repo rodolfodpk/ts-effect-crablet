@@ -45,6 +45,8 @@ from the first lookup) cannot be expressed with `all(...)`, whose members are ch
 - Two commands can no longer deadlock each other (one append, writer locks in sorted order). The executor still treats a Postgres deadlock as a
   `Conflict`, because a command can deadlock with an application transaction that appends several times in its own order
   (`test/integration/deadlock-retry.test.ts`).
+- A model with a period that is read in `resolve` is read, not turned: the events that turn a period ride on the append of a command whose own `model` is the period
+  model (`test/period.test.ts`, "read from resolve"). A command that writes into a period makes that model its `model`.
 - A domain that needs two separate appends in one command loses that. It is two commands, or one `decide` that emits all the events under one condition.
 - Breaking: `prepare` no longer exists, and `decide` and `model` changed shape ([ADR-0013](0013-api-evolution-additive-vs-breaking.md)).
 
