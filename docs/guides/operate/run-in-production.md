@@ -151,8 +151,8 @@ Crablet.layer(
 `session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. Its pool holds what the process keeps for good, which depends on the
 roles it runs (measured idle): **all three workers and the api, 7** (3 leader locks, 3 `LISTEN` for event wake-ups, 1 for view progress); **the three workers, 6**; **one worker, 2** (its lock and its
 `LISTEN`); **the api alone, 1**. The default of 10 leaves room for the attempts of the modules that do not lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a
-leader (a leader gives up after 10 s and logs why; a `LISTEN` that does not fit just waits and the process falls back to polling). Say how many your process keeps with `sessionHolds` and the layer warns when the pool is
-smaller; the wallet works it out from its roles (`sessionConnectionsHeld`) and reads the connection from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`, `_PASSWORD`, `_POOL`, each defaulting to the main one).
+leader (a leader gives up after 10 s and logs why; a `LISTEN` that does not fit just waits and the process falls back to polling). The framework counts what each module and the view-progress hub keep as they start, and warns once when the pool is
+smaller. The wallet reads the connection from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`, `_PASSWORD`, `_POOL`, each defaulting to the main one).
 The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
 Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it.
 

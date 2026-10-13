@@ -9,7 +9,7 @@ import { migrateIfFresh } from "./migrate.ts";
 import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
-import { hasWorkers, rolesFromEnv, sessionConnectionsHeld } from "./roles.ts";
+import { hasWorkers, rolesFromEnv } from "./roles.ts";
 import { apiHealthRoutes, processStatus, serveHealth } from "./health.ts";
 import { pollingFromEnv, wakeupModeFromEnv } from "./polling.ts";
 
@@ -36,7 +36,6 @@ const poolSize = poolSizeFromEnv();
 const wakeupMode = wakeupModeFromEnv(); // WALLET_WAKEUPS
 const polling = pollingFromEnv(); // WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS; with WALLET_WAKEUPS=off the processors do not LISTEN (they follow the event store)
 const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (ADR-0022)
-const sessionHolds = sessionConnectionsHeld(roles); // what this process's roles keep in the session pool for good
 
 // Entry point: apply migrations (to a fresh database only), then start the app - views/
 // automations/outbox background processors AND the HTTP server, all sharing one connection pool.
@@ -55,7 +54,7 @@ async function main(): Promise<void> {
     ...(poolSize === undefined ? {} : { maxConnections: poolSize })
   }, {
     eventStore: { wakeupMode },
-    ...(sessionInfo === undefined ? {} : { session: { ...sessionInfo, password: Redacted.make(sessionInfo.password) }, sessionHolds })
+    ...(sessionInfo === undefined ? {} : { session: { ...sessionInfo, password: Redacted.make(sessionInfo.password) } })
   });
 
   const program = Effect.gen(function* () {

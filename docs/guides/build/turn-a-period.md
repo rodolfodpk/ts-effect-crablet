@@ -28,7 +28,9 @@ export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
     walletId: p.id,
     statementId: statementIdOf(p.id, p.key),
     ...p.fields,
-    openingBalance: state.balance,
+    // Until 2026-10-11 this was `state.balance`, so closings written before then carry their closing balance here too; the statement view
+    // takes the opening balance from WalletStatementOpened, so nothing read the wrong value.
+    openingBalance: state.openingBalance,
     closingBalance: state.balance,
     closedAt: p.at
   })
@@ -77,7 +79,7 @@ test("the first deposit of the next month closes this month's statement and open
   const r = await s.at(new Date(Date.UTC(2026, 10, 1, 0, 1))).when(Deposit, dep("w1", "d2", 5));
   expect(r.events.map((e) => e.type)).toEqual(["WalletStatementClosed", "WalletStatementOpened", "DepositMade"]);
   const [closed, opened2, deposit] = r.events;
-  expect(closed!.data).toMatchObject({ month: 10, closingBalance: 125 });
+  expect(closed!.data).toMatchObject({ month: 10, openingBalance: 100, closingBalance: 125 }); // the October statement opened with 100
   expect(opened2!.data).toMatchObject({ month: 11, openingBalance: 125 });
   expect(deposit!.data).toMatchObject({ newBalance: 130 });
 });

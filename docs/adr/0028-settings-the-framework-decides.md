@@ -1,9 +1,11 @@
-# ADR-0028: The framework decides the wake-up settings it can work out itself
+# ADR-0028: The framework decides the wake-up and session settings it can work out itself
 
 ## Status
 
 **Accepted** (2026-10-11). Built: `wakeupMode: "inline"` is removed, and the views, automations and outbox modules follow the event store's wake-up
-mode through a `Wakeups` reference that `makeEventStoreLayer` provides; `listenForWakeups` is removed. Narrows [ADR-0021](0021-wakeups-after-commit-and-coalesced.md).
+mode through a `Wakeups` reference that `makeEventStoreLayer` provides; `listenForWakeups` is removed. Then, the same day: the framework counts the session
+connections a process keeps, and `sessionHolds` is removed (decision 3). Narrows [ADR-0021](0021-wakeups-after-commit-and-coalesced.md) and
+[ADR-0024](0024-session-connections-for-leader-and-listen.md).
 
 ## Context
 
@@ -23,16 +25,21 @@ mode through a `Wakeups` reference that `makeEventStoreLayer` provides; `listenF
 2. **The modules follow the event store.** `makeEventStoreLayer` provides a `Wakeups` reference (`"coalesced" | "off"`) next to `EventStore`; each module
    reads it and does not `LISTEN` when it is `"off"`. `listenForWakeups` is removed from `ViewsConfig`, `AutomationsConfig` and `OutboxConfig`. A module
    built without the event store layer sees the reference's default, `"coalesced"`, which is today's default.
+3. **The framework counts the session connections.** `sessionHolds` (on `Crablet.layer`) and `holds` (on `sessionClientsLayer`) are removed. The session
+   clients keep a running count: each module adds what it keeps (its leader lock, plus its `LISTEN` when wake-ups are on) the first time it tries for its
+   lock, which only happens once it has started; the view-progress hub adds its `LISTEN`. When the total passes the session pool's `maxConnections`, it
+   logs the same warning as before, once. The wallet no longer computes it from its roles (`sessionConnectionsHeld` is gone).
 
 ## Consequences
 
 - One setting decides whether wake-ups exist: `eventStore.wakeupMode` (`WALLET_WAKEUPS` in the wallet).
-- Breaking: `wakeupMode: "inline"` and `listenForWakeups` no longer exist ([ADR-0013](0013-api-evolution-additive-vs-breaking.md)). The wallet refuses
+- The session pool warning reflects what the process actually started, including wake-ups being off, with nothing to compute or keep in step.
+- Breaking: `wakeupMode: "inline"`, `listenForWakeups` and `sessionHolds` no longer exist ([ADR-0013](0013-api-evolution-additive-vs-breaking.md)). The wallet refuses
   `WALLET_WAKEUPS=inline` at start-up.
 - The throughput diagnostic compares `coalesced` with `off`; the inline figures stay recorded in ADR-0021.
 
 ## Alternatives considered
 
 - **Keep `listenForWakeups` and check it against the event store at start-up.** Catches the mismatch, but keeps four settings for one choice.
-- **Let the framework count the session connections it holds** (`sessionHolds` is computed by the application today). Considered with this ADR and left
-  for later: replacing a number with a counter only improves a warning.
+- **Keep `sessionHolds`.** First left for later (a counter only improves a warning), then done: the number had to be kept in step with the roles and with
+  the wake-up mode, which is the same kind of leak as `listenForWakeups`.

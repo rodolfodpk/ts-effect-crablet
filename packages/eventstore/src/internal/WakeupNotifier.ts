@@ -1,4 +1,4 @@
-import { Clock, Context, Duration, Effect, Metric, Ref } from "effect";
+import { Cause, Clock, Context, Duration, Effect, Metric, Ref } from "effect";
 import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
 import { encodePayload } from "../NotifyPayload.ts";
 
@@ -41,7 +41,10 @@ export const makeWakeupNotifier = (send: (payload: string) => Effect.Effect<void
     const deliver = (payload: string): Effect.Effect<void> =>
       send(payload).pipe(
         Effect.andThen(Metric.update(EventStoreMetrics.wakeupsSent, 1)),
-        Effect.catchCause((cause) => Effect.logWarning(`wake-up notification not sent (the pollers' interval covers it): ${String(cause)}`))
+        // A send interrupted because the process is stopping is not a failure to report (the tutorial's scripts end that way); anything else is.
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.logWarning(`wake-up notification not sent (the pollers' interval covers it): ${String(cause)}`)
+        )
       );
 
     // The timer: wait out the rest of the window, then send everything that was merged meanwhile.

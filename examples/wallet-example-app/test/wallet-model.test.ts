@@ -84,14 +84,14 @@ describe("state fold", () => {
   test("opens with the initial balance, then deposits and withdrawals change it", async () => {
     const fake = makeInMemoryEventStore();
     fake.seed(open("w1", 100), statement("w1", 100), deposit("w1", "d1", 25, 125), withdrawal("w1", "x1", 40, 85), deposit("w1", "d2", 15, 100));
-    expect(await stateOf(fake, "w1")).toEqual({ exists: true, balance: 100 });
+    expect(await stateOf(fake, "w1")).toEqual({ exists: true, balance: 100, openingBalance: 100 });
   });
 
   test("a closed wallet no longer exists; an unknown wallet never did", async () => {
     const fake = makeInMemoryEventStore();
     fake.seed(open("w1", 5), M.WalletClosed({ walletId: "w1", closedAt: at }));
     expect((await stateOf(fake, "w1")).exists).toBe(false);
-    expect(await stateOf(fake, "ghost")).toEqual({ exists: false, balance: 0 });
+    expect(await stateOf(fake, "ghost")).toEqual({ exists: false, balance: 0, openingBalance: 0 });
   });
 
   test("the balance carries forward into a new period through the statement's opening balance", async () => {

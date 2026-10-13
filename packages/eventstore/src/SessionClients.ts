@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Ref } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
@@ -17,6 +17,10 @@ import { PgClient } from "@effect/sql-pg";
 export interface SessionClients {
   readonly sql: SqlClient.SqlClient;
   readonly pg: PgClient.PgClient;
+  // The session pool's size, and how many of its connections what has started so far keeps for good (counted by `holdSession`).
+  readonly maxConnections: number | undefined;
+  readonly held: Ref.Ref<number>;
+  readonly warned: Ref.Ref<boolean>;
 }
 
 export const SessionClients = Context.Reference<SessionClients | null>("crablet/SessionClients", { defaultValue: () => null });
@@ -34,8 +38,8 @@ export const sessionPg: Effect.Effect<PgClient.PgClient, never, PgClient.PgClien
 });
 
 // What a process keeps in the session pool for good: one reserved connection per module that leads (3 locks at most), and one per LISTEN, which with @effect/sql-pg takes a pooled
-// connection for as long as it lasts (one for each module's wake-ups, and one for the views' progress hub where the api runs). It depends on the roles the process runs, so whoever
-// builds the layer says how many (`holds`); the layer does not guess. Measured, idle: a process with views + automations + outbox + api keeps 7; the three workers without api, 6; views
+// connection for as long as it lasts (one for each module's wake-ups, and one for the views' progress hub where the api runs). It depends on what the process starts, so the framework
+// counts it as things start (`holdSession`): each module when it first tries for its lock, and the hub when its LISTEN starts. Measured, idle: a process with views + automations + outbox + api keeps 7; the three workers without api, 6; views
 // alone, 2; api alone, 1. A pool smaller than that does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after `reserveTimeout` and says so;
 // a LISTEN that does not fit just waits, and its process falls back to polling).
 export const sessionPoolWarning = (maxConnections: number | undefined, holds: number | undefined): string | null =>
@@ -43,18 +47,37 @@ export const sessionPoolWarning = (maxConnections: number | undefined, holds: nu
     ? null
     : `session connections: maxConnections is ${maxConnections}, but this process keeps ${holds} of them for good (leader locks and LISTENs); the rest wait. Use ${holds} or more (the library's default is 10).`;
 
+// Count `n` more session connections kept for good by something that has just started (`what`), and warn once if the session pool is smaller than the total.
+// Without session clients there is nothing to count: the leader and the LISTEN share the application's pool, which `Crablet.layer`'s caller sizes.
+export const holdSession = (what: string, n: number): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const session = yield* Effect.service(SessionClients);
+    if (session === null) return;
+    const total = yield* Ref.updateAndGet(session.held, (h) => h + n);
+    const warning = sessionPoolWarning(session.maxConnections, total);
+    if (warning !== null && !(yield* Ref.getAndSet(session.warned, true))) yield* Effect.logWarning(`${warning} (last to start: ${what})`);
+  });
+
+// `holdSession`, once: for a module whose first attempt at its lock marks that it has started (later attempts are retries, not new connections).
+export const holdSessionOnce = (what: string, n: number): Effect.Effect<Effect.Effect<void>> =>
+  Effect.map(Ref.make(false), (done) => Effect.flatMap(Ref.getAndSet(done, true), (was) => (was ? Effect.void : holdSession(what, n))));
+
 // A second client, for the session connections, over `config` (the same shape as the application's: host, port, database, username, password, maxConnections).
 //
 // Its pool must hold what the process keeps for good (see `sessionPoolWarning`), plus room for the attempts of the modules that do not lead (one each). The first version of this advice
 // said 5 for every process, and a wallet behind PgBouncer never got its outbox leader back after its connection was killed.
 // (A `Reference` is not tracked in a layer's output type, hence `Layer<never, ...>`.)
-export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0], options: { readonly holds?: number } = {}): Layer.Layer<never, SqlError> =>
+export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0]): Layer.Layer<never, SqlError> =>
   Layer.effect(
     SessionClients,
     Effect.gen(function* () {
-      const warning = sessionPoolWarning(config.maxConnections, options.holds);
-      if (warning !== null) yield* Effect.logWarning(warning);
       const context = yield* Layer.build(PgClient.layer(config));
-      return { pg: Context.get(context, PgClient.PgClient), sql: Context.get(context, SqlClient.SqlClient) };
+      return {
+        pg: Context.get(context, PgClient.PgClient),
+        sql: Context.get(context, SqlClient.SqlClient),
+        maxConnections: config.maxConnections,
+        held: yield* Ref.make(0),
+        warned: yield* Ref.make(false)
+      };
     })
   );

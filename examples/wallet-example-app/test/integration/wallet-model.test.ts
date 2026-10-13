@@ -57,6 +57,8 @@ const exec = <T, E>(_name: string, input: T, command: Command<T, E>) =>
 const loadWallet = (walletId: string) =>
   run(Effect.flatMap(EventStore, (es) => WalletModel.of({ id: walletId, ...period }).load(es)));
 
+const existsAndBalance = (w: { readonly exists: boolean; readonly balance: number }) => ({ exists: w.exists, balance: w.balance });
+
 describe("wallet model against real Postgres", () => {
   it("state after real commands: deposits, withdrawals and a transfer, for sender AND receiver", async () => {
     const a = id("a");
@@ -71,9 +73,9 @@ describe("wallet model against real Postgres", () => {
       TransferMoney
     );
 
-    assert.deepEqual((await loadWallet(a)).state, { exists: true, balance: 75 }); // 100 + 25 - 10 - 40
-    assert.deepEqual((await loadWallet(b)).state, { exists: true, balance: 40 }); // receiver: the fixed attribution
-    assert.deepEqual((await loadWallet(id("ghost"))).state, { exists: false, balance: 0 });
+    assert.deepEqual(existsAndBalance((await loadWallet(a)).state), { exists: true, balance: 75 }); // 100 + 25 - 10 - 40
+    assert.deepEqual(existsAndBalance((await loadWallet(b)).state), { exists: true, balance: 40 }); // receiver: the fixed attribution
+    assert.deepEqual(existsAndBalance((await loadWallet(id("ghost"))).state), { exists: false, balance: 0 });
   });
 
   it("the boundary query + log position work as a real append condition (multi-item, via the SQL path)", async () => {

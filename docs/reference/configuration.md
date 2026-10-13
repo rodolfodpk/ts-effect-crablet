@@ -17,8 +17,7 @@ From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `
 | `eventStore.wakeupMode` | `"coalesced"` | How appends wake the pollers. `coalesced`: one notification per window, after the commit. `off`: none; the pollers see new events on their interval, and the views, automations and outbox modules do not `LISTEN` ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md), [ADR-0028](../adr/0028-settings-the-framework-decides.md)). |
 | `eventStore.wakeupWindowMs` | `50` | The coalescing window. `0` sends after each commit without waiting. |
 | `audit.payload` | `"redacted"` | What the command audit stores of each input: `redacted` (fields marked `personal(...)` replaced), `full`, `none` (no payload), or `off` (no audit). |
-| `session` | none | A direct connection, same shape as `pg`, for what cannot go through a pooler in transaction mode: the leader locks and `LISTEN`. Omitted, they use `pg` ([ADR-0024](../adr/0024-session-connections-for-leader-and-listen.md)). |
-| `sessionHolds` | none | How many `session` connections this process keeps for good (7 for the three modules and the api, 6 for the modules alone, 2 for one module, 1 for the api alone). Given, the layer warns when `session.maxConnections` is smaller. |
+| `session` | none | A direct connection, same shape as `pg`, for what cannot go through a pooler in transaction mode: the leader locks and `LISTEN`. Omitted, they use `pg` ([ADR-0024](../adr/0024-session-connections-for-leader-and-listen.md)). Its `maxConnections` must cover what the process keeps for good (7 for the three modules and the api, 1 for the api alone); the framework counts it as the modules start and warns once if the pool is smaller. |
 
 Processor settings (polling, backoff, `maxErrors`, the leader retry) are in [Views](./views.md#processor-settings). Read-consistency settings are in
 [HTTP](./http.md#read-consistency).

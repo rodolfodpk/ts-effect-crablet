@@ -4,7 +4,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
-import { sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
+import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -47,6 +47,9 @@ export const makeOutboxProcessor = (
     const configs = makeOutboxProcessorConfigs(deps.config, deps.topics);
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));
 
+    const wakeups = yield* Effect.service(Wakeups);
+    const countSession = yield* holdSessionOnce("the outbox module", wakeups === "off" ? 1 : 2);
+
     return yield* makeEventProcessor({
       configs,
       fetcher,
@@ -56,7 +59,8 @@ export const makeOutboxProcessor = (
       // config.processorId decodes to a topic that's guaranteed to be a key in topicByName.
       selectionOf: (config) => topicByName.get(TopicPublisherPair.fromKey(config.processorId).topic)!,
       instanceId,
-      acquireLeader: tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY),
-      wakeupStream: (yield* Effect.service(Wakeups)) === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY)),
+      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });
