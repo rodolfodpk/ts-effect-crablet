@@ -50,7 +50,7 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 
 ## Common tasks
 
-**Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (`V13__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
+**Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (`V15__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
 editing a migration that has been applied. Test it from the state before it: see `packages/eventstore/test/integration/migration-v11.test.ts`, which starts the test
 database at a chosen migration with `startTestDb({ migrations })`. A migration that locks a table says so in its header.
 

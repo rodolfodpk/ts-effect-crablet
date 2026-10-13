@@ -10,7 +10,7 @@ From a schema change to a view that still works: write the migration, change wha
 
 Every change to a view table goes through the same steps, from `examples/course-enrolment-app`:
 
-1. **Write the migration.** A new file in `db/migration`, numbered from `V100` so it cannot clash with the framework's (`V1` to `V13`), for example `V103__course_waitlist.sql`. Add it to `appMigrationFiles` in
+1. **Write the migration.** A new file in `db/migration`, numbered from `V100` so it cannot clash with the framework's (`V1` to `V14`), for example `V103__course_waitlist.sql`. Add it to `appMigrationFiles` in
    [`migrate.ts`](../../../examples/course-enrolment-app/src/migrate.ts).
 2. **Apply it to your development database.** `node src/migrate.ts`. The files are not idempotent and there is no record of what was applied, so it runs against a **fresh** database (`docker compose down -v`, then `up -d`, then migrate).
    For an existing database you apply only the files it has not had, with your own tooling ([run it in production](../operate/run-in-production.md#1-apply-the-migrations)).

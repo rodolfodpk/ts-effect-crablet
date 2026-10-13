@@ -242,7 +242,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
       const tagKeys = new Set(events.flatMap((e) => e.tags.map((t) => t.key)));
       return EventStoreMetrics.observe(
         EventStoreMetrics.append,
-        Sql.appendEventsIf(sql, events, condition, {}).pipe(
+        Sql.appendEventsIf(sql, events, condition).pipe(
           // Remember what was appended for the wake-up. Inside `withWakeups` it waits for the commit; outside, it is sent now.
           Effect.tap(() =>
             off

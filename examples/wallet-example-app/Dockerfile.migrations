@@ -1,4 +1,4 @@
-# The schema as one Flyway image: the framework's files (V1 to V13, packages/db-migrations/sql) and the application's (V100 and up, db/migration) in one history, in version order.
+# The schema as one Flyway image: the framework's files (V1 to V14, packages/db-migrations/sql) and the application's (V100 and up, db/migration) in one history, in version order.
 # The range below 100 is the framework's; an application numbers its own from 100. Build from the repository root:
 #   docker build -f examples/wallet-example-app/Dockerfile.migrations -t crablet-migrations:lab .
 FROM flyway/flyway:13.10.0

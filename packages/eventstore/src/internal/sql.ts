@@ -67,11 +67,6 @@ interface AppendResultJson {
   readonly last_position?: string;
 }
 
-export interface AppendOptions {
-  readonly notifyChannel?: string;
-  readonly notifyPayload?: string;
-}
-
 // append_events_if() serializes each condition item with a pg_advisory_xact_lock before checking
 // for conflicts, closing the genuinely-concurrent-race window at the SQL layer, so the client needs
 // no isolation-level control (no SERIALIZABLE bump, no commit-time-defect handling) - a plain
@@ -79,8 +74,7 @@ export interface AppendOptions {
 export const appendEventsIf = (
   sql: SqlClient.SqlClient,
   events: ReadonlyArray<AppendEvent>,
-  condition: AppendCondition,
-  options?: AppendOptions
+  condition: AppendCondition
 ): Effect.Effect<AppendResult, Conflict | Duplicate | SqlError> =>
   Effect.gen(function* () {
     const types = events.map((e) => e.type);
@@ -103,8 +97,10 @@ export const appendEventsIf = (
       new Date().toISOString(),
       correlationId,
       causationId === null ? null : causationId.toString(),
-      options?.notifyChannel ?? null,
-      options?.notifyPayload ?? null,
+      // p_notify_channel and p_notify_payload: the function can notify from inside the append, but nothing asks it to any more (the event store sends one wake-up after the
+      // commit, ADR-0021 and ADR-0028). They stay in the SQL signature, so no migration rewrites the function.
+      null,
+      null,
       // The cursor is a (transaction_id, position) pair; null (an old-style position) compares by position only.
       concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null)
     ]);
