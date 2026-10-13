@@ -13,14 +13,11 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { monitorProcessors } from "@crablet/event-poller/MonitorProcessors";
 import { makeViewsProcessor } from "@crablet/views";
 import { makeViewManagementService } from "@crablet/views/ViewManagementService";
-import type { ViewsConfig } from "@crablet/views/ViewsConfig";
 import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { makeAutomationsProcessor } from "@crablet/automations";
 import { makeAutomationManagementService } from "@crablet/automations/AutomationManagementService";
-import type { AutomationsConfig } from "@crablet/automations/AutomationsConfig";
 import { makeOutboxProcessor } from "@crablet/outbox";
 import { makeOutboxManagementService } from "@crablet/outbox/OutboxManagementService";
-import type { OutboxConfig } from "@crablet/outbox/OutboxConfig";
 import { topicConfigOf } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
@@ -53,39 +50,6 @@ export interface WalletAppConfig {
   readonly openApiPath?: string | false;
   readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string };
 }
-
-const defaultViewsConfig: ViewsConfig = {
-  pollingIntervalMs: 1000,
-  batchSize: 100,
-  backoffEnabled: true,
-  backoffThreshold: 3,
-  backoffMultiplier: 2,
-  backoffMaxSeconds: 10,
-  leaderElectionRetryIntervalMs: 5_000,
-  maxErrors: 10
-};
-
-const defaultAutomationsConfig: AutomationsConfig = {
-  pollingIntervalMs: 1000,
-  batchSize: 100,
-  backoffEnabled: true,
-  backoffThreshold: 3,
-  backoffMultiplier: 2,
-  backoffMaxSeconds: 10,
-  leaderElectionRetryIntervalMs: 5_000,
-  maxErrors: 10
-};
-
-const defaultOutboxConfig: OutboxConfig = {
-  pollingIntervalMs: 1000,
-  batchSize: 100,
-  backoffEnabled: true,
-  backoffThreshold: 3,
-  backoffMultiplier: 2,
-  backoffMaxSeconds: 10,
-  leaderElectionRetryIntervalMs: 5_000,
-  maxErrors: 10
-};
 
 // The 3 EventProcessorHandles started by startBackgroundProcessors - a caller that uses it directly (every E2E test file) must call `.service.stop` on each
 // before tearing down the underlying connection pool. The entry point uses `startBackgroundProcessorsScoped` below instead, and the scope does that.
@@ -132,7 +96,7 @@ export const startBackgroundProcessors = (
   Effect.gen(function* () {
     // #region views-processor
     const viewsHandle = yield* makeViewsProcessor({
-      config: { ...defaultViewsConfig, ...polling },
+      config: polling,
       projectors: [
         yield* makeWalletBalanceViewProjector(),
         yield* makeWalletTransactionViewProjector(),
@@ -147,7 +111,7 @@ export const startBackgroundProcessors = (
 
     // #region automations-processor
     const automationsHandle = yield* makeAutomationsProcessor({
-      config: { ...defaultAutomationsConfig, ...polling },
+      config: polling,
       handlers: [walletOpenedAutomation],
       instanceId
     });
@@ -155,7 +119,7 @@ export const startBackgroundProcessors = (
     // #endregion automations-processor
 
     const outboxHandle = yield* makeOutboxProcessor({
-      config: { ...defaultOutboxConfig, ...polling },
+      config: polling,
       topics: [
         topicConfigOf("wallet-events", {
           anyOfTags: new Set(["wallet_id", "from_wallet_id", "to_wallet_id"]),

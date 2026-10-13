@@ -29,6 +29,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0008: No command-type auto-discovery - handlers passed explicitly at every call site](0008-no-command-type-auto-discovery.md) - accepted
 - [ADR-0027: An id that is already taken is decided in `decide`, not flagged with `onDuplicate`](0027-a-taken-id-is-decided-not-flagged.md) - accepted
 - [ADR-0029: A command's lookup cannot write, and what it reads is protected](0029-a-lookup-cannot-write-and-is-protected.md) - accepted
+- [ADR-0030: One polling config, with defaults; no `enabled`](0030-one-polling-config.md) - accepted
 
 ## Reading, delivery and the pollers
 

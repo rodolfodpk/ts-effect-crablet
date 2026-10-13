@@ -7,7 +7,7 @@ so a read can wait for a write.
 
 - **`defineView`** (`/ProjectedView`), **`viewTable`** and its column types (`/ViewTable`) - a view declared as what each event does to its tables (`insert`, `update`, `upsert` with `add`/`set`/`max`, `remove`, and `raw` as the escape hatch). It gives the projector, the subscription (the handled event types), the tables it owns and an in-memory run (`applyInMemory`, `/ViewMemory`); **`checkViewTables`** (`/ViewTableCheck`) compares the declared tables with the migrated database ([ADR-0026](../../docs/adr/0026-views-declared-as-operations.md)).
 - **`ViewProjector`** and **`makeTransactionalViewProjector`** (`/ViewProjector`) - a projector is `handle(events)` for a batch; the transactional one runs the whole batch in one transaction (a failure rolls back the batch) and passes each event's correlation and causation ids on.
-- **`makeViewsProcessor`**, **`ViewsConfig`**, **`ViewSubscription`** - register the projectors and run them.
+- **`makeViewsProcessor`**, **`ViewsConfig`**, **`ViewSubscription`** - register the projectors and run them. `config` is optional: `ViewsConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings), and what is left out takes the default.
 - **`waitUntilProcessed`** (`/WaitUntilProcessed`) - wait until a view has processed a given write (the marker). **`readCheck`** (`/ReadCheck`) is its first look for every view of a read in one statement, and **`viewVerdict`** (`/ViewVerdict`) the rule both end in.
 - **`ViewProgress`**, **`ViewProgressHub`**, **`ViewProgressFeed`** - view progress announced with one LISTEN per process, fanned out in memory, and the server-sent "ping" feed.
 - **`ViewManagementService`** - inspect and control views.

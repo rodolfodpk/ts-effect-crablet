@@ -10,7 +10,6 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makeViewsProcessor } from "@crablet/views";
-import type { ViewsConfig } from "@crablet/views/ViewsConfig";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
@@ -66,19 +65,6 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));
 };
 
-// #region views-config
-const viewsConfig: ViewsConfig = {
-  pollingIntervalMs: 1000,
-  batchSize: 100,
-  backoffEnabled: true,
-  backoffThreshold: 3,
-  backoffMultiplier: 2,
-  backoffMaxSeconds: 120,
-  leaderElectionRetryIntervalMs: 5_000,
-  maxErrors: 10
-};
-// #endregion views-config
-
 // Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback).
 // Building its Layer alone would NOT process anything: `.service.start` forks the long-lived fibers that do the work, and
 // they are only stopped by `.service.stop` - call it before closing the database pool.
@@ -100,7 +86,6 @@ export const startCourseViews = (
       delayMs > 0 ? { ...projector, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), projector.handle(events)) } : projector;
     // Two views off the same events: the seats left (declared with defineView) and who took which seat (a hand-written projector).
     const handle = yield* makeViewsProcessor({
-      config: viewsConfig,
       projectors: [delayed(yield* makeCourseSeatsViewProjector()), delayed(yield* makeCourseEnrolmentsViewProjector())],
       subscriptions: [courseSeatsViewSubscription, courseEnrolmentsViewSubscription],
       instanceId

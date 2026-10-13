@@ -22,6 +22,31 @@ From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `
 Processor settings (polling, backoff, `maxErrors`, the leader retry) are in [Views](./views.md#processor-settings). Read-consistency settings are in
 [HTTP](./http.md#read-consistency).
 
+## Polling settings
+
+How a processor polls, backs off and gives up, in `PollingConfig` (`@crablet/event-poller/ProcessorConfig`). The views, automations and outbox modules each take a
+`Partial<PollingConfig>` as `config`, or none: what is left out takes the default below ([ADR-0030](../adr/0030-one-polling-config.md)).
+
+```ts
+makeViewsProcessor({ projectors, subscriptions });                                   // all defaults
+makeViewsProcessor({ projectors, subscriptions, config: { pollingIntervalMs: 200 } }); // one setting changed
+```
+
+| Setting | Default | What it does |
+|---|---|---|
+| `pollingIntervalMs` | `1000` | How often the processor polls while events keep coming (also the wait when it first goes idle). |
+| `batchSize` | `100` | The most events handled in one batch (one transaction for a view). |
+| `backoffEnabled` | `true` | Whether an idle processor waits longer between polls. |
+| `backoffThreshold` | `3` | Empty polls before the wait starts to grow. |
+| `backoffMultiplier` | `2` | How much the wait grows each time. |
+| `backoffMaxSeconds` | `10` | The longest an idle processor waits between polls. A wake-up ends the wait. This bounds the delay if a wake-up is lost ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). |
+| `maxErrors` | `10` | Errors in a row before the processor is marked `FAILED` and stops. |
+| `leaderElectionRetryIntervalMs` | `5000` | How often a follower tries to take the module's lock. Bounds the takeover after a crash. |
+
+A single view, automation or topic publisher can override `pollingIntervalMs`, `batchSize` and the four backoff settings of its own; `maxErrors` and the leader retry
+belong to the module. A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some
+modules by role.
+
 ## The wallet's environment variables
 
 The wallet example (`examples/wallet-example-app/src/index.ts`) reads these. They are a model for your own application; the framework itself reads no

@@ -29,7 +29,7 @@ migrations and monitoring. Running out is quiet: commands fail and nothing in th
 
 ## 4. Polling and wake-ups
 
-Start with the defaults: wake-ups `coalesced`, poll every 1 s, back off to at most 10 s when idle. With wake-ups working, a write reaches a view in
+Start with the defaults: wake-ups `coalesced`, poll every 1 s, back off to at most 10 s when idle. They are the defaults of the modules too, so a module needs no `config` at all ([polling settings](../../reference/configuration.md#polling-settings)). With wake-ups working, a write reaches a view in
 tens of milliseconds whatever the polling settings; they only matter when a wake-up is lost or turned off
 ([three measured profiles](run-in-production.md#polling-and-wake-ups)).
 

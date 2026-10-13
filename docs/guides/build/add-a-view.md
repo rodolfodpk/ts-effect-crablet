@@ -100,7 +100,7 @@ stops the processors before the connection pool closes ([Run it in production](.
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
 ```ts
     const viewsHandle = yield* makeViewsProcessor({
-      config: { ...defaultViewsConfig, ...polling },
+      config: polling,
       projectors: [
         yield* makeWalletBalanceViewProjector(),
         yield* makeWalletTransactionViewProjector(),
