@@ -169,13 +169,13 @@ lost. A fresh clone of the branch, the commands copied from the pages as written
 | Tutorial step 5 (the page) | not run | needs a browser |
 
 **Still open:** the same walk by someone who did not write the documents, timing the reading (the targets above: the README in 2 minutes, step 2 in 45),
-and the three questions answered from `docs/README.md` alone.
+and the three questions answered from `docs/README.md` alone. The protocol for it is [`newcomer-walkthrough.md`](./newcomer-walkthrough.md).
 
 ## A cold-start run by an AI agent (2026-10-13)
 
 A fresh agent with no memory of the work, told to behave as a developer who had never seen the project, read the README, ran the quick start and tutorial steps 1 and 2 on a
 clean copy, answered the three questions of "How we will know" using only `docs/README.md`, and judged the "Why not" and evidence pages as a skeptical team lead. It tests whether
-the documents are clear and complete; **it does not measure reading time** (an agent reads in seconds), so the timed walk by a person is still open.
+the documents are clear and complete; **it does not measure reading time** (an agent reads in seconds), so the timed walk by a person is still open (its protocol: [`newcomer-walkthrough.md`](./newcomer-walkthrough.md)).
 
 What matched: the quick start and both tutorial steps ran exactly as the pages say; the three questions were answered in two or three pages each; the delivery guarantees page was
 called the best page.
