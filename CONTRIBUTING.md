@@ -54,6 +54,10 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 editing a migration that has been applied. Test it from the state before it: see `packages/eventstore/test/integration/migration-v11.test.ts`, which starts the test
 database at a chosen migration with `startTestDb({ migrations })`. A migration that locks a table says so in its header.
 
+**Add a package entry point.** Add it to `exports` in the package's `package.json`, and decide whether an application should import it. If only the sibling packages should, add it to
+`crablet.internal` there (sorted) and describe it under "Internal" in the package's README; `scripts/public-api.test.ts` then keeps applications and the documents away from it
+([ADR-0031](docs/adr/0031-api-and-plumbing-are-separate.md)).
+
 **Change the HTTP API.** The OpenAPI descriptions in [`docs/api/`](docs/api) are checked in, and a unit test fails when they are stale. Regenerate the wallet's with
 `bun run docs:api`, and the course app's with `node scripts/generate-openapi.ts` from `examples/course-enrolment-app`. The diff is the API change.
 

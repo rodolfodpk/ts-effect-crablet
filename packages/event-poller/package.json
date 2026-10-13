@@ -21,6 +21,9 @@
     "./InstanceId": "./src/InstanceId.ts",
     "./MonitorProcessors": "./src/MonitorProcessors.ts"
   },
+  "crablet": {
+    "internal": ["./BackoffState", "./EventFetcher", "./EventHandler", "./PostgresProgressTracker", "./ProgressPing", "./ProgressTracker", "./SqlEventFetcher"]
+  },
   "dependencies": {
     "effect": "4.0.2",
     "@effect/sql-pg": "4.0.2",

@@ -30,6 +30,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0027: An id that is already taken is decided in `decide`, not flagged with `onDuplicate`](0027-a-taken-id-is-decided-not-flagged.md) - accepted
 - [ADR-0029: A command's lookup cannot write, and what it reads is protected](0029-a-lookup-cannot-write-and-is-protected.md) - accepted
 - [ADR-0030: One polling config, with defaults; no `enabled`](0030-one-polling-config.md) - accepted
+- [ADR-0031: A package's API and its plumbing are separate, and the line is enforced](0031-api-and-plumbing-are-separate.md) - accepted
 
 ## Reading, delivery and the pollers
 
