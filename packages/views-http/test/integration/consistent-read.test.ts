@@ -83,7 +83,6 @@ const GroupLive = HttpApiBuilder.group(Api, "reads", (handlers) =>
 );
 
 const viewsConfig: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 50,
   batchSize: 100,
   backoffEnabled: false,

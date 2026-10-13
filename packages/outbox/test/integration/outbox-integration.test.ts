@@ -64,7 +64,6 @@ const getProgress = (topic: string, publisher: string) =>
   );
 
 const baseOutboxConfig: OutboxConfig = {
-  enabled: true,
   pollingIntervalMs: 100,
   batchSize: 100,
   backoffEnabled: false,

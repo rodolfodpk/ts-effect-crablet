@@ -4,7 +4,6 @@ import { viewSubscriptionOf } from "../src/ViewSubscription.ts";
 import type { ViewsConfig } from "../src/ViewsConfig.ts";
 
 const baseConfig: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,
@@ -22,7 +21,6 @@ describe("makeViewProcessorConfigs", () => {
     expect(config!.pollingIntervalMs).toBe(1000);
     expect(config!.batchSize).toBe(100);
     expect(config!.backoffEnabled).toBe(true);
-    expect(config!.enabled).toBe(true);
     expect(config!.maxErrors).toBe(10);
   });
 

@@ -131,7 +131,7 @@ describe("a declared view on real Postgres", () => {
   it("a batch that comes through the processor twice (a crash between the view's commit and the cursor) is applied once", { timeout: 30_000 }, async () => {
     const counter = defineView("pv-once", { tables: [accounts] })
       .on(Deposited, (d) => accounts.upsert({ id: `once-${d.id}` }, { add: { balance: d.amount, deposits: 1 } }));
-    const config: ViewsConfig = { enabled: true, pollingIntervalMs: 100, batchSize: 100, backoffEnabled: false, backoffThreshold: 3, backoffMultiplier: 2, backoffMaxSeconds: 120, leaderElectionRetryIntervalMs: 30_000, maxErrors: 5 };
+    const config: ViewsConfig = { pollingIntervalMs: 100, batchSize: 100, backoffEnabled: false, backoffThreshold: 3, backoffMultiplier: 2, backoffMaxSeconds: 120, leaderElectionRetryIntervalMs: 30_000, maxErrors: 5 };
     await run(
       Effect.gen(function* () {
         const store = yield* EventStore;

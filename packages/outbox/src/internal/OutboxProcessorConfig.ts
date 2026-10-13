@@ -23,8 +23,7 @@ export const makeOutboxProcessorConfigs = (
           backoffMultiplier: resolveOverride(assignment.backoffMultiplier, config.backoffMultiplier),
           backoffMaxSeconds: resolveOverride(assignment.backoffMaxSeconds, config.backoffMaxSeconds),
           leaderElectionRetryIntervalMs: config.leaderElectionRetryIntervalMs,
-          maxErrors: config.maxErrors,
-          enabled: config.enabled
+          maxErrors: config.maxErrors
         }
       )
     )

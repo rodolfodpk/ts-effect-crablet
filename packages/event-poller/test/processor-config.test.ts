@@ -11,7 +11,6 @@ describe("processorConfigOf", () => {
       backoffThreshold: 3,
       backoffMultiplier: 2,
       backoffMaxSeconds: 120,
-      enabled: true
     });
     expect(config.maxErrors).toBe(10);
     expect(config.leaderElectionRetryIntervalMs).toBe(5_000);
@@ -26,7 +25,6 @@ describe("processorConfigOf", () => {
       backoffThreshold: 3,
       backoffMultiplier: 2,
       backoffMaxSeconds: 120,
-      enabled: true,
       maxErrors: 5,
       leaderElectionRetryIntervalMs: 15_000
     });

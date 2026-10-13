@@ -7,7 +7,6 @@ import type { AutomationsConfig } from "../src/AutomationsConfig.ts";
 import { noOp } from "../src/AutomationDecision.ts";
 
 const baseConfig: AutomationsConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,
@@ -33,7 +32,6 @@ describe("makeAutomationProcessorConfigs", () => {
     expect(config!.pollingIntervalMs).toBe(1000);
     expect(config!.batchSize).toBe(100);
     expect(config!.backoffEnabled).toBe(true);
-    expect(config!.enabled).toBe(true);
     expect(config!.maxErrors).toBe(10);
   });
 

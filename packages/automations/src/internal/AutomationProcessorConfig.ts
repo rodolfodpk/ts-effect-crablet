@@ -21,7 +21,6 @@ export const makeAutomationProcessorConfigs = (
       backoffMultiplier: resolveOverride(handler.backoffMultiplier, config.backoffMultiplier),
       backoffMaxSeconds: resolveOverride(handler.backoffMaxSeconds, config.backoffMaxSeconds),
       leaderElectionRetryIntervalMs: config.leaderElectionRetryIntervalMs,
-      maxErrors: config.maxErrors,
-      enabled: config.enabled
+      maxErrors: config.maxErrors
     })
   );

@@ -157,8 +157,6 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.gen(function* () {
         const config = configOf(id);
         if (!config) return yield* Effect.die(new Error(`Unknown processorId: ${id}`));
-        if (!config.enabled) return 0;
-
         const status = yield* deps.progressTracker.getStatus(id);
         if (status === "PAUSED" || status === "FAILED") return 0;
 
@@ -361,7 +359,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const leaderRetryIntervalMs =
       deps.leaderRetryIntervalMs ??
-      deps.configs.find((c) => c.enabled)?.leaderElectionRetryIntervalMs ??
+      deps.configs[0]?.leaderElectionRetryIntervalMs ??
       5_000;
 
     const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(

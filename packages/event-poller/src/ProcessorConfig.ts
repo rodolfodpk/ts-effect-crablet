@@ -10,7 +10,6 @@ export interface ProcessorConfig<I> {
   readonly backoffMaxSeconds: number;
   readonly maxErrors: number;
   readonly leaderElectionRetryIntervalMs: number;
-  readonly enabled: boolean;
 }
 
 // PATTERN NOTE - `Omit<T, K>`/`Pick<T, K>`/`Partial<T>` are TypeScript's built-in "utility types":

@@ -46,7 +46,6 @@ after(async () => {
 });
 
 const config: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 200,
   batchSize: 100,
   backoffEnabled: false,

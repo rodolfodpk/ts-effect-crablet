@@ -5,7 +5,6 @@ import { toKey } from "../src/TopicPublisherPair.ts";
 import type { OutboxConfig } from "../src/OutboxConfig.ts";
 
 const baseConfig: OutboxConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,

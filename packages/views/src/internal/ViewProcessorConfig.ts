@@ -18,7 +18,6 @@ export const makeViewProcessorConfigs = (
       backoffMultiplier: resolveOverride(subscription.backoffMultiplier, config.backoffMultiplier),
       backoffMaxSeconds: resolveOverride(subscription.backoffMaxSeconds, config.backoffMaxSeconds),
       leaderElectionRetryIntervalMs: config.leaderElectionRetryIntervalMs,
-      maxErrors: config.maxErrors,
-      enabled: config.enabled
+      maxErrors: config.maxErrors
     })
   );

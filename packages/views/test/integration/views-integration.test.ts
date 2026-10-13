@@ -72,7 +72,6 @@ const getProgress = (viewName: string) =>
   );
 
 const baseViewsConfig: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 100,
   batchSize: 100,
   backoffEnabled: false,

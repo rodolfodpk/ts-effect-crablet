@@ -52,7 +52,6 @@ A view, an automation and an outbox topic each run as a processor with these set
 | `backoffEnabled`, `backoffThreshold`, `backoffMultiplier`, `backoffMaxSeconds` | required | After `backoffThreshold` empty polls or errors, the interval grows by `backoffMultiplier` up to `backoffMaxSeconds`. A wake-up ends the wait. |
 | `maxErrors` | `10` | Errors in a row before the processor is marked `FAILED` and stops. |
 | `leaderElectionRetryIntervalMs` | `5000` | How often a follower tries to take the module's lock. Bounds the takeover after a crash. |
-| `enabled` | required | Whether the processor runs. |
 
 ## Reads over views
 

@@ -55,7 +55,6 @@ export interface WalletAppConfig {
 }
 
 const defaultViewsConfig: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,
@@ -67,7 +66,6 @@ const defaultViewsConfig: ViewsConfig = {
 };
 
 const defaultAutomationsConfig: AutomationsConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,
@@ -79,7 +77,6 @@ const defaultAutomationsConfig: AutomationsConfig = {
 };
 
 const defaultOutboxConfig: OutboxConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,

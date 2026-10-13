@@ -68,7 +68,6 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
 
 // #region views-config
 const viewsConfig: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,

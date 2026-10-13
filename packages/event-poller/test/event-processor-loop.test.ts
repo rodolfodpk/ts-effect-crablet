@@ -67,7 +67,7 @@ const waitUntil = <A, E>(
     return yield* check;
   });
 
-const makeHarness = (options?: { readonly enabled?: boolean; readonly failFirstN?: number }) =>
+const makeHarness = (options?: { readonly failFirstN?: number }) =>
   Effect.gen(function* () {
     const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([]);
     const { tracker, rows } = yield* makeInMemoryProgressTracker<string>();
@@ -80,8 +80,7 @@ const makeHarness = (options?: { readonly enabled?: boolean; readonly failFirstN
       backoffEnabled: true,
       backoffThreshold: 1,
       backoffMultiplier: 2,
-      backoffMaxSeconds: 120,
-      enabled: options?.enabled ?? true
+      backoffMaxSeconds: 120
     });
 
     const handle = yield* makeEventProcessor({
@@ -101,13 +100,6 @@ const makeHarness = (options?: { readonly enabled?: boolean; readonly failFirstN
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
 describe("EventProcessor.process (direct call, no leadership gate)", () => {
-  test("disabled config -> 0, no autoRegister", async () => {
-    const { handle, rows } = await run(makeHarness({ enabled: false }));
-    const handled = await run(handle.service.process(PROCESSOR_ID));
-    expect(handled).toBe(0);
-    expect((await run(rows)).has(PROCESSOR_ID)).toBe(false);
-  });
-
   test("PAUSED status -> 0, no fetch performed even though events exist", async () => {
     const { handle, eventsRef, tracker } = await run(makeHarness());
     await run(Ref.set(eventsRef, [storedEvent(1n)]));
@@ -216,7 +208,6 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
         backoffThreshold: 0,
         backoffMultiplier: 2,
         backoffMaxSeconds: 120,
-        enabled: true
       });
 
       const handle = yield* makeEventProcessor({
@@ -277,7 +268,7 @@ describe("the leadership gauge", () => {
       const { tracker } = yield* makeInMemoryProgressTracker<string>();
       const handlerHandle = yield* makeInMemoryEventHandler<string>();
       const config = processorConfigOf("gauge-proc", {
-        pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120, enabled: true
+        pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120
       });
       // alwaysLeader()'s lock is 0n, and this instance is "gauge-instance": the gauge must be found under those two labels
       let leading = true;
@@ -320,7 +311,6 @@ describe("EventProcessor leadership fence (scheduled loop)", () => {
     backoffThreshold: 1,
     backoffMultiplier: 2,
     backoffMaxSeconds: 120,
-    enabled: true
   });
 
   // `answers` are consumed one per verify call; after they run out the last one repeats.
@@ -476,7 +466,7 @@ describe("EventProcessor.startScoped: the scope owns the processors", () => {
       const released = yield* Ref.make(0);
       const leader: LeaderHandle = { lockKey: 0n, isLeader: () => true, verify: Effect.succeed(true), release: () => Ref.update(released, (n) => n + 1) };
       const handle = yield* makeEventProcessor({
-        configs: [processorConfigOf(PROCESSOR_ID, { pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120, enabled: true })],
+        configs: [processorConfigOf(PROCESSOR_ID, { pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120 })],
         fetcher: makeInMemoryEventFetcher<string>(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
