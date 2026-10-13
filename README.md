@@ -17,9 +17,9 @@ Here there are no aggregates and no streams. Events go into one log, tagged with
 depends on, and its append succeeds only if none of them changed since it read them. So both rules are checked in one atomic decision, and two
 commands conflict only when one changes something the other relied on. This is an implementation of the open [DCB specification](https://dcb.events/specification/).
 
-> **Status: experimental, pre-release.** The API changes often and the packages are not on npm yet
-> ([ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*). To try it today, clone this repository and
-> work in it. Not a fit if you are not on PostgreSQL or need a stable library now. What is open: the [roadmap](./ROADMAP.md).
+> **Status: experimental, pre-release.** The API changes often, there is no stability promise yet, and the packages are not on npm. To try it today, clone this repository
+> and work in it. Not a fit if you are not on PostgreSQL or need a stable library now. What would make it ready, and what is still open: the
+> [roadmap](./ROADMAP.md#before-a-10). (The policy for changing the API is [ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*.)
 
 ## Both rules, one command
 
@@ -68,7 +68,7 @@ export const Subscribe = defineCommand({
 
 The boundary of `Subscribe` is the course's events plus the student's events. It comes from the two models; you never write that query.
 
-**Run it, no database needed** ([`examples/quickstart`](./examples/quickstart/README.md)). It starts from a history where `math` has one seat:
+**Run it, no database needed** ([`examples/quickstart`](./examples/quickstart/README.md)). You need Bun 1.4 or newer, and Node 24 or newer (it runs the `.ts` file directly). It starts from a history where `math` has one seat:
 
 ```bash
 bun install
@@ -128,6 +128,8 @@ Effect.runPromise(Effect.provide(program, AppLive));
 ```
 
 ## What you get
+
+*Words you may not know yet: a **view** is a read model kept up to date from the events; an **automation** reacts to an event by issuing a command; the **outbox** publishes events to other systems; a **leader** is the one process that runs a background part of the application; a **marker** says where in the log a write ended; a **tag** is a label on an event saying what it is about. The [glossary](./docs/reference/glossary.md) has all of them.*
 
 - **One rule across several things, without a saga.** A course limit and a student limit, or a transfer between two accounts, is one command
   ([how it works](./docs/concepts/dcb-guide.md)).

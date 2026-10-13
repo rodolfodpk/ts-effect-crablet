@@ -2,9 +2,8 @@
 
 *Evidence · anyone deciding whether to trust it · the [README](../README.md) read · 10 minutes*
 
-What the framework guarantees, the test that checks each guarantee, what was measured, and the limits that are known. Every number here has a source
-in the project's records, and the records say how firm each one is. All measurements were taken on one laptop with Docker, so treat them as an order
-of magnitude, not as capacity.
+What the framework guarantees, the test that checks each guarantee, what was measured, and the limits that are known. The table of numbers says what each number is and how
+many runs it rests on; the full experiments, with what was wrong before each fix, are in the linked records.
 
 ## The guarantees, and what checks them
 
@@ -19,23 +18,27 @@ of magnitude, not as capacity.
 | **Reads are never silently stale** | A read with a marker includes the write, or answers `503`. | The read-consistency tests in `packages/views-http` and the wallet's end-to-end test. |
 | **A stored event that no longer fits is never misread** | It fails with a typed `EventDecodingError` naming it, and is never skipped. | The event-evolution tests and experiment E7 ([ADR-0017](./adr/0017-event-evolution-by-compatibility.md)). |
 
-**How good the tests are.** Line coverage of the packages, merged from the unit and the integration suites, is gated in CI (99.7 % when the gate was set).
+**How good the tests are.** Line coverage of the packages (not the examples), merged from the unit and the integration suites, is gated in CI against a committed baseline (`scripts/coverage-gate.ts`, `coverage-baseline.json`): 99.7 % when the gate was set.
 Coverage only says a line ran, so the correctness core was also broken by hand on purpose, 17 times: three breaks survived, and all three were real
 gaps, now closed ([test coverage](./history/plans/test-coverage.md)). Mutation testing by a tool is [proposed](./history/plans/mutation-testing.md), not built.
 
 ## Numbers
 
-| What | Measured | Source |
-|---|---|---|
-| Loading 1,000,000 events through the append path | about **15,000 events/s** | reliability report, E9 |
-| Size of an event with several tags, with its indexes and tag rows | about **1.2 KB** | reliability report, E9 |
-| A transfer (`all` over two accounts) from an account with 100,000 events | **218 ms** | reliability report, E5d |
-| Takeover after a leader **crashes** | within the retry interval: 0.2 to 4.2 s with the 5 s default (six runs) | reliability report, D1b |
-| Takeover after a **graceful stop** | **0.04 to 0.10 s** | reliability report, D1c |
-| Takeover when a leader **pod is killed** in Kubernetes | **0.4 s**, nothing lost | kind lab, `kill` |
-| Takeover after a **silent network partition** | **13 to 29 s** with Postgres keepalives 10/5/3; **388 s** with the keepalives RDS ships | kind lab, `partition-*` |
-| A stale leader's handler calls after losing its session | **0** (723 before the fix) | reliability report, D1 |
-| Acknowledged commands missing from the views after a rolling update, a killed pod, a lost node or a partition | **0** in every scenario | kind lab |
+**How they were measured.** On one laptop (8 cores) with Docker, against a real PostgreSQL 18 in a container, the application and the database on the same machine; the
+failover rows on a local Kubernetes cluster (kind). Not a cloud database, not a production load. So the numbers compare one thing with another and give an order of
+magnitude; they are not capacity. The last column says how many runs each rests on.
+
+| What | Measured | How firm | Source |
+|---|---|---|---|
+| Loading 1,000,000 events through the append path | about **15,000 events/s** | two full runs that agreed in shape | reliability report, E9 |
+| Size of an event with several tags, with its indexes and tag rows | about **1.2 KB** (wallet-shaped events, 1,203 bytes) | two full runs at 1,000,000 events | reliability report, E9 |
+| A transfer (`all` over two accounts) from an account with 100,000 events | **218 ms** (403 ms before the fix) | one experiment; the same harness timed 25 commands per size | reliability report, E5d |
+| Takeover after a leader **crashes** | 0.2 to 4.2 s with the 5 s retry default: it is the retry interval minus the phase | six trials, one per phase of the retry cycle | reliability report, D1b |
+| Takeover after a **graceful stop** | **0.04 to 0.10 s** (mean 0.07 s) | trials listed in the report | reliability report, D1c |
+| Takeover when a leader **pod is killed** in Kubernetes | **0.4 s**; 0 of 52 acknowledged commands missing afterwards | one run | kind lab, `kill` |
+| Takeover after a **silent network partition** | **13 to 29 s** with Postgres keepalives 10/5/3; **388 s** with the keepalives RDS ships | four runs (keepalives 10/5/3); one run (RDS keepalives) | kind lab, `partition-*` |
+| A stale leader's handler calls after losing its session | **0** (723 before the fix) | one run, 40 s | reliability report, D1 |
+| Acknowledged commands missing from the views | **0**: of 50 (rolling update), 52 (pod killed), 214 (long transaction), 283 (node lost); and in each partition run | one run each, except the partitions | kind lab |
 
 The full records, with every experiment, what was wrong before each fix and how firm each number is:
 [the reliability and scale report](./history/plans/reliability-and-scale-diagnostic.md) and [the kind lab](./history/plans/kind-lab.md).

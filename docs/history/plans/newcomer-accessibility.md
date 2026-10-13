@@ -170,3 +170,27 @@ lost. A fresh clone of the branch, the commands copied from the pages as written
 
 **Still open:** the same walk by someone who did not write the documents, timing the reading (the targets above: the README in 2 minutes, step 2 in 45),
 and the three questions answered from `docs/README.md` alone.
+
+## A cold-start run by an AI agent (2026-10-13)
+
+A fresh agent with no memory of the work, told to behave as a developer who had never seen the project, read the README, ran the quick start and tutorial steps 1 and 2 on a
+clean copy, answered the three questions of "How we will know" using only `docs/README.md`, and judged the "Why not" and evidence pages as a skeptical team lead. It tests whether
+the documents are clear and complete; **it does not measure reading time** (an agent reads in seconds), so the timed walk by a person is still open.
+
+What matched: the quick start and both tutorial steps ran exactly as the pages say; the three questions were answered in two or three pages each; the delivery guarantees page was
+called the best page.
+
+What it found, and what was done about it:
+
+| Finding | Done |
+|---|---|
+| The evidence numbers pointed at history reports with no method on the page | a "How they were measured" paragraph and a "How firm" column (runs per number) |
+| Jargon in the README before it was defined; the glossary was not linked from it | one line of plain definitions at the top of "What you get", linking the glossary |
+| The README status box sent a newcomer to an ADR, and "ready?" had no criteria | the status box points to the roadmap's "Before a 1.0" |
+| `docs/README.md` called history "not needed" while the evidence section linked it | the line names the two reports the evidence cites as the exception |
+| Node 24 was only in the tutorial index | the README's quick start says Bun 1.4+ and Node 24+ |
+| "Why not" had no "what we gave up" list | a "What you take on if you adopt it" section |
+| Tutorial step 1: a long note on ids and personal data before tags are understood | moved to the end of step 1 |
+| Tutorial step 2 did not say what to do if port 5432 is busy | a hint in step 2 |
+| The "no leader" runbook was not usable at 3 a.m. | the `/status` check with an example, the SQL to find the lock holder (run against a real Postgres), the lock keys, and recovery times |
+| "Why not" never compares with a named alternative | **not done, by decision**: the documents do not compare the project with named frameworks |

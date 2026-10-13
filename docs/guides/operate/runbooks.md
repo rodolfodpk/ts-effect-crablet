@@ -21,16 +21,40 @@ it does not rewind the cursor, so nothing is handled twice by the reset itself.
 
 ## A module has no leader
 
-**Means:** nothing is running the views, the automations or the outbox, or nothing is reporting leadership at all. A crashed leader is recognised after
-two minutes of silence.
+**Means:** for the views, the automations or the outbox, no instance has reported leading it for two minutes, so nothing is running that module's processors. Or, if the alert
+says "no leadership data at all", nothing is reporting. Why two minutes: leadership is a gauge that is re-sent while it holds. A leader that crashes never reports "not leading", so
+the alert waits until its last report is older than 120 seconds.
 
-**Check:**
-1. Are the instances that run this module up (`GET /status` on each shows whether it runs the module and leads it)?
-2. Can they reach Postgres? A silent partition holds the lock until the server's keepalives give up ([failure modes](failure-modes.md#a-leader-loses-the-network)).
-3. Are the connections exhausted? A process with no free connection cannot take the lock.
+**Check, in this order:**
 
-**Do:** start an instance that runs the module, or restore its network. If the old leader's session is stuck, terminating it on the server
-(`pg_terminate_backend`) frees the lock, and a follower takes over at its next retry.
+1. **Ask the instances.** Every process of the wallet serves `GET /status` on its port (8080 by default); an application of your own exposes its own. It says what the process runs and
+   whether it leads each module right now:
+   ```json
+   {"pod":"wallet-views-1","roles":["views","automations"],"uptimeSeconds":812,
+    "modules":[{"module":"views","runs":true,"leading":false},{"module":"automations","runs":true,"leading":true}]}
+   ```
+   (An example.) If no instance has `runs: true` for the module, nothing is started for it: start one. If some do and none leads, go on.
+2. **Ask Postgres who holds the lock.** There is one advisory lock per module: views `4856221667890123457`, automations `4856221667890123458`, outbox `4856221667890123456`.
+   ```sql
+   SELECT a.pid, a.application_name, a.state, a.backend_start,
+          ((l.classid::bigint << 32) | l.objid::bigint) AS lock_key
+     FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+    WHERE l.locktype = 'advisory' AND l.granted;
+   ```
+   - **No row for the module's key:** nobody holds it. The followers take it at their next try (every 5 seconds by default, `leaderElectionRetryIntervalMs`), so within a few seconds the
+     alert recovers on its own. If it does not, the instances cannot reach Postgres or have no free connection: check the next two points.
+   - **A row, and no instance says it leads:** a session holds the lock that no process owns any more (a partition that Postgres has not yet given up on, or a stuck connection).
+     `application_name` tells you which instance it was, if your application sets it (the wallet sets `wallet-<pod>`).
+3. **Can the instances reach Postgres?** A silent partition holds the lock until the server's keepalives give up: 13 to 29 seconds with keepalives 10/5/3, 388 seconds with the ones
+   RDS ships ([failure modes](failure-modes.md#a-leader-loses-the-network)). Waiting is correct in that case.
+4. **Are the connections exhausted?** A process with no free connection cannot take the lock ([size the pool](run-in-production.md#size-the-pool)).
+
+**Do:**
+- Start an instance that runs the module, or restore the network.
+- If a session you identified in step 2 holds the lock and its process is gone or unreachable, end it: `SELECT pg_terminate_backend(<pid>)`. The lock is freed at once and a follower takes
+  it at its next try. Do not terminate the session of a process that says it is leading.
+- **How long recovery takes:** after a graceful stop or a killed pod, under a second in the kind lab; after a crash, within the retry interval (5 seconds by default); after a silent
+  partition, as long as the keepalives take. The alert clears once a leader has reported again.
 
 ## A consumer is behind
 
