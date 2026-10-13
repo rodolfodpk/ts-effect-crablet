@@ -68,6 +68,9 @@ export interface ResolveReader {
 }
 
 export const emit = (...events: ReadonlyArray<AppendEvent>): Emit => ({ _tag: "Emit", events });
+// "Nothing to do": the decision appends nothing and the command ends as an idempotent success (200 over HTTP, status IDEMPOTENT). `reason` is what the caller gets back
+// (`ExecutionResult.reason`, `reason` in the HTTP body): give it a short code in UPPER_SNAKE_CASE (ALREADY_SUBSCRIBED, ALREADY_OPENED), like the framework's own
+// DUPLICATE_OPERATION (an `idempotentBy` match) and NO_EVENTS (an `emit()` with no events), so a client can switch on it.
 export const noop = (reason: string | null = null): Noop => ({ _tag: "Noop", reason });
 export const fail = <E>(error: E): Fail<E> => ({ _tag: "Fail", error });
 

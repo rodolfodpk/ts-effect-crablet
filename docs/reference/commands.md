@@ -36,8 +36,11 @@ and makes the condition strict when a lookup covers an event the command appends
 | Return | Outcome | Over HTTP |
 |---|---|---|
 | `emit(event, ...)` | `created`: the events are appended under the consistency condition | `201` with a `marker` |
-| `noop(reason)` | `idempotent`: nothing appended | `200` |
+| `noop(reason)` | `idempotent`: nothing appended; the command was already done, or there was nothing to do | `200`, `status: "IDEMPOTENT"` and the `reason` |
 | `fail(new SomeError(...))` | the domain error; nothing appended | the status of the error's `kind` (below) |
+
+A `noop` reason is a short code in `UPPER_SNAKE_CASE` (`ALREADY_SUBSCRIBED`, `ALREADY_OPENED`), the same style as the framework's own: `DUPLICATE_OPERATION` when
+`idempotentBy` finds the operation already done, and `NO_EVENTS` when `emit()` has no events. A client can switch on it.
 
 ## An id that is already taken
 

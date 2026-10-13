@@ -16,6 +16,6 @@ export const OpenWallet = defineCommand({
     opened === null
       ? emit(WalletOpened({ ...c, openedAt: now.toISOString() }))
       : opened.owner === c.owner && opened.initialBalance === c.initialBalance
-        ? noop("already opened")
+        ? noop("ALREADY_OPENED")
         : fail(new WalletAlreadyExists({ walletId: c.walletId }))
 });
