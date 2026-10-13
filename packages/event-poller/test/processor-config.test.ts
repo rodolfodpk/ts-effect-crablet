@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { processorConfigOf } from "../src/ProcessorConfig.ts";
+import { defaultPollingConfig, processorConfigFrom, processorConfigOf } from "../src/ProcessorConfig.ts";
 import { resolveOverride } from "../src/ProcessorRuntimeOverrides.ts";
 
 describe("processorConfigOf", () => {
@@ -30,6 +30,49 @@ describe("processorConfigOf", () => {
     });
     expect(config.maxErrors).toBe(5);
     expect(config.leaderElectionRetryIntervalMs).toBe(15_000);
+  });
+});
+
+describe("defaultPollingConfig", () => {
+  test("is the one set of defaults: poll every second in batches of 100, back off to 10 s, 10 errors, retry the leader lock every 5 s", () => {
+    expect(defaultPollingConfig).toEqual({
+      pollingIntervalMs: 1000,
+      batchSize: 100,
+      backoffEnabled: true,
+      backoffThreshold: 3,
+      backoffMultiplier: 2,
+      backoffMaxSeconds: 10,
+      maxErrors: 10,
+      leaderElectionRetryIntervalMs: 5_000
+    });
+  });
+
+  test("processorConfigOf with nothing but an id is all defaults; what it is given wins; an undefined field does not erase a default", () => {
+    expect(processorConfigOf("p")).toEqual({ processorId: "p", ...defaultPollingConfig });
+    expect(processorConfigOf("p", { batchSize: 5 }).batchSize).toBe(5);
+    expect(processorConfigOf("p", { batchSize: undefined }).batchSize).toBe(100);
+  });
+});
+
+describe("processorConfigFrom", () => {
+  test("no module config and no overrides: the defaults", () => {
+    expect(processorConfigFrom("p", undefined)).toEqual({ processorId: "p", ...defaultPollingConfig });
+  });
+
+  test("the module's config wins over the defaults, and names only what it changes", () => {
+    const c = processorConfigFrom("p", { pollingIntervalMs: 200, maxErrors: 3, leaderElectionRetryIntervalMs: 1000 });
+    expect([c.pollingIntervalMs, c.maxErrors, c.leaderElectionRetryIntervalMs]).toEqual([200, 3, 1000]);
+    expect([c.batchSize, c.backoffMaxSeconds]).toEqual([100, 10]);
+  });
+
+  test("a processor's own override wins over the module's config; null and undefined inherit; 0 and false are real overrides", () => {
+    const c = processorConfigFrom("p", { pollingIntervalMs: 200, batchSize: 50, backoffEnabled: true }, { pollingIntervalMs: 25, batchSize: null, backoffEnabled: false, backoffThreshold: 0 });
+    expect([c.pollingIntervalMs, c.batchSize, c.backoffEnabled, c.backoffThreshold]).toEqual([25, 50, false, 0]);
+  });
+
+  test("maxErrors and the leader retry belong to the module: a processor cannot override them", () => {
+    const c = processorConfigFrom("p", { maxErrors: 3 }, { maxErrors: 99 } as never);
+    expect(c.maxErrors).toBe(3);
   });
 });
 

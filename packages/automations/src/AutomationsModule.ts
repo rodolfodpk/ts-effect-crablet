@@ -19,7 +19,8 @@ import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/Aut
 import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorConfig.ts";
 
 export interface AutomationsDeps {
-  readonly config: AutomationsConfig;
+  // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
+  readonly config?: AutomationsConfig;
   // See internal/AutomationEventFetcher.ts's primer on this registry's type erasure - each
   // AutomationHandler keeps its own concrete T/E/HE at the call site that builds it; only the
   // heterogeneous list passed here is erased.

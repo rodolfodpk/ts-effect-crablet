@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
+import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makeAutomationProcessorConfigs } from "../src/internal/AutomationProcessorConfig.ts";
 import { automationHandlerOf } from "../src/AutomationHandler.ts";
 import { testCommand } from "./fixtures/testCommand.ts";
@@ -43,6 +44,12 @@ describe("makeAutomationProcessorConfigs", () => {
     expect(config!.backoffEnabled).toBe(false);
     // Non-overridden fields still fall back to the global default.
     expect(config!.batchSize).toBe(100);
+  });
+
+  test("with no module config at all, every setting is the framework default, and a handler can still override", () => {
+    const [plain, tuned] = makeAutomationProcessorConfigs(undefined, [fakeHandler("a"), fakeHandler("b", { batchSize: 7 })]);
+    expect(plain).toEqual({ processorId: "a", ...defaultPollingConfig });
+    expect(tuned!.batchSize).toBe(7);
   });
 
   test("produces one config per handler", () => {

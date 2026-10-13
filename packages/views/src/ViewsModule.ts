@@ -18,7 +18,8 @@ import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
 
 export interface ViewsDeps {
-  readonly config: ViewsConfig;
+  // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
+  readonly config?: ViewsConfig;
   readonly projectors: ReadonlyArray<ViewProjector>;
   readonly subscriptions: ReadonlyArray<ViewSubscription>;
   readonly instanceId?: string;

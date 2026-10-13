@@ -18,7 +18,8 @@ import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts"
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
 
 export interface OutboxDeps {
-  readonly config: OutboxConfig;
+  // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
+  readonly config?: OutboxConfig;
   readonly topics: ReadonlyArray<TopicConfig>;
   readonly publishers: ReadonlyArray<OutboxPublisher>;
   readonly instanceId?: string;

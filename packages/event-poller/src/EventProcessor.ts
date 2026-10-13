@@ -5,7 +5,7 @@ import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
 import * as PollerMetrics from "@crablet/metrics-otel/PollerMetrics";
 import * as LeaderMetrics from "@crablet/metrics-otel/LeaderMetrics";
-import type { ProcessorConfig } from "./ProcessorConfig.ts";
+import { defaultPollingConfig, type ProcessorConfig } from "./ProcessorConfig.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 import type { EventFetcher } from "./EventFetcher.ts";
@@ -360,7 +360,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     const leaderRetryIntervalMs =
       deps.leaderRetryIntervalMs ??
       deps.configs[0]?.leaderElectionRetryIntervalMs ??
-      5_000;
+      defaultPollingConfig.leaderElectionRetryIntervalMs;
 
     const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(
       Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))

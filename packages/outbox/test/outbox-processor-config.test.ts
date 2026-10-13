@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makeOutboxProcessorConfigs } from "../src/internal/OutboxProcessorConfig.ts";
 import { topicConfigOf } from "../src/TopicConfig.ts";
 import { toKey } from "../src/TopicPublisherPair.ts";
@@ -44,5 +45,11 @@ describe("makeOutboxProcessorConfigs", () => {
     ]);
     expect(config!.pollingIntervalMs).toBe(250);
     expect(config!.batchSize).toBe(100);
+  });
+
+  test("with no module config at all, every setting is the framework default, and a publisher can still override", () => {
+    const [plain, tuned] = makeOutboxProcessorConfigs(undefined, [topicConfigOf("orders", { publishers: ["kafka", { name: "sns", batchSize: 7 }] })]);
+    expect({ ...plain, processorId: undefined }).toEqual({ processorId: undefined, ...defaultPollingConfig });
+    expect(tuned!.batchSize).toBe(7);
   });
 });
