@@ -6,7 +6,7 @@ import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY } from "@crablet/eventstore/Lea
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { OutboxPublisher } from "./OutboxPublisher.ts";
 import type { TopicConfig } from "./TopicConfig.ts";
@@ -53,6 +53,7 @@ export const makeOutboxProcessor = (
 
     return yield* makeEventProcessor({
       configs,
+      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
       fetcher,
       handler,
       progressTracker,

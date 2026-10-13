@@ -6,7 +6,7 @@ import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Lead
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { VIEW_PROGRESS_CHANNEL } from "./ViewProgress.ts";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -57,6 +57,7 @@ export const makeViewsProcessor = (
 
     return yield* makeEventProcessor({
       configs,
+      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
       fetcher,
       handler,
       progressTracker,

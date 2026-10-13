@@ -83,6 +83,7 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   readonly instanceId: string;
   readonly acquireLeader: Effect.Effect<LeaderHandle | null, unknown>;
   readonly wakeupStream: Stream.Stream<WakeupBatch, unknown>;
+  // How often a follower tries to take the module's leader lock (the module's `leaderElectionRetryIntervalMs`). Default: `defaultPollingConfig`'s.
   readonly leaderRetryIntervalMs?: number;
   // Runs an effect in ONE database transaction (`sql.withTransaction`). When it is set, and the tracker has `advanceCursor`, a batch is handled and
   // its cursor moved in that one transaction: the handler's writes and the cursor commit together or not at all. The cursor move is a forward-only
@@ -357,10 +358,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         // every log line this loop writes says which processor and which instance wrote it
       ).pipe(Effect.annotateLogs({ processor: String(config.processorId), instance: deps.instanceId }));
 
-    const leaderRetryIntervalMs =
-      deps.leaderRetryIntervalMs ??
-      deps.configs[0]?.leaderElectionRetryIntervalMs ??
-      defaultPollingConfig.leaderElectionRetryIntervalMs;
+    const leaderRetryIntervalMs = deps.leaderRetryIntervalMs ?? defaultPollingConfig.leaderElectionRetryIntervalMs;
 
     const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(
       Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))

@@ -34,7 +34,10 @@ process (roles). It was set to `false` in one test, no application read it, and 
    added in one place. `maxErrors` and the leader retry belong to the module and cannot be overridden by one processor.
 5. **`enabled` is removed** from `ProcessorConfig` and the module configs. A processor is stopped at run time by pausing it, and a process runs only some modules
    by role. `EventProcessor` no longer returns early for it.
-6. **The default `backoffMaxSeconds` is 10,** the "bounded" profile of ADR-0021: an idle processor polls at least every 10 s, so a lost wake-up costs at most that. The
+6. **The leader retry is a module setting, not a processor's.** There is one leader lock per module, so `leaderElectionRetryIntervalMs` is no longer in
+   `ProcessorConfig` (it was copied into every processor's config, and `EventProcessor` read it from the first). Each module resolves it from its own config
+   (`resolvePollingConfig`) and passes it to the processor once, as `leaderRetryIntervalMs`.
+7. **The default `backoffMaxSeconds` is 10,** the "bounded" profile of ADR-0021: an idle processor polls at least every 10 s, so a lost wake-up costs at most that. The
    course app drops its own 120 and uses it.
 
 ## Consequences
@@ -44,12 +47,6 @@ process (roles). It was set to `false` in one test, no application read it, and 
   without it still compiles.
 - The course app, and any application that relied on a module config with no `backoffMaxSeconds`, now backs off to 10 s instead of what it wrote, which is the
   documented advice; an application that wants the quiet profile writes `{ backoffMaxSeconds: 120 }`.
-
-## Left as it is
-
-`leaderElectionRetryIntervalMs` is a per-module setting: there is one leader lock per module. It is still copied into every `ProcessorConfig`, and `EventProcessor`
-reads it from the first one (or the default, for a module with no processors). That is harmless, because all the processors of a module get the same value, but it
-belongs at the module level. That change is in the `event-poller` internals and is not part of this decision.
 
 ## Alternatives considered
 

@@ -31,21 +31,27 @@ export const defaultPollingConfig: PollingConfig = {
   leaderElectionRetryIntervalMs: 5_000
 };
 
-// Configuration of one processor.
-export interface ProcessorConfig<I> extends PollingConfig {
+// Configuration of one processor: the polling settings that belong to a processor. `leaderElectionRetryIntervalMs` is not here: there is one leader lock per module,
+// so the module passes it to the processor once (`EventProcessorDeps.leaderRetryIntervalMs`), not as a copy in every processor's config.
+export interface ProcessorConfig<I> extends Omit<PollingConfig, "leaderElectionRetryIntervalMs"> {
   readonly processorId: I;
 }
 
 // `defaultPollingConfig`, then what `fields` names. A field that is present but `undefined` does not override the default.
-const withDefaults = (fields: Partial<PollingConfig> | undefined): PollingConfig => {
+export const resolvePollingConfig = (fields: Partial<PollingConfig> | undefined): PollingConfig => {
   const merged: Record<string, unknown> = { ...defaultPollingConfig };
   for (const [key, value] of Object.entries(fields ?? {})) if (value !== undefined) merged[key] = value;
   return merged as unknown as PollingConfig;
 };
 
+const perProcessor = (config: PollingConfig): Omit<PollingConfig, "leaderElectionRetryIntervalMs"> => {
+  const { leaderElectionRetryIntervalMs: _module, ...rest } = config;
+  return rest;
+};
+
 export const processorConfigOf = <I>(processorId: I, fields: Partial<PollingConfig> = {}): ProcessorConfig<I> => ({
   processorId,
-  ...withDefaults(fields)
+  ...perProcessor(resolvePollingConfig(fields))
 });
 
 // What every module does to build a processor's config: the defaults, then the module's config, then the processor's own overrides (a view's, an automation's, a
@@ -55,7 +61,7 @@ export const processorConfigFrom = <I>(
   moduleConfig: Partial<PollingConfig> | undefined,
   overrides: ProcessorRuntimeOverrides = {}
 ): ProcessorConfig<I> => {
-  const base = withDefaults(moduleConfig);
+  const base = perProcessor(resolvePollingConfig(moduleConfig));
   return {
     processorId,
     ...base,

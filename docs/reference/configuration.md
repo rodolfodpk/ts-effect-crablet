@@ -44,7 +44,7 @@ makeViewsProcessor({ projectors, subscriptions, config: { pollingIntervalMs: 200
 | `leaderElectionRetryIntervalMs` | `5000` | How often a follower tries to take the module's lock. Bounds the takeover after a crash. |
 
 A single view, automation or topic publisher can override `pollingIntervalMs`, `batchSize` and the four backoff settings of its own; `maxErrors` and the leader retry
-belong to the module. A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some
+belong to the module (the leader retry is not part of a processor's config at all: there is one leader lock per module). A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some
 modules by role.
 
 ## The wallet's environment variables

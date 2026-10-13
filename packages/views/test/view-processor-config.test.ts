@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
+
+const { leaderElectionRetryIntervalMs: _moduleLevel, ...perProcessorDefaults } = defaultPollingConfig;
 import { makeViewProcessorConfigs } from "../src/internal/ViewProcessorConfig.ts";
 import { viewSubscriptionOf } from "../src/ViewSubscription.ts";
 import type { ViewsConfig } from "../src/ViewsConfig.ts";
@@ -37,7 +39,7 @@ describe("makeViewProcessorConfigs", () => {
 
   test("with no module config at all, every setting is the framework default, and a subscription can still override", () => {
     const [plain, tuned] = makeViewProcessorConfigs(undefined, [viewSubscriptionOf("a"), viewSubscriptionOf("b", { batchSize: 7 })]);
-    expect(plain).toEqual({ processorId: "a", ...defaultPollingConfig });
+    expect(plain).toEqual({ processorId: "a", ...perProcessorDefaults });
     expect(tuned!.batchSize).toBe(7);
   });
 

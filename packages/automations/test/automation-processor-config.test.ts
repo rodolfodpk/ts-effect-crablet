@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
+
+const { leaderElectionRetryIntervalMs: _moduleLevel, ...perProcessorDefaults } = defaultPollingConfig;
 import { makeAutomationProcessorConfigs } from "../src/internal/AutomationProcessorConfig.ts";
 import { automationHandlerOf } from "../src/AutomationHandler.ts";
 import { testCommand } from "./fixtures/testCommand.ts";
@@ -48,7 +50,7 @@ describe("makeAutomationProcessorConfigs", () => {
 
   test("with no module config at all, every setting is the framework default, and a handler can still override", () => {
     const [plain, tuned] = makeAutomationProcessorConfigs(undefined, [fakeHandler("a"), fakeHandler("b", { batchSize: 7 })]);
-    expect(plain).toEqual({ processorId: "a", ...defaultPollingConfig });
+    expect(plain).toEqual({ processorId: "a", ...perProcessorDefaults });
     expect(tuned!.batchSize).toBe(7);
   });
 

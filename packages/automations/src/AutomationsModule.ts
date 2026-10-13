@@ -8,7 +8,7 @@ import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY } from "@crablet/eventstor
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
@@ -81,6 +81,7 @@ export const makeAutomationsProcessor = (
 
     return yield* makeEventProcessor({
       configs,
+      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
       fetcher,
       handler,
       progressTracker,
