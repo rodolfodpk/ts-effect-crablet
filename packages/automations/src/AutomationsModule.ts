@@ -8,7 +8,7 @@ import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY } from "@crablet/eventstor
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
@@ -19,7 +19,8 @@ import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/Aut
 import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorConfig.ts";
 
 export interface AutomationsDeps {
-  readonly config: AutomationsConfig;
+  // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
+  readonly config?: AutomationsConfig;
   // See internal/AutomationEventFetcher.ts's primer on this registry's type erasure - each
   // AutomationHandler keeps its own concrete T/E/HE at the call site that builds it; only the
   // heterogeneous list passed here is erased.
@@ -80,6 +81,7 @@ export const makeAutomationsProcessor = (
 
     return yield* makeEventProcessor({
       configs,
+      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
       fetcher,
       handler,
       progressTracker,

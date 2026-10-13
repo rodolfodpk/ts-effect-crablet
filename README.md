@@ -57,7 +57,7 @@ export const Subscribe = defineCommand({
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))
       : student.courses.includes(c.courseId)
-        ? noop("already subscribed")
+        ? noop("ALREADY_SUBSCRIBED")
         : course.subscribers >= course.capacity
           ? fail(new CourseFull({ courseId: c.courseId }))
           : student.courses.length >= 3

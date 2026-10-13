@@ -14,11 +14,23 @@ Tables to look things up in. To learn the ideas, read the [concept pages](../REA
 | [Database tables](./tables.md) | The tables the framework owns. |
 | [Glossary](./glossary.md) | Every word the documents use. |
 
+## Public API and plumbing
+
+Every `@crablet/<package>/<Name>` import is an entry point listed in the package's `package.json` (`exports`). Most are the API: what an application imports. A few are
+**plumbing** that the sibling packages build on: the engine's fetcher, handler and progress-tracker parts in `@crablet/event-poller`, the reconnecting LISTEN and the
+wake-up payload in `@crablet/eventstore`, the progress channel and the wait rule in `@crablet/views`. Those are listed under `crablet.internal` in the same
+`package.json`, described in the package's README under "Internal", and **can change without notice**.
+
+The decision is [ADR-0031](../adr/0031-api-and-plumbing-are-separate.md). The line is enforced: `scripts/public-api.test.ts` fails if an example's or a tool's source, or a page of these documents, imports an entry point listed as internal. To
+promote one to the API, remove it from the list and document it; to demote one, add it (which is a breaking change for anyone importing it).
+
+`@crablet/event-poller` is the engine behind the views, automations and outbox modules, not a way to write your own processor.
+
 ## Packages
 
 | Package | What it is |
 |---|---|
-| [`packages/db-migrations`](../../packages/db-migrations/README.md) | The SQL migrations V1-V13 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
+| [`packages/db-migrations`](../../packages/db-migrations/README.md) | The SQL migrations V1-V14 (event log, command audit, poller progress, conditional append, tag-key table), as a plain file bundle |
 | [`packages/test-support`](../../packages/test-support/README.md) | A throwaway Postgres (Testcontainers) for integration tests |
 | [`packages/eventstore`](../../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
 | [`packages/commands`](../../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and Given/When/Then test helpers |

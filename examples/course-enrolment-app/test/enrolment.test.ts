@@ -15,6 +15,7 @@ describe("define_course", () => {
     expect(first.events.map((e) => e.type)).toEqual(["CourseDefined"]);
     const again = await s.when(DefineCourse, define("math", 30));
     expect(again.outcome).toBe("idempotent");
+    expect(again.reason).toBe("ALREADY_DEFINED");
     expect(again.events).toEqual([]);
   });
 

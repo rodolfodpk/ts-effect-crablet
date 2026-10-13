@@ -5,7 +5,7 @@ import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPayload";
 import * as PollerMetrics from "@crablet/metrics-otel/PollerMetrics";
 import * as LeaderMetrics from "@crablet/metrics-otel/LeaderMetrics";
-import type { ProcessorConfig } from "./ProcessorConfig.ts";
+import { defaultPollingConfig, type ProcessorConfig } from "./ProcessorConfig.ts";
 import type { ProcessorStatus } from "./ProcessorStatus.ts";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 import type { EventFetcher } from "./EventFetcher.ts";
@@ -83,6 +83,7 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   readonly instanceId: string;
   readonly acquireLeader: Effect.Effect<LeaderHandle | null, unknown>;
   readonly wakeupStream: Stream.Stream<WakeupBatch, unknown>;
+  // How often a follower tries to take the module's leader lock (the module's `leaderElectionRetryIntervalMs`). Default: `defaultPollingConfig`'s.
   readonly leaderRetryIntervalMs?: number;
   // Runs an effect in ONE database transaction (`sql.withTransaction`). When it is set, and the tracker has `advanceCursor`, a batch is handled and
   // its cursor moved in that one transaction: the handler's writes and the cursor commit together or not at all. The cursor move is a forward-only
@@ -157,8 +158,6 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.gen(function* () {
         const config = configOf(id);
         if (!config) return yield* Effect.die(new Error(`Unknown processorId: ${id}`));
-        if (!config.enabled) return 0;
-
         const status = yield* deps.progressTracker.getStatus(id);
         if (status === "PAUSED" || status === "FAILED") return 0;
 
@@ -359,10 +358,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         // every log line this loop writes says which processor and which instance wrote it
       ).pipe(Effect.annotateLogs({ processor: String(config.processorId), instance: deps.instanceId }));
 
-    const leaderRetryIntervalMs =
-      deps.leaderRetryIntervalMs ??
-      deps.configs.find((c) => c.enabled)?.leaderElectionRetryIntervalMs ??
-      5_000;
+    const leaderRetryIntervalMs = deps.leaderRetryIntervalMs ?? defaultPollingConfig.leaderElectionRetryIntervalMs;
 
     const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(
       Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))

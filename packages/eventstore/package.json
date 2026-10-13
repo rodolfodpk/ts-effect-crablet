@@ -24,6 +24,9 @@
     "./spec/Spec": "./src/spec/Spec.ts",
     "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
+  "crablet": {
+    "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload"]
+  },
   "dependencies": {
     "effect": "4.0.2",
     "@effect/sql-pg": "4.0.2",

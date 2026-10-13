@@ -14,6 +14,7 @@ tutorial.
 | React to an event by issuing a command | [Add an automation](build/add-an-automation.md) |
 | Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](build/expose-a-command-over-http.md) |
 | Test a command's decisions without a database | [Test a command](build/test-a-command.md) |
+| Decide on something the input does not name (a card number names a member) | [Look something up before deciding](build/look-something-up-first.md) |
 | Close a statement or a shift and open the next one | [Turn a period](build/turn-a-period.md) |
 | Change an event that is already stored | [Evolving events](build/evolving-events.md) |
 

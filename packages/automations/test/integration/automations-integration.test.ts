@@ -89,7 +89,6 @@ const getEventRow = (eventType: string) =>
   );
 
 const baseAutomationsConfig: AutomationsConfig = {
-  enabled: true,
   pollingIntervalMs: 100,
   batchSize: 100,
   backoffEnabled: false,

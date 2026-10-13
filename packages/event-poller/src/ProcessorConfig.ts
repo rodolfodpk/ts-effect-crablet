@@ -1,39 +1,75 @@
-// Configuration of one processor. maxErrors/leaderElectionRetryIntervalMs have defaults, supplied by
-// processorConfigOf() (matching this repo's AppendEvent/Tag factory-with-defaults style).
-export interface ProcessorConfig<I> {
-  readonly processorId: I;
+import { resolveOverride, type ProcessorRuntimeOverrides } from "./ProcessorRuntimeOverrides.ts";
+
+// How a processor polls, backs off and gives up: the one list of these settings (ADR-0030). The views, automations and outbox modules take
+// a `Partial<PollingConfig>` (everything optional, `defaultPollingConfig` fills the rest), and `ProcessorConfig` is this plus the processor's id.
+export interface PollingConfig {
+  // How long to wait between polls while events keep coming (also the wait when a processor first goes idle).
   readonly pollingIntervalMs: number;
+  // The most events handled in one batch (one transaction for a view).
   readonly batchSize: number;
+  // After `backoffThreshold` empty polls the wait grows by `backoffMultiplier`, up to `backoffMaxSeconds`. A wake-up ends the wait.
   readonly backoffEnabled: boolean;
   readonly backoffThreshold: number;
   readonly backoffMultiplier: number;
   readonly backoffMaxSeconds: number;
+  // Errors in a row before the processor is marked FAILED and stops.
   readonly maxErrors: number;
+  // How often a follower tries to take the module's leader lock; bounds the takeover after a crash.
   readonly leaderElectionRetryIntervalMs: number;
-  readonly enabled: boolean;
 }
 
-// PATTERN NOTE - `Omit<T, K>`/`Pick<T, K>`/`Partial<T>` are TypeScript's built-in "utility types":
-// functions that take an existing type and produce a new, derived one, rather than writing the
-// derived shape out by hand (and risking it drifting out of sync with `ProcessorConfig` itself).
-// Read the two lines below as: `RequiredFields<I>` = "every ProcessorConfig field except
-// processorId/maxErrors/leaderElectionRetryIntervalMs" (the ones without a default), and
-// `DefaultedFields` = "just those two defaulted fields." `RequiredFields<I> &
-// Partial<DefaultedFields>` (the parameter type below) then means "give me all the required
-// fields, plus optionally either defaulted field" - if you add a new field to `ProcessorConfig`
-// without a default, `RequiredFields<I>` picks it up automatically and callers are forced to
-// supply it; add a new *defaulted* field and only `DefaultedFields` needs updating. This is the
-// TS-generics way of keeping a "some fields required, some optional-with-defaults" factory
-// function in sync with its target interface, without a hand-written second interface.
-type RequiredFields<I> = Omit<ProcessorConfig<I>, "processorId" | "maxErrors" | "leaderElectionRetryIntervalMs">;
-type DefaultedFields = Pick<ProcessorConfig<unknown>, "maxErrors" | "leaderElectionRetryIntervalMs">;
-
-export const processorConfigOf = <I>(
-  processorId: I,
-  fields: RequiredFields<I> & Partial<DefaultedFields>
-): ProcessorConfig<I> => ({
-  processorId,
+// The defaults. `backoffMaxSeconds` 10 is the "bounded" profile of docs/guides/operate/run-in-production.md (ADR-0021): an idle processor polls at least every 10 s, so a
+// lost wake-up costs at most that.
+export const defaultPollingConfig: PollingConfig = {
+  pollingIntervalMs: 1000,
+  batchSize: 100,
+  backoffEnabled: true,
+  backoffThreshold: 3,
+  backoffMultiplier: 2,
+  backoffMaxSeconds: 10,
   maxErrors: 10,
-  leaderElectionRetryIntervalMs: 5_000,
-  ...fields
+  leaderElectionRetryIntervalMs: 5_000
+};
+
+// Configuration of one processor: the polling settings that belong to a processor. `leaderElectionRetryIntervalMs` is not here: there is one leader lock per module,
+// so the module passes it to the processor once (`EventProcessorDeps.leaderRetryIntervalMs`), not as a copy in every processor's config.
+export interface ProcessorConfig<I> extends Omit<PollingConfig, "leaderElectionRetryIntervalMs"> {
+  readonly processorId: I;
+}
+
+// `defaultPollingConfig`, then what `fields` names. A field that is present but `undefined` does not override the default.
+export const resolvePollingConfig = (fields: Partial<PollingConfig> | undefined): PollingConfig => {
+  const merged: Record<string, unknown> = { ...defaultPollingConfig };
+  for (const [key, value] of Object.entries(fields ?? {})) if (value !== undefined) merged[key] = value;
+  return merged as unknown as PollingConfig;
+};
+
+const perProcessor = (config: PollingConfig): Omit<PollingConfig, "leaderElectionRetryIntervalMs"> => {
+  const { leaderElectionRetryIntervalMs: _module, ...rest } = config;
+  return rest;
+};
+
+export const processorConfigOf = <I>(processorId: I, fields: Partial<PollingConfig> = {}): ProcessorConfig<I> => ({
+  processorId,
+  ...perProcessor(resolvePollingConfig(fields))
 });
+
+// What every module does to build a processor's config: the defaults, then the module's config, then the processor's own overrides (a view's, an automation's, a
+// topic publisher's). A `null` or missing override inherits the module's value.
+export const processorConfigFrom = <I>(
+  processorId: I,
+  moduleConfig: Partial<PollingConfig> | undefined,
+  overrides: ProcessorRuntimeOverrides = {}
+): ProcessorConfig<I> => {
+  const base = perProcessor(resolvePollingConfig(moduleConfig));
+  return {
+    processorId,
+    ...base,
+    pollingIntervalMs: resolveOverride(overrides.pollingIntervalMs, base.pollingIntervalMs),
+    batchSize: resolveOverride(overrides.batchSize, base.batchSize),
+    backoffEnabled: resolveOverride(overrides.backoffEnabled, base.backoffEnabled),
+    backoffThreshold: resolveOverride(overrides.backoffThreshold, base.backoffThreshold),
+    backoffMultiplier: resolveOverride(overrides.backoffMultiplier, base.backoffMultiplier),
+    backoffMaxSeconds: resolveOverride(overrides.backoffMaxSeconds, base.backoffMaxSeconds)
+  };
+};

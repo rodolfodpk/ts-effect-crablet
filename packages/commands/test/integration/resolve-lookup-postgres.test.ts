@@ -10,9 +10,7 @@ import { EventStore } from "@crablet/eventstore";
 import * as Crablet from "../../src/Crablet.ts";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit, fail, type ResolveReader } from "../../src/Command.ts";
-import { DomainError } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
-import { defineModel } from "../../src/Model.ts";
+import { BookLent, CardCancelled, CardIssued, CardModel, CardNotValid, MemberModel } from "../support/borrow-book.ts";
 
 let db: TestDb;
 before(async () => {
@@ -32,27 +30,19 @@ const AppLive = () =>
   });
 const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
 
-// A library: a card names a member; a loan is the member's.
-const CardIssued = defineEvent("RL_CardIssued", { schema: Schema.Struct({ card: Schema.String, member: Schema.String }), tags: (d) => ({ card_number: d.card }) });
-const CardCancelled = defineEvent("RL_CardCancelled", { schema: Schema.Struct({ card: Schema.String }), tags: (d) => ({ card_number: d.card }) });
-const BookLent = defineEvent("RL_BookLent", { schema: Schema.Struct({ member: Schema.String, book: Schema.String }), tags: (d) => ({ member_id: d.member }) });
-const CardModel = defineModel({ by: "card_number", initial: () => ({ member: null as string | null }) })
-  .on(CardIssued, (_, d) => ({ member: d.member }))
-  .on(CardCancelled, () => ({ member: null }));
-const MemberModel = defineModel({ by: "member_id", initial: () => ({ loans: 0 }) }).on(BookLent, (m) => ({ loans: m.loans + 1 }));
-class CardNotValid extends DomainError("CardNotValid", { fields: { card: Schema.String }, kind: "invalid" }) {}
-
-const input = Schema.Struct({ card: Schema.String, book: Schema.String });
+// The guide's library (support/borrow-book.ts): a card names a member, and a loan is the member's. The command here is the guide's `BorrowBook` with a wait after the lookup, so the
+// test can cancel the card between the lookup and the append.
+const input = Schema.Struct({ cardNumber: Schema.String, bookId: Schema.String });
 
 // The command looks the card up, then waits (only on its first attempt) until the test has cancelled the card.
-const lookUp = (lookedUp: Deferred.Deferred<void>, cancelled: Deferred.Deferred<void>) => (c: { readonly card: string }, read: ResolveReader) =>
+const lookUp = (lookedUp: Deferred.Deferred<void>, cancelled: Deferred.Deferred<void>) => (c: { readonly cardNumber: string }, read: ResolveReader) =>
   Effect.gen(function* () {
-    const card = yield* read.load(CardModel.of({ id: c.card }));
+    const card = yield* read.load(CardModel.of({ id: c.cardNumber }));
     if (yield* Deferred.succeed(lookedUp, undefined)) yield* Deferred.await(cancelled);
-    return card.member;
+    return card.memberId;
   });
-const lend = (c: { readonly card: string; readonly book: string }, member: string | null) =>
-  member === null ? fail(new CardNotValid({ card: c.card })) : emit(BookLent({ member, book: c.book }));
+const lend = (c: { readonly cardNumber: string; readonly bookId: string }, memberId: string | null) =>
+  memberId === null ? fail(new CardNotValid({ cardNumber: c.cardNumber })) : emit(BookLent({ memberId, bookId: c.bookId }));
 
 const borrowBook = (lookedUp: Deferred.Deferred<void>, cancelled: Deferred.Deferred<void>, withModel: boolean) =>
   withModel
@@ -61,7 +51,7 @@ const borrowBook = (lookedUp: Deferred.Deferred<void>, cancelled: Deferred.Defer
         input,
         errors: [CardNotValid],
         resolve: lookUp(lookedUp, cancelled),
-        model: (_, { resolved }) => MemberModel.of({ id: resolved ?? "none" }),
+        model: (_, { resolved }) => MemberModel.of({ id: resolved ?? "nobody" }),
         decide: (_, c, { resolved }) => lend(c, resolved)
       })
     : defineCommand({
@@ -75,19 +65,19 @@ const borrowBook = (lookedUp: Deferred.Deferred<void>, cancelled: Deferred.Defer
 const race = (withModel: boolean) =>
   run(
     Effect.gen(function* () {
-      const card = `card-${crypto.randomUUID().slice(0, 8)}`;
+      const cardNumber = `card-${crypto.randomUUID().slice(0, 8)}`;
       const es = yield* EventStore;
-      yield* es.append([CardIssued({ card, member: `m-${card}` })]);
+      yield* es.append([CardIssued({ cardNumber, memberId: `m-${cardNumber}` })]);
       const lookedUp = yield* Deferred.make<void>();
       const cancelled = yield* Deferred.make<void>();
       const executor = yield* CommandExecutor;
       const cancel = Effect.gen(function* () {
         yield* Deferred.await(lookedUp);
-        yield* es.append([CardCancelled({ card })]);
+        yield* es.append([CardCancelled({ cardNumber })]);
         yield* Deferred.succeed(cancelled, undefined);
       });
-      const [borrow] = yield* Effect.all([Effect.exit(executor.run(borrowBook(lookedUp, cancelled, withModel), { card, book: "b1" })), cancel], { concurrency: 2 });
-      const lent = yield* es.exists(BookLent.where({ member_id: `m-${card}` }));
+      const [borrow] = yield* Effect.all([Effect.exit(executor.run(borrowBook(lookedUp, cancelled, withModel), { cardNumber, bookId: "b1" })), cancel], { concurrency: 2 });
+      const lent = yield* es.exists(BookLent.where({ member_id: `m-${cardNumber}` }));
       return { borrow, lent };
     })
   );

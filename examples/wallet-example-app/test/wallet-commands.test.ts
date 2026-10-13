@@ -30,6 +30,7 @@ describe("OpenWallet", () => {
   test("the same open again is a retry: already opened, nothing appended", async () => {
     const r = await given(opened("w1", 50)).when(OpenWallet, { walletId: "w1", owner: "Ann", initialBalance: 50 });
     expect(r.outcome).toBe("idempotent");
+    expect(r.reason).toBe("ALREADY_OPENED");
     expect(r.events).toEqual([]);
   });
 

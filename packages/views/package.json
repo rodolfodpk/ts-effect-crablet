@@ -20,6 +20,9 @@
     "./ViewMemory": "./src/ViewMemory.ts",
     "./ViewTableCheck": "./src/ViewTableCheck.ts"
   },
+  "crablet": {
+    "internal": ["./ViewProgress", "./ViewVerdict"]
+  },
   "dependencies": {
     "effect": "4.0.2",
     "@effect/sql-pg": "4.0.2",

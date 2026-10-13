@@ -6,7 +6,7 @@ import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Lead
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { VIEW_PROGRESS_CHANNEL } from "./ViewProgress.ts";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -18,7 +18,8 @@ import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
 
 export interface ViewsDeps {
-  readonly config: ViewsConfig;
+  // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
+  readonly config?: ViewsConfig;
   readonly projectors: ReadonlyArray<ViewProjector>;
   readonly subscriptions: ReadonlyArray<ViewSubscription>;
   readonly instanceId?: string;
@@ -56,6 +57,7 @@ export const makeViewsProcessor = (
 
     return yield* makeEventProcessor({
       configs,
+      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
       fetcher,
       handler,
       progressTracker,

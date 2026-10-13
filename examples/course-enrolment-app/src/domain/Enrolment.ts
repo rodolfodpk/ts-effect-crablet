@@ -50,7 +50,7 @@ export const DefineCourse = defineCommand({
     !course.exists
       ? emit(CourseDefined(c))
       : course.capacity === c.capacity
-        ? noop("already defined")
+        ? noop("ALREADY_DEFINED")
         : fail(new CourseAlreadyDefined({ courseId: c.courseId, capacity: course.capacity }))
 });
 // #endregion define-course

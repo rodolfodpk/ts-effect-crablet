@@ -7,12 +7,17 @@ so a read can wait for a write.
 
 - **`defineView`** (`/ProjectedView`), **`viewTable`** and its column types (`/ViewTable`) - a view declared as what each event does to its tables (`insert`, `update`, `upsert` with `add`/`set`/`max`, `remove`, and `raw` as the escape hatch). It gives the projector, the subscription (the handled event types), the tables it owns and an in-memory run (`applyInMemory`, `/ViewMemory`); **`checkViewTables`** (`/ViewTableCheck`) compares the declared tables with the migrated database ([ADR-0026](../../docs/adr/0026-views-declared-as-operations.md)).
 - **`ViewProjector`** and **`makeTransactionalViewProjector`** (`/ViewProjector`) - a projector is `handle(events)` for a batch; the transactional one runs the whole batch in one transaction (a failure rolls back the batch) and passes each event's correlation and causation ids on.
-- **`makeViewsProcessor`**, **`ViewsConfig`**, **`ViewSubscription`** - register the projectors and run them.
-- **`waitUntilProcessed`** (`/WaitUntilProcessed`) - wait until a view has processed a given write (the marker). **`readCheck`** (`/ReadCheck`) is its first look for every view of a read in one statement, and **`viewVerdict`** (`/ViewVerdict`) the rule both end in.
-- **`ViewProgress`**, **`ViewProgressHub`**, **`ViewProgressFeed`** - view progress announced with one LISTEN per process, fanned out in memory, and the server-sent "ping" feed.
+- **`makeViewsProcessor`**, **`ViewsConfig`**, **`ViewSubscription`** - register the projectors and run them. `config` is optional: `ViewsConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings), and what is left out takes the default.
+- **`waitUntilProcessed`** (`/WaitUntilProcessed`) - wait until a view has processed a given write (the marker). **`readCheck`** (`/ReadCheck`) is its first look for every view of a read in one statement.
+- **`ViewProgressHub`**, **`ViewProgressFeed`** - view progress announced with one LISTEN per process, fanned out in memory, and the server-sent "ping" feed.
 - **`ViewManagementService`** - inspect and control views.
 
 Delivery is at-least-once, but a projector's writes commit in the same transaction as the view's cursor, so a batch handled twice is applied once, **provided the writes go through the `sql` the projector is given** ([ADR-0023](../../docs/adr/0023-view-batch-and-cursor-in-one-transaction.md)). A projector that writes elsewhere must be **idempotent**. A declared view (`defineView`) keeps no bookkeeping of its own for this: the processor guarantees it, so calling `projector.handle` twice by hand applies twice.
+
+## Internal
+
+`ViewProgress` (the progress channel) and `ViewVerdict` (the rule `waitUntilProcessed` and `readCheck` both end in) are plumbing: they are listed under `crablet.internal` in
+[`package.json`](./package.json), applications and the documents do not import them, and they can change without notice ([the boundary](../../docs/reference/README.md#public-api-and-plumbing)).
 
 ## Depends on
 

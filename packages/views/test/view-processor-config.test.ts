@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
+
+const { leaderElectionRetryIntervalMs: _moduleLevel, ...perProcessorDefaults } = defaultPollingConfig;
 import { makeViewProcessorConfigs } from "../src/internal/ViewProcessorConfig.ts";
 import { viewSubscriptionOf } from "../src/ViewSubscription.ts";
 import type { ViewsConfig } from "../src/ViewsConfig.ts";
 
 const baseConfig: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 1000,
   batchSize: 100,
   backoffEnabled: true,
@@ -22,7 +24,6 @@ describe("makeViewProcessorConfigs", () => {
     expect(config!.pollingIntervalMs).toBe(1000);
     expect(config!.batchSize).toBe(100);
     expect(config!.backoffEnabled).toBe(true);
-    expect(config!.enabled).toBe(true);
     expect(config!.maxErrors).toBe(10);
   });
 
@@ -34,6 +35,18 @@ describe("makeViewProcessorConfigs", () => {
     expect(config!.backoffEnabled).toBe(false);
     // Non-overridden fields still fall back to the global default.
     expect(config!.batchSize).toBe(100);
+  });
+
+  test("with no module config at all, every setting is the framework default, and a subscription can still override", () => {
+    const [plain, tuned] = makeViewProcessorConfigs(undefined, [viewSubscriptionOf("a"), viewSubscriptionOf("b", { batchSize: 7 })]);
+    expect(plain).toEqual({ processorId: "a", ...perProcessorDefaults });
+    expect(tuned!.batchSize).toBe(7);
+  });
+
+  test("a partial module config changes only what it names", () => {
+    const [config] = makeViewProcessorConfigs({ backoffMaxSeconds: 120 }, [viewSubscriptionOf("a")]);
+    expect(config!.backoffMaxSeconds).toBe(120);
+    expect(config!.pollingIntervalMs).toBe(defaultPollingConfig.pollingIntervalMs);
   });
 
   test("produces one config per subscription", () => {

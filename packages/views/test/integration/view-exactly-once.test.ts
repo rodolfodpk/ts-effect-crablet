@@ -58,7 +58,6 @@ after(async () => {
 const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) => runtime.runPromise(effect);
 
 const config: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 100,
   batchSize: 100,
   backoffEnabled: false,

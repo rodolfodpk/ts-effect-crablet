@@ -270,4 +270,34 @@ describe("a model with a period", () => {
     const balance = (await s.at(oct).when(Report, c(0, "o3"))).events.at(-1)!.data as { balance?: number };
     expect(balance.balance).toBe(15);
   });
+
+  // A period model can be read from `resolve` (`read.load`): the lookup sees the state of the period the clock is in, and, like every read, it only reads. It does NOT turn the
+  // period: the events that turn it (`prefix`) ride on the append of a command whose own `model` is the period model. So a command that reads a period model only in `resolve`
+  // and tags its events with that period writes into a period nobody opened; to write into a period, make its model the command's `model`.
+  describe("read from resolve", () => {
+    const Peek = defineCommand({
+      name: "px_peek",
+      input,
+      errors: [NoSuchAccount],
+      resolve: (cc, read) => read.load(Monthly.of({ id: cc.id })),
+      decide: (_, cc, { resolved }) => (resolved.exists ? emit(Reported({ id: cc.id, balance: resolved.balance }, resolved.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
+    });
+
+    test("it sees the balance of the period the clock is in, and tags what it emits with that period", async () => {
+      const s = given(Opened({ id: "a1" }));
+      await s.at(oct).when(Credit, c(10, "o1"));
+      const r = await s.at(oct).when(Peek, c(0, "o2"));
+      expect(types(r)).toEqual(["PX_Reported"]);
+      expect(r.events[0]!.data).toMatchObject({ balance: 10 });
+      expect(r.events[0]!.tags.map((t) => `${t.key}=${t.value}`)).toContain("month=10");
+    });
+
+    test("a lookup never turns the period: in the next month nothing closes October or opens November, because the period model is not the command's own model", async () => {
+      const s = given(Opened({ id: "a1" }));
+      await s.at(oct).when(Credit, c(10, "o1"));
+      const r = await s.at(nov).when(Peek, c(0, "o2"));
+      expect(types(r)).toEqual(["PX_Reported"]);
+      expect(s.log.map((e) => e.type)).toEqual(["PX_Opened", "PX_PeriodOpened", "PX_Credited", "PX_Reported"]);
+    });
+  });
 });

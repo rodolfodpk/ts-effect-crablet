@@ -116,7 +116,6 @@ const startProcessor = (harness: Harness, options?: { readonly pollingIntervalMs
       backoffThreshold: 3,
       backoffMultiplier: 2,
       backoffMaxSeconds: 120,
-      enabled: true
     });
 
     const handler = {

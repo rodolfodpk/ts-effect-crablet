@@ -1,3 +1,5 @@
+import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
+
 // How often the processors poll, and how far they back off when idle (docs/guides/operate/run-in-production.md, "Polling and wake-ups"). Applies to all three modules.
 // WALLET_POLL_MS: the interval between polls while there are events (default 1000). WALLET_BACKOFF_MAX_SECONDS: the most an idle processor waits between polls (default 10).
 // A wake-up notification ends the wait early either way; these set the worst case when one is lost, and the load on the database when idle.
@@ -5,7 +7,7 @@ export interface Polling {
   readonly pollingIntervalMs: number;
   readonly backoffMaxSeconds: number;
 }
-export const defaultPolling: Polling = { pollingIntervalMs: 1000, backoffMaxSeconds: 10 };
+export const defaultPolling: Polling = { pollingIntervalMs: defaultPollingConfig.pollingIntervalMs, backoffMaxSeconds: defaultPollingConfig.backoffMaxSeconds };
 
 const wholeNumber = (name: string, value: string | undefined, fallback: number, min: number): number => {
   if (value === undefined || value.trim() === "") return fallback;

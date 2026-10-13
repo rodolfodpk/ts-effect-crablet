@@ -45,7 +45,6 @@ const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient 
 
 // A slow poll, so that "just appended" is reliably BEFORE the view has seen the event.
 const slowViews: ViewsConfig = {
-  enabled: true,
   pollingIntervalMs: 400,
   batchSize: 100,
   backoffEnabled: false,
