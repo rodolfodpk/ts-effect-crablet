@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Exit, Metric, Queue, Ref, Stream } from "effect";
+import { Cause, Effect, Exit, Metric, Queue, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
@@ -111,31 +111,40 @@ describe("EventProcessor.process (direct call, no leadership gate)", () => {
     expect(handled).toBe(0);
   });
 
+  const twoProcessors = (selectionOf: (config: { readonly processorId: string }) => EventSelection.EventSelection) =>
+    Effect.gen(function* () {
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([storedEvent(1n, "A"), storedEvent(2n, "B"), storedEvent(3n, "A")]);
+      const { tracker } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>({});
+      const handle = yield* makeEventProcessor({
+        configs: ["proc-a", "proc-b"].map((id) => processorConfigOf(id, { batchSize: 10 })),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf,
+        instanceId: "test-instance",
+        acquireLeader: Effect.succeed(alwaysLeader()),
+        wakeupStream: Stream.never
+      });
+      return { handle, handlerHandle };
+    });
+
   test("one fetcher serves every processor: each fetch is given that processor's own selection", async () => {
-    const asked: Array<ReadonlySet<string>> = [];
     const selections = new Map([
       ["proc-a", EventSelection.of({ eventTypes: new Set(["A"]) })],
       ["proc-b", EventSelection.of({ eventTypes: new Set(["B"]) })]
     ]);
-    const handle = await run(
-      Effect.gen(function* () {
-        const { tracker } = yield* makeInMemoryProgressTracker<string>();
-        const handlerHandle = yield* makeInMemoryEventHandler<string>({});
-        return yield* makeEventProcessor({
-          configs: [...selections.keys()].map((id) => processorConfigOf(id, { batchSize: 10 })),
-          fetcher: { fetchEvents: (selection) => Effect.sync(() => (asked.push(selection.eventTypes), [])) },
-          handler: handlerHandle.handler,
-          progressTracker: tracker,
-          selectionOf: (config) => selections.get(config.processorId)!,
-          instanceId: "test-instance",
-          acquireLeader: Effect.succeed(alwaysLeader()),
-          wakeupStream: Stream.never
-        });
-      })
-    );
-    await run(handle.service.process("proc-b"));
-    await run(handle.service.process("proc-a"));
-    expect(asked).toEqual([new Set(["B"]), new Set(["A"])]);
+    const { handle, handlerHandle } = await run(twoProcessors((config) => selections.get(config.processorId)!));
+    expect(await run(handle.service.process("proc-b"))).toBe(1);
+    expect(await run(handle.service.process("proc-a"))).toBe(2);
+    const batches = await run(handlerHandle.handledBatches);
+    expect(batches.map((batch) => batch.map((e) => e.type))).toEqual([["B"], ["A", "A"]]);
+  });
+
+  test("a config with no selection stops the build with an error that names the processor", async () => {
+    const exit = await Effect.runPromiseExit(twoProcessors((config) => (config.processorId === "proc-a" ? EventSelection.empty() : (undefined as never))));
+    expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+    expect(Exit.isFailure(exit) && (Cause.squash(exit.cause) as Error).message).toBe("No event selection for processor proc-b");
   });
 
   test("pause, resume and the status views: a paused processor handles nothing, a resumed one carries on, and getAllStatuses lists every configured processor", async () => {

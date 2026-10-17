@@ -3,15 +3,16 @@ import type { StoredEvent } from "@crablet/eventstore";
 import type { EventFetcher } from "../../src/EventFetcher.ts";
 import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
 
-// Fast, in-memory EventFetcher double - filters a fixed in-memory event list by cursor ((transaction_id, position) order)/batchSize
-// only (no EventSelection filtering; that's covered by sql-event-fetcher.test.ts against real
-// Postgres, since the WHERE-clause logic has no meaningful in-memory equivalent worth testing here).
+// Fast, in-memory EventFetcher double - filters a fixed in-memory event list by the selection's event types (empty = every type), then by
+// cursor ((transaction_id, position) order)/batchSize. The tag dimensions are not filtered here; they are covered by sql-event-fetcher.test.ts
+// against real Postgres, since the WHERE-clause logic has no meaningful in-memory equivalent worth testing here.
 export const makeInMemoryEventFetcher = (
   eventsRef: Ref.Ref<ReadonlyArray<StoredEvent>>
 ): EventFetcher<never, never> => ({
-  fetchEvents: (_selection, cursor, batchSize) =>
+  fetchEvents: (selection, cursor, batchSize) =>
     Effect.map(Ref.get(eventsRef), (events) =>
       events
+        .filter((e) => selection.eventTypes.size === 0 || selection.eventTypes.has(e.type))
         .filter((e) => ProgressCursorNS.compare(ProgressCursorNS.after(e), cursor) > 0)
         .sort((a, b) => ProgressCursorNS.compare(ProgressCursorNS.after(a), ProgressCursorNS.after(b)))
         .slice(0, batchSize)
