@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
-import { viewVerdict } from "../src/ViewVerdict.ts";
+import { viewVerdict } from "../src/internal/ViewVerdict.ts";
 
 const at = (xid: string, position: bigint) => ProgressCursor.of(xid, position);
 const write = at("100", 50n);

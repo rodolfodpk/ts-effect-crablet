@@ -1,15 +1,11 @@
 import { Clock, Duration, Effect, Metric } from "effect";
 import type { SqlClient } from "effect/sql";
-import type { SqlError } from "effect/sql/SqlError";
 import { HttpApiSchema } from "effect/http-api";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import * as ReadConsistencyMetrics from "@crablet/metrics-otel/ReadConsistencyMetrics";
+import { settleViews, type SettleViews } from "@crablet/views/SettleViews";
 import type { ViewSubscription } from "@crablet/views/ViewSubscription";
-import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
-import { readCheck, type ReadCheckResult } from "@crablet/views/ReadCheck";
-import { viewVerdict } from "@crablet/views/ViewVerdict";
-import { headOfLog } from "./HeadOfLog.ts";
 import {
   defaultReadConsistency,
   resolveReadPolicy,
@@ -18,24 +14,14 @@ import {
   type ReadConsistencyConfig
 } from "./ReadConsistency.ts";
 import { ViewsUnavailable } from "./ReadProblems.ts";
-import { waitForViews, type ViewWait } from "./WaitForViews.ts";
-
-// What the wrapper needs from the database: the head of the log, and how to wait for one view. The real ones are `headOfLog` and
-// `waitUntilProcessed`; tests pass fakes.
-export interface ReadDeps<R = SqlClient.SqlClient> {
-  readonly head: Effect.Effect<ProgressCursor.ProgressCursor, SqlError, R>;
-  readonly wait: ViewWait<R>;
-  // The first look in ONE statement (`readCheck`): where the log ends and where each view is. When given, `head` is not used and a view that has already caught up is not waited
-  // for; when omitted (the tests that fake `head` and `wait`), the end of the log is read with `head` and every view goes to `wait`, as before.
-  readonly check?: (subscriptions: ReadonlyArray<ViewSubscription>, marker: ProgressCursor.ProgressCursor | null) => Effect.Effect<ReadCheckResult, SqlError, R>;
-}
 
 export interface ConsistentReadOptions<R = SqlClient.SqlClient> {
   // The API-wide settings (default: strict, a read with no marker waits for the head of the log, 5 s, at most 30 s, no relaxing).
   readonly config?: ReadConsistencyConfig;
   // The `Retry-After` of a strict read that timed out, in seconds (default 1).
   readonly retryAfterSeconds?: number;
-  readonly deps?: ReadDeps<R>;
+  // How the views are settled against the write. The real one is `settleViews`; tests pass fakes.
+  readonly settle?: SettleViews<R>;
 }
 
 // Describes one read endpoint to the wrapper.
@@ -58,17 +44,17 @@ export interface ConsistentHeaders {
 //
 //   1. the consistency parameters are validated (a 400 for a bad value, or a mode the server does not allow the client to choose);
 //   2. the endpoint's own parameters are validated (`parse`);
-//   3. unless no wait is wanted, the head of the log is read once; a marker beyond it is a 400 (it can only be forged or from another log);
-//   4. every view the endpoint reads is waited for, at the same time, until it has reached the marker (or the head), up to the timeout;
-//   5. all caught up: the handler runs. Not caught up: `strict` fails with a 503 naming each view that is behind, `bounded` runs the
+//   3. unless no wait is wanted, the views are settled against the marker (or the head of the log) with `settleViews`: a marker beyond the end of the
+//      log is a 400 (it can only be forged or from another log), and otherwise every view the endpoint reads is waited for, at the same time, up to the timeout;
+//   4. all caught up: the handler runs. Not caught up: `strict` fails with a 503 naming each view that is behind, `bounded` runs the
 //      handler anyway and marks the response stale.
 //
-// Nothing before step 4 waits, so a bad request never costs a timeout. A database failure while checking is a defect (a 500), not a
+// Nothing before step 3 waits, so a bad request never costs a timeout. A database failure while checking is a defect (a 500), not a
 // verdict about the views. The result is the `withHeaders` value that the success schema `ReadSuccess(Body)` describes.
 export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentReadOptions<R> = {}) => {
   const config = options.config ?? defaultReadConsistency;
   const retryAfterSeconds = options.retryAfterSeconds ?? 1;
-  const deps = options.deps ?? ({ head: headOfLog, wait: waitUntilProcessed, check: readCheck } as unknown as ReadDeps<R>);
+  const settle = options.settle ?? (settleViews as unknown as SettleViews<R>);
 
   return <Request extends { readonly query: ConsistencyParams }, Parsed, E1, R1, A, E2, R2>(
     spec: ReadSpec<Request, Parsed, E1, R1>,
@@ -96,37 +82,18 @@ export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentR
         }
 
         const marker = policy.target._tag === "Latest" ? null : ProgressCursor.of(policy.target.marker.transactionId, policy.target.marker.position);
-        const beyond = () => Effect.fail(CommandApiBadRequest.of("consistentWith is beyond the end of the log: it is not a marker this service returned"));
 
-        let write: ProgressCursor.ProgressCursor;
-        let startedAt: number;
-        let outcome;
-        // Without `deps.check`: three statements that wait for one another, the end of the log, then, per view, its progress and whether anything it handles is pending. (The comment is above the
-        // block, not inside it: the integration run counts a comment that opens a block as a line, the unit run does not, and the merged coverage then reads that line as never run.)
-        if (deps.check === undefined) {
-          const head = yield* Effect.orDie(deps.head);
-          write = marker ?? head;
-          if (marker !== null && ProgressCursor.compare(marker, head) > 0) return yield* beyond();
-          if (subscriptions.length === 0) {
-            yield* count("skipped");
-            return yield* answer(false);
-          }
-          startedAt = yield* Clock.currentTimeMillis;
-          outcome = yield* Effect.orDie(waitForViews(subscriptions, write, policy.timeoutMs, deps.wait));
-        } else {
-          // One statement: the end of the log and where each view is. The wait metric starts before it (it used to start after the end of the log was read).
-          startedAt = yield* Clock.currentTimeMillis;
-          const first = yield* Effect.orDie(deps.check(subscriptions, marker));
-          write = marker ?? first.head;
-          if (marker !== null && ProgressCursor.compare(marker, first.head) > 0) return yield* beyond();
-          if (subscriptions.length === 0) {
-            yield* count("skipped");
-            return yield* answer(false);
-          }
-          // A view that has caught up is not waited for, one that has FAILED is reported at once, and only the ones still working on the write go on to wait.
-          const verdicts = first.views.map((v) => viewVerdict(write, v.cursor, v.status, v.pending));
-          outcome = yield* Effect.orDie(waitForViews(subscriptions, write, policy.timeoutMs, deps.wait, verdicts));
+        // The wait metric starts before the first look, which is one statement with the end of the log in it.
+        const startedAt = yield* Clock.currentTimeMillis;
+        const settlement = yield* Effect.orDie(settle(subscriptions, marker, policy.timeoutMs));
+        if (settlement._tag === "Beyond") {
+          return yield* Effect.fail(CommandApiBadRequest.of("consistentWith is beyond the end of the log: it is not a marker this service returned"));
         }
+        if (subscriptions.length === 0) {
+          yield* count("skipped");
+          return yield* answer(false);
+        }
+        const outcome = settlement.outcome;
         const waited = (yield* Clock.currentTimeMillis) - startedAt;
         yield* Metric.update(Metric.withAttributes(ReadConsistencyMetrics.waitDuration, { mode: policy.mode }), Duration.millis(waited));
 

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { HttpApiSchema } from "effect/http-api";
-import type { ViewsOutcome } from "./WaitForViews.ts";
+import type { ViewsOutcome } from "@crablet/views/SettleViews";
 
 export const ViewsUnavailableType = "urn:crablet:problem:read:views-unavailable";
 

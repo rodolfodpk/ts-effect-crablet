@@ -13,15 +13,14 @@
     "./ViewsConfig": "./src/ViewsConfig.ts",
     "./ViewManagementService": "./src/ViewManagementService.ts",
     "./WaitUntilProcessed": "./src/WaitUntilProcessed.ts",
-    "./ViewVerdict": "./src/ViewVerdict.ts",
-    "./ReadCheck": "./src/ReadCheck.ts",
+    "./SettleViews": "./src/SettleViews.ts",
     "./ViewTable": "./src/ViewTable.ts",
     "./ProjectedView": "./src/ProjectedView.ts",
     "./ViewMemory": "./src/ViewMemory.ts",
     "./ViewTableCheck": "./src/ViewTableCheck.ts"
   },
   "crablet": {
-    "internal": ["./ViewProgress", "./ViewVerdict"]
+    "internal": ["./ViewProgress"]
   },
   "dependencies": {
     "effect": "4.0.2",

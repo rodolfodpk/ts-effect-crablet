@@ -20,7 +20,7 @@ README called it "the shared base" the modules build on; there is no guide and n
 1. **`@crablet/event-poller` is the engine behind the three modules, not a way to write your own processor.** No guide or example promises otherwise.
 2. **A package lists its plumbing under `crablet.internal` in its `package.json`:** the entry points only the sibling packages build on. They are described in the package's README under
    "Internal" and can change without notice. Today: `eventstore` (`CorrelationContext`, `Listen`, `NotifyPayload`), `event-poller` (`BackoffState`, `EventFetcher`, `EventHandler`,
-   `PostgresProgressTracker`, `ProgressPing`, `ProgressTracker`, `SqlEventFetcher`), `views` (`ViewProgress`, `ViewVerdict`).
+   `PostgresProgressTracker`, `ProgressPing`, `ProgressTracker`, `SqlEventFetcher`), `views` (`ViewProgress`, `ViewVerdict`; `ViewVerdict` has since moved inside the package, ADR-0015's update of 2026-10-17).
 3. **The line is a test.** `scripts/public-api.test.ts` fails when a list names something that is not an export, and when an example's or a tool's source, or a document, imports an
    internal entry point. Tests and diagnostics may: they are inside the project.
 4. **No rename.** The entry points keep their paths. Several types that look unused by applications are part of public shapes (`EventSelection` is the filter fields of a view

@@ -6,7 +6,7 @@ import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import type { ViewSubscription } from "./ViewSubscription.ts";
 import { ViewProgressHub } from "./ViewProgressHub.ts";
-import { viewVerdict } from "./ViewVerdict.ts";
+import { viewVerdict } from "./internal/ViewVerdict.ts";
 
 // Read your own writes from an asynchronous view.
 //

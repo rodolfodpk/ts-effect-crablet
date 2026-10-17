@@ -109,6 +109,8 @@ A default read sent four statements in a row to the database: the end of the log
 
 What to do about each view is one pure function, `viewVerdict` (`caught_up`, `failed`, `wait`), shared with `waitUntilProcessed`; only the views whose verdict is `wait` go on to the waiting loop, which is unchanged (so it still subscribes to the hub's pings, and still looks again after subscribing). `makeConsistentRead` uses the combined look unless its `deps` are replaced without a `check` (the tests that fake `head` and `wait` keep their old path).
 
+*Update, 2026-10-17:* the old path is gone. The first look, the verdicts and the waiting are one module, `settleViews` (`@crablet/views/SettleViews`), and `makeConsistentRead` takes it as its one dependency (`settle`) in place of `deps`. `HeadOfLog` and `WaitForViews` are removed from `views-http`, and `readCheck` and `viewVerdict` are now inside `views`.
+
 **Measured** (`examples/wallet-example-app/diagnostics/read-first-look.diagnostic.ts`: the real `makeConsistentRead`, before and after, with a network delay on the database's container; the wrapper and the application's query, not the HTTP stack; one run, reads alternated; p50, ms):
 
 | added delay (`SELECT 1` p50) | default read, one view | read with a marker | default read, two views | 16 concurrent default reads, reads/s |
