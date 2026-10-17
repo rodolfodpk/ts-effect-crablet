@@ -1,11 +1,11 @@
 // DIAGNOSTIC EXPERIMENT (docs/adr/0015-read-consistency-by-marker.md, update of 2026-10-09), not a test: it measures, it does not assert. Needs Docker (Testcontainers, and the image `alpine` for the delay).
 // Run with:  node --test examples/wallet-example-app/diagnostics/read-first-look.diagnostic.ts   and read the `DIAG` lines.   QUICK=1 for fewer reads.
-// The real consistent read (`makeConsistentRead`) of the wallet's balance view, before and after the first look became one statement: "before" is the wrapper with the dependencies it had
-// (the end of the log, then a wait per view), "after" is the wrapper as it is now. The database's container gets a network delay (`tc netem`, on the packets that leave it), so the cost of a round
+// The real consistent read (`makeConsistentRead`) of the wallet's balance view, before and after the first look became one statement: "before" is the wrapper with the steps it had
+// (the end of the log, then a wait per view, rebuilt below as a `settle`), "after" is the wrapper as it is now. The database's container gets a network delay (`tc netem`, on the packets that leave it), so the cost of a round
 // trip shows. What is timed is the wrapper plus the application's query, not the HTTP stack. Reads alternate between the two so drift cancels; the state is the usual default read: the view is
 // caught up and the last event of the log is one it does not handle, so the pending check runs.
 import { after, before, describe, it } from "node:test";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Duration, Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { execFileSync } from "node:child_process";
@@ -13,15 +13,32 @@ import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
+import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
+import type { SettleViews, UncaughtView } from "@crablet/views/SettleViews";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import { makeConsistentRead } from "@crablet/views-http";
-import { headOfLog } from "@crablet/views-http/HeadOfLog";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import { walletBalanceViewSubscription, walletSummaryViewSubscription } from "../src/views/WalletViewConfig.ts";
 
 const QUICK = process.env["QUICK"] !== undefined;
+
+// "before": the end of the log in its own statement, then every view waited for (each wait looks at the view's progress, then at what is pending).
+const settleBefore: SettleViews = (subscriptions, marker, timeoutMs) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql.unsafe<{ x: string; p: string }>("SELECT transaction_id::text AS x, position::text AS p FROM crablet_events ORDER BY transaction_id DESC, position DESC LIMIT 1");
+    const head = rows[0] === undefined ? ProgressCursor.zero : ProgressCursor.of(rows[0].x, BigInt(rows[0].p));
+    if (marker !== null && ProgressCursor.compare(marker, head) > 0) return { _tag: "Beyond", head } as const;
+    const behind = (yield* Effect.forEach(subscriptions, (s) =>
+      waitUntilProcessed(s, marker ?? head, { timeout: Duration.millis(timeoutMs) }).pipe(
+        Effect.as(null),
+        Effect.catchTag("WaitTimeout", (e) => Effect.succeed<UncaughtView>({ name: s.viewName, reason: "lagging", reachedPosition: String(e.reached) })),
+        Effect.catchTag("ViewFailed", () => Effect.succeed<UncaughtView>({ name: s.viewName, reason: "view_failed", reachedPosition: null }))
+      ), { concurrency: "unbounded" })).filter((v): v is UncaughtView => v !== null);
+    return { _tag: "Settled", outcome: behind.length === 0 ? { _tag: "CaughtUp" } : { _tag: "NotCaughtUp", reason: "lagging", views: behind } } as const;
+  });
 let db: TestDb;
 let sidecar = "";
 const sh = (...a: string[]) => execFileSync("docker", a, { stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
@@ -55,7 +72,7 @@ describe("DIAG", () => {
 
       interface Req { readonly query: { readonly consistentWith?: string; readonly id?: string } }
       const endpointFor = (reads: typeof walletBalanceViewSubscription[], after_: boolean) => {
-        const read = after_ ? makeConsistentRead() : makeConsistentRead({ deps: { head: headOfLog, wait: waitUntilProcessed } });
+        const read = after_ ? makeConsistentRead() : makeConsistentRead({ settle: settleBefore });
         return read(
           { reads, parse: (req: Req) => Effect.succeed(req.query.id!) },
           (id: string) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [id]))

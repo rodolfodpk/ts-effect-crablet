@@ -4,7 +4,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import { buildReadCheckQuery, type SelectionQueryOptions } from "@crablet/event-poller/SqlEventFetcher";
-import type { ViewSubscription } from "./ViewSubscription.ts";
+import type { ViewSubscription } from "../ViewSubscription.ts";
 
 // The first look of a consistent read, in ONE statement instead of three that wait for one another: where the log ends, and for each view where it is and whether anything it
 // handles is pending between its cursor and the write (`marker`, or the end of the log when null). Only the framework's own tables are read; the application's query is the

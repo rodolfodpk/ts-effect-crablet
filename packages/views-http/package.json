@@ -6,8 +6,6 @@
   "exports": {
     ".": "./src/ConsistentRead.ts",
     "./ReadConsistency": "./src/ReadConsistency.ts",
-    "./WaitForViews": "./src/WaitForViews.ts",
-    "./HeadOfLog": "./src/HeadOfLog.ts",
     "./ReadProblems": "./src/ReadProblems.ts",
     "./ReadQuery": "./src/ReadQuery.ts"
   },

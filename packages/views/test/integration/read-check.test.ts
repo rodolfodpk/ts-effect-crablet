@@ -13,8 +13,8 @@ import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import type { SelectionQueryOptions } from "@crablet/event-poller/SqlEventFetcher";
 import { viewSubscriptionOf, type ViewSubscription } from "../../src/ViewSubscription.ts";
 import { ViewFailed, WaitTimeout, waitUntilProcessed } from "../../src/WaitUntilProcessed.ts";
-import { viewVerdict, type ViewVerdict } from "../../src/ViewVerdict.ts";
-import { readCheck } from "../../src/ReadCheck.ts";
+import { viewVerdict, type ViewVerdict } from "../../src/internal/ViewVerdict.ts";
+import { readCheck } from "../../src/internal/ReadCheck.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
