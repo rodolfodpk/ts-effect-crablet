@@ -46,7 +46,7 @@ export interface ConsistentHeaders {
 //   2. the endpoint's own parameters are validated (`parse`);
 //   3. unless no wait is wanted, the views are settled against the marker (or the head of the log) with `settleViews`: a marker beyond the end of the
 //      log is a 400 (it can only be forged or from another log), and otherwise every view the endpoint reads is waited for, at the same time, up to the timeout;
-//   5. all caught up: the handler runs. Not caught up: `strict` fails with a 503 naming each view that is behind, `bounded` runs the
+//   4. all caught up: the handler runs. Not caught up: `strict` fails with a 503 naming each view that is behind, `bounded` runs the
 //      handler anyway and marks the response stale.
 //
 // Nothing before step 3 waits, so a bad request never costs a timeout. A database failure while checking is a defect (a 500), not a

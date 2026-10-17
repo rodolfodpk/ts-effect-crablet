@@ -31,8 +31,9 @@ export const makeSettleViews =
       const outcomes = yield* Effect.forEach(
         subscriptions,
         (subscription, index) => {
-          const view = first.views[index]!;
-          const verdict = viewVerdict(write, view.cursor, view.status, view.pending);
+          // The first look gives one entry per subscription; were one missing, the view is waited for rather than judged on nothing.
+          const view = first.views[index];
+          const verdict = view === undefined ? "wait" : viewVerdict(write, view.cursor, view.status, view.pending);
           if (verdict === "caught_up") return Effect.succeed(null);
           if (verdict === "failed") return Effect.succeed<UncaughtView>({ name: subscription.viewName, reason: "view_failed", reachedPosition: null });
           return deps.wait(subscription, write, { timeout: Duration.millis(timeoutMs) }).pipe(

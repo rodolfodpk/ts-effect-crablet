@@ -106,6 +106,12 @@ describe("the views that are behind", () => {
     expect(h.calls.waits.map((w) => w.view)).toEqual(["a"]);
   });
 
+  it("a view the first look has no entry for is waited for, not judged on nothing", async () => {
+    const h = harness({ result: { head, views: [atHead] } });
+    await run(h.settle([view("a"), view("b")], null, 5000));
+    expect(h.calls.waits.map((w) => w.view)).toEqual(["b"]);
+  });
+
   it("are waited for at the same time (one slow view does not delay the start of the others)", async () => {
     // Sequentially this deadlocks: `first` cannot finish until `second` has STARTED.
     const program = Effect.gen(function* () {

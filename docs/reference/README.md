@@ -18,7 +18,7 @@ Tables to look things up in. To learn the ideas, read the [concept pages](../REA
 
 Every `@crablet/<package>/<Name>` import is an entry point listed in the package's `package.json` (`exports`). Most are the API: what an application imports. A few are
 **plumbing** that the sibling packages build on: the engine's fetcher, handler and progress-tracker parts in `@crablet/event-poller`, the reconnecting LISTEN and the
-wake-up payload in `@crablet/eventstore`, the progress channel and the wait rule in `@crablet/views`. Those are listed under `crablet.internal` in the same
+wake-up payload in `@crablet/eventstore`, the progress channel in `@crablet/views`. Those are listed under `crablet.internal` in the same
 `package.json`, described in the package's README under "Internal", and **can change without notice**.
 
 The decision is [ADR-0031](../adr/0031-api-and-plumbing-are-separate.md). The line is enforced: `scripts/public-api.test.ts` fails if an example's or a tool's source, or a page of these documents, imports an entry point listed as internal. To

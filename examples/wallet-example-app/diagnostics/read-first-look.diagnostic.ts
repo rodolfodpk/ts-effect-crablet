@@ -37,7 +37,7 @@ const settleBefore: SettleViews = (subscriptions, marker, timeoutMs) =>
         Effect.catchTag("WaitTimeout", (e) => Effect.succeed<UncaughtView>({ name: s.viewName, reason: "lagging", reachedPosition: String(e.reached) })),
         Effect.catchTag("ViewFailed", () => Effect.succeed<UncaughtView>({ name: s.viewName, reason: "view_failed", reachedPosition: null }))
       ), { concurrency: "unbounded" })).filter((v): v is UncaughtView => v !== null);
-    return { _tag: "Settled", outcome: behind.length === 0 ? { _tag: "CaughtUp" } : { _tag: "NotCaughtUp", reason: "lagging", views: behind } } as const;
+    return { _tag: "Settled", outcome: behind.length === 0 ? { _tag: "CaughtUp" } : { _tag: "NotCaughtUp", reason: behind.some((v) => v.reason === "view_failed") ? "view_failed" : "lagging", views: behind } } as const;
   });
 let db: TestDb;
 let sidecar = "";
