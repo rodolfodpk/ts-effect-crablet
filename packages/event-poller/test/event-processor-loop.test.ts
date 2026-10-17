@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Exit, Metric, Queue, Ref, Stream } from "effect";
+import { Cause, Effect, Exit, Metric, Queue, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { LeaderHandle } from "@crablet/eventstore/Leader";
@@ -71,7 +71,7 @@ const makeHarness = (options?: { readonly failFirstN?: number }) =>
   Effect.gen(function* () {
     const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([]);
     const { tracker, rows } = yield* makeInMemoryProgressTracker<string>();
-    const fetcher = makeInMemoryEventFetcher<string>(eventsRef);
+    const fetcher = makeInMemoryEventFetcher(eventsRef);
     const handlerHandle = yield* makeInMemoryEventHandler<string>({ failFirstN: options?.failFirstN });
 
     const config = processorConfigOf(PROCESSOR_ID, {
@@ -109,6 +109,42 @@ describe("EventProcessor.process (direct call, no leadership gate)", () => {
 
     const handled = await run(handle.service.process(PROCESSOR_ID));
     expect(handled).toBe(0);
+  });
+
+  const twoProcessors = (selectionOf: (config: { readonly processorId: string }) => EventSelection.EventSelection) =>
+    Effect.gen(function* () {
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([storedEvent(1n, "A"), storedEvent(2n, "B"), storedEvent(3n, "A")]);
+      const { tracker } = yield* makeInMemoryProgressTracker<string>();
+      const handlerHandle = yield* makeInMemoryEventHandler<string>({});
+      const handle = yield* makeEventProcessor({
+        configs: ["proc-a", "proc-b"].map((id) => processorConfigOf(id, { batchSize: 10 })),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
+        handler: handlerHandle.handler,
+        progressTracker: tracker,
+        selectionOf,
+        instanceId: "test-instance",
+        acquireLeader: Effect.succeed(alwaysLeader()),
+        wakeupStream: Stream.never
+      });
+      return { handle, handlerHandle };
+    });
+
+  test("one fetcher serves every processor: each fetch is given that processor's own selection", async () => {
+    const selections = new Map([
+      ["proc-a", EventSelection.of({ eventTypes: new Set(["A"]) })],
+      ["proc-b", EventSelection.of({ eventTypes: new Set(["B"]) })]
+    ]);
+    const { handle, handlerHandle } = await run(twoProcessors((config) => selections.get(config.processorId)!));
+    expect(await run(handle.service.process("proc-b"))).toBe(1);
+    expect(await run(handle.service.process("proc-a"))).toBe(2);
+    const batches = await run(handlerHandle.handledBatches);
+    expect(batches.map((batch) => batch.map((e) => e.type))).toEqual([["B"], ["A", "A"]]);
+  });
+
+  test("a config with no selection stops the build with an error that names the processor", async () => {
+    const exit = await Effect.runPromiseExit(twoProcessors((config) => (config.processorId === "proc-a" ? EventSelection.empty() : (undefined as never))));
+    expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+    expect(Exit.isFailure(exit) && (Cause.squash(exit.cause) as Error).message).toBe("No event selection for processor proc-b");
   });
 
   test("pause, resume and the status views: a paused processor handles nothing, a resumed one carries on, and getAllStatuses lists every configured processor", async () => {
@@ -197,7 +233,7 @@ describe("EventProcessor full start/stop loop (drives real polling via Effect Te
     const program = Effect.gen(function* () {
       const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([storedEvent(1n)]);
       const { tracker } = yield* makeInMemoryProgressTracker<string>();
-      const fetcher = makeInMemoryEventFetcher<string>(eventsRef);
+      const fetcher = makeInMemoryEventFetcher(eventsRef);
       const handlerHandle = yield* makeInMemoryEventHandler<string>();
       const wakeupQueue = yield* Queue.unbounded<WakeupBatch>();
 
@@ -275,7 +311,7 @@ describe("the leadership gauge", () => {
       const leader: LeaderHandle = { lockKey: 0n, isLeader: () => leading, verify: Effect.sync(() => leading), release: () => Effect.void };
       const handle = yield* makeEventProcessor({
         configs: [config],
-        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
         selectionOf: () => EventSelection.empty(),
@@ -332,7 +368,7 @@ describe("EventProcessor leadership fence (scheduled loop)", () => {
       const handlerHandle = yield* makeInMemoryEventHandler<string>();
       const handle = yield* makeEventProcessor({
         configs: [config],
-        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
         selectionOf: () => EventSelection.empty(),
@@ -404,7 +440,7 @@ describe("EventProcessor leadership fence (scheduled loop)", () => {
       const handlerHandle = yield* makeInMemoryEventHandler<string>();
       const handle = yield* makeEventProcessor({
         configs: [config],
-        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
         selectionOf: () => EventSelection.empty(),
@@ -432,7 +468,7 @@ describe("EventProcessor leadership fence (scheduled loop)", () => {
       const handlerHandle = yield* makeInMemoryEventHandler<string>();
       const handle = yield* makeEventProcessor({
         configs: [config],
-        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
         selectionOf: () => EventSelection.empty(),
@@ -467,7 +503,7 @@ describe("EventProcessor.startScoped: the scope owns the processors", () => {
       const leader: LeaderHandle = { lockKey: 0n, isLeader: () => true, verify: Effect.succeed(true), release: () => Ref.update(released, (n) => n + 1) };
       const handle = yield* makeEventProcessor({
         configs: [processorConfigOf(PROCESSOR_ID, { pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120 })],
-        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
         selectionOf: () => EventSelection.empty(),

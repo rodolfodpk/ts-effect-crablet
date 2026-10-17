@@ -52,10 +52,8 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
     const rows = await run(
       Effect.gen(function* () {
-        const fetcher = yield* makeSqlEventFetcher<string>(
-          EventSelection.of({ eventTypes: new Set(["FetchTestTypeA"]) })
-        );
-        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
+        const fetcher = yield* makeSqlEventFetcher();
+        return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["FetchTestTypeA"]) }), ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -82,10 +80,8 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
     const rows = await run(
       Effect.gen(function* () {
-        const fetcher = yield* makeSqlEventFetcher<string>(
-          EventSelection.of({ eventTypes: new Set(["FetchTestRequired"]), requiredTags: new Set(["k1", "k2"]) })
-        );
-        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
+        const fetcher = yield* makeSqlEventFetcher();
+        return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["FetchTestRequired"]), requiredTags: new Set(["k1", "k2"]) }), ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -108,10 +104,8 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
     const rows = await run(
       Effect.gen(function* () {
-        const fetcher = yield* makeSqlEventFetcher<string>(
-          EventSelection.of({ eventTypes: new Set(["FetchTestAnyOf"]), anyOfTags: new Set(["k1", "k9"]) })
-        );
-        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
+        const fetcher = yield* makeSqlEventFetcher();
+        return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["FetchTestAnyOf"]), anyOfTags: new Set(["k1", "k9"]) }), ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -134,13 +128,12 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
     const rows = await run(
       Effect.gen(function* () {
-        const fetcher = yield* makeSqlEventFetcher<string>(
-          EventSelection.of({
-            eventTypes: new Set(["FetchTestExact"]),
-            exactTags: new Map([["status", "open"]])
-          })
+        const fetcher = yield* makeSqlEventFetcher();
+        return yield* fetcher.fetchEvents(
+          EventSelection.of({ eventTypes: new Set(["FetchTestExact"]), exactTags: new Map([["status", "open"]]) }),
+          ProgressCursorNS.zero,
+          1000
         );
-        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
       })
     );
 
@@ -164,10 +157,8 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
     const rows = await run(
       Effect.gen(function* () {
-        const fetcher = yield* makeSqlEventFetcher<string>(
-          EventSelection.of({ exactTags: new Map([["marker", marker]]) })
-        );
-        return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 2);
+        const fetcher = yield* makeSqlEventFetcher();
+        return yield* fetcher.fetchEvents(EventSelection.of({ exactTags: new Map([["marker", marker]]) }), ProgressCursorNS.zero, 2);
       })
     );
 
@@ -216,14 +207,9 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
       const rowsWhileOpen = await run(
         Effect.gen(function* () {
-          const fetcher = yield* makeSqlEventFetcher<string>(
-            EventSelection.of({ exactTags: new Map([["marker", `${marker}A`]]) })
-          );
-          const a = yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
-          const fetcherB = yield* makeSqlEventFetcher<string>(
-            EventSelection.of({ exactTags: new Map([["marker", `${marker}B`]]) })
-          );
-          const b = yield* fetcherB.fetchEvents("proc", ProgressCursorNS.zero, 1000);
+          const fetcher = yield* makeSqlEventFetcher();
+          const a = yield* fetcher.fetchEvents(EventSelection.of({ exactTags: new Map([["marker", `${marker}A`]]) }), ProgressCursorNS.zero, 1000);
+          const b = yield* fetcher.fetchEvents(EventSelection.of({ exactTags: new Map([["marker", `${marker}B`]]) }), ProgressCursorNS.zero, 1000);
           return { a, b };
         })
       );
@@ -237,10 +223,8 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
 
       const rowsAfterCommit = await run(
         Effect.gen(function* () {
-          const fetcher = yield* makeSqlEventFetcher<string>(
-            EventSelection.of({ eventTypes: new Set(["GapTestEvent"]) })
-          );
-          return yield* fetcher.fetchEvents("proc", ProgressCursorNS.zero, 1000);
+          const fetcher = yield* makeSqlEventFetcher();
+          return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["GapTestEvent"]) }), ProgressCursorNS.zero, 1000);
         })
       );
       const markersSeen = rowsAfterCommit

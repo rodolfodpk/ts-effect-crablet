@@ -98,7 +98,7 @@ describe("tag key presence: the tag table and the events' own tags select the sa
       const after = random() < 0.3 ? null : Math.floor(random() * rows.length);
       const batch = 1 + Math.floor(random() * 150);
       const fetch = (tagKeys: TagKeyStrategy) =>
-        run(Effect.flatMap(makeSqlEventFetcher<string>(sel, { tagKeys }), (f) => f.fetchEvents("p", cursorOf(after), batch)));
+        run(Effect.flatMap(makeSqlEventFetcher({ tagKeys }), (f) => f.fetchEvents(sel, cursorOf(after), batch)));
       const [viaTable, viaScan] = [await fetch("table"), await fetch("scan")];
       const shape = (xs: typeof viaTable) => xs.map((e) => `${e.position}:${e.type}:${e.tags.map((t) => `${t.key}=${t.value}`).join(",")}`);
       if (JSON.stringify(shape(viaTable)) !== JSON.stringify(shape(viaScan))) mismatches.push(`fetch #${n}: table ${viaTable.length} rows, scan ${viaScan.length} rows`);
@@ -125,8 +125,8 @@ describe("tag key presence: the tag table and the events' own tags select the sa
       yield* es.append([AppendEvent.builder("Marker").tag("only_here", "1").data({}).build()]);
       yield* sql.unsafe("DELETE FROM crablet_event_tag_keys WHERE key = 'only_here'");
       const sel = EventSelection.of({ requiredTags: new Set(["only_here"]) });
-      const table = yield* Effect.flatMap(makeSqlEventFetcher<string>(sel, { tagKeys: "table" }), (f) => f.fetchEvents("p", ProgressCursorNS.zero, 10));
-      const scan = yield* Effect.flatMap(makeSqlEventFetcher<string>(sel, { tagKeys: "scan" }), (f) => f.fetchEvents("p", ProgressCursorNS.zero, 10));
+      const table = yield* Effect.flatMap(makeSqlEventFetcher({ tagKeys: "table" }), (f) => f.fetchEvents(sel, ProgressCursorNS.zero, 10));
+      const scan = yield* Effect.flatMap(makeSqlEventFetcher({ tagKeys: "scan" }), (f) => f.fetchEvents(sel, ProgressCursorNS.zero, 10));
       return { table: table.length, scan: scan.length };
     }));
     assert.deepStrictEqual(r, { table: 0, scan: 1 });

@@ -8,12 +8,12 @@ import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/Sess
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
+import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { VIEW_PROGRESS_CHANNEL } from "./ViewProgress.ts";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ViewProjector } from "./ViewProjector.ts";
 import type { ViewSubscription } from "./ViewSubscription.ts";
 import type { ViewsConfig } from "./ViewsConfig.ts";
-import { makeViewEventFetcher } from "./internal/ViewEventFetcher.ts";
 import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
 
@@ -27,7 +27,7 @@ export interface ViewsDeps {
 
 // Views-module-specific wiring only. The generic scheduling/leader-election/backoff engine itself lives in
 // @crablet/event-poller and is reused as-is; this is the adapter layer
-// assembling the module-specific fetcher/handler/progress-tracker/configs and handing them, plus
+// assembling the module-specific handler/progress-tracker/configs (and the shared SQL fetcher) and handing them, plus
 // the shared VIEWS_LOCK_KEY and EVENTS_CHANNEL, to that engine.
 export const makeViewsProcessor = (
   deps: ViewsDeps
@@ -47,7 +47,7 @@ export const makeViewsProcessor = (
       idColumn: "view_name",
       notifyChannel: VIEW_PROGRESS_CHANNEL
     });
-    const fetcher = yield* makeViewEventFetcher(deps.subscriptions);
+    const fetcher = yield* makeSqlEventFetcher();
     const handler = makeViewEventHandler(deps.projectors);
     const configs = makeViewProcessorConfigs(deps.config, deps.subscriptions);
     const subscriptionByViewName = new Map(deps.subscriptions.map((s) => [s.viewName, s] as const));

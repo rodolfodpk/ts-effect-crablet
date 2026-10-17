@@ -35,7 +35,7 @@ const build = (events: ReadonlyArray<StoredEvent>, leader?: LeaderHandle) =>
     const handlerHandle = yield* makeInMemoryEventHandler<string>({});
     return yield* makeEventProcessor({
       configs: [config],
-      fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+      fetcher: makeInMemoryEventFetcher(eventsRef),
       handler: handlerHandle.handler,
       progressTracker: tracker,
       selectionOf: () => EventSelection.empty(),
@@ -69,7 +69,7 @@ describe("tracing", () => {
       const handlerHandle = yield* makeInMemoryEventHandler<string>({ failFirstN: 1 });
       const handle = yield* makeEventProcessor({
         configs: [config],
-        fetcher: makeInMemoryEventFetcher<string>(eventsRef),
+        fetcher: makeInMemoryEventFetcher(eventsRef),
         handler: handlerHandle.handler,
         progressTracker: tracker,
         selectionOf: () => EventSelection.empty(),

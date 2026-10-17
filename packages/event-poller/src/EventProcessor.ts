@@ -76,7 +76,8 @@ export interface BackoffSnapshot {
 // with a fake always-leader stub and a manually-driven stream instead of a real database.
 export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends string> {
   readonly configs: ReadonlyArray<C>;
-  readonly fetcher: EventFetcher<I, unknown, never>;
+  // One fetcher for every processor: each fetch is given the processor's selection (`selectionOf`).
+  readonly fetcher: EventFetcher<unknown, never>;
   readonly handler: EventHandler<I, unknown, never>;
   readonly progressTracker: ProgressTracker<I>;
   readonly selectionOf: (config: C) => EventSelection;
@@ -147,6 +148,14 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     const leaderHint = yield* Queue.sliding<void>(1);
 
     const configOf = (id: I): C | undefined => deps.configs.find((c) => c.processorId === id);
+    // Each processor's selection, asked of `selectionOf` once: what it fetches, what wakes it, and what its backlog is counted against. A config with no
+    // selection is a wiring mistake, so it stops the build here instead of failing in the SQL builder at every poll.
+    const selectionById = new Map<I, EventSelection>();
+    for (const config of deps.configs) {
+      const selection = deps.selectionOf(config);
+      if (selection === undefined) return yield* Effect.die(new Error(`No event selection for processor ${String(config.processorId)}`));
+      selectionById.set(config.processorId, selection);
+    }
 
     // The same 7-step sequence the scheduled loop calls, but with NO leadership check (that gate
     // lives only in `tick` below).
@@ -173,7 +182,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         );
         if (!ready.ready) return 0;
 
-        const events = yield* deps.fetcher.fetchEvents(id, ready.cursor, config.batchSize);
+        const events = yield* deps.fetcher.fetchEvents(selectionById.get(id)!, ready.cursor, config.batchSize);
         if (events.length === 0) return 0;
 
         // A span only for a poll that found something: an idle poll every second would be a span a second per processor, and says nothing.
@@ -352,7 +361,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       Effect.scoped(
         Effect.gen(function* () {
           const dequeue = yield* PubSub.subscribe(hub);
-          const filter = EventSelectionNS.toSubscriberFilter(deps.selectionOf(config));
+          const filter = EventSelectionNS.toSubscriberFilter(selectionById.get(config.processorId)!);
           yield* Effect.forever(tick(config, dequeue, filter));
         })
         // every log line this loop writes says which processor and which instance wrote it
@@ -484,7 +493,6 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       (m) => new Map([...m.entries()].map(([id, state]) => [id, toBackoffSnapshot(state)]))
     );
 
-    const selectionById = new Map<I, EventSelection>(deps.configs.map((c) => [c.processorId, deps.selectionOf(c)] as const));
     const selectionFor = (processorId: I): EventSelection | undefined => selectionById.get(processorId);
     const isLeader: Effect.Effect<boolean> = Effect.map(Ref.get(leaderRef), (leader) => leader !== null && leader.isLeader());
     const handle: EventProcessorHandle<C, I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor, isLeader };

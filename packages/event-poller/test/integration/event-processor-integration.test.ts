@@ -105,9 +105,8 @@ const startProcessor = (harness: Harness, options?: { readonly pollingIntervalMs
       tableName: "crablet_view_progress",
       idColumn: "view_name"
     });
-    const fetcher = yield* makeSqlEventFetcher<string>(
-      EventSelection.of({ exactTags: new Map([["run_marker", harness.viewName]]) })
-    );
+    const fetcher = yield* makeSqlEventFetcher();
+    const selection = EventSelection.of({ exactTags: new Map([["run_marker", harness.viewName]]) });
 
     const config = processorConfigOf(harness.viewName, {
       pollingIntervalMs: options?.pollingIntervalMs ?? 60_000,
@@ -133,7 +132,7 @@ const startProcessor = (harness: Harness, options?: { readonly pollingIntervalMs
       fetcher,
       handler,
       progressTracker,
-      selectionOf: () => EventSelection.empty(),
+      selectionOf: () => selection,
       instanceId: `instance-${crypto.randomUUID()}`,
       acquireLeader: tryAcquireGlobalLeader(sql, harness.lockKey),
       wakeupStream: wakeupStream(pg, EVENTS_CHANNEL)
