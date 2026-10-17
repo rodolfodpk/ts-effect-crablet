@@ -8,11 +8,11 @@ import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/Sess
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
+import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import type { OutboxPublisher } from "./OutboxPublisher.ts";
 import type { TopicConfig } from "./TopicConfig.ts";
 import type { OutboxConfig } from "./OutboxConfig.ts";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
-import { makeOutboxEventFetcher } from "./internal/OutboxEventFetcher.ts";
 import { makeOutboxEventHandler } from "./internal/OutboxEventHandler.ts";
 import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts";
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
@@ -43,7 +43,7 @@ export const makeOutboxProcessor = (
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
     const progressTracker = yield* makeOutboxProgressTracker(instanceId);
-    const fetcher = yield* makeOutboxEventFetcher(deps.topics);
+    const fetcher = yield* makeSqlEventFetcher();
     const handler = makeOutboxEventHandler(deps.publishers);
     const configs = makeOutboxProcessorConfigs(deps.config, deps.topics);
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));

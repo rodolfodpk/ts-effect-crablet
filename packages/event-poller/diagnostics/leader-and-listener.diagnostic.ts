@@ -39,11 +39,12 @@ const start = (label: string, view: string, lockKey: bigint, calls: Array<Call>,
     const s = yield* SqlClient.SqlClient;
     const pg = yield* PgClient.PgClient;
     const progressTracker = yield* makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" });
-    const fetcher = yield* makeSqlEventFetcher<string>(EventSelection.of({ exactTags: new Map([["run_marker", view]]) }));
+    const fetcher = yield* makeSqlEventFetcher();
+    const selection = EventSelection.of({ exactTags: new Map([["run_marker", view]]) });
     const config = processorConfigOf(view, { pollingIntervalMs: o.polling, batchSize: 100, backoffEnabled: o.backoff ?? false, backoffThreshold: 3, backoffMultiplier: 2, backoffMaxSeconds: o.backoffMaxSeconds ?? 120, enabled: true });
     const handler = { handle: (_id: string, events: ReadonlyArray<{ position: bigint }>) => Effect.sync(() => { calls.push({ who: label, at: performance.now(), positions: events.map((e) => e.position) }); return events.length; }) };
     const handle = yield* makeEventProcessor({
-      configs: [config], fetcher, handler: handler as never, progressTracker, selectionOf: () => EventSelection.empty(),
+      configs: [config], fetcher, handler: handler as never, progressTracker, selectionOf: () => selection,
       instanceId: `${label}-${crypto.randomUUID().slice(0, 6)}`, acquireLeader: tryAcquireGlobalLeader(s, lockKey), wakeupStream: wakeupStream(pg, EVENTS_CHANNEL), leaderRetryIntervalMs: o.retry
     });
     yield* handle.service.start;

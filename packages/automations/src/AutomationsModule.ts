@@ -10,20 +10,21 @@ import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/Sess
 import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
+import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
 import type { AutomationHandler } from "./AutomationHandler.ts";
 import type { AutomationsConfig } from "./AutomationsConfig.ts";
-import { makeAutomationEventFetcher } from "./internal/AutomationEventFetcher.ts";
 import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/AutomationEventHandler.ts";
 import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorConfig.ts";
 
 export interface AutomationsDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
   readonly config?: AutomationsConfig;
-  // See internal/AutomationEventFetcher.ts's primer on this registry's type erasure - each
-  // AutomationHandler keeps its own concrete T/E/HE at the call site that builds it; only the
-  // heterogeneous list passed here is erased.
+  // `AutomationHandler<any, any, any>`: a heterogeneous registry of automations, each with its own command type T, is type-erased here - each
+  // AutomationHandler keeps its own concrete T/E/HE at the call site that builds it; only the list passed here is erased. The wiring below
+  // reads only the EventSelection/automationName fields, which don't depend on T; T matters only to the per-decision dispatch
+  // (internal/AutomationEventHandler.ts).
   readonly handlers: ReadonlyArray<AutomationHandler<any, any, any>>;
   readonly instanceId?: string;
 }
@@ -71,7 +72,7 @@ export const makeAutomationsProcessor = (
       tableName: "crablet_automation_progress",
       idColumn: "automation_name"
     });
-    const fetcher = yield* makeAutomationEventFetcher(deps.handlers);
+    const fetcher = yield* makeSqlEventFetcher();
     const handler = makeAutomationEventHandler(deps.handlers, executeDecision);
     const configs = makeAutomationProcessorConfigs(deps.config, deps.handlers);
     const handlerByName = new Map(deps.handlers.map((h) => [h.automationName, h] as const));

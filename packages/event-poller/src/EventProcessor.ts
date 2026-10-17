@@ -76,7 +76,8 @@ export interface BackoffSnapshot {
 // with a fake always-leader stub and a manually-driven stream instead of a real database.
 export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends string> {
   readonly configs: ReadonlyArray<C>;
-  readonly fetcher: EventFetcher<I, unknown, never>;
+  // One fetcher for every processor: each fetch is given the processor's selection (`selectionOf`).
+  readonly fetcher: EventFetcher<unknown, never>;
   readonly handler: EventHandler<I, unknown, never>;
   readonly progressTracker: ProgressTracker<I>;
   readonly selectionOf: (config: C) => EventSelection;
@@ -173,7 +174,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         );
         if (!ready.ready) return 0;
 
-        const events = yield* deps.fetcher.fetchEvents(id, ready.cursor, config.batchSize);
+        const events = yield* deps.fetcher.fetchEvents(deps.selectionOf(config), ready.cursor, config.batchSize);
         if (events.length === 0) return 0;
 
         // A span only for a poll that found something: an idle poll every second would be a span a second per processor, and says nothing.

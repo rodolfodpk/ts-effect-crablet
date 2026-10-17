@@ -77,7 +77,7 @@ describe("DIAG", () => {
     const tail = await at(5_000), end = await at(1), recent = await at(100_000);
     const strategies: ReadonlyArray<TagKeyStrategy> = ["table", "scan"];
     const time = async (runs: number, f: () => Promise<unknown>) => { await f(); const xs: number[] = []; for (let i = 0; i < runs; i++) { const t = performance.now(); await f(); xs.push(performance.now() - t); } return `${pct(xs, 50).toFixed(1)} ms / ${pct(xs, 95).toFixed(1)} ms`; };
-    const fetch = (sel: EventSelection.EventSelection, s: TagKeyStrategy, from: ProgressCursorNS.ProgressCursor) => runtime.runPromise(Effect.flatMap(makeSqlEventFetcher<string>(sel, { tagKeys: s }), (f) => f.fetchEvents("p", from, 100)));
+    const fetch = (sel: EventSelection.EventSelection, s: TagKeyStrategy, from: ProgressCursorNS.ProgressCursor) => runtime.runPromise(Effect.flatMap(makeSqlEventFetcher({ tagKeys: s }), (f) => f.fetchEvents(sel, from, 100)));
     const pending = (sel: EventSelection.EventSelection, s: TagKeyStrategy, after: ProgressCursorNS.ProgressCursor, upTo: ProgressCursorNS.ProgressCursor) => runtime.runPromise(hasPendingSelectedEvents(sel, after, upTo, { tagKeys: s }));
 
     for (const [name, sel] of Object.entries(selections)) {
@@ -180,10 +180,10 @@ describe("DIAG", () => {
       const readerLoop = async (sel: EventSelection.EventSelection, sink: number[]) => {
         const start = (await q<{ x: string; p: string }>("SELECT transaction_id::text AS x, position::text AS p FROM crablet_events ORDER BY transaction_id DESC, position DESC LIMIT 1"))[0]!;
         let cursor = ProgressCursorNS.of(start.x, BigInt(start.p));
-        const fetcher = await runtime.runPromise(makeSqlEventFetcher<string>(sel, { tagKeys: strategy }));
+        const fetcher = await runtime.runPromise(makeSqlEventFetcher({ tagKeys: strategy }));
         while (performance.now() < deadline) {
           const t = performance.now();
-          const events = await runtime.runPromise(fetcher.fetchEvents("p", cursor, 100));
+          const events = await runtime.runPromise(fetcher.fetchEvents(sel, cursor, 100));
           // the poller also asks whether it is caught up
           if (events.length > 0) cursor = ProgressCursorNS.of(events[events.length - 1]!.transactionId, events[events.length - 1]!.position);
           else await runtime.runPromise(hasPendingSelectedEvents(sel, cursor, cursor, { tagKeys: strategy }));

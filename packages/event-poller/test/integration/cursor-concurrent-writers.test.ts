@@ -52,8 +52,8 @@ describe("poller cursor under concurrent writers", () => {
       while (idleRoundsAfterWriting < 3) {
         const batch = await runtime.runPromise(
           Effect.gen(function* () {
-            const fetcher = yield* makeSqlEventFetcher<string>(EventSelection.of({ eventTypes: new Set(["ConcurrentSmoke"]) }));
-            return yield* fetcher.fetchEvents("smoke", cursor, 50);
+            const fetcher = yield* makeSqlEventFetcher();
+            return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["ConcurrentSmoke"]) }), cursor, 50);
           })
         );
         for (const e of batch) delivered.add(e.position);

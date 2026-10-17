@@ -61,8 +61,8 @@ const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>
 const fetchAfter = (cursor: ProgressCursor) =>
   run(
     Effect.gen(function* () {
-      const fetcher = yield* makeSqlEventFetcher<string>(EventSelection.of({ eventTypes: new Set(["InvA", "InvB"]) }));
-      return yield* fetcher.fetchEvents("proc", cursor, 1000);
+      const fetcher = yield* makeSqlEventFetcher();
+      return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["InvA", "InvB"]) }), cursor, 1000);
     })
   );
 

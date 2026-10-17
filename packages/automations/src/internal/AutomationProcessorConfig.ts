@@ -6,6 +6,6 @@ import type { AutomationHandler } from "../AutomationHandler.ts";
 // ViewProcessorConfig.ts uses (not outbox's cross-join, since an automation has no secondary "publisher"-like dimension).
 export const makeAutomationProcessorConfigs = (
   config: AutomationsConfig = {},
-  // See AutomationEventFetcher.ts's primer on this registry's type erasure.
+  // See AutomationsDeps.handlers (AutomationsModule.ts) on this registry's type erasure.
   handlers: ReadonlyArray<AutomationHandler<any, any, any>>
 ): ReadonlyArray<ProcessorConfig<string>> => handlers.map((handler) => processorConfigFrom(handler.automationName, config, handler));

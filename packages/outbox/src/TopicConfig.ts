@@ -10,7 +10,7 @@ export interface TopicPublisherAssignment extends ProcessorRuntimeOverrides {
 
 // A topic's matching criteria (EventSelection) plus the
 // publishers assigned to it. Every assigned publisher advances independently through this same
-// selection (see internal/OutboxEventFetcher.ts - one fetch query shared per topic, not per pair).
+// selection (each pair is a processor of its own, fetching with its topic's selection).
 export interface TopicConfig extends EventSelection {
   readonly topic: string;
   readonly publishers: ReadonlyArray<TopicPublisherAssignment>;
