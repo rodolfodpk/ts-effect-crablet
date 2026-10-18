@@ -112,7 +112,8 @@ sequenceDiagram
   H-->>C: 201 with a marker, or 400, 404, 409 as problem+json
 ```
 
-The idempotency check runs inside the append before the concurrency check, so a repeat of an already-done operation is an idempotent success, never a spurious conflict. The
+The idempotency check runs inside the append before the concurrency check, so a repeat of an already-done operation is an idempotent success, never a spurious conflict;
+a repeat answers with the earlier write's marker, and the same key carrying a different request is refused with `IdempotencyMismatch` ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)). The
 command is audited when auditing is on. See [ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md) and [ADR-0010](../adr/0010-declarative-command-api.md).
 
 ## Two commands that conflict
