@@ -79,6 +79,10 @@ export interface Loaded<S> {
   // answered `noop(...)`.
   // (A method, not a property, so that a `Loaded<{ ... }>` is still a `Loaded<unknown>`.)
   fold?(state: S, events: ReadonlyArray<AppendEvent>): S;
+  // For an event about to be appended: the tags it lacks to be read back by this model, as "key=value" (none when it is not one of the model's
+  // types, not about this entity, or carries them all). An event the model handles, about its entity, that lacks its scope tags (a deposit without
+  // the month it was decided in) would be missed by the next load and by the boundary: the executor refuses it (ADR-0037).
+  readonly misses?: (event: AppendEvent) => ReadonlyArray<string>;
 }
 
 export interface ModelInstance<S> {
@@ -127,6 +131,16 @@ const foldWith = <S>(entries: ReadonlyArray<OnEntry<S>>, query: Query.Query, id:
     const entry = entries.find((e) => e.type === event.type);
     return entry !== undefined && queryMatches(query, { ...event, position: 0n }) ? entry.apply(s, event.eventData, { event: asStored(event), id }) : s;
   }, state);
+
+// The tags an event about this entity lacks to be read back (see Loaded.misses). It is "about this entity" when it carries one of the keys its
+// type is bound through, with this id; a lifecycle event is not scoped, so it needs nothing more.
+const missesWith = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, scopeTags: ReadonlyArray<Tag.Tag>) => (event: AppendEvent): ReadonlyArray<string> => {
+  const entry = entries.find((e) => e.type === event.type);
+  if (entry === undefined || entry.lifecycle) return [];
+  const has = (key: string, value: string) => event.tags.some((t) => t.key === key && t.value === value);
+  if (!(entry.by ?? [by]).some((key) => has(key, id))) return [];
+  return scopeTags.filter((t) => !has(t.key, t.value)).map((t) => `${t.key}=${t.value}`);
+};
 
 export interface ModelBuilder<S, Scope extends object, By extends string = string> {
   // Handle an event of this kind. By default it is bound to the model's id via the `by` tag and
@@ -273,6 +287,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         boundary: m.query,
         guard: closingQuery(id, fields),
         fold: foldIn(fields),
+        misses: missesWith(entries, def.by, id, tagsOf(spec, fields)),
         ...stamp
       });
 
@@ -312,7 +327,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const opening = requireTags(opened(config.open(carry, context(target))), opened.type);
       prefix.push(opening);
       const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
-      return { state: withPeriod(state, target), logPosition: horizon, horizon, latest, prefix, boundary, fold: foldIn(target), ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
+      return { state: withPeriod(state, target), logPosition: horizon, horizon, latest, prefix, boundary, fold: foldIn(target), misses: missesWith(entries, def.by, id, tagsOf(spec, target)), ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
     });
 
   return {
@@ -331,8 +346,8 @@ export const defineModel = <S, const By extends string, Scope extends object = {
   // Default tag key that binds an event to this model's id (e.g. "wallet_id"). Every event the model handles must carry it (or the keys its `by` option names).
   readonly by: By;
   readonly initial: () => S;
-  // Extra tags that narrow the non-lifecycle events to a slice (e.g. a year/month period). They are not checked against the events: a command usually adds
-  // them when it appends (`extraTags`), not the event's own `tags`.
+  // Extra tags that narrow the non-lifecycle events to a slice (e.g. a year/month period). A command usually adds them when it appends (`extraTags`),
+  // not the event's own `tags`, so the type checker cannot see them; the executor checks them on the command's own events (Loaded.misses).
   readonly scope?: (scope: Scope) => Record<string, TagValue>;
 }): ModelBuilder<S, Scope, By> => {
   const build = (entries: ReadonlyArray<OnEntry<S>>, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope, By> => {
@@ -382,7 +397,8 @@ export const defineModel = <S, const By extends string, Scope extends object = {
           logPosition: r.logPosition,
           horizon: r.horizon,
           latest: r.latest,
-          fold: foldWith(entries, query, args.id)
+          fold: foldWith(entries, query, args.id),
+          misses: missesWith(entries, def.by, args.id, scopeTags)
         });
         return {
           query,
@@ -433,6 +449,7 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
         return {
           state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never,
           fold: fold as never,
+          misses: (event: AppendEvent) => loaded.flatMap(([, l]) => l.misses?.(event) ?? []),
           logPosition: horizon,
           horizon,
           latest,

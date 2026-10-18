@@ -63,7 +63,7 @@ returning `emit`, `noop` or `fail`, and `defineView().on()`. Around it, four thi
 
 **What the type checker can know, it checks.**
 - **A model's tag.** `defineModel` keeps `by` as a literal type, and `.on` and `.lifecycle` accept only an event whose declared tags include it, or every key `{ by: [...] }` names. The compiler says `this event does not carry the tag "…" the model binds through`.
-  - Tags a command adds at append time are not checked, because they are not in the event's own `tags`: `extraTags`, which a model's `scope` relies on.
+  - Tags a command adds at append time (`extraTags`, which a model's `scope` and `.period` rely on) are not in the event's own `tags`, so the type checker cannot see them. They are checked when the command appends instead: an event its own model handles, about the model's entity, must carry the tags the model reads it by (its scope, the period it decided in), or the write is refused as a defect before anything is appended (`Loaded.misses`).
   - Keys that are not known exactly (a `by` held in a variable typed `string`) cannot be checked, and are accepted.
 - **`byModel()`.** It requires `model` and refuses `consistency` ([ADR-0034](0034-a-repeat-must-be-the-same-request.md)).
 - **A wrong value.** A string where `idempotentBy` expects a query or `byModel()` gets a message naming the two forms.

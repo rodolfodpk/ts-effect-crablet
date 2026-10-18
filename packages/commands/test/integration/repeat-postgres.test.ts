@@ -119,3 +119,23 @@ describe("byModel() is checked on every write (ADR-0034, real Postgres)", () => 
     assert.equal(rows.length, 0, "nothing appended");
   });
 });
+
+describe("a command's events must be read back by its own model (ADR-0037, real Postgres)", () => {
+  it("an event its scoped model handles, about its entity, without the scope's tag is refused before anything is appended", { timeout: 30_000 }, async () => {
+    const Logged = defineEvent("RPG_Logged", { schema: Schema.Struct({ deskId: Schema.String, entryId: Schema.String }), tags: (d) => ({ desk_id: d.deskId, entry_id: d.entryId }) });
+    const DeskMonth = defineModel({ by: "desk_id", initial: () => 0, scope: (s: { month: number }) => ({ month: s.month }) }).on(Logged, (n) => n + 1);
+    const Log = defineCommand({
+      name: "rpg_log",
+      input: Schema.Struct({ deskId: Schema.String, entryId: Schema.String }),
+      model: (c) => DeskMonth.of({ id: c.deskId, month: 10 }),
+      idempotentBy: (c) => Logged.where({ entry_id: c.entryId }),
+      // forgets the month its model reads it by
+      decide: (_, c) => emit(Logged(c))
+    });
+    const deskId = crypto.randomUUID();
+    const exit = await runExit(Effect.flatMap(CommandExecutor, (x) => x.run(Log, { deskId, entryId: "e1" })));
+    assert.ok(Exit.isFailure(exit), "refused");
+    const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT 1 FROM crablet_events WHERE tags @> ARRAY[$1]::text[]", [`desk_id=${deskId}`])));
+    assert.equal(rows.length, 0, "nothing appended");
+  });
+});

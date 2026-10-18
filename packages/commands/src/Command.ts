@@ -274,6 +274,22 @@ export const defineCommand = <
       if (decision._tag === "Noop") return CD.noOp(decision.reason, markerOf(loaded?.latest));
       if (decision.events.length === 0) return CD.noOp("NO_EVENTS", markerOf(loaded?.latest));
 
+      // An event the command's own model handles, about its entity, must carry the tags the model reads it by (its scope, the period it decided
+      // in): otherwise the next load, and the boundary, would miss it (ADR-0037). Nothing is appended.
+      if (loaded?.misses !== undefined) {
+        for (const event of decision.events) {
+          const missing = loaded.misses(event);
+          if (missing.length > 0) {
+            return yield* Effect.die(
+              new Error(
+                `command "${def.name}": its model reads ${event.type} by the tags ${missing.join(", ")}, which the event does not carry; the next load, ` +
+                  `and the boundary, would miss it. Add them when building it (in a model with a period, ${event.type}(data, state.period.tags)). Nothing was appended.`
+              )
+            );
+          }
+        }
+      }
+
       // byModel() claims that the model shows the request was done, and `decide` answers its repeat (ADR-0034). Checked on every write, in memory:
       // after the command's own events, the same request must be answered `noop(...)`. If not, a retry would append again (or fail where it
       // succeeded), so nothing is appended.
