@@ -26,7 +26,7 @@ export const SendWelcomeNotification = defineCommand({
 ## 2. The handler
 
 `defineAutomation(name, command)` binds the command, and `.on(Event, handler)` says which event wakes it: the handler maps the event's data to the command's
-input, one request, an array of them, or `undefined` for none. The event is read through its own definition, so an unreadable one is a typed failure
+input, one request, an array of them, or `undefined` for none (for a command whose input is itself an array, return a list of inputs). The event is read through its own definition, so an unreadable one is a typed failure
 recorded against the automation rather than a wrong action. The handler is pure: if deciding needs state, the command reads it (`model`, `resolve`), where
 it is consistent. Building the input from the trigger also makes a redelivery the same request.
 

@@ -13,7 +13,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 //   - a consumer that keeps the order it receives can skip anything at or below the last (transactionId, position) it applied, saved together with
 //     what it applied. Not `position` alone: a later event can have a smaller position. Not `eventId`: it is an id, not an order;
 //   - a consumer that does not keep the order keeps the set of `eventId`s it has seen.
-// (A repeat is accepted for the outbox; an automation, by contrast, must be idempotent - see automationHandlerOf.)
+// (A repeat is accepted for the outbox; an automation, by contrast, must be idempotent - see defineAutomation.)
 export interface OutboxPublisher<E = unknown> {
   readonly name: string;
   readonly preferredMode?: "batch" | "individual";

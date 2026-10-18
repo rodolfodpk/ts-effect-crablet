@@ -41,7 +41,7 @@ returning `emit`, `noop` or `fail`, and `defineView().on()`. Around it, four thi
 - **Models, views and automations are all declared this way.** A handler gets the event's decoded data (and a `ctx` with the stored event, its position and its tags) and returns data:
   - a model returns its next state;
   - a view returns its operations;
-  - an automation returns the command's input: one, several, or `undefined` for none.
+  - an automation returns the command's input: one, several, or `undefined` for none. When the input is itself an array, only a list of inputs is accepted, so one input is never taken for several.
 - **What each one reads comes from its `.on` handlers**, so the selection cannot drift from what it does.
 - **Each event is decoded with its own definition**, and one that cannot be decoded fails, never skipped ([ADR-0017](0017-event-evolution-by-compatibility.md)).
 - **A view or an automation with no `.on` is refused** when its processor is built.
@@ -64,6 +64,7 @@ returning `emit`, `noop` or `fail`, and `defineView().on()`. Around it, four thi
 **What the type checker can know, it checks.**
 - **A model's tag.** `defineModel` keeps `by` as a literal type, and `.on` and `.lifecycle` accept only an event whose declared tags include it, or every key `{ by: [...] }` names. The compiler says `this event does not carry the tag "…" the model binds through`.
   - Tags a command adds at append time are not checked, because they are not in the event's own `tags`: `extraTags`, which a model's `scope` relies on.
+  - Keys that are not known exactly (a `by` held in a variable typed `string`) cannot be checked, and are accepted.
 - **`byModel()`.** It requires `model` and refuses `consistency` ([ADR-0034](0034-a-repeat-must-be-the-same-request.md)).
 - **A wrong value.** A string where `idempotentBy` expects a query or `byModel()` gets a message naming the two forms.
 

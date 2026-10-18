@@ -1,4 +1,3 @@
-import type { ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import { WalletBalanceView } from "./WalletBalanceViewProjector.ts";
 import { WalletSummaryView } from "./WalletSummaryViewProjector.ts";
 import { WalletTransactionView } from "./WalletTransactionViewProjector.ts";
@@ -9,6 +8,6 @@ export const walletViews = [WalletBalanceView, WalletTransactionView, WalletSumm
 
 // Per-view runtime settings, by name: deployment settings, kept out of the views' definitions. These match the global defaults this app also
 // uses; they are here to show the mechanism.
-export const walletViewOverrides: Readonly<Record<string, ProcessorRuntimeOverrides>> = {
+export const walletViewOverrides = {
   "wallet-statement-view": { pollingIntervalMs: 1000, batchSize: 100 }
 };
