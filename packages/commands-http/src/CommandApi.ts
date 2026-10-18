@@ -5,9 +5,9 @@ import type { SqlError } from "effect/sql/SqlError";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { Command } from "@crablet/commands/Command";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
-import type { InvalidInput, KindedError } from "@crablet/commands/Errors";
+import type { IdempotencyMismatch, InvalidInput, KindedError } from "@crablet/commands/Errors";
 import type { AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
 // body is the command's own input schema, plus `GET {basePath}` listing the exposed commands with their
@@ -36,12 +36,14 @@ export const CommandCreatedResponse = Schema.Struct({
   marker: Schema.String
 }).annotate({ httpApiStatus: 201, identifier: "CommandCreated" } as never);
 
+// "Already done": a repeat of a request, or a command that had nothing to do. The marker points at the earlier write (ADR-0034), so a client whose
+// first answer was lost can still read its own write; it is null only when there is nothing to point at (a no-op of a command with no model).
 export const CommandIdempotentResponse = Schema.Struct({
   status: Schema.Literal("IDEMPOTENT"),
   reason: Schema.NullOr(Schema.String),
-  lastPosition: Schema.Null,
-  lastTransactionId: Schema.Null,
-  marker: Schema.Null
+  lastPosition: Schema.NullOr(Schema.String),
+  lastTransactionId: Schema.NullOr(Schema.String),
+  marker: Schema.NullOr(Schema.String)
 }).annotate({ httpApiStatus: 200, identifier: "CommandIdempotent" } as never);
 
 export const ExposedCommandsResponse = Schema.Struct({
@@ -58,6 +60,7 @@ const asProblem = <S extends Schema.Top>(schema: S) => schema.pipe(HttpApiSchema
 export const BadRequestProblem = asProblem(CommandApiBadRequest);
 const ConflictProblem = asProblem(CommandConflict);
 const UnexpectedProblem = asProblem(CommandApiUnexpectedError);
+const IdempotencyMismatchProblem = asProblem(CommandIdempotencyMismatch);
 
 export const executeEndpointName = (commandType: string) => `execute_${commandType}`;
 
@@ -67,7 +70,7 @@ export const executeEndpointName = (commandType: string) => `execute_${commandTy
 // registers its commands (`Implementations` below): it could only ever surface as a generic 500.
 // `EventDecodingError`: a stored event its definition cannot read (ADR-0017). It is presented as the generic 500 (the response does not say which event: the
 // log line written where it was found does, with its position and type).
-export type Presentable = KindedError | AppendTooLarge | Conflict | SqlError | EventDecodingError | InvalidInput;
+export type Presentable = KindedError | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError | EventDecodingError | InvalidInput;
 
 // ---- the group's STATIC type (the loop in `makeCommandApiGroup` builds exactly this) ----
 //
@@ -79,7 +82,7 @@ export type Presentable = KindedError | AppendTooLarge | Conflict | SqlError | E
 // per command).
 
 type ProblemsOf<Es> = Es extends ReadonlyArray<infer E> ? ProblemBody<E> : never;
-type CommandErrorSchemas<Es> = typeof BadRequestProblem | typeof ConflictProblem | typeof UnexpectedProblem | ProblemsOf<Es>;
+type CommandErrorSchemas<Es> = typeof BadRequestProblem | typeof ConflictProblem | typeof IdempotencyMismatchProblem | typeof UnexpectedProblem | ProblemsOf<Es>;
 type CommandEndpoint<BasePath extends string, K extends AnyCommandContract> = HttpApiEndpoint.HttpApiEndpoint<
   `execute_${K["name"]}`,
   "POST",
@@ -119,7 +122,7 @@ export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C
       HttpApiEndpoint.post(executeEndpointName(contract.name), `${basePath}/${contract.name}` as `/${string}`, {
         payload: contract.input as unknown as Schema.Top,
         success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
-        error: [BadRequestProblem, ConflictProblem, UnexpectedProblem, ...contract.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
+        error: [BadRequestProblem, ConflictProblem, IdempotencyMismatchProblem, UnexpectedProblem, ...contract.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
       })
     );
   }
@@ -159,6 +162,13 @@ export const checkImplementations = (
       if (implementation.name !== contract.name) problems.push(`the command registered as "${contract.name}" is named "${implementation.name}"`);
       if (implementation.input !== contract.input) problems.push(`"${contract.name}": the command's input is not the contract's (build it with defineCommand({ ...Contract, ... }))`);
       if (implementation.errors !== contract.errors) problems.push(`"${contract.name}": the command's declared errors are not the contract's (build it with defineCommand({ ...Contract, ... }))`);
+      // A client retries a request whose answer it lost; a command that cannot recognise the repeat would apply it twice (ADR-0034).
+      if (!implementation.idempotent) {
+        problems.push(
+          `"${contract.name}": the command does not say how a repeat is recognised, and a client retries a request whose answer it lost. Declare idempotentBy: a query on a request id ` +
+            `the client sends (an effect that can happen many times, like a deposit), or "decide" when decide already answers a repeat (an effect that happens once per key, like opening a wallet)`
+        );
+      }
     }
   }
   for (const name of Object.keys(implementations)) if (!names.has(name)) problems.push(`"${name}" is implemented but has no contract`);

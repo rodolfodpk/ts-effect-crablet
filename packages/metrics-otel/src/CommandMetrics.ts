@@ -14,5 +14,9 @@ export const handle: OperationMetrics = {
 // Tag with ("command_type", commandType).
 export const idempotentDuplicates = Metric.counter("crablet.command.idempotent_duplicates");
 
+// A request id reused by a DIFFERENT request (IdempotencyMismatch, ADR-0034): a client bug, or an idempotency key that is too broad. Tag with
+// ("command_type", commandType).
+export const idempotencyMismatches = Metric.counter("crablet.command.idempotency_mismatches");
+
 // Incremented each time a command is re-run after a `Conflict` (stale decision), tagged by command_type.
 export const conflictRetries = Metric.counter("crablet.command.conflict_retries");

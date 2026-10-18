@@ -9,7 +9,8 @@ import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command } from "./Command.ts";
 import { recordCommand } from "./CommandAudit.ts";
 import type * as CD from "./CommandDecision.ts";
-import type { InvalidInput } from "./Errors.ts";
+import { IdempotencyMismatch, type InvalidInput } from "./Errors.ts";
+import { isSameRequest } from "./Repeat.ts";
 import * as ExecutionResultNS from "./ExecutionResult.ts";
 import type { ExecutionResult } from "./ExecutionResult.ts";
 
@@ -33,7 +34,7 @@ export interface CommandExecutorService {
     input: unknown
   ) => Effect.Effect<
     ExecutionResult,
-    Err | InvalidInput | AppendTooLarge | Conflict | SqlError,
+    Err | InvalidInput | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
     EventStore | CommandAuditStore | SqlClient.SqlClient
   >;
   readonly runDecoded: <In, Err>(
@@ -41,7 +42,7 @@ export interface CommandExecutorService {
     input: In
   ) => Effect.Effect<
     ExecutionResult,
-    Err | AppendTooLarge | Conflict | SqlError,
+    Err | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
     EventStore | CommandAuditStore | SqlClient.SqlClient
   >;
 }
@@ -65,17 +66,21 @@ class RolledBackIdempotent {
 // against a since-changed state is a duplicate, not a spurious conflict.
 export const runHandler = <T, E>(
   handler: CommandHandler<T, E>,
-  command: T
-): Effect.Effect<ExecutionResult, E | AppendTooLarge | Conflict | SqlError, EventStore> =>
+  command: T,
+  // The command's name, for the message of an `IdempotencyMismatch` found at the append.
+  name = "command"
+): Effect.Effect<ExecutionResult, E | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError, EventStore> =>
   Effect.gen(function* () {
     const eventStore = yield* EventStore;
     const decision = yield* handler(command);
 
     if (decision._tag === "NoOp") {
-      return ExecutionResultNS.idempotent(decision.reason ?? "DUPLICATE_OPERATION");
+      return ExecutionResultNS.idempotent(decision.reason ?? "DUPLICATE_OPERATION", decision.marker ?? null);
     }
 
-    const outcome = yield* eventStore.append(decision.events, decision.condition).pipe(
+    const fingerprint = decision.requestFingerprint ?? null;
+    const causationId = yield* CorrelationContext.causationId;
+    const outcome = yield* CorrelationContext.withRequestFingerprint(fingerprint)(eventStore.append(decision.events, decision.condition)).pipe(
       Effect.map((appended) => ({ lastPosition: appended.lastPosition, transactionId: appended.transactionId })),
       Effect.catchTag("Conflict", (conflict) =>
         // A lifecycle-guard decision reports its conflict as a guard conflict.
@@ -88,11 +93,19 @@ export const runHandler = <T, E>(
             : conflict
         )
       ),
-      // the idempotency query matched at the append: the operation was already done
-      Effect.catchTag("Duplicate", () => Effect.succeed("idempotent" as const))
+      // The idempotency query matched at the append (a request that committed between the pre-check and here): the same request is "already
+      // done", with the earlier write's marker; another request under the same key is refused (ADR-0034).
+      Effect.catchTag("Duplicate", (duplicate) =>
+        isSameRequest(duplicate, fingerprint, causationId)
+          ? Effect.succeed({ repeat: duplicate.latest } as const)
+          : Effect.fail(new IdempotencyMismatch({
+              command: name,
+              message: `command "${name}": this request's key was already used by a different request; the earlier one stands and this one was not applied`
+            }))
+      )
     );
 
-    return outcome === "idempotent" ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION") : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
+    return "repeat" in outcome ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION", outcome.repeat) : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
   });
 
 // Re-run `attempt` after a `Conflict`, up to `retries` more times (`onRetry` runs before each re-run).
@@ -136,7 +149,7 @@ export const CommandExecutorLive = Layer.effect(
       handler: CommandHandler<T, E>
     ): Effect.Effect<
       ExecutionResult,
-      E | AppendTooLarge | Conflict | SqlError,
+      E | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
       EventStore | CommandAuditStore | SqlClient.SqlClient
     > =>
       // sql.withTransaction(effect) runs `effect` inside one Postgres transaction, committing on
@@ -153,7 +166,7 @@ export const CommandExecutorLive = Layer.effect(
         // `requireFreshTransaction`: the append must be this transaction's first write, so its events sort after everything the command read (ADR-0033).
         Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(CorrelationContext.requireFreshTransaction(
           Effect.gen(function* () {
-            const result = yield* runHandler(handler, command);
+            const result = yield* runHandler(handler, command, definition.name);
             // An idempotent result (a repeat, or a decision that does nothing) has done nothing, so nothing of this attempt may stay: roll the transaction back. A command cannot append
             // before its decision (`resolve` only reads), so today there is nothing to undo; the rollback keeps it that way if that ever changes, because an idempotent result writes no
             // audit row and anything committed would have no command behind it. The failure is caught just below, outside the wake-up.
@@ -174,7 +187,12 @@ export const CommandExecutorLive = Layer.effect(
               { command_type: definition.name }
             );
             return Metric.update(taggedCounter, 1);
-          })
+          }),
+          Effect.tapError((error) =>
+            error instanceof IdempotencyMismatch
+              ? Metric.update(Metric.withAttributes(CommandMetrics.idempotencyMismatches, { command_type: definition.name }), 1)
+              : Effect.void
+          )
         ),
         [["command_type", definition.name]]
       );
@@ -191,7 +209,7 @@ export const CommandExecutorLive = Layer.effect(
         Effect.annotateLogs({ command: command.name })
       ) as Effect.Effect<
         ExecutionResult,
-        Err | AppendTooLarge | Conflict | SqlError,
+        Err | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
         EventStore | CommandAuditStore | SqlClient.SqlClient
       >;
 

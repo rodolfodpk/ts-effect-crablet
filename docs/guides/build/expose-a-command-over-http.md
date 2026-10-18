@@ -33,6 +33,16 @@ Each error class carries a `kind` (`not_found`, `invalid`, `conflict`, `forbidde
 
 Spread the contract into `defineCommand` and add the decision ([tutorial step 2](../../tutorial/02-postgres-and-the-second-rule.md)).
 
+**Say how a repeat is recognised.** A client retries a request whose answer it lost, so the server refuses, when it starts, a command with no `idempotentBy`
+([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md)):
+
+- an effect that can happen many times (a deposit, a transfer): a query on a request id the client sends, `idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId })`.
+  A repeat is `200` "already done"; the same id with a different body is `422` `IDEMPOTENCY_MISMATCH`;
+- an effect that happens once per key (define course `math`, subscribe `ann` to it): `idempotentBy: "decide"`, and `decide` answers the repeat with `noop(...)`.
+
+Either way a repeat answers with the earlier write's marker. Check the answer in a test with `assertRepeatHarmless(Command, input, history?)` from
+`@crablet/commands/testing/Scenario`.
+
 ## 3. List the contracts
 
 <!-- file: examples/course-enrolment-app/src/CourseApi.ts#expose -->

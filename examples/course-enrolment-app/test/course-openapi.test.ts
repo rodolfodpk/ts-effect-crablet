@@ -55,13 +55,13 @@ describe("course API OpenAPI document", () => {
 
   test("subscribe documents exactly its declared errors, typed with their own fields", () => {
     const statuses = Object.keys(operation("subscribe").responses).sort();
-    expect(statuses).toEqual(["200", "201", "400", "404", "409", "500"]); // CourseNotFound 404; CourseFull / StudentAtLimit 409
+    expect(statuses).toEqual(["200", "201", "400", "404", "409", "422", "500"]); // CourseNotFound 404; CourseFull / StudentAtLimit 409; 422 is the framework's (a reused request id)
     expect(Object.keys(spec.components.schemas.CourseFullProblem.properties.fields.properties).sort()).toEqual(["capacity", "courseId"]);
     expect(Object.keys(spec.components.schemas.StudentAtLimitProblem.properties.fields.properties).sort()).toEqual(["limit", "studentId"]);
   });
 
   test("define_course has no domain errors of its own (a repeat is the framework's 409)", () => {
-    expect(Object.keys(operation("define_course").responses).sort()).toEqual(["200", "201", "400", "409", "500"]);
+    expect(Object.keys(operation("define_course").responses).sort()).toEqual(["200", "201", "400", "409", "422", "500"]);
   });
 
   test("no input renders wrongly, and the document has no 'number or Infinity' fields", () => {

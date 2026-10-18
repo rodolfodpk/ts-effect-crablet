@@ -147,7 +147,7 @@ A read with no parameters waits for **everything committed when it arrived**, so
   `?consistency=bounded` waits up to the timeout and then answers anyway, marked with the header `Crablet-Consistency: stale`.
 - **The view did not catch up in time** (default 5 s, `?waitTimeout=<ms>` up to 30 s) on a strict read: a `503` problem with `Retry-After`, naming the views that are behind.
   It is never a stale answer: a strict read is either right or refused. (A view that is `FAILED` is a `503` too, without `Retry-After`: retrying will not help.)
-- **A repeat** appended nothing, so its response has `"marker":null`; read with `latest`.
+- **A repeat** appended nothing, but its response carries the earlier write's marker: read with it, as with any write ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)).
 - **A bad marker**, or one beyond the end of the log, is a `400` *before* anything waits:
 
 ```bash

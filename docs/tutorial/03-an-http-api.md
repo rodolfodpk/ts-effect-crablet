@@ -62,10 +62,10 @@ curl -s -X POST localhost:8080/api/commands/subscribe \
 
 ```
 {"status":"CREATED","reason":null,"lastPosition":"11","lastTransactionId":"11","marker":"11:11"}
-{"status":"IDEMPOTENT","reason":"ALREADY_SUBSCRIBED","lastPosition":null,"lastTransactionId":null,"marker":null}
+{"status":"IDEMPOTENT","reason":"ALREADY_SUBSCRIBED","lastPosition":"11","lastTransactionId":"11","marker":"11:11"}
 ```
 
-The second call is a repeat: `200` and "already done", with nothing written (so no position and no marker). `marker` is the position and the transaction id as one string, `"<lastTransactionId>:<lastPosition>"`. Now fill the course and ask for a third seat:
+The second call is a repeat: `200` and "already done", with nothing written. It answers with the **first** call's marker, so a client whose first answer was lost can still read its own write ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)). `marker` is the position and the transaction id as one string, `"<lastTransactionId>:<lastPosition>"`. Now fill the course and ask for a third seat:
 
 ```bash
 curl -s -X POST localhost:8080/api/commands/subscribe \

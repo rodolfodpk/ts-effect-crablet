@@ -13,6 +13,7 @@ exporter, so wire one in your application ([See it on a dashboard](../guides/ope
 | `crablet.command.handle.successes`, `.failures`, `.duration` | commands handled, failed, and how long each took |
 | `crablet.command.conflict_retries` | commands re-run after a `Conflict`: contention between overlapping boundaries |
 | `crablet.command.idempotent_duplicates` | repeats answered as "already done" |
+| `crablet.command.idempotency_mismatches` | request ids reused by a different request, refused with 422 (ADR-0034): a client bug, or an `idempotentBy` that is too broad |
 | `crablet.period.clock_behind` | a command found a period open that is later than its clock says ([ADR-0025](../adr/0025-the-framework-turns-the-period.md)) |
 
 ## Event store

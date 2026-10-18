@@ -110,16 +110,18 @@ describe("the page, driven against the real course app", () => {
     assert.ok(AsyncData.isSuccess(done) && readBackNote(done.data.readBack) === "Read back with this write's marker, so the numbers below include it.");
   });
 
-  it("a repeat is 'already subscribed' and has no marker (nothing was appended), so the page reads back with `latest`", { timeout: 30_000 }, async () => {
+  it("a repeat is 'already subscribed' and carries the first subscription's marker, so the page reads back with it", { timeout: 30_000 }, async () => {
     const course = `c-${uid()}`;
     const student = `ann-${uid()}`;
     let model = await defineCourse(init().model, course, 3);
     model = await subscribe(model, student, course);
+    const first = model.subscribe.result;
+    assert.ok(AsyncData.isSuccess(first));
     model = await subscribe(model, student, course);
     const done = model.subscribe.result;
     assert.ok(AsyncData.isSuccess(done));
-    assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason, done.data.outcome.marker], ["IDEMPOTENT", "ALREADY_SUBSCRIBED", null]);
-    assert.strictEqual(done.data.readBack, "latest");
+    assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason, done.data.outcome.marker], ["IDEMPOTENT", "ALREADY_SUBSCRIBED", first.data.outcome.marker]);
+    assert.strictEqual(done.data.readBack, "with_marker");
   });
 
   it("every refusal arrives as the problem the page understands, with the fields it shows", { timeout: 60_000 }, async () => {

@@ -51,11 +51,11 @@ describe("the API description of the command routes", () => {
 
   test("failures: the framework's own on every route, a command's declared errors only on its own", () => {
     const statuses = (name: string) => Object.keys(post(name).responses).sort();
-    // open: bad payload 400, stale decision 409, unexpected 500
-    expect(statuses("open")).toEqual(["200", "201", "400", "409", "500"]);
+    // open: bad payload 400, stale decision 409, a request id reused with a different body 422, unexpected 500
+    expect(statuses("open")).toEqual(["200", "201", "400", "409", "422", "500"]);
     // deposit adds WalletNotFound (404); withdraw adds it and InsufficientFunds (kind invalid -> 400)
-    expect(statuses("deposit")).toEqual(["200", "201", "400", "404", "409", "500"]);
-    expect(statuses("withdraw")).toEqual(["200", "201", "400", "404", "409", "500"]);
+    expect(statuses("deposit")).toEqual(["200", "201", "400", "404", "409", "422", "500"]);
+    expect(statuses("withdraw")).toEqual(["200", "201", "400", "404", "409", "422", "500"]);
   });
 
   test("problems are application/problem+json; a declared error is its own typed component", () => {
@@ -124,11 +124,11 @@ describe("a command route (it answers once the command has committed, with the w
     expect(description.components.schemas.ViewWaitResult).toBeUndefined();
   });
 
-  test("the write's marker is a string on a created response and null on an idempotent one", () => {
+  test("the write's marker is a string on a created response, and on an idempotent one the earlier write's marker or null (ADR-0034)", () => {
     expect(description.components.schemas.CommandCreated.properties.marker.type).toBe("string");
     const idempotent = description.components.schemas.CommandIdempotent;
     expect(idempotent.required).toContain("marker");
-    expect(idempotent.properties.marker.type).toBe("null");
+    expect(idempotent.properties.marker).toEqual({ anyOf: [{ type: "string" }, { type: "null" }] });
     expect(Object.keys(idempotent.properties)).toEqual(["status", "reason", "lastPosition", "lastTransactionId", "marker"]);
   });
 });

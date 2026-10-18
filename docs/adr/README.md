@@ -27,10 +27,11 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0004: Commit-time serialization failures are handled via Cause inspection, not typed errors](0004-commit-time-failures-via-cause-inspection.md) - accepted
 - [ADR-0002: Single EventStore implementation via Effect's ambient transaction context](0002-single-eventstore-implementation.md) - accepted
 - [ADR-0008: No command-type auto-discovery - handlers passed explicitly at every call site](0008-no-command-type-auto-discovery.md) - accepted
-- [ADR-0027: An id that is already taken is decided in `decide`, not flagged with `onDuplicate`](0027-a-taken-id-is-decided-not-flagged.md) - accepted
+- [ADR-0027: An id that is already taken is decided in `decide`, not flagged with `onDuplicate`](0027-a-taken-id-is-decided-not-flagged.md) - accepted; a match from a different request is no longer "already done" (0034)
 - [ADR-0029: A command's lookup cannot write, and what it reads is protected](0029-a-lookup-cannot-write-and-is-protected.md) - accepted
 - [ADR-0030: One polling config, with defaults; no `enabled`](0030-one-polling-config.md) - accepted
 - [ADR-0031: A package's API and its plumbing are separate, and the line is enforced](0031-api-and-plumbing-are-separate.md) - accepted
+- [ADR-0034: A repeat must be the same request, and every command says how it recognises one](0034-a-repeat-must-be-the-same-request.md) - **accepted**: a reused key with another body is a 422; a repeat carries a marker
 
 ## Reading, delivery and the pollers
 

@@ -49,6 +49,9 @@ export interface Loaded<S> {
   readonly logPosition: LogPosition;
   // A cursor before anything this load could have missed (see `ProjectionResult.horizon`); what `all` builds its cursor from.
   readonly horizon: LogPosition;
+  // The newest event the load read, settled or not (ProjectionResult.latest): an upper bound on what `decide` saw. A decision that answers
+  // "already done" from the model returns it as its marker (ADR-0034).
+  readonly latest: LogPosition;
   // Only a model with a period (`.period`) sets these three. `prefix`: the events that turn the period (close the old one, open the new one), appended in the same append as the
   // command's own events and only if the command appends any. `boundary`: the query the append is conditioned on, when it is not the model's static `query` (a turn reads more than it
   // declares). `guard`: what a command that only needs to commute with itself must still conflict with - here, the closing of the period it decided in.
@@ -216,7 +219,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         };
       }
     };
-    return Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), (r) => ({ ...r.state, query, logPosition: r.logPosition, horizon: r.horizon }));
+    return Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), (r) => ({ ...r.state, query, logPosition: r.logPosition, horizon: r.horizon, latest: r.latest }));
   };
 
   const load = (eventStore: EventStoreService, id: string) =>
@@ -227,10 +230,11 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const target = spec.fieldsAt(now);
       const withPeriod = (s: S, fields: F) => ({ ...(s as object), period: info(fields) }) as S & { readonly period: PeriodInfo<F> };
       const stamp = { now } as const;
-      const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
+      const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition; latest: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
         state: withPeriod(m.s, fields),
         logPosition: m.logPosition,
         horizon: m.horizon,
+        latest: m.latest,
         boundary: m.query,
         guard: closingQuery(id, fields),
         ...stamp
@@ -259,18 +263,20 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       let carry = first.s;
       let boundary = unionOf(first.query, trackingQuery(id));
       let horizon = LogPositionNS.earliest(first.horizon, track.horizon);
+      let latest = LogPositionNS.latest(first.latest, track.latest);
       const prefix: Array<AppendEvent> = [];
       if (current !== null) {
         const old = yield* read(eventStore, id, current);
         carry = old.s;
         boundary = unionOf(boundary, old.query);
         horizon = LogPositionNS.earliest(horizon, old.horizon);
+        latest = LogPositionNS.latest(latest, old.latest);
         prefix.push(requireTags(closed(config.close(old.s, context(current))), closed.type));
       }
       const opening = requireTags(opened(config.open(carry, context(target))), opened.type);
       prefix.push(opening);
       const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
-      return { state: withPeriod(state, target), logPosition: horizon, horizon, prefix, boundary, ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
+      return { state: withPeriod(state, target), logPosition: horizon, horizon, latest, prefix, boundary, ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
     });
 
   return {
@@ -334,10 +340,11 @@ export const defineModel = <S, Scope extends object = {}>(def: {
             return entry ? entry.apply(state, event.data, { event, id: args.id }) : state;
           }
         };
-        const loaded = (r: { readonly state: S; readonly logPosition: LogPosition; readonly horizon: LogPosition }): Loaded<S> => ({
+        const loaded = (r: { readonly state: S; readonly logPosition: LogPosition; readonly horizon: LogPosition; readonly latest: LogPosition }): Loaded<S> => ({
           state: r.state,
           logPosition: r.logPosition,
-          horizon: r.horizon
+          horizon: r.horizon,
+          latest: r.latest
         });
         return {
           query,
@@ -376,6 +383,7 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
         );
         const horizons = loaded.map(([, l]) => l.horizon);
         const horizon = horizons.length === 0 ? LogPositionNS.zero() : horizons.reduce((a, b) => LogPositionNS.earliest(a, b));
+        const latest = loaded.length === 0 ? LogPositionNS.zero() : loaded.map(([, l]) => l.latest).reduce((a, b) => LogPositionNS.latest(a, b));
         // Members with a period bring the events that turn it, the boundary they were read with and the guard of the period they decided in; the whole carries all of them.
         const entriesWithPeriod = Object.entries(members).map(([key, member]) => [key, member, loaded.find(([k]) => k === key)![1]] as const);
         const prefix = loaded.flatMap(([, l]) => l.prefix ?? []);
@@ -385,6 +393,7 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
           state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never,
           logPosition: horizon,
           horizon,
+          latest,
           ...(loaded.find(([, l]) => l.now !== undefined)?.[1].now ? { now: loaded.find(([, l]) => l.now !== undefined)![1].now } : {}),
           ...(prefix.length > 0 ? { prefix } : {}),
           ...(boundary !== undefined ? { boundary } : {}),

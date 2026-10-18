@@ -19,6 +19,7 @@ import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import type { AutomationHandler } from "../../src/AutomationHandler.ts";
 import { executeCommand } from "../../src/AutomationDecision.ts";
+import { IdempotencyMismatch } from "@crablet/commands/Errors";
 import {
   checkAutomationIdempotency,
   type IdempotencyBackend,
@@ -98,6 +99,7 @@ const postgresBackend: IdempotencyBackend = {
     );
     if (Exit.isSuccess(exit)) return { _tag: "done", wasIdempotent: exit.value.wasIdempotent, reason: exit.value.reason } as const;
     const failure = exit.cause.reasons.find(Cause.isFailReason);
+    if (failure?.error instanceof IdempotencyMismatch) return { _tag: "mismatch" } as const;
     return { _tag: "failed", detail: failure === undefined ? Cause.pretty(exit.cause) : JSON.stringify(failure.error) } as const;
   },
   count: () =>

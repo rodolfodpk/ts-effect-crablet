@@ -10,7 +10,9 @@ import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
 import * as CD from "./CommandDecision.ts";
 import type { CommandHandler } from "./CommandExecutor.ts";
-import { InvalidInput, inputIssuesOf, type AnyDomainErrorClass, type KindedError } from "./Errors.ts";
+import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
+import { IdempotencyMismatch, InvalidInput, inputIssuesOf, type AnyDomainErrorClass, type KindedError } from "./Errors.ts";
+import { fingerprintOf, isSameRequest } from "./Repeat.ts";
 import type { ModelInstance } from "./Model.ts";
 
 // A command is one declaration of "what happens when this request arrives":
@@ -20,7 +22,7 @@ import type { ModelInstance } from "./Model.ts";
 //       input: Schema.Struct({ walletId: Schema.String, depositId: Schema.String, amount: Schema.Positive }),
 //       model: (c) => WalletModel.of({ id: c.walletId, ...period }),           // state + boundary
 //       consistency: () => concurrent({ guard: WalletModel.lifecycleQuery(...) }), // optional; default strict()
-//       idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId }),   // optional
+//       idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId }),   // how a repeat is recognised (or "decide")
 //       decide: (wallet, c) =>
 //         wallet.exists ? emit(DepositMade({ ... })) : fail(new WalletNotFound({ walletId: c.walletId }))
 //     });
@@ -128,12 +130,13 @@ export interface Command<
   // Validate untrusted input against the schema. Fails with `InvalidInput`.
   readonly decodeInput: (raw: unknown) => Effect.Effect<In, InvalidInput>;
   // The compiled handler, run by the executor inside its transaction.
-  readonly handler: CommandHandler<In, Err | SqlError>;
+  readonly handler: CommandHandler<In, Err | SqlError | IdempotencyMismatch>;
   // How many times the executor re-runs the whole command (fresh transaction, fresh load) after a
   // `Conflict`, before giving up with that `Conflict`.
   readonly retries: number;
-  // Whether the command declared `idempotentBy`. An automation requires it: its batch can be handled twice (a crash, a zombie leader), and only an
-  // idempotent command makes that harmless.
+  // Whether the command declared `idempotentBy`, as a query or as "decide": whether it says how a repeat is recognised. An automation and the HTTP
+  // API require it: an automation's batch can be handled twice (a crash, a zombie leader) and a client retries a request whose answer it lost,
+  // and only a command that recognises a repeat makes that harmless.
   readonly idempotent: boolean;
 }
 
@@ -163,10 +166,15 @@ export const defineCommand = <
   // Default: `strict()` with a model, `concurrent()` without one. A model can only make a command stricter: without one, `decide` has no
   // state, so there is nothing to protect.
   readonly consistency?: (input: Schema.Schema.Type<I>, context: ResolvedContext<R>) => Consistency;
-  // "Has this exact operation already been done?" as a query, keyed on what identifies one REQUEST (a deposit id). Depends on the INPUT
-  // only, so it is checked before `resolve`/`decide` ever run: on a retry the state has moved on (e.g. the balance is already reduced), so
-  // re-deciding could wrongly fail. It is also re-checked atomically at append.
-  readonly idempotentBy?: (input: Schema.Schema.Type<I>) => QueryType;
+  // How a repeat of a request is recognised (ADR-0034). Two answers:
+  //   - a QUERY, for an effect that can legitimately happen many times (a deposit), keyed on what identifies one REQUEST (a deposit id). It
+  //     depends on the INPUT only, so it is checked before `resolve`/`decide` ever run: on a retry the state has moved on (the balance is already
+  //     reduced), so re-deciding could wrongly fail. It is re-checked atomically at append. A match from the same request is "already done",
+  //     with the earlier write's marker; a match from a DIFFERENT request (same key, another body) fails with `IdempotencyMismatch`.
+  //   - "decide", for an effect that can only happen once per key (open wallet X): the model already shows whether it happened, and `decide`
+  //     answers the repeat itself - `noop(...)` for the same request, a domain error for a different one. Nothing is looked up for it.
+  // Required for a command exposed over HTTP or run by an automation; `assertRepeatHarmless` (testing) checks the answer.
+  readonly idempotentBy?: ((input: Schema.Schema.Type<I>) => QueryType) | "decide";
   // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
   readonly decide: (state: S, input: Schema.Schema.Type<I>, context: DecideContext<R>) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
@@ -184,17 +192,28 @@ export const defineCommand = <
   const decodeInput = (raw: unknown) =>
     Effect.mapError(decode(raw, { errors: "all" }), (e) => new InvalidInput({ message: e.message, issues: inputIssuesOf(e) }));
 
+  const mismatch = new IdempotencyMismatch({
+    command: def.name,
+    message: `command "${def.name}": this request's key was already used by a different request; the earlier one stands and this one was not applied`
+  });
+
   const handler = ((input: In) =>
     Effect.gen(function* () {
       const eventStore = yield* EventStore;
 
-      // 1. Idempotency pre-check, before anything else (see `idempotentBy`).
-      const idempotency = def.idempotentBy?.(input) ?? null;
+      // 1. Idempotency pre-check, before anything else (see `idempotentBy`): a repeat of the same request is "already done", with the earlier
+      // write's marker; the same key from a different request is refused.
+      const idempotency = typeof def.idempotentBy === "function" ? def.idempotentBy(input) : null;
+      const fingerprint = idempotency !== null ? yield* fingerprintOf(def.name, def.input, input) : null;
       if (idempotency !== null) {
         if (Query.isEmpty(idempotency)) {
           return yield* Effect.die(new Error(`command "${def.name}": idempotentBy returned an empty query`));
         }
-        if (yield* eventStore.exists(idempotency)) return CD.noOp("DUPLICATE_OPERATION");
+        const duplicate = yield* eventStore.findDuplicate(idempotency);
+        if (duplicate !== null) {
+          if (!isSameRequest(duplicate, fingerprint, yield* CorrelationContext.causationId)) return yield* mismatch;
+          return CD.noOp("DUPLICATE_OPERATION", duplicate.latest);
+        }
       }
 
       // 2. Resolve (a lookup through a reader that records what it read), 3. load the model.
@@ -214,8 +233,9 @@ export const defineCommand = <
       const now = loaded?.now ?? new Date(yield* Clock.currentTimeMillis);
       const decision = def.decide(loaded?.state as S, input, { now, resolved }) as Decision<ErrorOf<D>>;
       if (decision._tag === "Fail") return yield* Effect.fail(decision.error);
-      if (decision._tag === "Noop") return CD.noOp(decision.reason);
-      if (decision.events.length === 0) return CD.noOp("NO_EVENTS");
+      // A no-op answers with the newest event the decision read: whatever made it "already done" is at or before it.
+      if (decision._tag === "Noop") return CD.noOp(decision.reason, markerOf(loaded?.latest));
+      if (decision.events.length === 0) return CD.noOp("NO_EVENTS", markerOf(loaded?.latest));
 
       // 5. Build the append: events + the condition the chosen consistency implies. A model with a period may bring the events that turn the period (`loaded.prefix`): they go in
       // this same append, ahead of the command's own, and only because the command has events of its own (a refusal, a no-op, an idempotent repeat never get here).
@@ -248,8 +268,14 @@ export const defineCommand = <
       } else {
         append = CD.commutative(...events);
       }
-      return idempotency !== null ? CD.withIdempotencyQuery(append, idempotency) : append;
-    })) as CommandHandler<In, ErrorOf<D> | RE | SqlError>;
+      return idempotency !== null ? { ...CD.withIdempotencyQuery(append, idempotency), requestFingerprint: fingerprint } : append;
+    })) as CommandHandler<In, ErrorOf<D> | RE | SqlError | IdempotencyMismatch>;
 
   return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, idempotent: def.idempotentBy !== undefined };
 };
+
+// A read position as a marker, or null when it points at nothing (the start of the log).
+const markerOf = (position: LogPosition | undefined): CD.NoOp["marker"] =>
+  position === undefined || position.position === 0n || position.transactionId === null || position.transactionId === "0"
+    ? null
+    : { position: position.position, transactionId: position.transactionId };

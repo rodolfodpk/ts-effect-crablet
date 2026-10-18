@@ -20,6 +20,15 @@ export class InvalidInput extends Data.TaggedError("InvalidInput")<{
   readonly issues?: ReadonlyArray<InputIssue>;
 }> {}
 
+// A request id (`idempotentBy`) that was already used by a DIFFERENT request: the same deposit id with another amount, say. The earlier
+// request stands; this one is refused rather than answered "already done", because it was never applied (ADR-0034). A framework error
+// like `Conflict`, not a domain error: it can only come from a command whose `idempotentBy` is a query. `message` names the command and
+// never echoes the input.
+export class IdempotencyMismatch extends Data.TaggedError("IdempotencyMismatch")<{
+  readonly message: string;
+  readonly command: string;
+}> {}
+
 // The issues of a failed decode, as data. (The Standard Schema formatter is what Effect itself uses for tools that expect
 // `{ path, message }`; a path segment is a key or an object wrapping one.)
 export const inputIssuesOf = (error: Schema.SchemaError): ReadonlyArray<InputIssue> =>

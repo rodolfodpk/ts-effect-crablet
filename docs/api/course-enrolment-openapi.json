@@ -107,6 +107,16 @@
               }
             }
           },
+          "422": {
+            "description": "CommandIdempotencyMismatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandIdempotencyMismatchEncoded"
+                }
+              }
+            }
+          },
           "500": {
             "description": "CommandApiUnexpectedError",
             "content": {
@@ -209,6 +219,16 @@
                       "$ref": "#/components/schemas/StudentAtLimitProblem"
                     }
                   ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "CommandIdempotencyMismatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandIdempotencyMismatchEncoded"
                 }
               }
             }
@@ -1045,6 +1065,53 @@
         ],
         "additionalProperties": false
       },
+      "CommandIdempotencyMismatchEncoded": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "urn:crablet:problem:command-api:idempotency-mismatch"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "enum": [
+              "Unprocessable Content"
+            ]
+          },
+          "status": {
+            "type": "number",
+            "enum": [
+              422
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "violationCode": {
+            "type": "string",
+            "enum": [
+              "IDEMPOTENCY_MISMATCH"
+            ]
+          },
+          "hint": {
+            "type": "string",
+            "enum": [
+              "This request id was already used with a different body. Send a new request id for a new request."
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "violationCode",
+          "hint"
+        ],
+        "additionalProperties": false
+      },
       "StudentAtLimitProblem": {
         "type": "object",
         "properties": {
@@ -1217,13 +1284,34 @@
             ]
           },
           "lastPosition": {
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lastTransactionId": {
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "marker": {
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

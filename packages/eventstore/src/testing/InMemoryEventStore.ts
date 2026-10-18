@@ -38,13 +38,16 @@ export interface InMemoryEventStore {
 
 export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const log: Array<StoredEvent> = [];
+  // The request fingerprint each event was appended with (ADR-0034), by position: not part of StoredEvent, as in Postgres.
+  const fingerprints = new Map<bigint, string | null>();
   const appended: Array<{ events: ReadonlyArray<AppendEvent>; condition: AppendCondition | null }> = [];
   let transactionCounter = 0;
   const lock = Semaphore.makeUnsafe(1);
 
-  const store = (events: ReadonlyArray<AppendEvent>, correlationId: string | null, causationId: bigint | null): AppendResult => {
+  const store = (events: ReadonlyArray<AppendEvent>, correlationId: string | null, causationId: bigint | null, fingerprint: string | null = null): AppendResult => {
     const transactionId = String(++transactionCounter);
     for (const e of events) {
+      fingerprints.set(BigInt(log.length + 1), fingerprint);
       log.push({
         type: e.type,
         tags: e.tags,
@@ -60,6 +63,23 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
     return { transactionId, lastPosition: BigInt(log.length) };
   };
 
+  // What `query` matches, as Postgres reports it (crablet_items_duplicate): the latest match and the distinct requests behind the matches.
+  const duplicateOf = (query: AppendCondition["idempotencyQuery"]): Duplicate | null => {
+    const matched = log.filter((event) => queryMatches(query, event));
+    const latest = matched[matched.length - 1];
+    if (latest === undefined) return null;
+    const requests = new Map<string, { fingerprint: string | null; causationId: bigint | null }>();
+    for (const event of matched) {
+      const fingerprint = fingerprints.get(event.position) ?? null;
+      requests.set(`${fingerprint}/${event.causationId}`, { fingerprint, causationId: event.causationId });
+    }
+    return new Duplicate({
+      message: "Duplicate operation: duplicate operation detected",
+      latest: { position: latest.position, transactionId: latest.transactionId },
+      requests: [...requests.values()]
+    });
+  };
+
   const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
     Effect.gen(function* () {
       if (events.length === 0) return yield* Effect.die("Cannot append empty events list");
@@ -68,16 +88,17 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
       }
       const verdict = condition ? checkAppend(log, condition) : "ok";
       if (verdict === "duplicate") {
-        return yield* new Duplicate({ message: "Duplicate operation: duplicate operation detected" });
+        return yield* duplicateOf(condition!.idempotencyQuery)!;
       }
       if (verdict === "conflict") {
         return yield* new Conflict({ message: "AppendCondition violated: append condition violated", kind: "boundary" });
       }
       const correlationId = yield* CorrelationContext.correlationId;
       const causationId = yield* CorrelationContext.causationId;
+      const fingerprint = yield* CorrelationContext.requestFingerprint;
       // Nothing above suspends, so the check and the insert are one atomic step.
       appended.push({ events, condition: condition ?? null });
-      return store(events, correlationId, causationId);
+      return store(events, correlationId, causationId, fingerprint);
     })) as EventStoreService["append"];
 
   const project: EventStoreService["project"] = (query, after, projectors) =>
@@ -102,13 +123,15 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         }
         last = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
       }
-      return { state: state as never, logPosition: last, horizon };
+      // Every event is settled in memory, so the newest one read is also the last settled one.
+      return { state: state as never, logPosition: last, horizon, latest: last };
     });
 
   const service: EventStoreService = {
     append,
     project,
     exists: (query) => Effect.sync(() => log.some((event) => queryMatches(query, event))),
+    findDuplicate: (query) => Effect.sync(() => duplicateOf(query)),
     withWakeups: (effect) => effect // nothing to wake in memory
   };
 
@@ -121,6 +144,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
           Exit.isSuccess(exit)
             ? Effect.void
             : Effect.sync(() => {
+                for (const event of log.slice(logMark)) fingerprints.delete(event.position);
                 log.length = logMark;
                 appended.length = appendedMark;
               })

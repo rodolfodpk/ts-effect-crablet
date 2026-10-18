@@ -46,6 +46,7 @@ export const DefineCourse = defineCommand({
   ...DefineCourseContract,
   // The same course again is a retry ("already defined"); another course under the same id is a conflict.
   model: (c) => CourseModel.of({ id: c.courseId }),
+  idempotentBy: "decide", // the model shows whether it was done; decide answers a repeat
   decide: (course, c) =>
     !course.exists
       ? emit(CourseDefined(c))
@@ -60,6 +61,7 @@ export const Subscribe = defineCommand({
   ...SubscribeContract,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
+  idempotentBy: "decide", // the model shows whether it was done; decide answers a repeat
   decide: ({ course, student }, c) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))

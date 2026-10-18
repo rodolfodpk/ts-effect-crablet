@@ -8,7 +8,7 @@ tables, views included, are numbered from V100. A diagram of how they relate is 
 
 | Table | One row per | What it holds |
 |---|---|---|
-| `crablet_events` | event | The log: `position`, `type`, `tags` (indexed), `data` (the payload, JSON), `transaction_id`, and correlation and causation ids. Never updated or deleted. |
+| `crablet_events` | event | The log: `position`, `type`, `tags` (indexed), `data` (the payload, JSON), `transaction_id`, correlation and causation ids, and `request_fingerprint` (SHA-256 of the request, for a command with an idempotency key: [ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)). Never updated or deleted. |
 | `crablet_event_tag_keys` | event and tag key | `(key, position)`, so the pollers can select events by tag key cheaply ([ADR-0019](../adr/0019-storage-visibility-and-the-tag-table.md)). |
 | `crablet_commands` | command, when auditing is on | The command's type, its input (redacted by default) and metadata, in the same transaction as its events. |
 | `crablet_view_progress` | view | The view's cursor (`last_transaction_id`, `last_position`), status, error count and last error. |

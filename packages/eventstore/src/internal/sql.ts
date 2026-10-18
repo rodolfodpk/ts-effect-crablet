@@ -44,7 +44,8 @@ const APPEND_EVENTS_IF_SQL = `
     $4::jsonb, $5::bigint, $6::jsonb,
     $7::timestamptz, $8::uuid, $9::bigint,
     $10::text, $11::text,
-    $12::xid8, $13::boolean
+    $12::xid8, $13::boolean,
+    decode($14::text, 'hex')
   ) AS result
 `;
 
@@ -65,7 +66,33 @@ interface AppendResultJson {
   readonly events_count?: number;
   readonly transaction_id?: string;
   readonly last_position?: string;
+  readonly duplicate?: DuplicateJson | null;
 }
+
+// What crablet_items_duplicate() reports: the latest matching event and the requests behind the matches.
+interface DuplicateJson {
+  readonly latest_transaction_id: string;
+  readonly latest_position: string;
+  readonly requests: ReadonlyArray<{ readonly fingerprint: string | null; readonly causation_id: string | null }>;
+}
+
+const duplicateOf = (message: string, json: DuplicateJson): Duplicate =>
+  new Duplicate({
+    message,
+    latest: { position: BigInt(json.latest_position), transactionId: json.latest_transaction_id },
+    requests: json.requests.map((r) => ({ fingerprint: r.fingerprint, causationId: r.causation_id === null ? null : BigInt(r.causation_id) }))
+  });
+
+// What an idempotency query matches, as the `Duplicate` an append would report, or null when it matches nothing: the command executor's
+// check before it decides (ADR-0034).
+export const findDuplicate = (sql: SqlClient.SqlClient, query: Query): Effect.Effect<Duplicate | null, SqlError> =>
+  Effect.gen(function* () {
+    const items = conditionItemsJson(query);
+    if (items === null) return null;
+    const rows = yield* sql.unsafe<{ duplicate: DuplicateJson | null }>("SELECT crablet_items_duplicate($1::jsonb) AS duplicate", [items]);
+    const json = rows[0]?.duplicate ?? null;
+    return json === null ? null : duplicateOf("Duplicate operation: duplicate operation detected", json);
+  });
 
 // append_events_if() serializes each condition item with a pg_advisory_xact_lock before checking
 // for conflicts, closing the genuinely-concurrent-race window at the SQL layer, so the client needs
@@ -87,6 +114,7 @@ export const appendEventsIf = (
     const correlationId = yield* CorrelationContext.correlationId;
     const causationId = yield* CorrelationContext.causationId;
     const requireFresh = yield* CorrelationContext.requiresFreshTransaction;
+    const fingerprint = yield* CorrelationContext.requestFingerprint;
 
     const rows = yield* sql.unsafe<{ result: AppendResultJson }>(APPEND_EVENTS_IF_SQL, [
       types,
@@ -104,7 +132,8 @@ export const appendEventsIf = (
       null,
       // The cursor is a (transaction_id, position) pair; null (an old-style position) compares by position only.
       concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null),
-      requireFresh
+      requireFresh,
+      fingerprint
     ]).pipe(
       // CRB01: a command ran in a transaction that had already written (ADR-0033). A programming error, not a condition a caller can handle.
       Effect.catchTag("SqlError", (error) =>
@@ -123,7 +152,9 @@ export const appendEventsIf = (
       const message = result.message ?? "append condition violated";
       // The SQL function reports which check refused the append. Idempotency is checked first.
       return result.error_code === "IDEMPOTENCY_VIOLATION"
-        ? yield* new Duplicate({ message: `Duplicate operation: ${message}` })
+        ? yield* (result.duplicate
+            ? duplicateOf(`Duplicate operation: ${message}`, result.duplicate)
+            : Effect.die("append_events_if reported a duplicate without what it matched"))
         : yield* new Conflict({ message: `AppendCondition violated: ${message}`, kind: "boundary" });
     }
 

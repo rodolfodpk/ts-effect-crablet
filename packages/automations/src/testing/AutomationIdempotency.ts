@@ -5,6 +5,7 @@ import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { runHandler, withConflictRetry } from "@crablet/commands";
 import type { Command } from "@crablet/commands/Command";
+import { IdempotencyMismatch } from "@crablet/commands/Errors";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
 // A test of an automation's idempotency, for the automation's author to call. It runs the automation against an in-memory event store (no database), twice over
@@ -24,6 +25,8 @@ import type { AutomationHandler } from "../AutomationHandler.ts";
 // that both reach the same verdict (automation-idempotency-postgres.test.ts); an automation's author has no use for one.
 export type BackendResult =
   | { readonly _tag: "done"; readonly wasIdempotent: boolean; readonly reason: string | null }
+  // The command's key matched a DIFFERENT request (IdempotencyMismatch, ADR-0034).
+  | { readonly _tag: "mismatch" }
   | { readonly _tag: "failed"; readonly detail: string };
 
 export interface IdempotencyBackend {
@@ -57,6 +60,7 @@ export const inMemoryBackend = (): IdempotencyBackend => {
       const exit = await Effect.runPromiseExit(program);
       if (Exit.isSuccess(exit)) return { _tag: "done", wasIdempotent: exit.value.wasIdempotent, reason: exit.value.reason };
       const failure = exit.cause.reasons.find(Cause.isFailReason);
+      if (failure?.error instanceof IdempotencyMismatch) return { _tag: "mismatch" };
       return { _tag: "failed", detail: failure === undefined ? Cause.pretty(exit.cause) : JSON.stringify(failure.error) };
     },
     count: async () => store.log.length
@@ -73,7 +77,7 @@ export interface IdempotencyReport {
 interface Outcome {
   readonly trigger: bigint;
   readonly command: string;
-  readonly result: "created" | "already-done" | "noop" | "failed";
+  readonly result: "created" | "already-done" | "mismatch" | "noop" | "failed";
   readonly detail: string;
 }
 
@@ -100,6 +104,8 @@ export const checkAutomationIdempotency = async (
             result: result.wasIdempotent ? (result.reason === "DUPLICATE_OPERATION" ? "already-done" : "noop") : "created",
             detail: result.reason ?? ""
           });
+        } else if (result._tag === "mismatch") {
+          outcomes.push({ trigger: event.position, command: automation.command.name, result: "mismatch", detail: "" });
         } else {
           outcomes.push({ trigger: event.position, command: automation.command.name, result: "failed", detail: result.detail });
         }
@@ -121,6 +127,11 @@ export const checkAutomationIdempotency = async (
       problems.push(
         `TOO BROAD: "${o.command}" for the trigger at position ${o.trigger} was answered "already done" on the FIRST pass. Its idempotentBy matches something that is not this operation, ` +
           `so real work would be dropped in silence. Put what tells this trigger apart (its own id, the target, the attempt) in the query.`
+      );
+    } else if (o.result === "mismatch") {
+      problems.push(
+        `TOO BROAD: "${o.command}" for the trigger at position ${o.trigger} found its idempotentBy already used by a DIFFERENT request on the FIRST pass. In production it fails with ` +
+          `IdempotencyMismatch and the automation stops on it. Put what tells this trigger apart (its own id, the target, the attempt) in the query.`
       );
     }
   }

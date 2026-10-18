@@ -24,6 +24,12 @@ const FreshTransaction = Context.Reference<boolean>("crablet/RequireFreshTransac
   defaultValue: () => false
 });
 
+// Set by the command executor around the append of a command with an idempotency key: the request's fingerprint (hex SHA-256), stored on
+// its events and compared when the key repeats (ADR-0034).
+const RequestFingerprint = Context.Reference<string | null>("crablet/RequestFingerprint", {
+  defaultValue: () => null
+});
+
 export const correlationId: Effect.Effect<string | null> = Effect.gen(function* () {
   return yield* CorrelationId;
 });
@@ -48,3 +54,12 @@ export const requiresFreshTransaction: Effect.Effect<boolean> = Effect.gen(funct
 
 export const requireFreshTransaction = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, FreshTransaction, true);
+
+export const requestFingerprint: Effect.Effect<string | null> = Effect.gen(function* () {
+  return yield* RequestFingerprint;
+});
+
+export const withRequestFingerprint =
+  (fingerprint: string | null) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.provideService(effect, RequestFingerprint, fingerprint);

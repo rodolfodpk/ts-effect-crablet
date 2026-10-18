@@ -75,7 +75,7 @@ const LABELS: Record<string, ReadonlyArray<string>> = {
   "crablet.automation.decide.duration": ["automation"], "crablet.automation.decide.successes": ["automation"], "crablet.automation.decide.failures": ["automation"], "crablet.automation.events_processed": ["automation"],
   "crablet.outbox.publish.duration": ["publisher"], "crablet.outbox.publish.successes": ["publisher"], "crablet.outbox.publish.failures": ["publisher"], "crablet.outbox.events_published": ["publisher"],
   "crablet.command.handle.duration": ["command_type"], "crablet.command.handle.successes": ["command_type"], "crablet.command.handle.failures": ["command_type"],
-  "crablet.command.idempotent_duplicates": ["command_type"], "crablet.command.conflict_retries": ["command_type"],
+  "crablet.command.idempotent_duplicates": ["command_type"], "crablet.command.idempotency_mismatches": ["command_type"], "crablet.command.conflict_retries": ["command_type"],
   "crablet.period.clock_behind": [],
   "crablet.eventstore.append.duration": [], "crablet.eventstore.append.successes": [], "crablet.eventstore.append.failures": [],
   "crablet.eventstore.events_appended": [], "crablet.eventstore.event_type_appended": ["event_type"], "crablet.eventstore.concurrency_violations": [], "crablet.eventstore.decoding_failures": ["event_type"],

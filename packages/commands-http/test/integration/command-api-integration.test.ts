@@ -82,6 +82,8 @@ const RefuseContract = commandContract({
 });
 const Refuse = defineCommand({
   ...RefuseContract,
+  // It never appends: its refusal is its answer to any repeat.
+  idempotentBy: "decide",
   decide: (_, c) =>
     c.kind === "not_found" ? fail(new NoSuchThing({ id: c.id }))
     : c.kind === "forbidden" ? fail(new NotAllowed({ reason: "read-only" }))
@@ -171,15 +173,17 @@ describe("commands-http integration (real Postgres)", () => {
 
       const first = await post();
       assert.strictEqual(first.status, 201);
+      const created = await jsonBody(first);
 
       const second = await post();
       assert.strictEqual(second.status, 200);
       const body = await jsonBody(second);
       assert.strictEqual(body.status, "IDEMPOTENT");
       assert.ok(body.reason, "expected a non-empty idempotency reason");
-      assert.strictEqual(body.lastPosition, null, "a repeat appended nothing");
-      assert.strictEqual(body.lastTransactionId, null);
-      assert.strictEqual(body.marker, null, "a repeat appended nothing, so it has no marker (yet)");
+      // A repeat appended nothing, and answers with the EARLIER write's marker, so a client whose first answer was lost still reads its own write (ADR-0034).
+      assert.strictEqual(body.lastPosition, created.lastPosition);
+      assert.strictEqual(body.lastTransactionId, created.lastTransactionId);
+      assert.strictEqual(body.marker, created.marker);
     });
   });
 
@@ -262,7 +266,7 @@ describe("commands-http integration (real Postgres)", () => {
         // the four declared domain errors of `refuse`, each at the status of its kind
         assert.deepStrictEqual(
           Object.keys(spec.paths["/api/commands/refuse"].post.responses).sort(),
-          ["200", "201", "400", "403", "404", "409", "500"]
+          ["200", "201", "400", "403", "404", "409", "422", "500"]
         );
       });
     });
@@ -457,12 +461,13 @@ describe("commands-http from contracts (real Postgres)", () => {
 // ADR-0017: a stored event its definition cannot read is a typed EventDecodingError in the command; over HTTP it is the generic 500 problem, which does not say
 // which event (that is for the log line written where it was found), and every later request over that boundary answers the same.
 describe("a command over a boundary that contains an unreadable stored event (real Postgres)", () => {
-  const Ticked = defineEvent("Ticked", { schema: Schema.Struct({ entityId: Schema.String }), tags: (d) => ({ entity_id: d.entityId }) });
+  const Ticked = defineEvent("Ticked", { schema: Schema.Struct({ entityId: Schema.String, tickId: Schema.String }), tags: (d) => ({ entity_id: d.entityId, tick_id: d.tickId }) });
   const Count = defineModel({ by: "entity_id", initial: () => ({ n: 0 }) }).on(Ticked, (s) => ({ n: s.n + 1 }));
-  const TickContract = commandContract({ name: "tick", input: Schema.Struct({ entityId: Schema.String }) });
-  const Tick = defineCommand({ ...TickContract, model: (c) => Count.of({ id: c.entityId }), decide: (_m, c) => emit(Ticked(c)) });
+  const TickContract = commandContract({ name: "tick", input: Schema.Struct({ entityId: Schema.String, tickId: Schema.String }) });
+  const Tick = defineCommand({ ...TickContract, idempotentBy: (c) => Ticked.where({ tick_id: c.tickId }), model: (c) => Count.of({ id: c.entityId }), decide: (_m, c) => emit(Ticked(c)) });
   const tickContracts = [TickContract];
-  const post = (baseUrl: string, entityId: string) => fetch(`${baseUrl}/api/commands/tick`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityId }) });
+  const post = (baseUrl: string, entityId: string) =>
+    fetch(`${baseUrl}/api/commands/tick`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityId, tickId: crypto.randomUUID() }) });
 
   it("answers 500, the generic problem, without naming the event; the same again; and another entity is fine", { timeout: 30_000 }, async () => {
     const bad = `bad-${crypto.randomUUID().slice(0, 6)}`;
@@ -483,21 +488,22 @@ describe("a command over a boundary that contains an unreadable stored event (re
 });
 
 // A command that is refused because the boundary changed since it loaded: with no retries left the conflict reaches the client as a 409 with a code that says which kind.
-const Bumped = defineEvent("Bumped", { schema: Schema.Struct({ counterId: Schema.String }), tags: (d) => ({ counter_id: d.counterId }) });
+const Bumped = defineEvent("Bumped", { schema: Schema.Struct({ counterId: Schema.String, bumpId: Schema.String }), tags: (d) => ({ counter_id: d.counterId, bump_id: d.bumpId }) });
 const CounterModel = defineModel({ by: "counter_id", initial: () => ({ n: 0 }) }).on(Bumped, (s) => ({ n: s.n + 1 }));
-const BumpContract = commandContract({ name: "bump", input: Schema.Struct({ counterId: Schema.String }) });
+const BumpContract = commandContract({ name: "bump", input: Schema.Struct({ counterId: Schema.String, bumpId: Schema.String }) });
 const Bump = defineCommand({
   ...BumpContract,
   retries: 0,
+  idempotentBy: (c) => Bumped.where({ bump_id: c.bumpId }),
   model: (c) => CounterModel.of({ id: c.counterId }),
-  decide: (_, c) => emit(Bumped({ counterId: c.counterId }))
+  decide: (_, c) => emit(Bumped({ counterId: c.counterId, bumpId: c.bumpId }))
 });
 
 describe("commands-http: a conflict that is not retried away", () => {
   it("is a 409 DCB_VIOLATION, and the events that were appended are exactly the requests that were accepted", { timeout: 60_000 }, async () => {
     await serve(makeCommandApiLive([BumpContract], { bump: Bump }, {}), async (baseUrl) => {
       const post = (counterId: string) =>
-        fetch(`${baseUrl}/api/commands/bump`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ counterId }) });
+        fetch(`${baseUrl}/api/commands/bump`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ counterId, bumpId: crypto.randomUUID() }) });
       // Sixteen requests at once over one boundary, none allowed to retry: when two load the same state, one of them must lose. Repeat until that has happened.
       for (let round = 0; round < 10; round++) {
         const counterId = `counter-${crypto.randomUUID()}`;
@@ -516,6 +522,42 @@ describe("commands-http: a conflict that is not retried away", () => {
         }
       }
       assert.fail("no request lost in ten rounds of sixteen simultaneous requests");
+    });
+  });
+});
+
+// ADR-0034: a request id reused by a DIFFERENT request is refused (422), not answered "already done"; the same request again is "already done" with the
+// earlier write's marker.
+const Paid = defineEvent("Paid", { schema: Schema.Struct({ paymentId: Schema.String, amount: Schema.Number }), tags: (d) => ({ payment_id: d.paymentId }) });
+const PayContract = commandContract({ name: "pay", input: Schema.Struct({ paymentId: Schema.String, amount: Schema.Number }) });
+const Pay = defineCommand({ ...PayContract, idempotentBy: (c) => Paid.where({ payment_id: c.paymentId }), decide: (_, c) => emit(Paid(c)) });
+
+describe("commands-http: a request id reused with a different body", () => {
+  it("the same body again is 200 with the first write's marker; another body under the same id is 422 IDEMPOTENCY_MISMATCH and appends nothing", { timeout: 30_000 }, async () => {
+    await serve(makeCommandApiLive([PayContract], { pay: Pay }, {}) as never, async (baseUrl) => {
+      const paymentId = `payment-${crypto.randomUUID()}`;
+      const post = (amount: number) =>
+        fetch(`${baseUrl}/api/commands/pay`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentId, amount }) });
+
+      const first = await post(10);
+      assert.strictEqual(first.status, 201);
+      const created = await jsonBody(first);
+
+      const repeat = await post(10);
+      assert.strictEqual(repeat.status, 200);
+      assert.strictEqual((await jsonBody(repeat))["marker"], created["marker"]);
+
+      const other = await post(20);
+      assert.strictEqual(other.status, 422);
+      assert.strictEqual(other.headers.get("content-type"), "application/problem+json");
+      const problem = await jsonBody(other);
+      assert.strictEqual(problem["violationCode"], "IDEMPOTENCY_MISMATCH");
+      assert.ok(!JSON.stringify(problem).includes("20"), "the problem does not echo the input");
+
+      const stored = await runtime.runPromise(
+        Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ amount: number }>("SELECT (data->>'amount')::int AS amount FROM crablet_events WHERE type = 'Paid' AND tags @> ARRAY[$1]::text[]", [`payment_id=${paymentId}`]))
+      );
+      assert.deepStrictEqual(stored.map((r) => r.amount), [10], "only the first request was applied");
     });
   });
 });

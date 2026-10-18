@@ -14,8 +14,8 @@ const Done = defineEvent("ContractApiDone", { schema: Schema.Struct({ id: Schema
 const ClaimContract = commandContract({ name: "claim", input: Schema.Struct({ id: Schema.String }), errors: [Taken] });
 const LogContract = commandContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
 const contracts = [ClaimContract, LogContract];
-const Claim = defineCommand({ ...ClaimContract, decide: (_s, c) => emit(Done(c)) });
-const Log = defineCommand({ ...LogContract, decide: (_s, c) => emit(Done({ id: c.note })) });
+const Claim = defineCommand({ ...ClaimContract, idempotentBy: (c) => Done.where({ id: c.id }), decide: (_s, c) => emit(Done(c)) });
+const Log = defineCommand({ ...LogContract, idempotentBy: (c) => Done.where({ id: c.note }), decide: (_s, c) => emit(Done({ id: c.note })) });
 
 describe("makeCommandApi from contracts", () => {
   test("describes one POST route per contract, named by the contract, plus the listing", () => {
@@ -49,6 +49,13 @@ describe("checkImplementations", () => {
   test("a command with a WIDER input (which the types cannot catch) is refused too", () => {
     const wider = defineCommand({ name: "log", input: Schema.Struct({ note: Schema.String, extra: Schema.String }), decide: (_s, c) => emit(Done({ id: c.note })) });
     expect(() => checkImplementations(contracts, { claim: Claim, log: wider })).toThrow(ContractMismatch);
+  });
+
+  test("a command that does not say how a repeat is recognised is refused: a client retries a request whose answer it lost (ADR-0034)", () => {
+    const noKey = defineCommand({ ...LogContract, decide: (_s, c) => emit(Done({ id: c.note })) });
+    expect(() => checkImplementations(contracts, { claim: Claim, log: noKey })).toThrow(/"log": the command does not say how a repeat is recognised/);
+    const decided = defineCommand({ ...LogContract, idempotentBy: "decide", decide: (_s, c) => emit(Done({ id: c.note })) });
+    expect(() => checkImplementations(contracts, { claim: Claim, log: decided })).not.toThrow();
   });
 
   test("lists every problem at once", () => {

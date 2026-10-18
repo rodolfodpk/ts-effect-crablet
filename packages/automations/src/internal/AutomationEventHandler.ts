@@ -5,6 +5,7 @@ import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import type { AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import type { Command } from "@crablet/commands/Command";
+import type { IdempotencyMismatch } from "@crablet/commands/Errors";
 import * as AutomationMetrics from "@crablet/metrics-otel/AutomationMetrics";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
@@ -25,7 +26,7 @@ const withEventContext = <A, E, R>(event: StoredEvent, effect: Effect.Effect<A, 
 export type ExecuteDecision = <T, HE>(
   command: Command<T, HE>,
   input: T
-) => Effect.Effect<unknown, HE | AppendTooLarge | Conflict | SqlError, never>;
+) => Effect.Effect<unknown, HE | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError, never>;
 
 // Routes handle(automationName, events) to the
 // registered AutomationHandler for that name; dies loudly on an unregistered automation (mirrors
