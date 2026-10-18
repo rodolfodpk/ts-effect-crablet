@@ -3,7 +3,7 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "../src/Command.ts";
 import type { Command } from "../src/Command.ts";
-import { commandContract } from "../src/Contract.ts";
+import { defineContract } from "../src/Contract.ts";
 import { DomainError } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 
@@ -15,8 +15,8 @@ class NoSuchSeat extends DomainError("NoSuchSeat", { fields: { seatId: Schema.St
 const SeatBooked = defineEvent("SeatBooked", { schema: Schema.Struct({ seatId: Schema.String }), tags: (d) => ({ seat_id: d.seatId }) });
 const Input = Schema.Struct({ seatId: Schema.String, row: Schema.Int });
 
-const BookContract = commandContract({ name: "book", input: Input, errors: [SeatTaken, NoSuchSeat] });
-const LogContract = commandContract({ name: "log", input: Input });
+const BookContract = defineContract({ name: "book", input: Input, errors: [SeatTaken, NoSuchSeat] });
+const LogContract = defineContract({ name: "log", input: Input });
 
 export type KeepsTheName = Expect<Equal<(typeof BookContract)["name"], "book">>;
 export type KeepsTheInput = Expect<Equal<(typeof BookContract)["input"], typeof Input>>;
@@ -31,13 +31,13 @@ export type SpreadIsTheDirectType = Expect<Equal<typeof Spread, typeof Direct>>;
 export const asErased: Command<any, any> = Spread;
 
 // a contract held in a const keeps the "decide may only fail with declared errors" check, whether it declares none or some
-const NoneDeclared = commandContract({ name: "forgets", input: Input });
+const NoneDeclared = defineContract({ name: "forgets", input: Input });
 defineCommand({
   ...NoneDeclared,
   // @ts-expect-error SeatTaken is not declared by the contract
   decide: (_state, c) => fail(new SeatTaken({ seatId: c.seatId }))
 });
-const OneDeclared = commandContract({ name: "one", input: Input, errors: [SeatTaken] });
+const OneDeclared = defineContract({ name: "one", input: Input, errors: [SeatTaken] });
 defineCommand({
   ...OneDeclared,
   // @ts-expect-error NoSuchSeat is not declared by the contract

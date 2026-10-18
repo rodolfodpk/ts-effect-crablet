@@ -70,8 +70,8 @@ export interface ResolveReader {
 }
 
 export const emit = (...events: ReadonlyArray<AppendEvent>): Emit => ({ _tag: "Emit", events });
-// "Nothing to do": the decision appends nothing and the command ends as an idempotent success (200 over HTTP, status IDEMPOTENT). `reason` is what the caller gets back
-// (`ExecutionResult.reason`, `reason` in the HTTP body): give it a short code in UPPER_SNAKE_CASE (ALREADY_SUBSCRIBED, ALREADY_OPENED), like the framework's own
+// "Nothing to do": the decision appends nothing and the command ends as an idempotent success (status IDEMPOTENT; a transport presents it as a success). `reason`
+// is what the caller gets back (`ExecutionResult.reason`): give it a short code in UPPER_SNAKE_CASE (ALREADY_SUBSCRIBED, ALREADY_OPENED), like the framework's own
 // DUPLICATE_OPERATION (an `idempotentBy` match) and NO_EVENTS (an `emit()` with no events), so a client can switch on it.
 export const noop = (reason: string | null = null): Noop => ({ _tag: "Noop", reason });
 export const fail = <E>(error: E): Fail<E> => ({ _tag: "Fail", error });
@@ -159,9 +159,9 @@ export interface Command<
   // How many times the executor re-runs the whole command (fresh transaction, fresh load) after a
   // `Conflict`, before giving up with that `Conflict`.
   readonly retries: number;
-  // Whether the command declared `idempotentBy`, as a query or as `byModel()`: whether it says how a repeat is recognised. An automation and the HTTP
-  // API require it: an automation's batch can be handled twice (a crash, a zombie leader) and a client retries a request whose answer it lost,
-  // and only a command that recognises a repeat makes that harmless.
+  // Whether the command declared `idempotentBy`, as a query or as `byModel()`: whether it says how a repeat is recognised. A caller that may repeat a
+  // request requires it: a client retries a request whose answer it lost, and an automation's batch can be handled twice (a crash, a zombie leader).
+  // Only a command that recognises a repeat makes that harmless. The HTTP API and automations check it when they are built.
   readonly idempotent: boolean;
 }
 
@@ -200,7 +200,7 @@ export const defineCommand = <
   //   - `byModel()`, for an effect that can only happen once per key (open wallet X): the model already shows whether it happened, and `decide`
   //     answers the repeat itself - `noop(...)` for the same request, a domain error for a different one. Nothing is looked up for it.
   //     It needs a model and decides under strict() (no `consistency`): a racing repeat conflicts, reloads, and `decide` sees the first.
-  // Required for a command exposed over HTTP or run by an automation; `assertRepeatHarmless` (testing) checks the answer.
+  // Required by any caller that may repeat a request (a client retry, an automation redelivery); `assertRepeatHarmless` (testing) checks the answer.
   readonly idempotentBy?: IdempotentBy<IB, Schema.Schema.Type<I>>;
   // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
   readonly decide: (state: S, input: Schema.Schema.Type<I>, context: DecideContext<R>) => D & Declared<ErrorOf<D>, Es>;

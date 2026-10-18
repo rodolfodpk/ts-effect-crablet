@@ -54,13 +54,13 @@ A command has two parts. Its **contract** - its name, its input Schema and the d
 
 <!-- file: examples/course-enrolment-app/src/domain/enrolment.contract.ts#contracts -->
 ```ts
-export const DefineCourseContract = commandContract({
+export const DefineCourseContract = defineContract({
   name: "define_course",
   input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
   errors: [CourseAlreadyDefined]
 });
 
-export const SubscribeContract = commandContract({
+export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   errors: [CourseNotFound, CourseFull, StudentAtLimit]

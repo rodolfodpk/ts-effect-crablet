@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { OpenApi } from "effect/http-api";
-import { commandContract } from "@crablet/commands/Contract";
+import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { makeCommandApi } from "../src/CommandApi.ts";
 import { inputJsonSchemaProblems } from "../src/InputJsonSchema.ts";
@@ -14,17 +14,17 @@ class InsufficientFunds extends DomainError("InsufficientFunds", {
 }) {}
 
 // The API is declared from CONTRACTS: a name, an input Schema and the domain errors. That is all the description needs.
-const DepositContract = commandContract({
+const DepositContract = defineContract({
   name: "deposit",
   errors: [WalletNotFound],
   input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite.check(Schema.isGreaterThan(0)) })
 });
-const WithdrawContract = commandContract({
+const WithdrawContract = defineContract({
   name: "withdraw",
   errors: [WalletNotFound, InsufficientFunds],
   input: Schema.Struct({ walletId: Schema.String, amount: Schema.Finite })
 });
-const OpenContract = commandContract({ name: "open", input: Schema.Struct({ walletId: Schema.String }) });
+const OpenContract = defineContract({ name: "open", input: Schema.Struct({ walletId: Schema.String }) });
 
 const contracts = [DepositContract, WithdrawContract, OpenContract];
 
@@ -77,7 +77,7 @@ describe("the API description of the command routes", () => {
 
 describe("how optional fields are described", () => {
   const specOf = (input: Schema.Constraint) => {
-    const api = OpenApi.fromApi(makeCommandApi("/api/commands", [commandContract({ name: "probe", input: input as never })])) as any;
+    const api = OpenApi.fromApi(makeCommandApi("/api/commands", [defineContract({ name: "probe", input: input as never })])) as any;
     return api.paths["/api/commands/probe"].post.requestBody.content["application/json"].schema;
   };
 
@@ -92,14 +92,14 @@ describe("how optional fields are described", () => {
     const input = Schema.Struct({ id: Schema.String, note: Schema.optional(Schema.String), nested: Schema.Struct({ deep: Schema.optional(Schema.Int) }) });
     expect(specOf(input).properties.note).toEqual({ anyOf: [{ type: "string" }, { type: "null" }] });
 
-    const problems = inputJsonSchemaProblems(commandContract({ name: "probe", input }));
+    const problems = inputJsonSchemaProblems(defineContract({ name: "probe", input }));
     expect(problems).toHaveLength(2);
     expect(problems.join("\n")).toContain('field "note"');
     expect(problems.join("\n")).toContain('field "nested.deep"');
   });
 
   test("a legitimate NullOr is not flagged", () => {
-    const command = commandContract({ name: "probe", input: Schema.Struct({ id: Schema.String, memo: Schema.NullOr(Schema.String) }) });
+    const command = defineContract({ name: "probe", input: Schema.Struct({ id: Schema.String, memo: Schema.NullOr(Schema.String) }) });
     expect(inputJsonSchemaProblems(command)).toEqual([]);
   });
 

@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { OpenApi } from "effect/http-api";
 import { byModel, defineCommand, emit, noop } from "@crablet/commands/Command";
-import { commandContract } from "@crablet/commands/Contract";
+import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import { defineModel } from "@crablet/commands/Model";
@@ -12,8 +12,8 @@ import { ContractMismatch, checkImplementations, makeCommandApi } from "../src/C
 
 class Taken extends DomainError("Taken", { fields: { id: Schema.String }, kind: "conflict" }) {}
 const Done = defineEvent("ContractApiDone", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ id: d.id }) });
-const ClaimContract = commandContract({ name: "claim", input: Schema.Struct({ id: Schema.String }), errors: [Taken] });
-const LogContract = commandContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
+const ClaimContract = defineContract({ name: "claim", input: Schema.Struct({ id: Schema.String }), errors: [Taken] });
+const LogContract = defineContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
 const contracts = [ClaimContract, LogContract];
 const Claim = defineCommand({ ...ClaimContract, idempotentBy: (c) => Done.where({ id: c.id }), decide: (_s, c) => emit(Done(c)) });
 const Log = defineCommand({ ...LogContract, idempotentBy: (c) => Done.where({ id: c.note }), decide: (_s, c) => emit(Done({ id: c.note })) });

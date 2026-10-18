@@ -2,30 +2,30 @@
 // Nothing here knows how a decision is made (the models, the statement periods, `decide`: see commands/*.ts), so this module is what
 // the HTTP API is declared from and what a browser could import. Keep server-only imports out of it.
 import * as Schema from "effect/Schema";
-import { commandContract } from "@crablet/commands/Contract";
+import { defineContract } from "@crablet/commands/Contract";
 import { personal } from "@crablet/commands/Personal";
 import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "./errors/WalletErrors.ts";
 import { NonBlank, NonNegative, Positive } from "./WalletInputs.ts";
 
-export const OpenWalletContract = commandContract({
+export const OpenWalletContract = defineContract({
   name: "open_wallet",
   errors: [WalletAlreadyExists],
   input: Schema.Struct({ walletId: NonBlank, owner: personal(NonBlank), initialBalance: NonNegative })
 });
 
-export const DepositContract = commandContract({
+export const DepositContract = defineContract({
   name: "deposit",
   errors: [WalletNotFound],
   input: Schema.Struct({ depositId: Schema.String, walletId: Schema.String, amount: Positive, description: Schema.String })
 });
 
-export const WithdrawContract = commandContract({
+export const WithdrawContract = defineContract({
   name: "withdraw",
   errors: [WalletNotFound, InsufficientFunds],
   input: Schema.Struct({ withdrawalId: Schema.String, walletId: Schema.String, amount: Positive, description: Schema.String })
 });
 
-export const TransferMoneyContract = commandContract({
+export const TransferMoneyContract = defineContract({
   name: "transfer_money",
   errors: [WalletNotFound, InsufficientFunds],
   input: Schema.Struct({
@@ -37,7 +37,7 @@ export const TransferMoneyContract = commandContract({
   }).pipe(Schema.check(Schema.makeFilter((c) => c.fromWalletId !== c.toWalletId || "fromWalletId and toWalletId must differ")))
 });
 
-export const CloseWalletContract = commandContract({
+export const CloseWalletContract = defineContract({
   name: "close_wallet",
   errors: [WalletNotFound],
   input: Schema.Struct({ walletId: Schema.String })

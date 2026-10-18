@@ -10,17 +10,19 @@ runs it with `curl`.
 
 ## 1. Declare the contract
 
-Its own file, importing nothing that decides anything, so a browser can import it too.
+Its own file, importing nothing that decides anything, so a browser can import it too: the module that declares the API, and a typed client, then
+load `name`, `input` and `errors` without `decide`, the models or the events. The command spreads it in, so the input schema is written once. A contract
+is optional: a command that is not a public API (an automation's command) writes `name`, `input` and `errors` inline.
 
 <!-- file: examples/course-enrolment-app/src/domain/enrolment.contract.ts#contracts -->
 ```ts
-export const DefineCourseContract = commandContract({
+export const DefineCourseContract = defineContract({
   name: "define_course",
   input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
   errors: [CourseAlreadyDefined]
 });
 
-export const SubscribeContract = commandContract({
+export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   errors: [CourseNotFound, CourseFull, StudentAtLimit]

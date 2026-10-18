@@ -18,7 +18,7 @@ import { byModel, defineCommand, emit, fail } from "@crablet/commands/Command";
 import { defineEvent } from "@crablet/commands/Event";
 import { defineModel } from "@crablet/commands/Model";
 import { DomainError } from "@crablet/commands/Errors";
-import { commandContract } from "@crablet/commands/Contract";
+import { defineContract } from "@crablet/commands/Contract";
 import * as Query from "@crablet/eventstore/Query";
 import { makeCommandApiLive } from "../../src/CommandApiLive.ts";
 import type { CommandApiConfig } from "../../src/CommandApiConfig.ts";
@@ -54,7 +54,7 @@ after(async () => {
 });
 
 // A command that appends: the happy path, and the contract tests below.
-const OpenWalletContract = commandContract({ name: "open_wallet", input: Schema.Struct({ walletId: Schema.String }) });
+const OpenWalletContract = defineContract({ name: "open_wallet", input: Schema.Struct({ walletId: Schema.String }) });
 const OpenWallet = defineCommand({
   ...OpenWalletContract,
   idempotentBy: (c) => Query.forEventAndTag("WalletOpened", "wallet_id", c.walletId),
@@ -62,7 +62,7 @@ const OpenWallet = defineCommand({
 });
 
 // A repeat is an idempotent success (200).
-const SendConfirmationContract = commandContract({ name: "send_confirmation", input: Schema.Struct({ orderId: Schema.String }) });
+const SendConfirmationContract = defineContract({ name: "send_confirmation", input: Schema.Struct({ orderId: Schema.String }) });
 const SendConfirmation = defineCommand({
   ...SendConfirmationContract,
   idempotentBy: (c) => Query.forEventAndTag("ConfirmationSent", "order_id", c.orderId),
@@ -75,7 +75,7 @@ class NotAllowed extends DomainError("NotAllowed", { fields: { reason: Schema.St
 class BadRequestDomain extends DomainError("BadRequestDomain", { fields: { limit: Schema.Number }, kind: "invalid" }) {}
 class AlreadyDone extends DomainError("AlreadyDone", { fields: { id: Schema.String }, kind: "conflict" }) {}
 
-const RefuseContract = commandContract({
+const RefuseContract = defineContract({
   name: "refuse",
   errors: [NoSuchThing, NotAllowed, BadRequestDomain, AlreadyDone],
   input: Schema.Struct({ kind: Schema.Literals(["not_found", "forbidden", "invalid", "conflict"]), id: Schema.String })
@@ -467,7 +467,7 @@ describe("commands-http from contracts (real Postgres)", () => {
 describe("a command over a boundary that contains an unreadable stored event (real Postgres)", () => {
   const Ticked = defineEvent("Ticked", { schema: Schema.Struct({ entityId: Schema.String, tickId: Schema.String }), tags: (d) => ({ entity_id: d.entityId, tick_id: d.tickId }) });
   const Count = defineModel({ by: "entity_id", initial: () => ({ n: 0 }) }).on(Ticked, (s) => ({ n: s.n + 1 }));
-  const TickContract = commandContract({ name: "tick", input: Schema.Struct({ entityId: Schema.String, tickId: Schema.String }) });
+  const TickContract = defineContract({ name: "tick", input: Schema.Struct({ entityId: Schema.String, tickId: Schema.String }) });
   const Tick = defineCommand({ ...TickContract, idempotentBy: (c) => Ticked.where({ tick_id: c.tickId }), model: (c) => Count.of({ id: c.entityId }), decide: (_m, c) => emit(Ticked(c)) });
   const tickContracts = [TickContract];
   const post = (baseUrl: string, entityId: string) =>
@@ -494,7 +494,7 @@ describe("a command over a boundary that contains an unreadable stored event (re
 // A command that is refused because the boundary changed since it loaded: with no retries left the conflict reaches the client as a 409 with a code that says which kind.
 const Bumped = defineEvent("Bumped", { schema: Schema.Struct({ counterId: Schema.String, bumpId: Schema.String }), tags: (d) => ({ counter_id: d.counterId, bump_id: d.bumpId }) });
 const CounterModel = defineModel({ by: "counter_id", initial: () => ({ n: 0 }) }).on(Bumped, (s) => ({ n: s.n + 1 }));
-const BumpContract = commandContract({ name: "bump", input: Schema.Struct({ counterId: Schema.String, bumpId: Schema.String }) });
+const BumpContract = defineContract({ name: "bump", input: Schema.Struct({ counterId: Schema.String, bumpId: Schema.String }) });
 const Bump = defineCommand({
   ...BumpContract,
   retries: 0,
@@ -533,7 +533,7 @@ describe("commands-http: a conflict that is not retried away", () => {
 // ADR-0034: a request id reused by a DIFFERENT request is refused (422), not answered "already done"; the same request again is "already done" with the
 // earlier write's marker.
 const Paid = defineEvent("Paid", { schema: Schema.Struct({ paymentId: Schema.String, amount: Schema.Number }), tags: (d) => ({ payment_id: d.paymentId }) });
-const PayContract = commandContract({ name: "pay", input: Schema.Struct({ paymentId: Schema.String, amount: Schema.Number }) });
+const PayContract = defineContract({ name: "pay", input: Schema.Struct({ paymentId: Schema.String, amount: Schema.Number }) });
 const Pay = defineCommand({ ...PayContract, idempotentBy: (c) => Paid.where({ payment_id: c.paymentId }), decide: (_, c) => emit(Paid(c)) });
 
 describe("commands-http: a request id reused with a different body", () => {
