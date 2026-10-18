@@ -7,7 +7,7 @@ import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import type { StoredEvent } from "@crablet/eventstore";
 import { assertAutomationIdempotent, checkAutomationIdempotency } from "../src/testing/AutomationIdempotency.ts";
-import { automationHandlerOf, type AutomationHandler } from "../src/AutomationHandler.ts";
+import { defineAutomation, type AutomationHandler } from "../src/AutomationHandler.ts";
 import { executeCommand } from "../src/AutomationDecision.ts";
 
 // The scenario: a deposit is made; the automation notifies about it. A deposit has its own id; a wallet has many deposits.
@@ -118,11 +118,9 @@ describe("assertAutomationIdempotent", () => {
     await expect(assertAutomationIdempotent(automationOf(notifyWith()), triggers)).rejects.toThrow(/automation "notify-deposit" is not idempotent/);
   });
 
-  test("returns the report when all is well, for an automation built with automationHandlerOf", async () => {
+  test("returns the report when all is well, for an automation built with defineAutomation", async () => {
     const good = notifyWith((c) => Notified.where({ deposit_id: c.depositId }));
-    const automation = automationHandlerOf("notify-deposit", good, (e) => Effect.succeed([executeCommand({ walletId: dataOf(e).walletId, depositId: dataOf(e).depositId })]), {
-      eventTypes: new Set(["DepositMade"])
-    });
+    const automation = defineAutomation("notify-deposit", good).on(DepositMade, (d) => ({ walletId: d.walletId, depositId: d.depositId }));
     expect((await assertAutomationIdempotent(automation, triggers)).effects).toBe(2);
   });
 });

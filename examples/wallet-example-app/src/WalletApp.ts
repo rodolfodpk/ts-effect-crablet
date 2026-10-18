@@ -112,7 +112,7 @@ export const startBackgroundProcessors = (
     // #region automations-processor
     const automationsHandle = yield* makeAutomationsProcessor({
       config: polling,
-      handlers: [walletOpenedAutomation],
+      automations: [walletOpenedAutomation],
       instanceId
     });
     if (roles.has("automations")) yield* automationsHandle.service.start;

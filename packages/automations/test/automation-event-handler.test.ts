@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeAutomationEventHandler, type ExecuteDecision } from "../src/internal/AutomationEventHandler.ts";
-import { automationHandlerOf } from "../src/AutomationHandler.ts";
+import { handlerOf } from "./fixtures/handlerOf.ts";
 import { executeCommand, noOp } from "../src/AutomationDecision.ts";
 import { testCommand } from "./fixtures/testCommand.ts";
 
@@ -23,12 +23,12 @@ describe("makeAutomationEventHandler", () => {
   test("routes to the automation matching the given automationName", async () => {
     const seenA: Array<string> = [];
     const seenB: Array<string> = [];
-    const automationA = automationHandlerOf(
+    const automationA = handlerOf(
       "automation-a",
       testCommand,
       () => Effect.sync(() => (seenA.push("decided"), [noOp()]))
     );
-    const automationB = automationHandlerOf(
+    const automationB = handlerOf(
       "automation-b",
       testCommand,
       () => Effect.sync(() => (seenB.push("decided"), [noOp()]))
@@ -44,7 +44,7 @@ describe("makeAutomationEventHandler", () => {
   });
 
   test("dies on an unregistered automation name", async () => {
-    const automation = automationHandlerOf(
+    const automation = handlerOf(
       "automation-a",
       testCommand,
       () => Effect.succeed([noOp()])
@@ -57,7 +57,7 @@ describe("makeAutomationEventHandler", () => {
 
   test("NoOp decisions count the trigger event as processed without executing anything", async () => {
     const executed: Array<unknown> = [];
-    const automation = automationHandlerOf(
+    const automation = handlerOf(
       "automation-a",
       testCommand,
       () => Effect.succeed([noOp()])
@@ -74,7 +74,7 @@ describe("makeAutomationEventHandler", () => {
 
   test("executes ExecuteCommand decisions sequentially, in returned order", async () => {
     const executed: Array<unknown> = [];
-    const automation = automationHandlerOf(
+    const automation = handlerOf(
       "automation-a",
       testCommand,
       (event) => Effect.succeed([executeCommand({ step: "first", position: event.position }), executeCommand({ step: "second", position: event.position })])
@@ -94,7 +94,7 @@ describe("makeAutomationEventHandler", () => {
 
   test("propagates the trigger event's causation/correlation ids into the executed decision", async () => {
     const seenIds: Array<{ correlationId: string | null; causationId: bigint | null }> = [];
-    const automation = automationHandlerOf(
+    const automation = handlerOf(
       "automation-a",
       testCommand,
       () => Effect.succeed([executeCommand({ noop: true })])
@@ -115,7 +115,7 @@ describe("makeAutomationEventHandler", () => {
 
   test("processes multiple trigger events in order, each decided independently", async () => {
     const decidedPositions: Array<bigint> = [];
-    const automation = automationHandlerOf(
+    const automation = handlerOf(
       "automation-a",
       testCommand,
       (event) => Effect.sync(() => (decidedPositions.push(event.position), [noOp()]))

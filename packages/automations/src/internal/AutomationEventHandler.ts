@@ -38,7 +38,7 @@ export type ExecuteDecision = <T, HE>(
 // how many decisions it produced - the return value is `events.length`, not a decision tally,
 // matching at-least-once redelivery semantics the same way ViewEventHandler/OutboxEventHandler do.
 export const makeAutomationEventHandler = (
-  // `AutomationHandler<any, any, any>` - see AutomationsDeps.handlers (AutomationsModule.ts) on why this
+  // `AutomationHandler<any, any, any>` - see AutomationsDeps.automations (AutomationsModule.ts) on why this
   // registry is type-erased at the internal-wiring boundary, never in the public API.
   handlers: ReadonlyArray<AutomationHandler<any, any, any>>,
   executeDecision: ExecuteDecision

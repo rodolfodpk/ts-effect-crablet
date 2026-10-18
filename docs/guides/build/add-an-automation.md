@@ -3,7 +3,7 @@
 *Guide · developers · the [tutorial](../../tutorial/README.md) · 10 minutes*
 
 An automation reacts to an event by issuing a **command**. It runs on the same poller as views, so delivery is at-least-once: the command it issues must be
-**idempotent**, or a redelivered event runs it twice. The framework enforces it: `automationHandlerOf` throws, when the automation is defined, for a command
+**idempotent**, or a redelivered event runs it twice. The framework enforces it: `defineAutomation` throws, when the automation is defined, for a command
 that declares no `idempotentBy`. The example is the wallet's welcome notification.
 
 [← Task guides](../README.md)
@@ -25,20 +25,20 @@ export const SendWelcomeNotification = defineCommand({
 
 ## 2. The handler
 
-It says which events wake it and, for each, returns the decisions to run. Read the event through its definition (`decodeStored`), so an unreadable event is a
-typed failure recorded against the automation rather than a wrong action.
+`defineAutomation(name, command)` binds the command, and `.on(Event, handler)` says which event wakes it: the handler maps the event's data to the command's
+input, one request, an array of them, or `undefined` for none. The event is read through its own definition, so an unreadable one is a typed failure
+recorded against the automation rather than a wrong action. The handler is pure: if deciding needs state, the command reads it (`model`, `resolve`), where
+it is consistent. Building the input from the trigger also makes a redelivery the same request.
 
 <!-- file: examples/wallet-example-app/src/automations/WalletOpenedAutomation.ts#automation -->
 ```ts
-export const walletOpenedAutomation: AutomationHandler<SendWelcomeNotificationCommand, EventDecodingError, never> = automationHandlerOf(
-  "wallet-opened-welcome-notification",
-  SendWelcomeNotification,
-  (event): Effect.Effect<ReadonlyArray<AutomationDecision<SendWelcomeNotificationCommand>>, EventDecodingError, never> =>
-    // read through the definition: an unreadable WalletOpened is a typed failure recorded against the automation, not a wrong notification
-    Effect.map(Wallet.WalletOpened.decodeStored(event), (data) => [executeCommand({ walletId: data.walletId, owner: data.owner })]),
-  { eventTypes: new Set([WalletEvents.WALLET_OPENED]) }
-);
+export const walletOpenedAutomation = defineAutomation("wallet-opened-welcome-notification", SendWelcomeNotification).on(Wallet.WalletOpened, (d) => ({
+  walletId: d.walletId,
+  owner: d.owner
+}));
 ```
+
+The name keys the automation's progress (its cursor): keep it when you change the automation, or it starts again from the beginning of the log.
 
 ## 3. Register it
 
@@ -46,14 +46,15 @@ export const walletOpenedAutomation: AutomationHandler<SendWelcomeNotificationCo
 ```ts
 const automationsHandle = yield* makeAutomationsProcessor({
   config: polling,
-  handlers: [walletOpenedAutomation],
+  automations: [walletOpenedAutomation],
   instanceId
 });
 if (roles.has("automations")) yield* automationsHandle.service.start;
 
 ```
 
-Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:
+Polling and batch settings for one automation go to the processor by name, `overrides: { "wallet-opened-welcome-notification": { batchSize: 10 } }`, not
+into its definition. Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:
 [`@crablet/automations`](../../../packages/automations/README.md).
 
 ## 4. Test that it is idempotent

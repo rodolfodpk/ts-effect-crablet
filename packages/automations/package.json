@@ -21,5 +21,10 @@
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*"
+  },
+  "crablet": {
+    "internal": [
+      "./AutomationDecision"
+    ]
   }
 }

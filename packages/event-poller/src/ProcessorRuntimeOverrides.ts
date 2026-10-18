@@ -11,3 +11,20 @@ export type ProcessorRuntimeOverrides = { readonly [K in Overridable]?: PollingC
 
 export const resolveOverride = <T>(override: T | undefined | null, globalDefault: T): T =>
   override ?? globalDefault;
+
+// Applies per-processor overrides given by name (a view's or an automation's), and refuses a name that is not in the list: a typo would
+// otherwise be ignored in silence.
+export const withOverridesByName = <A extends ProcessorRuntimeOverrides>(
+  module: string,
+  items: ReadonlyArray<A>,
+  nameOf: (item: A) => string,
+  overrides: Readonly<Record<string, ProcessorRuntimeOverrides>>
+): ReadonlyArray<A> => {
+  const names = new Set(items.map(nameOf));
+  const unknown = Object.keys(overrides).filter((name) => !names.has(name));
+  if (unknown.length > 0) throw new Error(`${module}: overrides name ${unknown.map((n) => `"${n}"`).join(", ")}, which is not in the list`);
+  return items.map((item) => {
+    const given = overrides[nameOf(item)];
+    return given === undefined ? item : { ...item, ...Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined)) };
+  });
+};
