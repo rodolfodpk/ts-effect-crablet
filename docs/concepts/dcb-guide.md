@@ -192,6 +192,9 @@ export const Subscribe = defineCommand({
 });
 ```
 
+A model's `by` is a tag key, and every event it handles must carry it: the compiler refuses one that does not, because such an event would match
+nothing and the boundary would not see it. Tag keys are snake_case (`course_id`), as stored and queried in SQL, while the data stays camelCase.
+
 What to notice:
 
 - **One event, two models.** `CourseModel` counts subscribers; `StudentModel` lists a student's courses. Both

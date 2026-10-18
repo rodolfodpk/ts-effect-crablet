@@ -33,6 +33,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0031: A package's API and its plumbing are separate, and the line is enforced](0031-api-and-plumbing-are-separate.md) - accepted
 - [ADR-0034: A repeat must be the same request, and every command says how it recognises one](0034-a-repeat-must-be-the-same-request.md) - **accepted**: a reused key with another body is a 422; a repeat carries a marker
 - [ADR-0035: The same trigger cannot append the same request twice](0035-the-same-trigger-cannot-append-the-same-request-twice.md) - **accepted**: the database's backstop behind an automation's `idempotentBy`
+- [ADR-0037: The declaration API: one shape, checked by the type checker](0037-the-declaration-api.md) - **accepted**: `define*(name, …).on(Event, handler)` for models, views and automations; `byModel()`; a model's tags checked
 
 ## Reading, delivery and the pollers
 

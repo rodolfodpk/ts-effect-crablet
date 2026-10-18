@@ -7,8 +7,10 @@ What `defineView` and `viewTable` accept. The guarantees a view gets are in [vie
 
 ## `defineView`
 
-From `@crablet/views/ProjectedView`. `defineView(name, { tables }).on(Event, (data, ctx) => operations)`: each handler is pure and returns operations as
-data. The declaration gives the projector, the subscription (the event types handled), the tables the view owns, and an in-memory run (`applyInMemory`).
+From `@crablet/views/ProjectedView`. `defineView(name, { tables, anyOfTags? }).on(Event, (data, ctx) => operations)`: each handler is pure and returns operations as
+data. The view listens to the event types of its handlers; what it reads besides them (`anyOfTags`, `requiredTags`, `exactTags`) is declared with it.
+The declaration gives the tables the view owns (for the drift check, `checkViewTables`) and an in-memory run (`applyInMemory`), and it is what
+`makeViewsProcessor({ views })` runs and a consistent read (`reads: [View]`) waits for ([ADR-0037](../adr/0037-the-declaration-api.md)).
 
 | Operation | What it does |
 |---|---|
@@ -44,7 +46,8 @@ Each column can add `.nullable()` and `.default(value)`.
 ## Processor settings
 
 A view runs as a processor. Its settings are the shared polling settings, all optional, with defaults: see [Polling settings](./configuration.md#polling-settings). A single
-view can override its own polling interval, batch size and backoff through its subscription (`MyView.subscription({ pollingIntervalMs: 250 })`).
+view's polling interval, batch size and backoff are given to the processor by the view's name, not in its definition:
+`makeViewsProcessor({ views, overrides: { "my-view": { pollingIntervalMs: 250 } } })`. A name the processor does not run is refused.
 
 ## Reads over views
 

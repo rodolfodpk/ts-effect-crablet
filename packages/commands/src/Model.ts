@@ -20,8 +20,10 @@ import { tagsOf, type PeriodFields, type PeriodSpec } from "./Period.ts";
 // appends with a condition that fails if anything in the boundary changed since it was loaded.
 //
 //     const WalletModel = defineModel({ by: "wallet_id", initial: () => ({ exists: false, balance: 0 }) })
-//       .lifecycle(WalletOpened, (_, d) => ({ exists: true, balance: d.initialBalance }))
-//       .on(DepositMade, (w, d) => ({ ...w, balance: d.newBalance }));
+//       .on(WalletOpened, (_, d) => ({ exists: true, balance: d.initialBalance }))
+//       .on(DepositMade, (w, d) => ({ ...w, balance: w.balance + d.amount }));
+//
+// Every event a model handles must carry the tag it binds through (`by`): the type checker refuses one that does not (ADR-0037).
 //
 //     WalletModel.of({ id: "w1" }).load(eventStore)   // -> { state, logPosition }
 //

@@ -101,6 +101,7 @@ From `@crablet/commands/Model`.
 | `.on(Event, (state, data, ctx) => state)` | How one event type changes the state. The handled types also make the boundary. Add `{ by: [...] }` when the event carries the entity under other tag keys (a transfer's `from_account_id` and `to_account_id`). |
 | | The event must carry the tag the model binds through (`by`, or every key of `{ by: [...] }`): an event that does not would match nothing, so the fold would miss it and the boundary would not see a concurrent change to it. A typo in `by` or a missing tag is a compile error, `this event does not carry the tag "…" the model binds through`. Tags a command adds at append time (`extraTags`, a model's `scope`) are not checked. |
 | `.ignores(Event, ...)` | Declares event types that carry the model's tags but do not change it, for the change-impact report ([Evolving events](../guides/build/evolving-events.md)). |
+| `defineModel({ by, initial, scope })`, `.lifecycle(Event, ...)` | For a model that is a slice of an entity (one month of a wallet): `scope` narrows the `.on` events to the slice's tags (a command adds them when it appends), and `.lifecycle` is an `.on` that is NOT narrowed, for the events that matter to every slice (opened, closed). Without a `scope` or a `.period`, `.lifecycle` and `.on` do the same. |
 | `.period(...)` | Turns the model over by period (`Period.year`, `month`, `week`, `day`, `custom`, with an optional time zone); the framework closes and opens periods in the command's own append ([Turn a period](../guides/build/turn-a-period.md)). |
 | `Model.of({ id })` | The model of one entity, used in a command's `model`. |
 | `all({ a: ..., b: ... })` | Several models in one decision. The boundary is the union of theirs. |
@@ -110,6 +111,9 @@ From `@crablet/commands/Model`.
 From `@crablet/commands/Event`. `defineEvent(name, { schema, tags })`: a name, a payload `Schema`, and `tags: (data) => ({ key: value })`, the tags the
 event is found by. Mark personal fields with `personal(...)` from `@crablet/commands/Personal`, and keep personal data out of tags
 ([events over time](../concepts/events-over-time.md#personal-data)).
+
+Tag keys are snake_case (`course_id`) while the data is camelCase (`courseId`): tags are stored as `key=value` text and
+queried in SQL, so they follow the database's convention.
 
 The result builds an event (`DepositMade({ ... })`), finds events (`DepositMade.where({ deposit_id })`, which accepts only the tag keys the event
 declares), and names the payload's type: `type Deposit = typeof DepositMade.Type`, as with an Effect `Schema`.
