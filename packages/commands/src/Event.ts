@@ -37,6 +37,8 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   // tags that are scoping context rather than part of the event's own data (e.g. a period).
   (data: Data, extraTags?: ReadonlyArray<Tag.Tag>): AppendEvent.AppendEvent;
   readonly type: Type;
+  // The payload's type, for annotations: `type Deposit = typeof DepositMade.Type`, as with an Effect `Schema`. Type-only: at run time it is undefined.
+  readonly Type: Data;
   // The payload schema (what the event log API documents, and what personal-data handling reads: see Personal.ts).
   readonly schema: Schema.Constraint;
   // Validate and narrow a stored event's raw JSON payload. Throws an `EventDecodingFailure` (paths and messages, never the value) if the stored data does

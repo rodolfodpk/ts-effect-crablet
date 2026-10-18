@@ -111,6 +111,9 @@ From `@crablet/commands/Event`. `defineEvent(name, { schema, tags })`: a name, a
 event is found by. Mark personal fields with `personal(...)` from `@crablet/commands/Personal`, and keep personal data out of tags
 ([events over time](../concepts/events-over-time.md#personal-data)).
 
+The result builds an event (`DepositMade({ ... })`), finds events (`DepositMade.where({ deposit_id })`, which accepts only the tag keys the event
+declares), and names the payload's type: `type Deposit = typeof DepositMade.Type`, as with an Effect `Schema`.
+
 ## Running a command
 
 `CommandExecutor.run(command, input)` validates the input, then in one transaction checks idempotency, runs `resolve`, loads the model, calls
