@@ -274,6 +274,21 @@ export const defineCommand = <
       if (decision._tag === "Noop") return CD.noOp(decision.reason, markerOf(loaded?.latest));
       if (decision.events.length === 0) return CD.noOp("NO_EVENTS", markerOf(loaded?.latest));
 
+      // byModel() claims that the model shows the request was done, and `decide` answers its repeat (ADR-0034). Checked on every write, in memory:
+      // after the command's own events, the same request must be answered `noop(...)`. If not, a retry would append again (or fail where it
+      // succeeded), so nothing is appended.
+      if (isByModel(def.idempotentBy) && loaded?.fold !== undefined) {
+        const again = def.decide(loaded.fold(loaded.state as S, decision.events), input, { now, resolved }) as Decision<ErrorOf<D>>;
+        if (again._tag !== "Noop") {
+          return yield* Effect.die(
+            new Error(
+              `command "${def.name}": idempotentBy byModel() says the model shows the request was done, but after its own events decide ` +
+                `${again._tag === "Fail" ? "fails" : "appends again"} for the same request instead of answering noop(...): a retry would ${again._tag === "Fail" ? "fail where it succeeded" : "do the work twice"}. Nothing was appended.`
+            )
+          );
+        }
+      }
+
       // 5. Build the append: events + the condition the chosen consistency implies. A model with a period may bring the events that turn the period (`loaded.prefix`): they go in
       // this same append, ahead of the command's own, and only because the command has events of its own (a refusal, a no-op, an idempotent repeat never get here).
       // What `resolve` read joins the condition the way `all(...)` joins its members: the queries are added, and the cursor is the earliest read horizon (Model.ts, `all`).

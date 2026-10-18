@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Metric } from "effect";
 import * as Schema from "effect/Schema";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
-import { defineCommand, emit, fail, noop } from "../src/Command.ts";
+import { byModel, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
@@ -299,5 +299,44 @@ describe("a model with a period", () => {
       expect(types(r)).toEqual(["PX_Reported"]);
       expect(s.log.map((e) => e.type)).toEqual(["PX_Opened", "PX_PeriodOpened", "PX_Credited", "PX_Reported"]);
     });
+  });
+});
+
+// byModel() is checked on every write (ADR-0034): after the command's own events, folded in the period it decided in, the same request must be
+// answered noop(...).
+const Flagged = defineEvent("PX_Flagged", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ acct: d.id }) });
+const FlagModel = defineModel({ by: "acct", initial: () => ({ exists: false, flagged: false }) })
+  .lifecycle(Opened, (s) => ({ ...s, exists: true }))
+  .on(PeriodOpened, (s) => ({ ...s, flagged: false }))
+  .on(Flagged, (s) => ({ ...s, flagged: true }))
+  .period(Period.month, {
+    opened: PeriodOpened,
+    closed: PeriodClosed,
+    open: (_, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, opening: 0 }),
+    close: (_, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, closing: 0 })
+  });
+const flagOnce = (name: string, tagged: boolean) =>
+  defineCommand({
+    name,
+    input: Schema.Struct({ id: Schema.String }),
+    model: (c) => FlagModel.of({ id: c.id }),
+    idempotentBy: byModel(),
+    decide: (a, c) => (a.flagged ? noop("ALREADY_FLAGGED") : emit(Flagged(c, tagged ? a.period.tags : [])))
+  });
+
+describe("byModel() on a model with a period", () => {
+  test("the first run, which also opens the period, and the repeat in the open period: created, then already done", async () => {
+    const s = given(Opened({ id: "a1" })).at(oct);
+    const first = await s.when(flagOnce("px_flag", true), { id: "a1" });
+    expect(types(first)).toEqual(["PX_PeriodOpened", "PX_Flagged"]);
+    const again = await s.when(flagOnce("px_flag", true), { id: "a1" });
+    expect(again.outcome).toBe("idempotent");
+    expect(again.reason).toBe("ALREADY_FLAGGED");
+  });
+
+  test("an event without the period's tags is not read back by its own model, so the check refuses it and nothing is appended", async () => {
+    const s = given(Opened({ id: "a1" })).at(oct);
+    await expect(s.when(flagOnce("px_flag_untagged", false), { id: "a1" })).rejects.toThrow(/after its own events decide appends again/);
+    expect(types(await s.when(flagOnce("px_flag", true), { id: "a1" }))).toEqual(["PX_PeriodOpened", "PX_Flagged"]);
   });
 });

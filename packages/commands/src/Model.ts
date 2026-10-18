@@ -8,6 +8,7 @@ import type { LogPosition } from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import { queryMatches } from "@crablet/eventstore/spec/Spec";
 import { tagsOf, type PeriodFields, type PeriodSpec } from "./Period.ts";
 
 // A model answers two questions about one entity (or a group of them):
@@ -73,6 +74,11 @@ export interface Loaded<S> {
   readonly now?: Date;
   readonly boundary?: Query.Query;
   readonly guard?: Query.Query;
+  // The state after `events`, folded the way a load would read them: only the events this model reads (its boundary, in the period it decided
+  // in), through the same handlers. What `byModel()` checks a decision with (ADR-0034): after the command's own events, the same request must be
+  // answered `noop(...)`.
+  // (A method, not a property, so that a `Loaded<{ ... }>` is still a `Loaded<unknown>`.)
+  fold?(state: S, events: ReadonlyArray<AppendEvent>): S;
 }
 
 export interface ModelInstance<S> {
@@ -111,6 +117,16 @@ const queryOf = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, 
   }
   return Query.of([...groups.values()].map((g) => Query.queryItemOf(g.types, g.tags)));
 };
+
+// An event about to be appended, as a handler sees it (a handler may read the event's tags).
+const asStored = (event: AppendEvent): StoredEvent => ({ type: event.type, data: event.eventData, tags: event.tags }) as unknown as StoredEvent;
+
+// Folds the events `query` matches, through the handlers declared for their types.
+const foldWith = <S>(entries: ReadonlyArray<OnEntry<S>>, query: Query.Query, id: string) => (state: S, events: ReadonlyArray<AppendEvent>): S =>
+  events.reduce((s, event) => {
+    const entry = entries.find((e) => e.type === event.type);
+    return entry !== undefined && queryMatches(query, { ...event, position: 0n }) ? entry.apply(s, event.eventData, { event: asStored(event), id }) : s;
+  }, state);
 
 export interface ModelBuilder<S, Scope extends object, By extends string = string> {
   // Handle an event of this kind. By default it is bound to the model's id via the `by` tag and
@@ -243,6 +259,12 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const target = spec.fieldsAt(now);
       const withPeriod = (s: S, fields: F) => ({ ...(s as object), period: info(fields) }) as S & { readonly period: PeriodInfo<F> };
       const stamp = { now } as const;
+      // A fold in the period decided in, which keeps the state's `period` (a handler need not carry it).
+      const foldIn = (fields: F) => {
+        const fold = foldWith(entries, queryOf(entries, def.by, id, tagsOf(spec, fields), false), id);
+        return (state: S & { readonly period: PeriodInfo<F> }, events: ReadonlyArray<AppendEvent>) =>
+          ({ ...(fold(state, events) as object), period: state.period }) as S & { readonly period: PeriodInfo<F> };
+      };
       const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition; latest: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
         state: withPeriod(m.s, fields),
         logPosition: m.logPosition,
@@ -250,6 +272,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         latest: m.latest,
         boundary: m.query,
         guard: closingQuery(id, fields),
+        fold: foldIn(fields),
         ...stamp
       });
 
@@ -289,7 +312,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const opening = requireTags(opened(config.open(carry, context(target))), opened.type);
       prefix.push(opening);
       const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
-      return { state: withPeriod(state, target), logPosition: horizon, horizon, latest, prefix, boundary, ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
+      return { state: withPeriod(state, target), logPosition: horizon, horizon, latest, prefix, boundary, fold: foldIn(target), ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
     });
 
   return {
@@ -358,7 +381,8 @@ export const defineModel = <S, const By extends string, Scope extends object = {
           state: r.state,
           logPosition: r.logPosition,
           horizon: r.horizon,
-          latest: r.latest
+          latest: r.latest,
+          fold: foldWith(entries, query, args.id)
         });
         return {
           query,
@@ -403,8 +427,12 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
         const prefix = loaded.flatMap(([, l]) => l.prefix ?? []);
         const boundary = entriesWithPeriod.some(([, , l]) => l.boundary !== undefined) ? unionOf(...entriesWithPeriod.map(([, m, l]) => l.boundary ?? m.query)) : undefined;
         const guardParts = loaded.map(([, l]) => l.guard).filter((g): g is Query.Query => g !== undefined);
+        // Each member folds what it reads.
+        const fold = (state: Record<string, unknown>, events: ReadonlyArray<AppendEvent>) =>
+          Object.fromEntries(loaded.map(([key, l]) => [key, l.fold !== undefined ? l.fold(state[key], events) : state[key]]));
         return {
           state: Object.fromEntries(loaded.map(([key, l]) => [key, l.state])) as never,
+          fold: fold as never,
           logPosition: horizon,
           horizon,
           latest,

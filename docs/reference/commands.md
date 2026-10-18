@@ -59,8 +59,10 @@ recognises the repeat, with `idempotentBy` ([ADR-0034](../adr/0034-a-repeat-must
 
 For a query, the framework stores a fingerprint of the request with its events (SHA-256 of the command name and its encoded input) and compares it when the
 key matches. The same automation trigger delivered again is always "already done", even if the automation built the input differently the second time.
-`byModel()` is a claim the framework cannot check by itself: `assertRepeatHarmless(Command, input, history?)` (`@crablet/commands/testing/Scenario`) runs the
-command twice and fails if the repeat appends anything or fails.
+`byModel()` is checked on every write: the executor folds the command's own events into the model's state and runs `decide` again with the same input,
+which must answer `noop(...)`; if it appends again or fails, nothing is appended and the command dies with a message that names it. In a test,
+`assertRepeatHarmless(Command, input, history?)` (`@crablet/commands/testing/Scenario`) runs the command twice and fails if the repeat appends anything or
+fails, for both forms of `idempotentBy`.
 
 `byModel()` needs a model and takes no `consistency`: it decides under `strict()`, the default with a model. Two identical requests that race both decide
 to append, and only the conflict, the rerun and its fresh load let `decide` see the first. The type checker refuses `byModel()` without a model or with a

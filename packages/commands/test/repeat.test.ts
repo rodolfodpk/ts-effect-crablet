@@ -104,7 +104,7 @@ describe("assertRepeatHarmless", () => {
     await assertRepeatHarmless(Open, { accountId: "b" });
   });
 
-  test("fails for a \"decide\" claim that decide does not keep: the repeat appends again", async () => {
+  test("a byModel() claim that decide does not keep is refused on its first run: after its own events it would append again", async () => {
     const Counted = defineCommand({
       name: "rp_counted",
       input: Schema.Struct({ accountId: Schema.String }),
@@ -112,10 +112,10 @@ describe("assertRepeatHarmless", () => {
       model: (c) => Account.of({ id: c.accountId }),
       decide: (_, c) => emit(Opened(c))
     });
-    await expect(assertRepeatHarmless(Counted, { accountId: "c" })).rejects.toThrow(/NOT HARMLESS/);
+    await expect(assertRepeatHarmless(Counted, { accountId: "c" })).rejects.toThrow(/byModel\(\) says the model shows the request was done, but after its own events decide appends again/);
   });
 
-  test("fails for a repeat answered with an error: a client retrying a lost answer would be told it failed", async () => {
+  test("a byModel() repeat answered with an error is refused on its first run: a client retrying a lost answer would be told it failed", async () => {
     class AlreadyOpen extends Error {}
     const Strict = defineCommand({
       name: "rp_strict",
@@ -124,7 +124,18 @@ describe("assertRepeatHarmless", () => {
       model: (c) => Account.of({ id: c.accountId }),
       decide: (account, c) => (account.open ? fail(new AlreadyOpen("open")) : emit(Opened(c)))
     });
-    await expect(assertRepeatHarmless(Strict, { accountId: "d" })).rejects.toThrow(/the repeat of a request that succeeded failed/);
+    await expect(assertRepeatHarmless(Strict, { accountId: "d" })).rejects.toThrow(/after its own events decide fails for the same request/);
+  });
+
+  test("fails for a query key that never matches what the command appends: the repeat appends again", async () => {
+    const Typo = defineCommand({
+      name: "rp_typo",
+      input: payInput,
+      idempotentBy: (c) => Paid.where({ payment_id: `${c.paymentId}-typo` }),
+      model: (c) => Account.of({ id: c.accountId }),
+      decide: (_, c) => emit(Paid(c))
+    });
+    await expect(assertRepeatHarmless(Typo, { accountId: "t", paymentId: "p", amount: 1 })).rejects.toThrow(/NOT HARMLESS/);
   });
 
   test("fails for a command that does not say how a repeat is recognised", async () => {

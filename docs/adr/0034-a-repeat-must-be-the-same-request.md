@@ -30,8 +30,10 @@ reports what it matched), `EventStore.findDuplicate`, `Duplicate.latest` and `.r
   cannot tell a retry from a new request. The framework looks the key up before deciding, and the append checks it again atomically.
 - **`byModel()`** is for an effect that happens once per key (open wallet X, define course Y, subscribe S to C). The model already shows whether it
   happened, and `decide` answers the repeat: `noop(...)` for the same request, a domain error for a different one (`WalletAlreadyExists`). The framework
-  looks nothing up for it. The value is a statement by the author, and `assertRepeatHarmless(Command, input, history?)` checks it in a test: it runs the
-  command twice and fails if the second run appends anything, or fails for a request that succeeded.
+  looks nothing up for it. The value is a statement by the author, and the executor checks it on every write, in memory and before anything is
+  appended: it folds the command's own events into the model's state and runs `decide` again with the same input, which must answer `noop(...)`. If it
+  emits again or fails, the write is refused as a defect (a retry would do the work twice, or fail where it succeeded). `assertRepeatHarmless(Command,
+  input, history?)` checks the same in a test, for both forms of `idempotentBy`.
 
   `byModel()` needs a model and takes no `consistency`: it decides under `strict()`, the default with a model. Two identical requests that race both load
   "not done yet"; under `strict()` the second append conflicts, the command runs again, and its fresh load shows the first, so `decide` answers it. Under

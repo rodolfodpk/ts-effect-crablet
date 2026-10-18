@@ -8,7 +8,8 @@ import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as Crablet from "../../src/Crablet.ts";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
-import { defineCommand, emit } from "../../src/Command.ts";
+import { byModel, defineCommand, emit } from "../../src/Command.ts";
+import { defineModel } from "../../src/Model.ts";
 import { IdempotencyMismatch } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
 
@@ -96,5 +97,25 @@ describe("a repeat must be the same request (ADR-0034, real Postgres)", () => {
       )
     );
     assert.equal(caught, "rpg_pay");
+  });
+});
+
+describe("byModel() is checked on every write (ADR-0034, real Postgres)", () => {
+  it("a command whose decide does not answer its own repeat is refused before anything is appended", { timeout: 30_000 }, async () => {
+    const Noted = defineEvent("RPG_Noted", { schema: Schema.Struct({ noteId: Schema.String }), tags: (d) => ({ note_id: d.noteId }) });
+    const NoteModel = defineModel({ by: "note_id", initial: () => ({ noted: false }) }).on(Noted, () => ({ noted: true }));
+    // It says the model shows the note was taken, but it never looks.
+    const Note = defineCommand({
+      name: "rpg_note",
+      input: Schema.Struct({ noteId: Schema.String }),
+      model: (c) => NoteModel.of({ id: c.noteId }),
+      idempotentBy: byModel(),
+      decide: (_, c) => emit(Noted(c))
+    });
+    const noteId = crypto.randomUUID();
+    const exit = await runExit(Effect.flatMap(CommandExecutor, (x) => x.run(Note, { noteId })));
+    assert.ok(Exit.isFailure(exit), "refused");
+    const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT 1 FROM crablet_events WHERE tags @> ARRAY[$1]::text[]", [`note_id=${noteId}`])));
+    assert.equal(rows.length, 0, "nothing appended");
   });
 });
