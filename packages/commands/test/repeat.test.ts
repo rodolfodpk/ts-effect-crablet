@@ -9,6 +9,7 @@ import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEven
 import { defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { runHandler } from "../src/CommandExecutor.ts";
 import { IdempotencyMismatch } from "../src/Errors.ts";
+import type { ExecutionResult } from "../src/ExecutionResult.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
 import { assertRepeatHarmless, given } from "../src/testing/Scenario.ts";
@@ -127,5 +128,32 @@ describe("assertRepeatHarmless", () => {
 
   test("tells the author when the first run did not append", async () => {
     await expect(assertRepeatHarmless(Open, { accountId: "f" }, [AppendEvent.ofUntagged("Nothing", {}), Opened({ accountId: "f" })])).rejects.toThrow(/the first run must append/);
+  });
+});
+
+// ADR-0035: the database's backstop, mirrored by the in-memory store (packages/commands/test/integration/trigger-backstop-postgres.test.ts on Postgres).
+describe("the same trigger cannot append the same request twice", () => {
+  const Notified = defineEvent("RP_Notified", { schema: Schema.Struct({ accountId: Schema.String, kind: Schema.String }), tags: (d) => ({ account_id: d.accountId }) });
+  // Its key never matches what it appends (a misspelled tag).
+  const Notify = defineCommand({
+    name: "rp_notify",
+    input: Schema.Struct({ accountId: Schema.String, kind: Schema.String }),
+    idempotentBy: (c) => Notified.where({ accountid: c.accountId } as never),
+    decide: (_, c) => emit(Notified(c))
+  });
+  const store = makeInMemoryEventStore();
+  const underTrigger = (input: { accountId: string; kind: string }, trigger: bigint) =>
+    Effect.runPromise(Effect.provide(CorrelationContext.withCausationId(trigger)(runHandler(Notify.handler, input, Notify.name)), store.layer) as Effect.Effect<ExecutionResult>);
+
+  test("a redelivered trigger whose key never matches appends nothing the second time, and the reason says the backstop caught it", async () => {
+    expect((await underTrigger({ accountId: "a", kind: "welcome" }, 1n)).wasIdempotent).toBe(false);
+    const again = await underTrigger({ accountId: "a", kind: "welcome" }, 1n);
+    expect([again.wasIdempotent, again.reason]).toEqual([true, "ALREADY_DONE_FOR_TRIGGER"]);
+  });
+
+  test("keyed by content: [A] then [B, A] appends B and not A again", async () => {
+    await underTrigger({ accountId: "b", kind: "A" }, 2n);
+    expect((await underTrigger({ accountId: "b", kind: "B" }, 2n)).wasIdempotent).toBe(false);
+    expect((await underTrigger({ accountId: "b", kind: "A" }, 2n)).wasIdempotent).toBe(true);
   });
 });

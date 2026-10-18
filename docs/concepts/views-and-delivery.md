@@ -18,7 +18,8 @@ reads the events after its cursor, hands them to a handler, and moves the cursor
 ## What you must do yourself
 
 - **Make every other effect idempotent.** A projector's write outside the `sql` it is given, an automation's command and an outbox publication can each
-  happen twice. An automation's command must declare `idempotentBy` (`automationHandlerOf` refuses one that does not). An outbox publisher should
+  happen twice. An automation's command must declare `idempotentBy` (`automationHandlerOf` refuses one that does not); behind it, the database refuses the
+  same trigger appending the same request twice ([ADR-0035](../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)). An outbox publisher should
   deduplicate on `event.position`.
 - **Do not use "position is bigger than the last one I saw" as an idempotency check.** Delivery is ordered by transaction first, so a later event can
   have a smaller position.

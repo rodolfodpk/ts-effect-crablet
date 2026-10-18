@@ -101,7 +101,7 @@ export const checkAutomationIdempotency = async (
           outcomes.push({
             trigger: event.position,
             command: automation.command.name,
-            result: result.wasIdempotent ? (result.reason === "DUPLICATE_OPERATION" ? "already-done" : "noop") : "created",
+            result: result.wasIdempotent ? (result.reason === "DUPLICATE_OPERATION" || result.reason === "ALREADY_DONE_FOR_TRIGGER" ? "already-done" : "noop") : "created",
             detail: result.reason ?? ""
           });
         } else if (result._tag === "mismatch") {
@@ -136,12 +136,16 @@ export const checkAutomationIdempotency = async (
     }
   }
 
-  await handleOnce();
+  const second = await handleOnce();
   const repeated = (await backend.count()) - afterFirst;
-  if (repeated > 0) {
+  // The framework's backstop (ADR-0035) stops the same trigger from appending the same request twice, so a key that never matches no longer shows as
+  // events appended twice; it shows as repeats the backstop, not the key, recognised.
+  const caughtByBackstop = second.filter((o) => o.result === "already-done" && o.detail === "ALREADY_DONE_FOR_TRIGGER").length;
+  if (repeated > 0 || caughtByBackstop > 0) {
     problems.push(
-      `NOT IDEMPOTENT: handling the same triggers a second time appended ${repeated} more event(s). "${automation.command.name}" must declare an idempotentBy ` +
-        `whose query matches the event it appends (same type, same tags), or a redelivered batch does its work twice.`
+      `NOT IDEMPOTENT: handling the same triggers a second time ${repeated > 0 ? `appended ${repeated} more event(s)` : `was stopped ${caughtByBackstop} time(s) only by the framework's backstop`}. ` +
+        `"${automation.command.name}" must declare an idempotentBy whose query matches the event it appends (same type, same tags): the backstop protects a ` +
+        `redelivered trigger, not the rule the key stands for (one welcome per wallet, across triggers).`
     );
   }
 

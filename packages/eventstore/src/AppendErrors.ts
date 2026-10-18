@@ -39,6 +39,9 @@ export class Duplicate extends Data.TaggedError("Duplicate")<{
   readonly latest: { readonly position: bigint; readonly transactionId: string };
   // The distinct requests behind the matches (at most a few).
   readonly requests: ReadonlyArray<MatchedRequest>;
+  // True when the idempotency query did NOT see it and the database's backstop did: the same trigger appending the same request again (ADR-0035).
+  // It means the command's `idempotentBy` does not recognise its own repeat.
+  readonly byTrigger: boolean;
 }> {}
 
 // An append of more events than `MAX_APPEND_EVENTS`. One append is one transaction that takes the writer lock and notifies once, so a very large batch holds

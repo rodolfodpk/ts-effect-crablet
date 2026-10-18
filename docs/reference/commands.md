@@ -40,7 +40,8 @@ and makes the condition strict when a lookup covers an event the command appends
 | `fail(new SomeError(...))` | the domain error; nothing appended | the status of the error's `kind` (below) |
 
 A `noop` reason is a short code in `UPPER_SNAKE_CASE` (`ALREADY_SUBSCRIBED`, `ALREADY_OPENED`), the same style as the framework's own: `DUPLICATE_OPERATION` when
-`idempotentBy` finds the operation already done, and `NO_EVENTS` when `emit()` has no events. A client can switch on it.
+`idempotentBy` finds the operation already done, `ALREADY_DONE_FOR_TRIGGER` when an automation's redelivered trigger was recognised by the framework's backstop
+rather than by `idempotentBy` ([ADR-0035](../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)), and `NO_EVENTS` when `emit()` has no events. A client can switch on it.
 
 An idempotent result carries a marker, the same `lastPosition` and `lastTransactionId` a created one has: where the earlier write is (the latest event the
 key matched, or the newest event the decision read). A client whose first answer was lost reads its own write with it. It is null only when there is

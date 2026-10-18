@@ -48,11 +48,11 @@ describe("checkAutomationIdempotency", () => {
     expect(report).toEqual({ ok: true, problems: [], effects: 2 });
   });
 
-  test("a command with no idempotentBy: the repeat appends again", async () => {
+  test("a command with no idempotentBy: the repeat is stopped only by the framework's backstop, which is reported (ADR-0035)", async () => {
     const report = await checkAutomationIdempotency(automationOf(notifyWith()), triggers);
     expect(report.ok).toBe(false);
     expect(report.problems).toHaveLength(1);
-    expect(report.problems[0]).toMatch(/NOT IDEMPOTENT.*appended 2 more event/);
+    expect(report.problems[0]).toMatch(/NOT IDEMPOTENT.*stopped 2 time\(s\) only by the framework's backstop/);
   });
 
   test("a key too broad (the wallet): the second deposit's notification would be dropped", async () => {

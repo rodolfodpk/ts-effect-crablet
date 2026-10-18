@@ -40,12 +40,17 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const log: Array<StoredEvent> = [];
   // The request fingerprint each event was appended with (ADR-0034), by position: not part of StoredEvent, as in Postgres.
   const fingerprints = new Map<bigint, string | null>();
+  // The emit keys of events appended under a cause, as `<cause>/<fingerprint>/<n>` (ADR-0035): the database's unique index, in memory.
+  const emitKeys = new Map<string, bigint>();
   const appended: Array<{ events: ReadonlyArray<AppendEvent>; condition: AppendCondition | null }> = [];
   let transactionCounter = 0;
   const lock = Semaphore.makeUnsafe(1);
 
   const store = (events: ReadonlyArray<AppendEvent>, correlationId: string | null, causationId: bigint | null, fingerprint: string | null = null): AppendResult => {
     const transactionId = String(++transactionCounter);
+    events.forEach((_, i) => {
+      if (causationId !== null && fingerprint !== null) emitKeys.set(`${causationId}/${fingerprint}/${i + 1}`, BigInt(log.length + 1 + i));
+    });
     for (const e of events) {
       fingerprints.set(BigInt(log.length + 1), fingerprint);
       log.push({
@@ -76,7 +81,8 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
     return new Duplicate({
       message: "Duplicate operation: duplicate operation detected",
       latest: { position: latest.position, transactionId: latest.transactionId },
-      requests: [...requests.values()]
+      requests: [...requests.values()],
+      byTrigger: false
     });
   };
 
@@ -96,6 +102,17 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
       const correlationId = yield* CorrelationContext.correlationId;
       const causationId = yield* CorrelationContext.causationId;
       const fingerprint = yield* CorrelationContext.requestFingerprint;
+      // The same trigger appending the same request again: refused like Postgres's unique emit key (ADR-0035).
+      const repeated = causationId !== null && fingerprint !== null ? emitKeys.get(`${causationId}/${fingerprint}/1`) : undefined;
+      if (repeated !== undefined) {
+        const earlier = log[Number(repeated) - 1]!;
+        return yield* new Duplicate({
+          message: "Duplicate operation: this trigger already appended this request",
+          latest: { position: earlier.position, transactionId: earlier.transactionId },
+          requests: [{ fingerprint, causationId }],
+          byTrigger: true
+        });
+      }
       // Nothing above suspends, so the check and the insert are one atomic step.
       appended.push({ events, condition: condition ?? null });
       return store(events, correlationId, causationId, fingerprint);
@@ -145,6 +162,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
             ? Effect.void
             : Effect.sync(() => {
                 for (const event of log.slice(logMark)) fingerprints.delete(event.position);
+                for (const [key, position] of emitKeys) if (position > BigInt(logMark)) emitKeys.delete(key);
                 log.length = logMark;
                 appended.length = appendedMark;
               })

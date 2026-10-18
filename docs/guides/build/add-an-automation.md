@@ -75,9 +75,24 @@ test("welcome notification: one per wallet, and a redelivered WalletOpened does 
 
 It handles the triggers once, then handles them again, and fails with the problems it found:
 
-- **NOT IDEMPOTENT**: the second pass appended events. The command has no `idempotentBy`, or its query never matches what it appends (a misspelled tag, the wrong event type).
-- **TOO BROAD**: on the first pass a decision was answered "already done". The query matches something that is not this operation, such as the wallet's id where the deposit's id was needed.
+- **NOT IDEMPOTENT**: on the second pass the key did not recognise the repeat: the command has no `idempotentBy`, or its query never matches what it appends
+  (a misspelled tag, the wrong event type). The framework's backstop still stops the same trigger from appending the same request twice (below), so this shows
+  as repeats the backstop caught, not as events appended twice.
+- **TOO BROAD**: on the first pass a decision was answered "already done", or was refused because the key was already used by a different request
+  (`IdempotencyMismatch`). The query matches something that is not this operation, such as the wallet's id where the deposit's id was needed.
 - **FAILED**: a command failed, usually for want of state it reads. Give the events it needs with `{ given: [...] }`.
 
 It is only as good as the triggers: two deposits to the same wallet expose a key on the wallet, two deposits to different wallets do not. It is a test, for you to call;
 nothing runs it in production.
+
+## What protects it in production
+
+Two things, so a wrong key costs a warning, not wrong data ([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md),
+[ADR-0035](../../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)):
+
+- **The same trigger cannot append the same request twice.** An append made by an automation carries the trigger's position and a key built from the
+  request's content, unique in the database. A redelivered trigger whose `idempotentBy` never matches is still "already done", with the reason
+  `ALREADY_DONE_FOR_TRIGGER`, and a warning names the command. It is keyed by content, so a redelivery whose `decide` returns more decisions still appends
+  what is new. Build the command's input from the trigger, so a redelivery builds the same request.
+- **A key used by another trigger's different request is refused** (`IdempotencyMismatch`), not answered "already done": a key that is too broad stops the
+  automation, loudly, instead of dropping work in silence.

@@ -204,14 +204,17 @@ export const defineCommand = <
       // 1. Idempotency pre-check, before anything else (see `idempotentBy`): a repeat of the same request is "already done", with the earlier
       // write's marker; the same key from a different request is refused.
       const idempotency = typeof def.idempotentBy === "function" ? def.idempotentBy(input) : null;
-      const fingerprint = idempotency !== null ? yield* fingerprintOf(def.name, def.input, input) : null;
+      // The request's fingerprint: compared when the key repeats, and, under a cause (an automation's trigger), the database's backstop against the same
+      // trigger appending the same request twice (ADR-0035).
+      const causationId = yield* CorrelationContext.causationId;
+      const fingerprint = idempotency !== null || causationId !== null ? yield* fingerprintOf(def.name, def.input, input) : null;
       if (idempotency !== null) {
         if (Query.isEmpty(idempotency)) {
           return yield* Effect.die(new Error(`command "${def.name}": idempotentBy returned an empty query`));
         }
         const duplicate = yield* eventStore.findDuplicate(idempotency);
         if (duplicate !== null) {
-          if (!isSameRequest(duplicate, fingerprint, yield* CorrelationContext.causationId)) return yield* mismatch;
+          if (!isSameRequest(duplicate, fingerprint, causationId)) return yield* mismatch;
           return CD.noOp("DUPLICATE_OPERATION", duplicate.latest);
         }
       }
@@ -268,7 +271,7 @@ export const defineCommand = <
       } else {
         append = CD.commutative(...events);
       }
-      return idempotency !== null ? { ...CD.withIdempotencyQuery(append, idempotency), requestFingerprint: fingerprint } : append;
+      return { ...(idempotency !== null ? CD.withIdempotencyQuery(append, idempotency) : append), requestFingerprint: fingerprint };
     })) as CommandHandler<In, ErrorOf<D> | RE | SqlError | IdempotencyMismatch>;
 
   return { name: def.name, input: def.input, errors: (def.errors ?? []) as unknown as Es, decodeInput, handler, retries: def.retries ?? defaultRetries, idempotent: def.idempotentBy !== undefined };

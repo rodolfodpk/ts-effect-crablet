@@ -95,9 +95,14 @@ export const runHandler = <T, E>(
       ),
       // The idempotency query matched at the append (a request that committed between the pre-check and here): the same request is "already
       // done", with the earlier write's marker; another request under the same key is refused (ADR-0034).
-      Effect.catchTag("Duplicate", (duplicate) =>
+      Effect.catchTag("Duplicate", (duplicate): Effect.Effect<Repeat, IdempotencyMismatch> =>
         isSameRequest(duplicate, fingerprint, causationId)
-          ? Effect.succeed({ repeat: duplicate.latest } as const)
+          ? duplicate.byTrigger
+            ? // The backstop caught what idempotentBy did not: the same trigger, the same request, again. Already done, but the key is wrong (ADR-0035).
+              Effect.logWarning(`command "${name}": a redelivered trigger (position ${causationId}) was stopped by the framework's backstop, not by its idempotentBy, which does not recognise its own repeat`).pipe(
+                Effect.as({ repeat: duplicate.latest, reason: "ALREADY_DONE_FOR_TRIGGER" })
+              )
+            : Effect.succeed({ repeat: duplicate.latest, reason: "DUPLICATE_OPERATION" })
           : Effect.fail(new IdempotencyMismatch({
               command: name,
               message: `command "${name}": this request's key was already used by a different request; the earlier one stands and this one was not applied`
@@ -105,8 +110,14 @@ export const runHandler = <T, E>(
       )
     );
 
-    return "repeat" in outcome ? ExecutionResultNS.idempotent("DUPLICATE_OPERATION", outcome.repeat) : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
+    return "repeat" in outcome ? ExecutionResultNS.idempotent(outcome.reason, outcome.repeat) : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
   });
+
+// An append the key found already done: where the earlier write is, and why (ExecutionResult.reason).
+interface Repeat {
+  readonly repeat: { readonly position: bigint; readonly transactionId: string };
+  readonly reason: "DUPLICATE_OPERATION" | "ALREADY_DONE_FOR_TRIGGER";
+}
 
 // Re-run `attempt` after a `Conflict`, up to `retries` more times (`onRetry` runs before each re-run).
 // Each re-run is a fresh attempt: the caller makes `attempt` a whole new transaction with a fresh load.

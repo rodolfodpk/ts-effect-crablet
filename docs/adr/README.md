@@ -32,6 +32,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0030: One polling config, with defaults; no `enabled`](0030-one-polling-config.md) - accepted
 - [ADR-0031: A package's API and its plumbing are separate, and the line is enforced](0031-api-and-plumbing-are-separate.md) - accepted
 - [ADR-0034: A repeat must be the same request, and every command says how it recognises one](0034-a-repeat-must-be-the-same-request.md) - **accepted**: a reused key with another body is a 422; a repeat carries a marker
+- [ADR-0035: The same trigger cannot append the same request twice](0035-the-same-trigger-cannot-append-the-same-request-twice.md) - **accepted**: the database's backstop behind an automation's `idempotentBy`
 
 ## Reading, delivery and the pollers
 

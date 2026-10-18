@@ -74,13 +74,15 @@ interface DuplicateJson {
   readonly latest_transaction_id: string;
   readonly latest_position: string;
   readonly requests: ReadonlyArray<{ readonly fingerprint: string | null; readonly causation_id: string | null }>;
+  readonly by_trigger?: boolean;
 }
 
 const duplicateOf = (message: string, json: DuplicateJson): Duplicate =>
   new Duplicate({
     message,
     latest: { position: BigInt(json.latest_position), transactionId: json.latest_transaction_id },
-    requests: json.requests.map((r) => ({ fingerprint: r.fingerprint, causationId: r.causation_id === null ? null : BigInt(r.causation_id) }))
+    requests: json.requests.map((r) => ({ fingerprint: r.fingerprint, causationId: r.causation_id === null ? null : BigInt(r.causation_id) })),
+    byTrigger: json.by_trigger === true
   });
 
 // What an idempotency query matches, as the `Duplicate` an append would report, or null when it matches nothing: the command executor's
