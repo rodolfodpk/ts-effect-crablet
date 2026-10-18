@@ -11,7 +11,7 @@ reads the events after its cursor, hands them to a handler, and moves the cursor
 |---|---|---|
 | **No event is skipped** | Every event your handler selects reaches it, even one whose transaction committed late. | The cursor is a `(transaction_id, position)` pair, not a bare position ([ADR-0012](../adr/0012-transaction-position-cursors.md)). |
 | **At least once** | An event can arrive again after a crash or a change of leader. | A cursor moves after the handler, never before. |
-| **Exactly once, for a view's own writes** | A view that writes through the `sql` its projector is given applies a repeated batch once. | The batch and the cursor commit in one transaction, and the cursor move is a compare-and-set ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md)). |
+| **Exactly once, for a view's own writes** | A view that writes through the `sql` its projector is given applies a repeated batch once. | The batch and the cursor commit in one transaction, and the cursor moves only if it is still where the batch started, so a repeated or overlapping batch is rolled back ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md), [ADR-0032](../adr/0032-the-cursor-moves-only-from-where-its-batch-started.md)). |
 | **In order** | Events arrive ordered by transaction, then by position. | The poller's query sorts on the same pair as the cursor. |
 | **One handler at a time** | Only the module's leader runs your handler. A leader that lost its lock stops before it handles or moves a cursor. | See [background processors](./background-processors.md). |
 

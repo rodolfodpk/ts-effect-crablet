@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-09). Built for views (`EventProcessorDeps.atomically`, `ProgressTracker.advanceCursor`, tests in `packages/views/test/integration/view-exactly-once.test.ts`). Not applied to automations or
+**Accepted** (2026-10-09). **Amended by [ADR-0032](0032-the-cursor-moves-only-from-where-its-batch-started.md)** (2026-10-18): the compare-and-set below was forward-only, which stops a repeat of the same batch but not two batches that overlap; the cursor now moves only from where its batch started. Built for views (`EventProcessorDeps.atomically`, `ProgressTracker.advanceCursor`, tests in `packages/views/test/integration/view-exactly-once.test.ts`). Not applied to automations or
 the outbox; "Alternatives" says why. The cost figures are from one run on a local Postgres in Docker, not from AWS.
 
 ## Context

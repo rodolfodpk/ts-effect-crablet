@@ -53,7 +53,7 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(SPEC);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("7", 42n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("7", 42n));
         yield* tracker.autoRegister(id, "instance-b"); // must NOT reset last_position back to 0
         return yield* tracker.getCursor(id);
       })
@@ -67,7 +67,7 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(SPEC);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("99", 123n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("99", 123n));
         return yield* tracker.getCursor(id);
       })
     );
@@ -160,30 +160,33 @@ describe("PostgresProgressTracker (against crablet_view_progress)", () => {
     assert.strictEqual(outcome, "not-ready");
   });
 
-  it("updateCursor only moves forward: an older cursor (a zombie leader's late write) changes nothing", async () => {
+  it("the cursor moves only from where the batch started: a late write from the same start changes nothing, behind OR ahead", async () => {
     const id = `view-${crypto.randomUUID()}`;
-    const cursor = await run(
+    const [first, behind, ahead, cursor] = await run(
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(SPEC);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("900", 900n));
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("100", 100n));
-        return yield* tracker.getCursor(id);
+        const first = yield* tracker.advanceCursor!(id, ProgressCursorNS.zero, ProgressCursorNS.of("900", 900n));
+        // A zombie leader's late write, from the start it read before the cursor moved: behind the stored cursor...
+        const behind = yield* tracker.advanceCursor!(id, ProgressCursorNS.zero, ProgressCursorNS.of("100", 100n));
+        // ...or AHEAD of it (a bigger batch from the same start, which a forward-only check would have let through).
+        const ahead = yield* tracker.advanceCursor!(id, ProgressCursorNS.zero, ProgressCursorNS.of("1000", 1000n));
+        return [first, behind, ahead, yield* tracker.getCursor(id)] as const;
       })
     );
-    assert.strictEqual(cursor.position, 900n);
-    assert.strictEqual(cursor.transactionId, "900");
+    assert.deepStrictEqual([first, behind, ahead], [true, false, false]);
+    assert.deepStrictEqual(cursor, ProgressCursorNS.of("900", 900n));
   });
 
-  it("the same cursor again is a no-op, and a higher position in the same transaction advances", async () => {
+  it("the same move again is a no-op, and a move from the stored cursor to a higher position in the same transaction advances", async () => {
     const id = `view-${crypto.randomUUID()}`;
     const cursor = await run(
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(SPEC);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 5n));
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 5n));
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 6n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("50", 5n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("50", 5n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("50", 5n), ProgressCursorNS.of("50", 6n));
         return yield* tracker.getCursor(id);
       })
     );

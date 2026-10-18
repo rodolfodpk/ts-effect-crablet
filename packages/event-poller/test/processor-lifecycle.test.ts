@@ -58,7 +58,7 @@ describe("ProcessorManagementService lifecycle", () => {
 
   test("reset clears error count and re-activates a FAILED processor, without rewinding position", async () => {
     const { tracker, management } = await run(setup());
-    await run(tracker.updateCursor("view-a", ProgressCursorNS.of("42", 42n)));
+    await run(tracker.updateCursor("view-a", ProgressCursorNS.zero, ProgressCursorNS.of("42", 42n)));
     for (let i = 0; i < 10; i++) await run(tracker.recordError("view-a", "boom", 10));
     expect(await run(tracker.getStatus("view-a"))).toBe("FAILED");
 

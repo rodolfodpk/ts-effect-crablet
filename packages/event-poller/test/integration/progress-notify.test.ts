@@ -63,8 +63,8 @@ describe("progress tracker notifications", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(notifying);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("100", 7n));
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("101", 9n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("100", 7n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.of("100", 7n), ProgressCursorNS.of("101", 9n));
       })
     );
     await settle();
@@ -84,7 +84,7 @@ describe("progress tracker notifications", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(notifying);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("200", 15n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("200", 15n));
       })
     );
     await settle();
@@ -99,7 +99,7 @@ describe("progress tracker notifications", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(notifying);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("300", 21n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("300", 21n));
       })
     );
     await settle();
@@ -113,7 +113,7 @@ describe("progress tracker notifications", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(silent);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("400", 30n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("400", 30n));
       })
     );
     await settle();
@@ -125,7 +125,7 @@ describe("progress tracker notifications", () => {
     await run(
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(notifying);
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("500", 40n)); // never autoRegistered
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("500", 40n)); // never autoRegistered
       })
     );
     await settle();
@@ -138,9 +138,9 @@ describe("progress tracker notifications", () => {
       Effect.gen(function* () {
         const tracker = yield* makePostgresProgressTracker<string>(notifying);
         yield* tracker.autoRegister(id, "instance-a");
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("600", 50n));
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("600", 50n)); // same
-        yield* tracker.updateCursor(id, ProgressCursorNS.of("550", 45n)); // older
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("600", 50n));
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("600", 50n)); // the same move again
+        yield* tracker.updateCursor(id, ProgressCursorNS.zero, ProgressCursorNS.of("550", 45n)); // from a start the cursor has left
       })
     );
     await settle();

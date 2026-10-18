@@ -64,7 +64,7 @@ describe("processor backlog against Postgres", () => {
       for (let i = 0; i < 5; i++) yield* insert("Noise");
       const lastRare = yield* insert("Rare");
       for (let i = 0; i < 4; i++) yield* insert("Noise");
-      yield* progressTracker.updateCursor(id, lastRare);
+      yield* progressTracker.updateCursor(id, ProgressCursorNS.zero, lastRare);
       return { backlog: yield* service.getBacklog(id), lag: yield* service.getLag(id) };
     }));
     assert.strictEqual(r.backlog!.pendingEvents, 0);
@@ -77,7 +77,7 @@ describe("processor backlog against Postgres", () => {
     const r = await run(Effect.gen(function* () {
       const { service, progressTracker } = yield* serviceFor(id, EventSelection.of({ eventTypes: new Set(["Rare"]) }));
       const seen = yield* insert("Rare", 7200);
-      yield* progressTracker.updateCursor(id, seen);
+      yield* progressTracker.updateCursor(id, ProgressCursorNS.zero, seen);
       yield* insert("Noise", 5000);
       yield* insert("Rare", 3600);
       yield* insert("Noise", 3000);

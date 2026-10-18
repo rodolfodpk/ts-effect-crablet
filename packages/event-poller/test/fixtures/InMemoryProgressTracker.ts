@@ -27,14 +27,17 @@ export const makeInMemoryProgressTracker = <I>(): Effect.Effect<InMemoryProgress
     const getCursor = (id: I): Effect.Effect<ProgressCursor> =>
       Effect.map(Ref.get(ref), (m) => m.get(id)?.cursor ?? ProgressCursorNS.zero);
 
-    const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void> =>
-      Ref.update(ref, (m) => {
+    // The same compare-and-set as PostgresProgressTracker: the cursor moves only if it is still `from`.
+    const advanceCursor = (id: I, from: ProgressCursor, to: ProgressCursor): Effect.Effect<boolean> =>
+      Ref.modify(ref, (m): [boolean, Map<I, Row>] => {
         const row = m.get(id);
-        if (!row) return m;
+        if (!row || ProgressCursorNS.compare(row.cursor, from) !== 0) return [false, m];
         const next = new Map(m);
-        next.set(id, { ...row, lastPosition: cursor.position, cursor });
-        return next;
+        next.set(id, { ...row, lastPosition: to.position, cursor: to });
+        return [true, next];
       });
+
+    const updateCursor = (id: I, from: ProgressCursor, to: ProgressCursor): Effect.Effect<void> => Effect.asVoid(advanceCursor(id, from, to));
 
     const recordError = (id: I, _error: string, maxErrors: number): Effect.Effect<void> =>
       Ref.update(ref, (m) => {
@@ -79,6 +82,7 @@ export const makeInMemoryProgressTracker = <I>(): Effect.Effect<InMemoryProgress
       getCursor,
       peekCursor: getCursor,
       updateCursor,
+      advanceCursor,
       recordError,
       resetErrorCount,
       getStatus,

@@ -3,7 +3,8 @@
 // ADDS (the way the wallet's balance and summary views do), so a repeated batch shows as a doubled total.
 //
 // Written before the fix (docs/history/plans/reliability-and-scale-diagnostic.md, F1 residual): the first two tests fail until the cursor is advanced in the
-// SAME transaction as the view's writes, as a forward-only compare-and-set that undoes the batch when it matches no row.
+// SAME transaction as the view's writes, as a compare-and-set that undoes the batch when it matches no row. The OVERLAPPING test was added later (ADR-0032): it
+// fails while that compare-and-set is only forward-only, and passes once the cursor moves only from where its batch started.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -100,10 +101,15 @@ const addingProjector = (viewName: string, beforeWrite: Effect.Effect<void> = Ef
     })
   );
 
-const processorFor = (viewName: string, eventType: string, projector: Effect.Effect<Effect.Success<ReturnType<typeof addingProjector>>, never, SqlClient.SqlClient>) =>
+const processorFor = (
+  viewName: string,
+  eventType: string,
+  projector: Effect.Effect<Effect.Success<ReturnType<typeof addingProjector>>, never, SqlClient.SqlClient>,
+  batchSize = config.batchSize
+) =>
   Effect.gen(function* () {
     return yield* makeViewsProcessor({
-      config,
+      config: { ...config, batchSize },
       projectors: [yield* projector],
       subscriptions: [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })],
       instanceId: `instance-${crypto.randomUUID()}`
@@ -157,6 +163,27 @@ describe("a view applies each event once (real Postgres)", () => {
     await Promise.allSettled([run(a.service.process(viewName)), run(b.service.process(viewName))]);
 
     assert.strictEqual(await total(viewName), 12, "5 + 7 once; 24 means the batch was applied twice");
+  });
+
+  it("two processors take OVERLAPPING batches from the same cursor and the smaller one commits first: the overlap is still applied once", { timeout: 30_000 }, async () => {
+    const runId = crypto.randomUUID();
+    const viewName = `once-overlap-${runId}`;
+    const eventType = `OnceOverlap-${runId}`;
+    await appendAdds(eventType, [5, 7]);
+
+    // A takes [5] (batch size 1), B takes [5, 7] (batch size 2), both from the same cursor: a zombie and its successor whose fetches saw different
+    // horizons, or two instances configured differently. A commits first; B writes only after that. A cursor check that only refuses to move
+    // backwards lets B through (5 < 7), and 5 is counted twice.
+    const bothInside = latch(2);
+    let aCommitted: () => void = () => undefined;
+    const aDone = new Promise<void>((resolve) => (aCommitted = resolve));
+    const a = await run(processorFor(viewName, eventType, addingProjector(viewName, bothInside), 1));
+    const b = await run(processorFor(viewName, eventType, addingProjector(viewName, Effect.andThen(bothInside, Effect.promise(() => aDone))), 2));
+
+    await Promise.allSettled([run(a.service.process(viewName)).finally(() => aCommitted()), run(b.service.process(viewName))]);
+    await run(a.service.process(viewName)); // the next tick picks up whatever is left
+
+    assert.strictEqual(await total(viewName), 12, "5 + 7 once; 17 means the overlap (5) was applied twice");
   });
 
   it("a crash after the view committed and before the cursor moved: the retry does not apply the batch again", { timeout: 30_000 }, async () => {

@@ -43,6 +43,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0021: Wake-ups are sent after the commit and coalesced, not inside every append](0021-wakeups-after-commit-and-coalesced.md) - **accepted**, narrowed by ADR-0028: built (coalesced wake-ups after the commit, with an `off` mode); 1.95 times the appends per second measured
 - [ADR-0028: The framework decides the wake-up and session settings it can work out itself](0028-settings-the-framework-decides.md) - accepted
 - [ADR-0023: A view's batch and its cursor commit in one transaction, so a repeated batch is applied once](0023-view-batch-and-cursor-in-one-transaction.md) - **accepted**: built for views; automations and the outbox excluded, with the reasons
+- [ADR-0032: A cursor moves only from where its batch started](0032-the-cursor-moves-only-from-where-its-batch-started.md) - **accepted**: amends 0023; overlapping batches are applied once
 - [ADR-0024: The leader lock and LISTEN can use a connection of their own, so the rest can go through a pooler](0024-session-connections-for-leader-and-listen.md) - **accepted**: built; tested on PgBouncer in Docker, not on RDS Proxy
 
 ## Storage and operation
