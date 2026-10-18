@@ -28,8 +28,9 @@ How a processor polls, backs off and gives up, in `PollingConfig` (`@crablet/eve
 `Partial<PollingConfig>` as `config`, or none: what is left out takes the default below ([ADR-0030](../adr/0030-one-polling-config.md)).
 
 ```ts
-makeViewsProcessor({ projectors, subscriptions });                                   // all defaults
-makeViewsProcessor({ projectors, subscriptions, config: { pollingIntervalMs: 200 } }); // one setting changed
+makeViewsProcessor({ views });                                                        // all defaults
+makeViewsProcessor({ views, config: { pollingIntervalMs: 200 } });                    // one setting changed, for every view
+makeViewsProcessor({ views, overrides: { "wallet-statement-view": { batchSize: 100 } } }); // one view's setting, by its name
 ```
 
 | Setting | Default | What it does |

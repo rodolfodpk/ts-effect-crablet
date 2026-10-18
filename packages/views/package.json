@@ -20,7 +20,7 @@
     "./ViewTableCheck": "./src/ViewTableCheck.ts"
   },
   "crablet": {
-    "internal": ["./ViewProgress"]
+    "internal": ["./ViewProgress", "./ViewProjector", "./ViewSubscription"]
   },
   "dependencies": {
     "effect": "4.0.2",

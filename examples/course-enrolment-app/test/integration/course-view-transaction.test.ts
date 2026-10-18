@@ -9,7 +9,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { CourseDefined, StudentSubscribed } from "../../src/domain/Enrolment.ts";
-import { makeCourseSeatsViewProjector } from "../../src/views/CourseSeatsViewProjector.ts";
+import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;
@@ -50,7 +50,7 @@ describe("course seats view writes", () => {
     const exit = await runtime.runPromiseExit(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        const projector = yield* makeCourseSeatsViewProjector();
+        const projector = yield* CourseSeatsView.projector;
         // what the processor does: the batch and the cursor in one transaction, which here fails after the projector has written
         yield* sql.withTransaction(
           Effect.gen(function* () {

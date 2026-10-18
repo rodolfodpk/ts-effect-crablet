@@ -24,11 +24,15 @@ export interface ConsistentReadOptions<R = SqlClient.SqlClient> {
   readonly settle?: SettleViews<R>;
 }
 
+// What a read needs of a view: its subscription, or something that gives it (`defineView`'s result).
+export type ReadView = ViewSubscription | { readonly subscription: () => ViewSubscription };
+const subscriptionOf = (view: ReadView): ViewSubscription => ("subscription" in view ? view.subscription() : view);
+
 // Describes one read endpoint to the wrapper.
 export interface ReadSpec<Request, Parsed, E, R> {
-  // The views the endpoint reads, or a function of its parsed parameters when a filter selects different views. They are subscriptions,
-  // not names: the wait needs each view's event selection to know when nothing relevant is pending.
-  readonly reads: ReadonlyArray<ViewSubscription> | ((parsed: Parsed) => ReadonlyArray<ViewSubscription>);
+  // The views the endpoint reads (`defineView`'s results), or a function of its parsed parameters when a filter selects different views. Views,
+  // not names: the wait needs each view's event selection to know when nothing relevant is pending. A subscription is accepted too.
+  readonly reads: ReadonlyArray<ReadView> | ((parsed: Parsed) => ReadonlyArray<ReadView>);
   // Validates the endpoint's OWN parameters (limit, cursor, filters). It runs before any waiting, so a bad request is a 400 at once and
   // never waits. Fail with the endpoint's 400.
   readonly parse: (request: Request) => Effect.Effect<Parsed, E, R>;
@@ -66,7 +70,7 @@ export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentR
         if (!resolution.ok) return yield* Effect.fail(CommandApiBadRequest.of(resolution.detail));
         const policy = resolution.policy;
         const parsed = yield* spec.parse(request);
-        const subscriptions = typeof spec.reads === "function" ? spec.reads(parsed) : spec.reads;
+        const subscriptions = (typeof spec.reads === "function" ? spec.reads(parsed) : spec.reads).map(subscriptionOf);
 
         const count = (outcome: "skipped" | "caught_up" | "stale" | "timeout" | "view_failed") =>
           Metric.update(Metric.withAttributes(ReadConsistencyMetrics.reads, { mode: policy.mode, outcome }), 1);

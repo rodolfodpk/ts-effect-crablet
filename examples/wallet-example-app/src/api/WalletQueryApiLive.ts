@@ -5,7 +5,9 @@ import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import { makeConsistentRead } from "@crablet/views-http";
 import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
-import { walletBalanceViewSubscription, walletSummaryViewSubscription, walletTransactionViewSubscription } from "../views/WalletViewConfig.ts";
+import { WalletBalanceView } from "../views/WalletBalanceViewProjector.ts";
+import { WalletSummaryView } from "../views/WalletSummaryViewProjector.ts";
+import { WalletTransactionView } from "../views/WalletTransactionViewProjector.ts";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 import { decodeWalletCursor, encodeWalletCursor } from "./WalletListPaging.ts";
 import { decodeTransactionCursor, encodeTransactionCursor, maxPageSize, parseLimit } from "./TransactionPaging.ts";
@@ -122,7 +124,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
           "listWallets",
           consistentRead(
             {
-              reads: [walletBalanceViewSubscription],
+              reads: [WalletBalanceView],
               parse: (request: { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string } }) => {
                 const limit = parseLimit(request.query.limit);
                 if (limit === null) return Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`));
@@ -147,7 +149,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
         .handle(
           "getWallet",
           consistentRead(
-            { reads: [walletBalanceViewSubscription], parse: (request: WalletRequest) => Effect.succeed(request.params) },
+            { reads: [WalletBalanceView], parse: (request: WalletRequest) => Effect.succeed(request.params) },
             (params: { readonly walletId: string }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
@@ -171,7 +173,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
           "getWalletTransactions",
           consistentRead(
             {
-              reads: [walletTransactionViewSubscription],
+              reads: [WalletTransactionView],
               parse: (request: WalletRequest & { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string } }) => {
                 const limit = parseLimit(request.query.limit);
                 if (limit === null) return Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`));
@@ -208,7 +210,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
         .handle(
           "getWalletSummary",
           consistentRead(
-            { reads: [walletSummaryViewSubscription], parse: (request: WalletRequest) => Effect.succeed(request.params) },
+            { reads: [WalletSummaryView], parse: (request: WalletRequest) => Effect.succeed(request.params) },
             (params: { readonly walletId: string }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;

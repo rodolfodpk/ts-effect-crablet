@@ -5,6 +5,7 @@
 // Written before the fix (docs/history/plans/reliability-and-scale-diagnostic.md, F1 residual): the first two tests fail until the cursor is advanced in the
 // SAME transaction as the view's writes, as a compare-and-set that undoes the batch when it matches no row. The OVERLAPPING test was added later (ADR-0032): it
 // fails while that compare-and-set is only forward-only, and passes once the cursor moves only from where its batch started.
+import { viewsOf } from "../fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -110,8 +111,7 @@ const processorFor = (
   Effect.gen(function* () {
     return yield* makeViewsProcessor({
       config: { ...config, batchSize },
-      projectors: [yield* projector],
-      subscriptions: [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })],
+      views: viewsOf([yield* projector], [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })]),
       instanceId: `instance-${crypto.randomUUID()}`
     });
   });

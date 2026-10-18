@@ -26,11 +26,7 @@ import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import { makeProcessorsApiGroupLive, type ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
-import { makeWalletBalanceViewProjector } from "./views/WalletBalanceViewProjector.ts";
-import { makeWalletTransactionViewProjector } from "./views/WalletTransactionViewProjector.ts";
-import { makeWalletSummaryViewProjector } from "./views/WalletSummaryViewProjector.ts";
-import { makeWalletStatementViewProjector } from "./views/WalletStatementViewProjector.ts";
-import { walletViewSubscriptions } from "./views/WalletViewConfig.ts";
+import { walletViewOverrides, walletViews } from "./views/WalletViewConfig.ts";
 import { allRoles, type Role, type Roles } from "./roles.ts";
 import { defaultPolling, type Polling } from "./polling.ts";
 import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
@@ -95,17 +91,7 @@ export const startBackgroundProcessors = (
 > =>
   Effect.gen(function* () {
     // #region views-processor
-    const viewsHandle = yield* makeViewsProcessor({
-      config: polling,
-      projectors: [
-        yield* makeWalletBalanceViewProjector(),
-        yield* makeWalletTransactionViewProjector(),
-        yield* makeWalletSummaryViewProjector(),
-        yield* makeWalletStatementViewProjector()
-      ],
-      subscriptions: walletViewSubscriptions,
-      instanceId
-    });
+    const viewsHandle = yield* makeViewsProcessor({ config: polling, views: walletViews, overrides: walletViewOverrides, instanceId });
     if (roles.has("views")) yield* viewsHandle.service.start;
     // #endregion views-processor
 

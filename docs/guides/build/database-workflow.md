@@ -15,7 +15,7 @@ Every change to a view table goes through the same steps, from `examples/course-
 2. **Apply it to your development database.** `node src/migrate.ts`. The files are not idempotent and there is no record of what was applied, so it runs against a **fresh** database (`docker compose down -v`, then `up -d`, then migrate).
    For an existing database you apply only the files it has not had, with your own tooling ([run it in production](../operate/run-in-production.md#1-apply-the-migrations)).
 3. **Change what the code says about the table.** A declared view has a `viewTable` (its columns, types, nullability, defaults and key); a read has a row schema (`SeatsRow` in
-   [`CourseQueryApiLive.ts`](../../../examples/course-enrolment-app/src/api/CourseQueryApiLive.ts)); a hand-written projector has its SQL.
+   [`CourseQueryApiLive.ts`](../../../examples/course-enrolment-app/src/api/CourseQueryApiLive.ts)); a view written with `raw` has its own SQL.
 4. **Run the tests** (Docker). They report what still disagrees with the migrated database.
 
 The read in step 3, as the course app writes it:
@@ -57,13 +57,13 @@ const findSeats = (sql: SqlClient.SqlClient) =>
 |---|---|---|
 | The declared-table test | [`course-seats-table.test.ts`](../../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts) (`checkViewTables`) | a migration renamed, retyped or dropped a column a `viewTable` declares, changed its nullability or default or the key, or added a NOT NULL column without a default that the declaration does not know |
 | The row schema of a read | `SqlSchema` (`Result: SeatsRow`), at every read | a column that was renamed or changed type: it fails naming the field, instead of later in a conversion (a `numeric` arrives as text and a `timestamptz` as a date: the schema converts them) |
-| The integration tests | `test/integration/` | the SQL of a hand-written projector and of every read, against a real Postgres, in the transaction of the view's cursor |
+| The integration tests | `test/integration/` | the SQL of a view written with `raw` and of every read, against a real Postgres, in the transaction of the view's cursor |
 | The type check | `bun run typecheck` | an operation on a declared table that names a column it does not have, or gives it a value of another type |
 | CI | `.github/workflows/ci.yml` | all of the above, so a disagreement cannot be merged |
 
 ## Things worth knowing
 
 - **The table is described twice**: in the migration (the truth) and in `viewTable`. `checkViewTables` is what keeps them equal; a rename is two edits and one failing test if you forget one.
-- **Only the SQL of a declared view is generated.** A hand-written projector and a read are SQL strings that nothing checks until a test runs them; write the test ([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts) is the example).
+- **Only the SQL of a declared view is generated.** A view's `raw` SQL and a read are SQL strings that nothing checks until a test runs them; write the test ([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts) is the example).
 - **Production does not run any of this.** The schema reaches a real database through your deployment's migration step (a pre-deploy job, not every instance at start-up: [run it in production](../operate/run-in-production.md)), and nothing here connects to it.
 - **A query builder is optional.** An app that wants typed SQL (Kysely, Drizzle) can add one: the libraries do not depend on it, and a projector or a read only needs to run its SQL on the `sql` it is given.

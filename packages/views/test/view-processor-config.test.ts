@@ -17,9 +17,15 @@ const baseConfig: ViewsConfig = {
   maxErrors: 10
 };
 
+const handled = new Set(["Something"]);
+
 describe("makeViewProcessorConfigs", () => {
+  test("refuses a view that handles no event: it would select nothing", () => {
+    expect(() => makeViewProcessorConfigs(baseConfig, [viewSubscriptionOf("idle")])).toThrow(/views: "idle" handle no event; add \.on\(Event, \.\.\.\)/);
+  });
+
   test("falls back to global ViewsConfig defaults when a subscription has no overrides", () => {
-    const [config] = makeViewProcessorConfigs(baseConfig, [viewSubscriptionOf("wallet-view")]);
+    const [config] = makeViewProcessorConfigs(baseConfig, [viewSubscriptionOf("wallet-view", { eventTypes: handled })]);
     expect(config!.processorId).toBe("wallet-view");
     expect(config!.pollingIntervalMs).toBe(1000);
     expect(config!.batchSize).toBe(100);
@@ -29,7 +35,7 @@ describe("makeViewProcessorConfigs", () => {
 
   test("a subscription's own override wins over the global default", () => {
     const [config] = makeViewProcessorConfigs(baseConfig, [
-      viewSubscriptionOf("wallet-view", { pollingIntervalMs: 250, backoffEnabled: false })
+      viewSubscriptionOf("wallet-view", { eventTypes: handled, pollingIntervalMs: 250, backoffEnabled: false })
     ]);
     expect(config!.pollingIntervalMs).toBe(250);
     expect(config!.backoffEnabled).toBe(false);
@@ -38,21 +44,21 @@ describe("makeViewProcessorConfigs", () => {
   });
 
   test("with no module config at all, every setting is the framework default, and a subscription can still override", () => {
-    const [plain, tuned] = makeViewProcessorConfigs(undefined, [viewSubscriptionOf("a"), viewSubscriptionOf("b", { batchSize: 7 })]);
+    const [plain, tuned] = makeViewProcessorConfigs(undefined, [viewSubscriptionOf("a", { eventTypes: handled }), viewSubscriptionOf("b", { eventTypes: handled, batchSize: 7 })]);
     expect(plain).toEqual({ processorId: "a", ...perProcessorDefaults });
     expect(tuned!.batchSize).toBe(7);
   });
 
   test("a partial module config changes only what it names", () => {
-    const [config] = makeViewProcessorConfigs({ backoffMaxSeconds: 120 }, [viewSubscriptionOf("a")]);
+    const [config] = makeViewProcessorConfigs({ backoffMaxSeconds: 120 }, [viewSubscriptionOf("a", { eventTypes: handled })]);
     expect(config!.backoffMaxSeconds).toBe(120);
     expect(config!.pollingIntervalMs).toBe(defaultPollingConfig.pollingIntervalMs);
   });
 
   test("produces one config per subscription", () => {
     const configs = makeViewProcessorConfigs(baseConfig, [
-      viewSubscriptionOf("view-a"),
-      viewSubscriptionOf("view-b")
+      viewSubscriptionOf("view-a", { eventTypes: handled }),
+      viewSubscriptionOf("view-b", { eventTypes: handled })
     ]);
     expect(configs.map((c) => c.processorId)).toEqual(["view-a", "view-b"]);
   });

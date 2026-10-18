@@ -16,14 +16,12 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 });
 
 // Seats per course: what each event does to the table, and nothing else. The handlers are pure (the decoded event in, operations out); the framework reads each payload through the event's own definition
-// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and takes the subscription's event types from
-// the handlers below. `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
+// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and listens to the event types of the handlers
+// below (CourseDefined and StudentSubscribed). `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
 // An event delivered twice is applied once, but not here: the batch and the view's cursor commit in one transaction (ADR-0023), so the processor guarantees it.
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
   .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }));
-
-export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => CourseSeatsView.projector;
 ```
 
 and a read endpoint over it. Reads are written by hand (their response schema is declared here; it is not derived from the domain):
@@ -47,7 +45,7 @@ export const CoursePage = Schema.Struct({
   next: Schema.NullOr(Schema.String)
 });
 
-// Who took which seat, in the order they subscribed (the enrolments view, written by a hand-written projector: src/views/CourseEnrolmentsViewProjector.ts).
+// Who took which seat, in the order they subscribed (the enrolments view, written with its own SQL through `raw`: src/views/CourseEnrolmentsViewProjector.ts).
 export const EnrolmentsResponse = Schema.Struct({
   courseId: Schema.String,
   students: Schema.Array(Schema.Struct({ studentId: Schema.String, seatNumber: Schema.Int }))

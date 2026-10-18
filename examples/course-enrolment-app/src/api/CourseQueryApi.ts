@@ -22,7 +22,7 @@ export const CoursePage = Schema.Struct({
   next: Schema.NullOr(Schema.String)
 });
 
-// Who took which seat, in the order they subscribed (the enrolments view, written by a hand-written projector: src/views/CourseEnrolmentsViewProjector.ts).
+// Who took which seat, in the order they subscribed (the enrolments view, written with its own SQL through `raw`: src/views/CourseEnrolmentsViewProjector.ts).
 export const EnrolmentsResponse = Schema.Struct({
   courseId: Schema.String,
   students: Schema.Array(Schema.Struct({ studentId: Schema.String, seatNumber: Schema.Int }))

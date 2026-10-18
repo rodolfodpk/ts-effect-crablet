@@ -1,5 +1,6 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md. A running view pings when it advances: the notification names the view and carries a
 // cursor that covers the write that caused it, so a client holding the write's marker can tell when its write is in the view.
+import { viewsOf } from "../fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "pg";
@@ -74,8 +75,7 @@ describe("a view's progress pings when it advances", () => {
     const handle = await runtime.runPromise(
       makeViewsProcessor({
         config,
-        projectors: [projector],
-        subscriptions: [viewSubscriptionOf(viewName, { eventTypes: new Set([type]) })],
+        views: viewsOf([projector], [viewSubscriptionOf(viewName, { eventTypes: new Set([type]) })]),
         instanceId: `i-${crypto.randomUUID()}`
       })
     );
@@ -103,8 +103,7 @@ describe("a view's progress pings when it advances", () => {
     const handle = await runtime.runPromise(
       makeViewsProcessor({
         config,
-        projectors: [projector],
-        subscriptions: [viewSubscriptionOf(viewName, { eventTypes: new Set([`NeverAppended-${runId}`]) })],
+        views: viewsOf([projector], [viewSubscriptionOf(viewName, { eventTypes: new Set([`NeverAppended-${runId}`]) })]),
         instanceId: `i-${crypto.randomUUID()}`
       })
     );

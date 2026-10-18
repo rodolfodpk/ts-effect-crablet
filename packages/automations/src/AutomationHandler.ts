@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { Command } from "@crablet/commands/Command";
 import * as EventSelectionNS from "@crablet/event-poller/EventSelection";
-import type { EventSelection } from "@crablet/event-poller/EventSelection";
+import type { DeclaredSelection, EventSelection } from "@crablet/event-poller/EventSelection";
 import type { ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { executeCommand, type AutomationDecision } from "./AutomationDecision.ts";
@@ -42,7 +42,7 @@ export interface AutomationContext {
 export type Requests<T> = T | ReadonlyArray<T> | undefined;
 
 // What the automation reads besides its event types (a tag every event must carry, ...). The event types come from `.on`.
-export type AutomationSelection = Partial<Omit<EventSelection, "eventTypes">>;
+export type AutomationSelection = DeclaredSelection;
 
 export interface DefinedAutomation<T, HE> extends AutomationHandler<T, EventDecodingError, HE> {
   // The event types a handler was declared for: what the automation selects.

@@ -1,5 +1,6 @@
 // Runs under Node (Testcontainers). A view declared with `defineView` (ADR-0026): the SQL its operations compile to does what the in-memory run says it does,
 // a batch handled twice is applied once, and the declared tables are compared with the migrated database.
+import { viewsOf } from "../fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -140,7 +141,7 @@ describe("a declared view on real Postgres", () => {
     );
     const handle = await run(
       Effect.gen(function* () {
-        return yield* makeViewsProcessor({ config, projectors: [yield* counter.projector], subscriptions: [counter.subscription()], instanceId: `instance-${crypto.randomUUID()}` });
+        return yield* makeViewsProcessor({ config, views: viewsOf([yield* counter.projector], [counter.subscription()]), instanceId: `instance-${crypto.randomUUID()}` });
       })
     );
     await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("INSERT INTO pv_fail (view_name) VALUES ('pv-once')")));

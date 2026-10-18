@@ -22,7 +22,7 @@ let runtime: ManagedRuntime.ManagedRuntime<CommandExecutor | EventStore | SqlCli
 let probe: Client;
 // the wallet's modules, imported after the variable is set
 let m: {
-  Deposit: any; Withdraw: any; OpenWallet: any; WalletPeriodModel: any; makeWalletStatementViewProjector: any;
+  Deposit: any; Withdraw: any; OpenWallet: any; WalletPeriodModel: any; WalletStatementView: any;
   atClock: any; pausableDeposit: any;
 };
 before(async () => {
@@ -31,7 +31,7 @@ before(async () => {
     Withdraw: (await import("../../src/domain/commands/WithdrawCommand.ts")).Withdraw,
     OpenWallet: (await import("../../src/domain/commands/OpenWalletCommand.ts")).OpenWallet,
     WalletPeriodModel: (await import("../../src/domain/WalletModel.ts")).WalletPeriodModel,
-    makeWalletStatementViewProjector: (await import("../../src/views/WalletStatementViewProjector.ts")).makeWalletStatementViewProjector,
+    WalletStatementView: (await import("../../src/views/WalletStatementViewProjector.ts")).WalletStatementView,
     atClock: (await import("../support/clocked-commands.ts")).atClock,
     pausableDeposit: (await import("../support/clocked-commands.ts")).pausableDeposit
   };
@@ -162,7 +162,7 @@ describe("a statement period of 5 minutes, on Postgres", () => {
       data: r.data, transactionId: r.transaction_id, position: BigInt(r.position), occurredAt: r.occurred_at, correlationId: null, causationId: null
     }));
     await runtime.runPromise(Effect.gen(function* () {
-      const projector = yield* m.makeWalletStatementViewProjector();
+      const projector = yield* m.WalletStatementView.projector;
       yield* projector.handle(stored);
     }) as never);
     const view = (await probe.query<{ statement_id: string; month: number | null; year: number; opening_balance: string; closing_balance: string | null; closed_at: Date | null; total_deposits: string }>(

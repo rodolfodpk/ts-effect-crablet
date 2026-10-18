@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The seats view's declared table (src/views/CourseSeatsViewProjector.ts) must match the migrated database: a migration that renames or retypes a column fails here, not at the first event.
+// Runs under Node (Testcontainers). The views' declared tables (src/views/CourseSeatsViewProjector.ts, CourseEnrolmentsViewProjector.ts) must match the migrated database: a migration that renames or retypes a column fails here, not at the first event.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -8,6 +8,7 @@ import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { checkViewTables } from "@crablet/views/ViewTableCheck";
 import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";
+import { CourseEnrolmentsView } from "../../src/views/CourseEnrolmentsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;
@@ -24,9 +25,14 @@ after(async () => {
   await db.stop();
 });
 
-describe("the seats view's declared table", () => {
-  it("matches the migrated database", async () => {
+describe("the views' declared tables", () => {
+  it("the seats view's table matches the migrated database", async () => {
     const problems = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => checkViewTables(sql, CourseSeatsView.tables)));
+    assert.deepStrictEqual(problems, []);
+  });
+
+  it("the enrolments view's table matches too, although its writes are its own SQL (raw)", async () => {
+    const problems = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => checkViewTables(sql, CourseEnrolmentsView.tables)));
     assert.deepStrictEqual(problems, []);
   });
 });

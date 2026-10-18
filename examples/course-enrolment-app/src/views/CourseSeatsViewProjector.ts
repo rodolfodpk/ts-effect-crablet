@@ -1,10 +1,4 @@
-import type { Effect } from "effect";
-import type { SqlClient } from "effect/sql";
-import type { SqlError } from "effect/sql/SqlError";
-import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { defineView } from "@crablet/views/ProjectedView";
-import type { ViewProjector } from "@crablet/views/ViewProjector";
-import type { ViewSubscription } from "@crablet/views/ViewSubscription";
 import { integer, text, viewTable } from "@crablet/views/ViewTable";
 import { CourseDefined, StudentSubscribed } from "../domain/Enrolment.ts";
 import { COURSE_SEATS_VIEW } from "../CourseApi.ts";
@@ -20,17 +14,10 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 });
 
 // Seats per course: what each event does to the table, and nothing else. The handlers are pure (the decoded event in, operations out); the framework reads each payload through the event's own definition
-// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and takes the subscription's event types from
-// the handlers below. `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
+// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and listens to the event types of the handlers
+// below (CourseDefined and StudentSubscribed). `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
 // An event delivered twice is applied once, but not here: the batch and the view's cursor commit in one transaction (ADR-0023), so the processor guarantees it.
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
   .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }));
-
-export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => CourseSeatsView.projector;
 // #endregion projector
-
-// What the view listens to: the event types of its handlers (CourseDefined and StudentSubscribed).
-// #region subscription
-export const courseSeatsViewSubscription: ViewSubscription = CourseSeatsView.subscription();
-// #endregion subscription

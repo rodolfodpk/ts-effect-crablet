@@ -3,7 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
-import type { EventSelection } from "@crablet/event-poller/EventSelection";
+import type { DeclaredSelection, EventSelection } from "@crablet/event-poller/EventSelection";
 import type { ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import { runOp } from "./internal/ViewOpSql.ts";
 import { makeTransactionalViewProjector, type ViewProjector } from "./ViewProjector.ts";
@@ -45,6 +45,7 @@ export interface ProjectedView {
   // The operations an event stands for (none when no handler is declared for its type). A payload the event's definition cannot read fails with `EventDecodingError`, never skipped (ADR-0017).
   readonly opsOf: (event: StoredEvent) => Effect.Effect<ReadonlyArray<ViewOp>, EventDecodingError>;
   readonly projector: Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient>;
+  // The view's subscription: the event types its handlers are declared for, the selection it was defined with, and `opts` on top.
   readonly subscription: (opts?: Partial<EventSelection> & ProcessorRuntimeOverrides) => ViewSubscription;
 }
 
@@ -56,7 +57,7 @@ interface Handler {
 const flatten = (ops: ViewOps): ReadonlyArray<ViewOp> =>
   ops === undefined ? [] : Array.isArray(ops) ? (ops as ReadonlyArray<ViewOp | undefined>).filter((o): o is ViewOp => o !== undefined) : [ops as ViewOp];
 
-const build = (name: string, tables: ReadonlyArray<ViewTableDef>, handlers: ReadonlyMap<string, Handler>): ProjectedView => {
+const build = (name: string, tables: ReadonlyArray<ViewTableDef>, selection: DeclaredSelection, handlers: ReadonlyMap<string, Handler>): ProjectedView => {
   const opsOf = (event: StoredEvent): Effect.Effect<ReadonlyArray<ViewOp>, EventDecodingError> => {
     const handler = handlers.get(event.type);
     if (handler === undefined) return Effect.succeed([]);
@@ -71,7 +72,7 @@ const build = (name: string, tables: ReadonlyArray<ViewTableDef>, handlers: Read
     tables,
     on: (event, handle) => {
       if (handlers.has(event.type)) throw new Error(`view "${name}": a handler for ${event.type} is already declared`);
-      return build(name, tables, new Map([...handlers, [event.type, { decode: event.decodeStored as Handler["decode"], handle: handle as Handler["handle"] }]]));
+      return build(name, tables, selection, new Map([...handlers, [event.type, { decode: event.decodeStored as Handler["decode"], handle: handle as Handler["handle"] }]]));
     },
     opsOf,
     projector: makeTransactionalViewProjector<EventDecodingError | SqlError>(name, (event, sql) =>
@@ -80,8 +81,13 @@ const build = (name: string, tables: ReadonlyArray<ViewTableDef>, handlers: Read
         for (const op of ops) yield* runOp(sql, op);
       })
     ),
-    subscription: (opts = {}) => viewSubscriptionOf(name, { ...opts, eventTypes: new Set(handles) })
+    subscription: (opts = {}) => viewSubscriptionOf(name, { ...selection, ...opts, eventTypes: new Set(handles) })
   };
 };
 
-export const defineView = (name: string, def: { readonly tables: ReadonlyArray<ViewTableDef> }): ProjectedView => build(name, def.tables, new Map());
+// `tables` are the tables the view owns (for the drift check); the rest is what it reads besides its event types (a tag every event must carry, ...).
+// Polling and batch settings are not part of it: they are given to the processor, by the view's name.
+export const defineView = (name: string, def: { readonly tables: ReadonlyArray<ViewTableDef> } & DeclaredSelection): ProjectedView => {
+  const { tables, ...selection } = def;
+  return build(name, tables, selection, new Map());
+};

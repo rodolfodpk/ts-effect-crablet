@@ -44,6 +44,14 @@ describe("defineView", () => {
     expect(view.tables).toEqual([accounts]);
   });
 
+  test("what the view reads besides its event types is declared with it, and the subscription carries it", () => {
+    const scoped = defineView("scoped", { tables: [accounts], anyOfTags: new Set(["account_id", "to_id"]) }).on(Opened, () => undefined);
+    const sub = scoped.subscription();
+    expect([...sub.anyOfTags].sort()).toEqual(["account_id", "to_id"]);
+    expect([...sub.eventTypes]).toEqual(["Opened"]);
+    expect(scoped.tables).toEqual([accounts]);
+  });
+
   test("an event with no handler writes nothing", async () => {
     expect(await run(view.opsOf(stored("Other", {})))).toEqual([]);
   });

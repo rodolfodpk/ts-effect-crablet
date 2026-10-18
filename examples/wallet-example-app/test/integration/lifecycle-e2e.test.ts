@@ -18,7 +18,7 @@ import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { walletOpenApiFile } from "../../src/api/WalletOpenApi.ts";
 import { makeWalletApi } from "../../src/WalletApp.ts";
 import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
-import { walletBalanceViewSubscription } from "../../src/views/WalletViewConfig.ts";
+import { WalletBalanceView } from "../../src/views/WalletBalanceViewProjector.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -138,7 +138,7 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     );
     assert.ok(result.lastPosition !== null, "a command that appended events reports the position it reached");
 
-    await runtime.runPromise(waitUntilProcessed(walletBalanceViewSubscription, { transactionId: result.lastTransactionId!, position: result.lastPosition }));
+    await runtime.runPromise(waitUntilProcessed(WalletBalanceView.subscription(), { transactionId: result.lastTransactionId!, position: result.lastPosition }));
     const body = await getJson(`/api/wallets/${walletId}`); // a single read, no retry loop
     assert.strictEqual(body["balance"], 60);
   });

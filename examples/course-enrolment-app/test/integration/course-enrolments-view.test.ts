@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The hand-written projector (src/views/CourseEnrolmentsViewProjector.ts): nothing checks its SQL text but this test.
+// Runs under Node (Testcontainers). The view written with its own SQL (src/views/CourseEnrolmentsViewProjector.ts): nothing checks its SQL text but this test.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
@@ -8,7 +8,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { StudentSubscribed } from "../../src/domain/Enrolment.ts";
-import { courseEnrolmentsViewSubscription, makeCourseEnrolmentsViewProjector } from "../../src/views/CourseEnrolmentsViewProjector.ts";
+import { CourseEnrolmentsView } from "../../src/views/CourseEnrolmentsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;
@@ -36,9 +36,9 @@ const seats = (courseId: string) =>
       sql.unsafe<{ student_id: string; seat_number: number }>("SELECT student_id, seat_number FROM course_enrolments_view WHERE course_id = $1 ORDER BY seat_number", [courseId])
     )
   );
-const handle = (events: ReadonlyArray<StoredEvent>) => runtime.runPromiseExit(Effect.flatMap(makeCourseEnrolmentsViewProjector(), (p) => p.handle(events)));
+const handle = (events: ReadonlyArray<StoredEvent>) => runtime.runPromiseExit(Effect.flatMap(CourseEnrolmentsView.projector, (p) => p.handle(events)));
 
-describe("course enrolments view (a hand-written projector)", () => {
+describe("course enrolments view (its own SQL, through raw)", () => {
   it("numbers the seats in the order the students subscribed, per course, and a student appears once", async () => {
     const a = `c-${crypto.randomUUID().slice(0, 8)}`;
     const b = `c-${crypto.randomUUID().slice(0, 8)}`;
@@ -57,6 +57,6 @@ describe("course enrolments view (a hand-written projector)", () => {
   });
 
   it("its subscription is the event type it handles", () => {
-    assert.deepStrictEqual([...courseEnrolmentsViewSubscription.eventTypes], [StudentSubscribed.type]);
+    assert.deepStrictEqual([...CourseEnrolmentsView.subscription().eventTypes], [StudentSubscribed.type]);
   });
 });

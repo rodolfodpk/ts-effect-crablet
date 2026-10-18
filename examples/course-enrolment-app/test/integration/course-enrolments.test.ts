@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). GET /api/courses/:courseId/enrolments: the read over the hand-written projector's view (src/views/CourseEnrolmentsViewProjector.ts), end to end: commands in, the view
+// Runs under Node (Testcontainers). GET /api/courses/:courseId/enrolments: the read over the view written with its own SQL (src/views/CourseEnrolmentsViewProjector.ts), end to end: commands in, the view
 // written by the projector the app registered, a consistent read out.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
