@@ -29,3 +29,9 @@ defineModel({ by: "account_id", initial: () => 0 }).lifecycle(Moved, (n) => n);
 // `opts.by` naming a tag the event does not carry.
 // @ts-expect-error this event does not carry the tag "via_id" the model binds through
 defineModel({ by: "account_id", initial: () => 0 }).on(Moved, (n) => n, { by: ["from_id", "via_id"] });
+
+// Keys that are not known exactly cannot be checked, and are accepted: a `by` held in a variable typed `string`, and `{ by }` typed `string[]`.
+const key: string = "account_id";
+export const ByVariable = defineModel({ by: key, initial: () => 0 }).on(Opened, (n) => n);
+const sides: ReadonlyArray<string> = ["from_id", "to_id"];
+export const SidesVariable = defineModel({ by: "account_id", initial: () => 0 }).on(Moved, (n) => n, { by: sides });

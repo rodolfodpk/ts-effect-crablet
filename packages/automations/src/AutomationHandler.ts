@@ -38,11 +38,9 @@ export interface AutomationContext {
   readonly tag: (key: string) => string | undefined;
 }
 
-// What a handler asks for: one request (the command's input), several, or none.
-export type Requests<T> = T | ReadonlyArray<T> | undefined;
-
-// What the automation reads besides its event types (a tag every event must carry, ...). The event types come from `.on`.
-export type AutomationSelection = DeclaredSelection;
+// What a handler asks for: one request (the command's input), several, or none. When the input is itself an array, only a list of inputs is
+// accepted (wrap a single one, `[input]`), so one input is never taken for several.
+export type Requests<T> = [T] extends [ReadonlyArray<unknown>] ? ReadonlyArray<T> | undefined : T | ReadonlyArray<T> | undefined;
 
 export interface DefinedAutomation<T, HE> extends AutomationHandler<T, EventDecodingError, HE> {
   // The event types a handler was declared for: what the automation selects.
@@ -66,7 +64,8 @@ type Handler = {
 export const defineAutomation = <T, HE = never>(
   automationName: string,
   command: Command<T, HE>,
-  selection: AutomationSelection = {}
+  // What the automation reads besides its event types (a tag every event must carry, ...); the event types come from `.on`.
+  selection: DeclaredSelection = {}
 ): DefinedAutomation<T, HE> => {
   // An automation runs at least once, not exactly once: its batch is handled again after a crash between the command and the cursor, or by a
   // zombie leader and its successor. A command without `idempotentBy` would then do its work twice, so it is refused when the automation is defined.
@@ -81,7 +80,7 @@ export const defineAutomation = <T, HE = never>(
 const build = <T, HE>(
   automationName: string,
   command: Command<T, HE>,
-  selection: AutomationSelection,
+  selection: DeclaredSelection,
   handlers: ReadonlyMap<string, Handler>
 ): DefinedAutomation<T, HE> => {
   const handles = [...handlers.keys()];

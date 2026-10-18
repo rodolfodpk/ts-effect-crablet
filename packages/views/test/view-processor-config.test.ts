@@ -21,7 +21,7 @@ const handled = new Set(["Something"]);
 
 describe("makeViewProcessorConfigs", () => {
   test("refuses a view that handles no event: it would select nothing", () => {
-    expect(() => makeViewProcessorConfigs(baseConfig, [viewSubscriptionOf("idle")])).toThrow(/views: "idle" handle no event; add \.on\(Event, \.\.\.\)/);
+    expect(() => makeViewProcessorConfigs(baseConfig, [viewSubscriptionOf("idle")])).toThrow(/views: "idle" handles no event; add \.on\(Event, \.\.\.\)/);
   });
 
   test("falls back to global ViewsConfig defaults when a subscription has no overrides", () => {

@@ -39,10 +39,13 @@ type DataOf<E> = E extends { readonly decode: (raw: unknown) => infer D } ? D : 
 // The tag keys an event declares, read from its `where` (defineEvent's result); `string` for an event that does not say, which is then not checked.
 type TagKeysOf<E> = E extends { readonly where: (filter?: infer F) => any } ? keyof NonNullable<F> & string : string;
 // An event a model binds through `Needed` must carry those tags: one that does not would match nothing, so the fold would miss it and the boundary
-// would not see a concurrent change to it. The text is what the compiler shows.
-type Carrying<E, Needed extends string> = [Exclude<Needed, TagKeysOf<E>>] extends [never]
+// would not see a concurrent change to it. The text is what the compiler shows. Keys that are not known exactly (a `by` held in a variable typed
+// `string`) cannot be checked, so they are not.
+type Carrying<E, Needed extends string> = string extends Needed
   ? E
-  : `this event does not carry the tag "${Exclude<Needed, TagKeysOf<E>>}" the model binds through`;
+  : [Exclude<Needed, TagKeysOf<E>>] extends [never]
+    ? E
+    : `this event does not carry the tag "${Exclude<Needed, TagKeysOf<E>>}" the model binds through`;
 
 export interface HandlerCtx {
   // The full stored event, including its tags (e.g. to tell which side of a two-party event this is).

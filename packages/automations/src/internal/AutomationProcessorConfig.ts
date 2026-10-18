@@ -11,6 +11,6 @@ export const makeAutomationProcessorConfigs = (
 ): ReadonlyArray<ProcessorConfig<string>> => {
   // An automation with no `.on` would select nothing: refused, not run idle.
   const empty = handlers.filter((h) => h.eventTypes.size === 0).map((h) => `"${h.automationName}"`);
-  if (empty.length > 0) throw new Error(`automations: ${empty.join(", ")} handle no event; add .on(Event, ...)`);
+  if (empty.length > 0) throw new Error(`automations: ${empty.join(", ")} ${empty.length === 1 ? "handles" : "handle"} no event; add .on(Event, ...)`);
   return handlers.map((handler) => processorConfigFrom(handler.automationName, config, handler));
 };

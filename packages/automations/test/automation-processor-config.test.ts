@@ -30,7 +30,7 @@ const fakeHandler = (automationName: string, fields: Parameters<typeof handlerOf
 
 describe("makeAutomationProcessorConfigs", () => {
   test("refuses an automation that handles no event: it would select nothing", () => {
-    expect(() => makeAutomationProcessorConfigs(baseConfig, [fakeHandler("idle", { eventTypes: new Set() })])).toThrow(/"idle" handle no event; add \.on\(Event, \.\.\.\)/);
+    expect(() => makeAutomationProcessorConfigs(baseConfig, [fakeHandler("idle", { eventTypes: new Set() })])).toThrow(/"idle" handles no event; add \.on\(Event, \.\.\.\)/);
   });
 
   test("falls back to global AutomationsConfig defaults when a handler has no overrides", () => {

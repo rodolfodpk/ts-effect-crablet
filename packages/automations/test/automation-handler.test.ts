@@ -47,6 +47,15 @@ describe("defineAutomation", () => {
     expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toContain("EventDecodingError");
   });
 
+  test("when the command's input is itself an array, a handler returns a list of inputs: one input is never taken for several", async () => {
+    const Tagged = defineEvent("AH_Tagged", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ tagged_id: d.id }) });
+    const TagAll = defineCommand({ name: "AH_TagAll", input: Schema.Array(Schema.String), idempotentBy: (ids) => Tagged.where({ tagged_id: ids[0] ?? "" }), decide: () => noop() });
+    // @ts-expect-error a single array input must be wrapped: [["o1", "o2"]]
+    defineAutomation("bare", TagAll).on(OrderPlaced, (d) => [d.orderId, "o2"]);
+    const wrapped = defineAutomation("wrapped", TagAll).on(OrderPlaced, (d) => [[d.orderId, "o2"]]);
+    expect(await inputsOf(wrapped as never, stored("AH_OrderPlaced", { orderId: "o1", lines: 1 }))).toEqual([["o1", "o2"]]);
+  });
+
   test("a second handler for the same event type is refused", () => {
     expect(() => defineAutomation("twice", testCommand).on(OrderPlaced, () => undefined).on(OrderPlaced, () => undefined)).toThrow(/already declared/);
   });

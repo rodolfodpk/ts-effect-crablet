@@ -9,6 +9,6 @@ export const makeViewProcessorConfigs = (
 ): ReadonlyArray<ProcessorConfig<string>> => {
   // A view with no `.on` would select nothing: refused, not run idle.
   const empty = subscriptions.filter((s) => s.eventTypes.size === 0).map((s) => `"${s.viewName}"`);
-  if (empty.length > 0) throw new Error(`views: ${empty.join(", ")} handle no event; add .on(Event, ...)`);
+  if (empty.length > 0) throw new Error(`views: ${empty.join(", ")} ${empty.length === 1 ? "handles" : "handle"} no event; add .on(Event, ...)`);
   return subscriptions.map((subscription) => processorConfigFrom(subscription.viewName, config, subscription));
 };

@@ -6,6 +6,7 @@ import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import * as ReadConsistencyMetrics from "@crablet/metrics-otel/ReadConsistencyMetrics";
 import { settleViews, type SettleViews } from "@crablet/views/SettleViews";
 import type { ViewSubscription } from "@crablet/views/ViewSubscription";
+import type { RunnableView } from "@crablet/views";
 import {
   defaultReadConsistency,
   resolveReadPolicy,
@@ -24,8 +25,8 @@ export interface ConsistentReadOptions<R = SqlClient.SqlClient> {
   readonly settle?: SettleViews<R>;
 }
 
-// What a read needs of a view: its subscription, or something that gives it (`defineView`'s result).
-export type ReadView = ViewSubscription | { readonly subscription: () => ViewSubscription };
+// What a read needs of a view: its subscription, or the view itself (`defineView`'s result), as the processor takes it.
+export type ReadView = ViewSubscription | Pick<RunnableView, "subscription">;
 const subscriptionOf = (view: ReadView): ViewSubscription => ("subscription" in view ? view.subscription() : view);
 
 // Describes one read endpoint to the wrapper.
