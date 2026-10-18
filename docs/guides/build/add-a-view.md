@@ -9,7 +9,7 @@ projector is given** ([ADR-0023](../../adr/0023-view-batch-and-cursor-in-one-tra
 
 **Apply the change an event carries, not a total it recorded.** A commutative command (the wallet's deposit) does not wait for other deposits, so the balance it writes into its event is the balance it saw when it decided, and
 a deposit that committed in between makes it stale (the kind lab counted 2,916 of 38,747 deposits that way in a two-hour soak, and 0 of 34,479 debits). A view that copies that number loses money; one that adds the amount
-(`balance = balance + amount`) is right in any order. The wallet's balance view did copy it at first, and the kind lab's consistency check found 22 to 28 wallets wrong.
+(`balance = balance + amount`) is right in any order. The wallet's balance view did copy it at first, and the kind lab's consistency check found 22 to 28 wallets wrong. For the same reason a `set` on a row that commuting events also write keeps the last one *delivered*: delivery follows causality, not the order unrelated commands decided in ([ordering](../../concepts/views-and-delivery.md#ordering)).
 
 [← Task guides](../README.md)
 

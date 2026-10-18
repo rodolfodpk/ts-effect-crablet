@@ -18,6 +18,12 @@ const CausationId = Context.Reference<bigint | null>("crablet/CausationId", {
   defaultValue: () => null
 });
 
+// Set by the command executor around a command's transaction: its append must be the transaction's first write, so its events sort after
+// everything the command read (ADR-0033). `appendEventsIf` passes it to the database, which refuses a transaction that already wrote.
+const FreshTransaction = Context.Reference<boolean>("crablet/RequireFreshTransaction", {
+  defaultValue: () => false
+});
+
 export const correlationId: Effect.Effect<string | null> = Effect.gen(function* () {
   return yield* CorrelationId;
 });
@@ -35,3 +41,10 @@ export const withCausationId =
   (causationIdValue: bigint) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     Effect.provideService(effect, CausationId, causationIdValue);
+
+export const requiresFreshTransaction: Effect.Effect<boolean> = Effect.gen(function* () {
+  return yield* FreshTransaction;
+});
+
+export const requireFreshTransaction = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, FreshTransaction, true);

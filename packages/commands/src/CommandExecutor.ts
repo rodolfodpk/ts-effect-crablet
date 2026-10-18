@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
+import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { type AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command } from "./Command.ts";
@@ -149,7 +150,8 @@ export const CommandExecutorLive = Layer.effect(
       CommandMetrics.observe(
         CommandMetrics.handle,
         // The wake-up for what the attempt appended goes out only after this transaction has committed (ADR-0021).
-        Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(
+        // `requireFreshTransaction`: the append must be this transaction's first write, so its events sort after everything the command read (ADR-0033).
+        Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(CorrelationContext.requireFreshTransaction(
           Effect.gen(function* () {
             const result = yield* runHandler(handler, command);
             // An idempotent result (a repeat, or a decision that does nothing) has done nothing, so nothing of this attempt may stay: roll the transaction back. A command cannot append
@@ -161,7 +163,7 @@ export const CommandExecutorLive = Layer.effect(
             yield* recordCommand(definition, command);
             return result;
           })
-        ).pipe(
+        )).pipe(
           Effect.catch((error) => (isDeadlock(error) ? Effect.fail(deadlockConflict) : Effect.fail(error)))
         ))).pipe(
           Effect.catch((error) => (error instanceof RolledBackIdempotent ? Effect.succeed(error.result) : Effect.fail(error))),

@@ -44,6 +44,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0028: The framework decides the wake-up and session settings it can work out itself](0028-settings-the-framework-decides.md) - accepted
 - [ADR-0023: A view's batch and its cursor commit in one transaction, so a repeated batch is applied once](0023-view-batch-and-cursor-in-one-transaction.md) - **accepted**: built for views; automations and the outbox excluded, with the reasons
 - [ADR-0032: A cursor moves only from where its batch started](0032-the-cursor-moves-only-from-where-its-batch-started.md) - **accepted**: amends 0023; overlapping batches are applied once
+- [ADR-0033: Delivery order is causal order, and a command's append is its transaction's first write](0033-delivery-order-is-causal-order.md) - **accepted**: what "in order" means, enforced
 - [ADR-0024: The leader lock and LISTEN can use a connection of their own, so the rest can go through a pooler](0024-session-connections-for-leader-and-listen.md) - **accepted**: built; tested on PgBouncer in Docker, not on RDS Proxy
 
 ## Storage and operation

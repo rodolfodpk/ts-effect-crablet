@@ -44,7 +44,7 @@ const APPEND_EVENTS_IF_SQL = `
     $4::jsonb, $5::bigint, $6::jsonb,
     $7::timestamptz, $8::uuid, $9::bigint,
     $10::text, $11::text,
-    $12::xid8
+    $12::xid8, $13::boolean
   ) AS result
 `;
 
@@ -86,6 +86,7 @@ export const appendEventsIf = (
 
     const correlationId = yield* CorrelationContext.correlationId;
     const causationId = yield* CorrelationContext.causationId;
+    const requireFresh = yield* CorrelationContext.requiresFreshTransaction;
 
     const rows = yield* sql.unsafe<{ result: AppendResultJson }>(APPEND_EVENTS_IF_SQL, [
       types,
@@ -102,8 +103,16 @@ export const appendEventsIf = (
       null,
       null,
       // The cursor is a (transaction_id, position) pair; null (an old-style position) compares by position only.
-      concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null)
-    ]);
+      concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null),
+      requireFresh
+    ]).pipe(
+      // CRB01: a command ran in a transaction that had already written (ADR-0033). A programming error, not a condition a caller can handle.
+      Effect.catchTag("SqlError", (error) =>
+        (error.reason.cause as { code?: string } | null | undefined)?.code === "CRB01"
+          ? Effect.die(new Error(`${(error.reason.cause as { message?: string }).message ?? "CRB01"}. Run the command outside any transaction that writes.`))
+          : Effect.fail(error)
+      )
+    );
 
     const result = rows[0]?.result;
     if (!result) {

@@ -12,7 +12,7 @@ reads the events after its cursor, hands them to a handler, and moves the cursor
 | **No event is skipped** | Every event your handler selects reaches it, even one whose transaction committed late. | The cursor is a `(transaction_id, position)` pair, not a bare position ([ADR-0012](../adr/0012-transaction-position-cursors.md)). |
 | **At least once** | An event can arrive again after a crash or a change of leader. | A cursor moves after the handler, never before. |
 | **Exactly once, for a view's own writes** | A view that writes through the `sql` its projector is given applies a repeated batch once. | The batch and the cursor commit in one transaction, and the cursor moves only if it is still where the batch started, so a repeated or overlapping batch is rolled back ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md), [ADR-0032](../adr/0032-the-cursor-moves-only-from-where-its-batch-started.md)). |
-| **In order** | Events arrive ordered by transaction, then by position. | The poller's query sorts on the same pair as the cursor. |
+| **In causal order** | Events arrive ordered by transaction, then by position. An event arrives after every event the command that appended it had read. | The poller's query sorts on the same pair as the cursor, and a command's append is its transaction's first write, so it gets its transaction id after its reads ([ADR-0033](../adr/0033-delivery-order-is-causal-order.md)). |
 | **One handler at a time** | Only the module's leader runs your handler. A leader that lost its lock stops before it handles or moves a cursor. | See [background processors](./background-processors.md). |
 
 ## What you must do yourself
@@ -24,6 +24,20 @@ reads the events after its cursor, hands them to a handler, and moves the cursor
   have a smaller position.
 - **Expect delay from long transactions.** A poller only reads events whose transaction is older than every transaction still open, which is what makes
   "no event is skipped" true. So a long-running transaction anywhere in the database holds delivery back until it ends.
+
+## Ordering
+
+Delivery order is `(transaction_id, position)`: not the order the events were committed, and not their `position` alone. What it guarantees is **causal
+order**: if a command read event A before appending event B, every handler sees A before B. The command executor enforces what that needs, a command's append
+being the first write of its transaction ([ADR-0033](../adr/0033-delivery-order-is-causal-order.md)); a command run in a transaction that already wrote is refused.
+
+Events that did not read each other have no order you can rely on. Two deposits to the same wallet that ran at the same time can arrive in either order. So:
+
+- **`add` is right in any order** (`balance = balance + amount`).
+- **`set` keeps the last one delivered**, which is not necessarily the last one decided, when several commuting events write the same row (the wallet's
+  `last_updated_at` can go back a little).
+- **A total recorded in a commuting event is a snapshot**: the deposit's `newBalance` is the balance its command saw, possibly stale. Apply the change, not the total
+  ([Add a view](../guides/build/add-a-view.md)).
 
 ## How a poller wakes up
 
