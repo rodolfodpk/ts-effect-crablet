@@ -33,6 +33,7 @@ after(async () => {
 });
 
 const stored = (type: string, data: unknown, position: bigint): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type, tags: [], data, transactionId: "1", position, occurredAt: new Date(), correlationId: null, causationId: null
 });
 const seats = (courseId: string) =>

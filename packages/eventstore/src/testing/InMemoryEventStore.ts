@@ -54,6 +54,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
     for (const e of events) {
       fingerprints.set(BigInt(log.length + 1), fingerprint);
       log.push({
+        eventId: crypto.randomUUID(),
         type: e.type,
         tags: e.tags,
         // round-trip through JSON like the real store, so data is plain JSON

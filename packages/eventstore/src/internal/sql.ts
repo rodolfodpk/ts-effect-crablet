@@ -167,6 +167,7 @@ export const appendEventsIf = (
   });
 
 export interface StoredEventRow {
+  readonly event_id: string;
   readonly type: string;
   readonly tags: ReadonlyArray<string>;
   readonly data: unknown;
@@ -241,7 +242,7 @@ export const queryEvents = (
     const sqlText =
       // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
       // ORDER BY uses the qualified column so it sorts by the real xid8, not the text alias.
-      "SELECT type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, " +
+      "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, " +
       "(transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled " +
       `FROM crablet_events${whereSql} ORDER BY crablet_events.transaction_id, position ASC`;
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;

@@ -59,6 +59,7 @@ const postgresBackend: IdempotencyBackend = {
         for (const e of events) {
           const appended = yield* store.append([e]);
           const rows = yield* sql.unsafe<{
+            event_id: string;
             type: string;
             tags: string[];
             data: unknown;
@@ -68,11 +69,12 @@ const postgresBackend: IdempotencyBackend = {
             correlation_id: string | null;
             causation_id: string | null;
           }>(
-            "SELECT type, tags, data, transaction_id::text AS transaction_id, position::text AS position, occurred_at, correlation_id, causation_id::text AS causation_id FROM crablet_events WHERE transaction_id = $1::xid8 ORDER BY position",
+            "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position::text AS position, occurred_at, correlation_id, causation_id::text AS causation_id FROM crablet_events WHERE transaction_id = $1::xid8 ORDER BY position",
             [appended.transactionId]
           );
           for (const row of rows) {
             stored.push({
+              eventId: row.event_id,
               type: row.type,
               tags: row.tags.map((raw: string) => {
                 const i = raw.indexOf("=");

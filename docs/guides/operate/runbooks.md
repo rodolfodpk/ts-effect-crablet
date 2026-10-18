@@ -14,10 +14,15 @@ answer `503` with reason `view_failed`.
 **Check:**
 1. The processor's last error: `GET /admin/processors` shows it, and so does `crablet_view_progress.last_error` (or the automation or outbox table).
 2. If the error is an `EventDecodingError`, go to [stored events cannot be read](#stored-events-cannot-be-read).
-3. Otherwise it is the handler or what it calls: a bug, a missing table or column, an external system that is down (for an outbox publisher).
+3. Otherwise it is the handler or what it calls: a bug, a missing table or column, an external system that is down (for an outbox publisher). An outbox
+   error that says `took longer than ... ms` is the publish timeout (`publishTimeoutMs`, default 30 s): the destination is slow or hanging.
+4. An automation whose error is `IdempotencyMismatch`: its `idempotentBy` matches another trigger's different request, so the key is too broad
+   ([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md)). Fix the key in the code; the trigger has not been handled.
 
 **Do:** fix the cause and deploy, then **reset** the processor. Reset clears the error count, sets it `ACTIVE` and resumes it from where it stopped;
-it does not rewind the cursor, so nothing is handled twice by the reset itself.
+it does not rewind the cursor, so nothing is handled twice by the reset itself. An event is never skipped to get past a failure: order and no gaps come
+first ([ADR-0036](../../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)). An outbox publisher that sends one event at a time and failed
+part-way already kept the events it sent: it resumes at the first one that failed.
 
 ## A module has no leader
 

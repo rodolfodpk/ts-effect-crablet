@@ -11,7 +11,7 @@ import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.
 import { makeInMemoryEventFetcher } from "./fixtures/InMemoryEventFetcher.ts";
 import { makeInMemoryEventHandler } from "./fixtures/InMemoryEventHandler.ts";
 
-const event = (position: bigint): StoredEvent => ({ type: "T", tags: [], data: {}, transactionId: position.toString(), position, occurredAt: new Date(0), correlationId: null, causationId: null });
+const event = (position: bigint): StoredEvent => ({ eventId: crypto.randomUUID(), type: "T", tags: [], data: {}, transactionId: position.toString(), position, occurredAt: new Date(0), correlationId: null, causationId: null });
 const PROCESSOR_ID = "proc-a";
 const config = processorConfigOf(PROCESSOR_ID, { pollingIntervalMs: 1000, batchSize: 10, backoffEnabled: false, backoffThreshold: 1, backoffMultiplier: 2, backoffMaxSeconds: 120 });
 

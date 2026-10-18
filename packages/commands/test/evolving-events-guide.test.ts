@@ -9,7 +9,7 @@ import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { checkFixtures, checkImpact, depositFixtures, DepositMade, DepositMadeV1, DepositReversed, netAmount, WalletBalance, WalletOpened, verifyStored } from "./support/evolving-events.ts";
 
-const stored = (data: unknown): StoredEvent => ({ type: "DepositMade", tags: [], data, transactionId: "12", position: 99n, occurredAt: new Date(0), correlationId: null, causationId: null });
+const stored = (data: unknown): StoredEvent => ({ eventId: crypto.randomUUID(), type: "DepositMade", tags: [], data, transactionId: "12", position: 99n, occurredAt: new Date(0), correlationId: null, causationId: null });
 
 describe("evolving an event: a compatible change", () => {
   test("the old payload decodes with the default; one written with the field keeps it; the old definition reads the new payload and ignores the field", () => {

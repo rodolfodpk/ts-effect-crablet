@@ -19,10 +19,11 @@ reads the events after its cursor, hands them to a handler, and moves the cursor
 
 - **Make every other effect idempotent.** A projector's write outside the `sql` it is given, an automation's command and an outbox publication can each
   happen twice. An automation's command must declare `idempotentBy` (`automationHandlerOf` refuses one that does not); behind it, the database refuses the
-  same trigger appending the same request twice ([ADR-0035](../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)). An outbox publisher should
-  deduplicate on `event.position`.
+  same trigger appending the same request twice ([ADR-0035](../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)). An outbox publisher gives
+  the destination `event.eventId` as the message id, so a broker that deduplicates by id drops a repeat; a consumer that keeps the order can instead skip
+  anything at or below the last `(transactionId, position)` it applied ([ADR-0036](../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
 - **Do not use "position is bigger than the last one I saw" as an idempotency check.** Delivery is ordered by transaction first, so a later event can
-  have a smaller position.
+  have a smaller position. The pair `(transactionId, position)` is the order; `eventId` is an identity, not an order.
 - **Expect delay from long transactions.** A poller only reads events whose transaction is older than every transaction still open, which is what makes
   "no event is skipped" true. So a long-running transaction anywhere in the database holds delivery back until it ends.
 

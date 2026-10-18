@@ -27,6 +27,7 @@ after(async () => {
 
 let position = 1n;
 const subscribed = (studentId: string, courseId: string, data: unknown = { studentId, courseId }): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type: StudentSubscribed.type, tags: [], data, transactionId: "1", position: position++, occurredAt: new Date(), correlationId: null, causationId: null
 });
 const seats = (courseId: string) =>

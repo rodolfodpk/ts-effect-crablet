@@ -45,6 +45,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, Env>) => runtime.runPromise(effec
 
 let nextPosition = 1n;
 const fakeEvent = (type: string, tags: Record<string, string>, data: unknown): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: Object.entries(tags).map(([key, value]): Tag => ({ key, value })),
   data,

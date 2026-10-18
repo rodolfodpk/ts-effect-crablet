@@ -91,7 +91,7 @@ export const buildEventSelectionQuery = (
 
   const sqlText =
     // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
-    "SELECT e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id " +
+    "SELECT e.event_id::text AS event_id, e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id " +
     `FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.transaction_id ASC, e.position ASC LIMIT $${limitParamIndex}`;
 
   return { sql: sqlText, params };
@@ -189,6 +189,7 @@ export const buildBacklogQuery = (
 };
 
 export interface StoredEventRow {
+  readonly event_id: string;
   readonly type: string;
   readonly tags: ReadonlyArray<string>;
   readonly data: unknown;
@@ -208,6 +209,7 @@ export const parseStoredEventRow = (row: StoredEventRow): StoredEvent => {
     return idx < 0 ? { key: raw, value: "" } : { key: raw.slice(0, idx), value: raw.slice(idx + 1) };
   });
   return {
+    eventId: row.event_id,
     type: row.type,
     tags,
     data: row.data,

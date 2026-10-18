@@ -53,13 +53,14 @@ describe("DIAG", () => {
     const t0 = performance.now();
     await runtime.runPromise(Effect.gen(function* () {
       const es = yield* EventStore;
-      for (let start = 0; start < N; start += 200) {
-        yield* es.append(Array.from({ length: Math.min(200, N - start) }, (_, k) => ((start + k) % 20 === 0 ? transfer(start + k) : deposit(start + k))));
+      // MAX_APPEND_EVENTS (50) is the most one append takes.
+      for (let start = 0; start < N; start += 50) {
+        yield* es.append(Array.from({ length: Math.min(50, N - start) }, (_, k) => ((start + k) % 20 === 0 ? transfer(start + k) : deposit(start + k))));
       }
     }));
     const secs = (performance.now() - t0) / 1000;
     await q("VACUUM ANALYZE crablet_events"); await q(`VACUUM ANALYZE ${TAG_TABLE}`);
-    console.log(`DIAG E9a appended ${N} events through the real append path in ${secs.toFixed(0)} s (${(N / secs).toFixed(0)} events/s, batches of 200)`);
+    console.log(`DIAG E9a appended ${N} events through the real append path in ${secs.toFixed(0)} s (${(N / secs).toFixed(0)} events/s, batches of 50)`);
     const sizes = await q<{ rel: string; kind: string; bytes: string }>(`
       SELECT c.relname AS rel, CASE WHEN c.relkind = 'i' THEN 'index' ELSE 'heap' END AS kind, pg_relation_size(c.oid)::text AS bytes
       FROM pg_class c

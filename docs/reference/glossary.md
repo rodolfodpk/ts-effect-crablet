@@ -6,6 +6,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 ## The idea
 
+- **Event id** - `event_id`, a uuidv7 every stored event gets: its stable public identity, the message id an outbox publisher gives its destination. It is not an order: events are ordered by `(transaction_id, position)` ([ADR-0036](../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
 - **Event** - a fact that happened, immutable, stored in one log shared by everything (`StudentSubscribed`, `DepositMade`). Defined with `defineEvent`: a name, a payload schema and the tags it can be found by. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
 - **Tag** - a `key=value` label on an event saying what it is about (`course_id=math`). Events are found by their tags; there are no streams. [DCB guide](../concepts/dcb-guide.md)
 - **Query** - a set of "event types, with these tags" items that selects events from the log.
@@ -17,7 +18,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Domain error** - a refusal that belongs to the business (`CourseFull`), declared on the command, with a `kind` the HTTP layer maps to a status code.
 - **Append condition** - "append these events only if nothing matching this query is newer than this position". It makes the check and the write one atomic step. [ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md)
 - **Conflict** - the append condition failed because the boundary changed. The command is re-run with fresh state (`retries`, default 3).
-- **Idempotent** - repeating the operation has no further effect. A command can declare `idempotentBy`, keyed on a request id, and a repeat answers "already done"; an id the caller chose that is already taken is decided in `decide` instead ([ADR-0027](../adr/0027-a-taken-id-is-decided-not-flagged.md)); delivery by the pollers is at-least-once, so an automation's command must declare it (`automationHandlerOf` refuses one that does not), an outbox publisher should deduplicate on `event.position`, and a view's projector is covered when it writes through the `sql` it is given (its batch and cursor commit together, ADR-0023).
+- **Idempotent** - repeating the operation has no further effect. A command can declare `idempotentBy`, keyed on a request id, and a repeat answers "already done"; an id the caller chose that is already taken is decided in `decide` instead ([ADR-0027](../adr/0027-a-taken-id-is-decided-not-flagged.md)); delivery by the pollers is at-least-once, so an automation's command must declare it (`automationHandlerOf` refuses one that does not), an outbox publisher gives its destination `event.eventId` as the message id (or skips what is at or below the last `(transactionId, position)` it applied), and a view's projector is covered when it writes through the `sql` it is given (its batch and cursor commit together, ADR-0023).
 - **Commutative command** - one that is safe to run in parallel with itself (deposits). It declares `concurrent({ guard })`; only the guard events can conflict.
 
 ## Positions and delivery

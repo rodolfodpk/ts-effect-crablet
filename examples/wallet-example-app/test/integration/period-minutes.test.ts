@@ -156,6 +156,7 @@ describe("a statement period of 5 minutes, on Postgres", () => {
     const rows = (await probe.query<{ type: string; tags: string[]; data: unknown; transaction_id: string; position: string; occurred_at: Date }>(
       `SELECT type, tags, data, transaction_id::text, position::text, occurred_at FROM crablet_events WHERE tags @> ARRAY['wallet_id=' || $1]::text[] ORDER BY transaction_id, position`, [id])).rows;
     const stored: StoredEvent[] = rows.map((r) => ({
+      eventId: crypto.randomUUID(),
       type: r.type,
       tags: r.tags.map((t) => { const i = t.indexOf("="); return { key: t.slice(0, i), value: t.slice(i + 1) }; }),
       data: r.data, transactionId: r.transaction_id, position: BigInt(r.position), occurredAt: r.occurred_at, correlationId: null, causationId: null

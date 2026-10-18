@@ -11,7 +11,7 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import type { OutboxPublisher } from "./OutboxPublisher.ts";
 import type { TopicConfig } from "./TopicConfig.ts";
-import type { OutboxConfig } from "./OutboxConfig.ts";
+import { defaultPublishTimeoutMs, type OutboxConfig } from "./OutboxConfig.ts";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 import { makeOutboxEventHandler } from "./internal/OutboxEventHandler.ts";
 import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts";
@@ -44,8 +44,9 @@ export const makeOutboxProcessor = (
 
     const progressTracker = yield* makeOutboxProgressTracker(instanceId);
     const fetcher = yield* makeSqlEventFetcher();
-    const handler = makeOutboxEventHandler(deps.publishers);
-    const configs = makeOutboxProcessorConfigs(deps.config, deps.topics);
+    const { publishTimeoutMs, ...pollingConfig } = deps.config ?? {};
+    const handler = makeOutboxEventHandler(deps.publishers, publishTimeoutMs ?? defaultPublishTimeoutMs);
+    const configs = makeOutboxProcessorConfigs(pollingConfig, deps.topics);
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
@@ -53,7 +54,7 @@ export const makeOutboxProcessor = (
 
     return yield* makeEventProcessor({
       configs,
-      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
+      leaderRetryIntervalMs: resolvePollingConfig(pollingConfig).leaderElectionRetryIntervalMs,
       fetcher,
       handler,
       progressTracker,

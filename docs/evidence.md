@@ -32,6 +32,7 @@ magnitude; they are not capacity. The last column says how many runs each rests 
 |---|---|---|---|
 | Loading 1,000,000 events through the append path | about **15,000 events/s** | two full runs that agreed in shape | reliability report, E9 |
 | Size of an event with several tags, with its indexes and tag rows | about **1.2 KB** (wallet-shaped events, 1,203 bytes) | two full runs at 1,000,000 events | reliability report, E9 |
+| What `event_id` adds | +6 B per event in the events heap, +0.4 % for the log (1,247 to 1,252 B/event); append rate unchanged | 200,000 wallet-shaped events, one run | `storage.diagnostic.ts` E9a, [ADR-0036](./adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md) |
 | A transfer (`all` over two accounts) from an account with 100,000 events | **218 ms** (403 ms before the fix) | one experiment; the same harness timed 25 commands per size | reliability report, E5d |
 | Takeover after a leader **crashes** | 0.2 to 4.2 s with the 5 s retry default: it is the retry interval minus the phase | six trials, one per phase of the retry cycle | reliability report, D1b |
 | Takeover after a **graceful stop** | **0.04 to 0.10 s** (mean 0.07 s) | trials listed in the report | reliability report, D1c |

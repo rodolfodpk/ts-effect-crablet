@@ -23,6 +23,9 @@ export const EVENTS_CHANNEL = "crablet_events";
 // A queried event (as opposed to AppendEvent, which
 // is what's written).
 export interface StoredEvent {
+  // The event's stable public id (a uuidv7): what a sink is given as the message id, the same on every republish (ADR-0036). NOT an order:
+  // events are ordered by (transactionId, position), and an id sorts by when it was generated.
+  readonly eventId: string;
   readonly type: string;
   readonly tags: ReadonlyArray<Tag>;
   readonly data: unknown;
@@ -145,6 +148,7 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
     return idx < 0 ? { key: raw, value: "" } : { key: raw.slice(0, idx), value: raw.slice(idx + 1) };
   });
   return {
+    eventId: row.event_id,
     type: row.type,
     tags,
     data: row.data,

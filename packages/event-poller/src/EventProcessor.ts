@@ -11,7 +11,7 @@ import type { ProgressTracker } from "./ProgressTracker.ts";
 import type { EventFetcher } from "./EventFetcher.ts";
 import * as ProgressCursorNS from "./ProgressCursor.ts";
 import type { ProgressCursor } from "./ProgressCursor.ts";
-import type { EventHandler } from "./EventHandler.ts";
+import { HandledPrefix, type EventHandler } from "./EventHandler.ts";
 import * as EventSelectionNS from "./EventSelection.ts";
 import type { EventSelection } from "./EventSelection.ts";
 import * as BackoffStateNS from "./BackoffState.ts";
@@ -225,7 +225,20 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
           : Effect.gen(function* () {
               yield* fence;
               const handled = yield* deps.handler.handle(id, events).pipe(
-                Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
+                // Part-way through (HandledPrefix): what was handled stays handled. Move the cursor past it (the same compare-and-set as below), then fail
+                // with the cause, so the next tick redelivers from the first event that was not handled, not the whole batch (ADR-0036).
+                Effect.catch((err): Effect.Effect<never, unknown> =>
+                  err instanceof HandledPrefix
+                    ? Effect.gen(function* () {
+                        if (err.handled > 0) {
+                          yield* fence;
+                          yield* deps.progressTracker.updateCursor(id, ready.cursor, ProgressCursorNS.after(events[err.handled - 1]!));
+                        }
+                        return yield* Effect.fail(err.cause);
+                      })
+                    : Effect.fail(err)
+                ),
+                Effect.tapError((err) => (err instanceof LeadershipLost ? Effect.void : deps.progressTracker.recordError(id, String(err), config.maxErrors)))
               );
 
               yield* fence;

@@ -8,6 +8,7 @@ import { executeCommand, noOp } from "../src/AutomationDecision.ts";
 import { testCommand } from "./fixtures/testCommand.ts";
 
 const fakeEvent = (position: bigint, correlationId: string | null = null): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type: "OrderPlaced",
   tags: [],
   data: {},

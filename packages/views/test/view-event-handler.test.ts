@@ -5,6 +5,7 @@ import { makeViewEventHandler } from "../src/internal/ViewEventHandler.ts";
 import type { ViewProjector } from "../src/ViewProjector.ts";
 
 const fakeEvent = (type: string): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: [],
   data: {},

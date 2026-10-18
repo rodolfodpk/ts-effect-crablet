@@ -238,3 +238,22 @@ describe("SqlEventFetcher (against real crablet_events/crablet_event_tag_keys)",
     }
   });
 });
+
+// ADR-0036: what a poller hands its handler (an outbox publisher) carries the event's stable id, the same the store holds.
+describe("SqlEventFetcher: the event's stable id", () => {
+  it("each fetched event has the event_id the database holds for it", async () => {
+    const type = `FetchIdType-${crypto.randomUUID().slice(0, 8)}`;
+    const fetched = await run(
+      Effect.gen(function* () {
+        const store = yield* EventStore;
+        yield* store.append([AppendEvent.ofUntagged(type, { n: 1 }), AppendEvent.ofUntagged(type, { n: 2 })]);
+        const fetcher = yield* makeSqlEventFetcher();
+        return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set([type]) }), ProgressCursorNS.zero, 1000);
+      })
+    );
+    const stored = await run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ event_id: string }>("SELECT event_id::text AS event_id FROM crablet_events WHERE type = $1 ORDER BY position", [type]))
+    );
+    assert.deepStrictEqual(fetched.map((e) => e.eventId), stored.map((r) => r.event_id));
+  });
+});

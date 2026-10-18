@@ -42,6 +42,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient | PgClient.Pg
 
 let nextPosition = 1n;
 const fakeEvent = (type: string, tags: Record<string, string>, data: unknown): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: Object.entries(tags).map(([key, value]): Tag => ({ key, value })),
   data,
