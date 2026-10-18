@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { defineCommand, emit, fail, noop } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
 import { WalletNotFound } from "../errors/WalletErrors.ts";
 import { CloseWalletContract } from "../WalletContracts.ts";
 import { WalletClosed, WalletLifecycleModel } from "../WalletModel.ts";
@@ -12,7 +12,7 @@ export type CloseWalletCommand = Schema.Schema.Type<(typeof CloseWalletContract)
 export const CloseWallet = defineCommand({
   ...CloseWalletContract,
   model: (c) => WalletLifecycleModel.of({ id: c.walletId }),
-  idempotentBy: "decide",
+  idempotentBy: byModel(),
   decide: (wallet, c, { now }) =>
     wallet.exists
       ? emit(WalletClosed({ walletId: c.walletId, closedAt: now.toISOString() }))

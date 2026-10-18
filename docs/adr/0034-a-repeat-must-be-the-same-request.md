@@ -4,7 +4,7 @@
 
 **Accepted** (2026-10-18). Built: migration `V16__crablet_request_fingerprint.sql` (`crablet_events.request_fingerprint`, `crablet_items_duplicate`, a duplicate that
 reports what it matched), `EventStore.findDuplicate`, `Duplicate.latest` and `.requests`, `ProjectionResult.latest`, `IdempotencyMismatch`
-(`@crablet/commands/Errors`), `idempotentBy: "decide"`, `assertRepeatHarmless` (`@crablet/commands/testing/Scenario`), the 422 problem and the check in
+(`@crablet/commands/Errors`), `idempotentBy: byModel()`, `assertRepeatHarmless` (`@crablet/commands/testing/Scenario`), the 422 problem and the check in
 `checkImplementations` (`@crablet/commands-http`), and the metric `crablet.command.idempotency_mismatches`. Supersedes the part of
 [ADR-0027](0027-a-taken-id-is-decided-not-flagged.md) that answered every match "already done", and closes the gap
 [ADR-0015](0015-read-consistency-by-marker.md) recorded ("a retried command has no marker").
@@ -28,10 +28,15 @@ reports what it matched), `EventStore.findDuplicate`, `Duplicate.latest` and `.r
 
 - **A query** (`(c) => DepositMade.where({ deposit_id: c.depositId })`) is for an effect that can legitimately happen many times, where state alone
   cannot tell a retry from a new request. The framework looks the key up before deciding, and the append checks it again atomically.
-- **`"decide"`** is for an effect that happens once per key (open wallet X, define course Y, subscribe S to C). The model already shows whether it
+- **`byModel()`** is for an effect that happens once per key (open wallet X, define course Y, subscribe S to C). The model already shows whether it
   happened, and `decide` answers the repeat: `noop(...)` for the same request, a domain error for a different one (`WalletAlreadyExists`). The framework
   looks nothing up for it. The value is a statement by the author, and `assertRepeatHarmless(Command, input, history?)` checks it in a test: it runs the
   command twice and fails if the second run appends anything, or fails for a request that succeeded.
+
+  `byModel()` needs a model and takes no `consistency`: it decides under `strict()`, the default with a model. Two identical requests that race both load
+  "not done yet"; under `strict()` the second append conflicts, the command runs again, and its fresh load shows the first, so `decide` answers it. Under
+  `concurrent()` both would append, and `assertRepeatHarmless`, which runs the command twice in a row, would not see it. The type checker refuses
+  `byModel()` without a model or with a `consistency`, and `defineCommand` refuses both when it runs, for callers the type checker does not see.
 
 **A repeat must be the same request.** A command with a query key stores a fingerprint of the request on its events: SHA-256 of the command name and the
 input, encoded by the command's own input schema, with sorted keys. When the key matches, what it matched decides:
@@ -51,7 +56,7 @@ event the decision read (`ProjectionResult.latest`, settled or not), and whateve
 is nothing to point at (a no-op of a command with no model).
 
 **Every command exposed over HTTP declares `idempotentBy`.** `checkImplementations` refuses one that does not, when the layer is built, with a message
-that names both forms. The wallet's `TransferMoney` now has its key, and the commands whose `decide` already answered a repeat say so with `"decide"`. A
+that names both forms. The wallet's `TransferMoney` now has its key, and the commands whose `decide` already answered a repeat say so with `byModel()`. A
 repeated `CloseWallet` is now `noop("ALREADY_CLOSED")` rather than `WalletNotFound`.
 
 ## Consequences
@@ -70,4 +75,8 @@ repeated `CloseWallet` is now `noop("ALREADY_CLOSED")` rather than `WalletNotFou
 - **Keep ADR-0027 and document it.** Rejected: a silent wrong answer, which the client cannot detect.
 - **A field to narrow what is compared (`sameRequest`).** Rejected for now: a retry resends the same body. It can be added later without breaking anything.
 - **A second field for the HTTP check (`repeat: "decided"`).** Rejected: it could contradict a query `idempotentBy`; one field answers one question.
+- **The string `idempotentBy: "decide"`.** Rejected: a magic value next to a function, and nothing to hang the rule on (a model, no `consistency`), which
+  could then only be checked when the command ran. `byModel()` is a value like `strict()`, and the type checker enforces the rule.
+- **Wrapping the query too (`Idempotency.key(...)`).** Rejected: it adds noise to the most common form, and `model` and `consistency` are plain
+  functions of the input as well.
 - **Compare the payload stored in the command audit.** Rejected: the audit is redacted by default, can be turned off, and is purged by retention.

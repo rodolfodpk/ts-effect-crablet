@@ -110,13 +110,13 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
   return scenarioOver(store, null);
 };
 
-// Checks a command's answer to a repeat (ADR-0034), the one thing `idempotentBy: "decide"` cannot check by itself: run the command, then run it
+// Checks a command's answer to a repeat (ADR-0034), the one thing `idempotentBy: byModel()` cannot check by itself: run the command, then run it
 // again with the same input, as a client does when it lost the first answer. The first run must append (give it the `history` it needs); the
 // second must append nothing and answer "already done" - not a second effect, and not an error for a request that succeeded. Works for both forms
 // of `idempotentBy`. Throws, naming what is wrong, so a failed check fails the test in any runner.
 export const assertRepeatHarmless = async <In, Err>(command: Command<In, Err>, input: unknown, history: ReadonlyArray<AppendEvent> = []): Promise<void> => {
   if (!command.idempotent) {
-    throw new Error(`command "${command.name}" does not say how a repeat is recognised: declare idempotentBy (a query on a request id, or "decide")`);
+    throw new Error(`command "${command.name}" does not say how a repeat is recognised: declare idempotentBy (a query on a request id, or byModel())`);
   }
   const scenario = given(...history);
   const first = await scenario.when(command, input);

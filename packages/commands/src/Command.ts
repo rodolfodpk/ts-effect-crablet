@@ -22,7 +22,7 @@ import type { ModelInstance } from "./Model.ts";
 //       input: Schema.Struct({ walletId: Schema.String, depositId: Schema.String, amount: Schema.Positive }),
 //       model: (c) => WalletModel.of({ id: c.walletId, ...period }),           // state + boundary
 //       consistency: () => concurrent({ guard: WalletModel.lifecycleQuery(...) }), // optional; default strict()
-//       idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId }),   // how a repeat is recognised (or "decide")
+//       idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId }),   // how a repeat is recognised (or byModel())
 //       decide: (wallet, c) =>
 //         wallet.exists ? emit(DepositMade({ ... })) : fail(new WalletNotFound({ walletId: c.walletId }))
 //     });
@@ -110,6 +110,31 @@ export const concurrent = (opts: { readonly guard?: QueryType } = {}): Consisten
 });
 
 // ---------------------------------------------------------------------------------------------
+// How a repeat is recognised, when the model shows it (see `idempotentBy`).
+// ---------------------------------------------------------------------------------------------
+
+export interface ByModel {
+  readonly _tag: "ByModel";
+}
+
+// The effect happens once per key (open wallet X): the model already shows whether it happened, and `decide` answers a repeat - `noop(...)` for the
+// same request, a domain error for a different one. It needs a model and decides under `strict()` (the default with a model), so a repeat that races
+// the first request conflicts, runs again, and its fresh load shows the first: `consistency` cannot be given with it.
+export const byModel = (): ByModel => ({ _tag: "ByModel" });
+const isByModel = (value: unknown): value is ByModel => typeof value === "object" && value !== null && (value as ByModel)._tag === "ByModel";
+
+// What `idempotentBy` accepts. `IB` is what was written; a string (the old `"decide"`, a typo) gets a message naming the two forms.
+type IdempotentBy<IB, In> = [IB] extends [string]
+  ? "idempotentBy takes byModel() or a query, (c) => Event.where({ ... })"
+  : (((input: In) => QueryType) | ByModel) & IB;
+
+// The rule above, for the type checker: with `byModel()`, `model` is required and `consistency` is not allowed.
+// The text of the `consistency` type is what the compiler shows when one is given.
+type ByModelRule<IB> = [IB] extends [ByModel]
+  ? { readonly model: unknown; readonly consistency?: "byModel() decides under strict(): remove consistency" }
+  : unknown;
+
+// ---------------------------------------------------------------------------------------------
 // The defined command.
 // ---------------------------------------------------------------------------------------------
 
@@ -134,7 +159,7 @@ export interface Command<
   // How many times the executor re-runs the whole command (fresh transaction, fresh load) after a
   // `Conflict`, before giving up with that `Conflict`.
   readonly retries: number;
-  // Whether the command declared `idempotentBy`, as a query or as "decide": whether it says how a repeat is recognised. An automation and the HTTP
+  // Whether the command declared `idempotentBy`, as a query or as `byModel()`: whether it says how a repeat is recognised. An automation and the HTTP
   // API require it: an automation's batch can be handled twice (a crash, a zombie leader) and a client retries a request whose answer it lost,
   // and only a command that recognises a repeat makes that harmless.
   readonly idempotent: boolean;
@@ -148,7 +173,8 @@ export const defineCommand = <
   D extends Decision<any> = Decision<never>,
   R = undefined,
   RE = never,
-  const Es extends ReadonlyArray<AnyDomainErrorClass> = []
+  const Es extends ReadonlyArray<AnyDomainErrorClass> = [],
+  IB = unknown
 >(def: {
   readonly name: string;
   readonly input: I;
@@ -171,18 +197,26 @@ export const defineCommand = <
   //     depends on the INPUT only, so it is checked before `resolve`/`decide` ever run: on a retry the state has moved on (the balance is already
   //     reduced), so re-deciding could wrongly fail. It is re-checked atomically at append. A match from the same request is "already done",
   //     with the earlier write's marker; a match from a DIFFERENT request (same key, another body) fails with `IdempotencyMismatch`.
-  //   - "decide", for an effect that can only happen once per key (open wallet X): the model already shows whether it happened, and `decide`
+  //   - `byModel()`, for an effect that can only happen once per key (open wallet X): the model already shows whether it happened, and `decide`
   //     answers the repeat itself - `noop(...)` for the same request, a domain error for a different one. Nothing is looked up for it.
+  //     It needs a model and decides under strict() (no `consistency`): a racing repeat conflicts, reloads, and `decide` sees the first.
   // Required for a command exposed over HTTP or run by an automation; `assertRepeatHarmless` (testing) checks the answer.
-  readonly idempotentBy?: ((input: Schema.Schema.Type<I>) => QueryType) | "decide";
+  readonly idempotentBy?: IdempotentBy<IB, Schema.Schema.Type<I>>;
   // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
   readonly decide: (state: S, input: Schema.Schema.Type<I>, context: DecideContext<R>) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
-}): Command<Schema.Schema.Type<I>, ErrorOf<D> | RE, I, Es> => {
+} & ByModelRule<IB>): Command<Schema.Schema.Type<I>, ErrorOf<D> | RE, I, Es> => {
   type In = Schema.Schema.Type<I>;
   // The audit table stores the name in a column limited to 64 characters: fail at definition time, not mid-request.
   if (def.name.length < 1 || def.name.length > 64) throw new Error(`command name must be 1-64 characters, got ${def.name.length}: "${def.name}"`);
+  // The byModel() rule, also for callers the type checker does not see (ADR-0034).
+  if (isByModel(def.idempotentBy)) {
+    if (def.model === undefined) throw new Error(`command "${def.name}": idempotentBy byModel() needs a model, the state decide answers a repeat from`);
+    if (def.consistency !== undefined) {
+      throw new Error(`command "${def.name}": idempotentBy byModel() decides under strict(), so it takes no consistency: under concurrent(), two identical requests racing would both append`);
+    }
+  }
 
   const decode = Schema.decodeUnknownEffect(def.input as unknown as Schema.Decoder<unknown>) as (
     raw: unknown,
@@ -203,7 +237,7 @@ export const defineCommand = <
 
       // 1. Idempotency pre-check, before anything else (see `idempotentBy`): a repeat of the same request is "already done", with the earlier
       // write's marker; the same key from a different request is refused.
-      const idempotency = typeof def.idempotentBy === "function" ? def.idempotentBy(input) : null;
+      const idempotency = typeof def.idempotentBy === "function" ? (def.idempotentBy as (input: In) => QueryType)(input) : null;
       // The request's fingerprint: compared when the key repeats, and, under a cause (an automation's trigger), the database's backstop against the same
       // trigger appending the same request twice (ADR-0035).
       const causationId = yield* CorrelationContext.causationId;

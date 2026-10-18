@@ -14,7 +14,7 @@ import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/Co
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { parseMarker } from "@crablet/eventstore/Marker";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import { defineCommand, emit, fail } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, fail } from "@crablet/commands/Command";
 import { defineEvent } from "@crablet/commands/Event";
 import { defineModel } from "@crablet/commands/Model";
 import { DomainError } from "@crablet/commands/Errors";
@@ -80,10 +80,14 @@ const RefuseContract = commandContract({
   errors: [NoSuchThing, NotAllowed, BadRequestDomain, AlreadyDone],
   input: Schema.Struct({ kind: Schema.Literals(["not_found", "forbidden", "invalid", "conflict"]), id: Schema.String })
 });
+// The thing a refusal is about: nothing ever appends it, so its state is always the initial one.
+const Thing = defineEvent("RefuseThing", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ thing_id: d.id }) });
+const ThingModel = defineModel({ by: "thing_id", initial: () => ({}) }).on(Thing, (s) => s);
 const Refuse = defineCommand({
   ...RefuseContract,
-  // It never appends: its refusal is its answer to any repeat.
-  idempotentBy: "decide",
+  // It never appends: its refusal, decided from the thing's state, is its answer to any repeat.
+  model: (c) => ThingModel.of({ id: c.id }),
+  idempotentBy: byModel(),
   decide: (_, c) =>
     c.kind === "not_found" ? fail(new NoSuchThing({ id: c.id }))
     : c.kind === "forbidden" ? fail(new NotAllowed({ reason: "read-only" }))

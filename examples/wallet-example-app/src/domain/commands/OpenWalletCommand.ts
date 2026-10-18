@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { defineCommand, emit, fail, noop } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
 import { OpenWalletContract } from "../WalletContracts.ts";
 import { WalletOpened, WalletOpeningModel } from "../WalletModel.ts";
 import { WalletAlreadyExists } from "../errors/WalletErrors.ts";
@@ -12,7 +12,7 @@ export type OpenWalletCommand = Schema.Schema.Type<(typeof OpenWalletContract)["
 export const OpenWallet = defineCommand({
   ...OpenWalletContract,
   model: (c) => WalletOpeningModel.of({ id: c.walletId }),
-  idempotentBy: "decide", // the model shows whether it was done; decide answers a repeat
+  idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: ({ opened }, c, { now }) =>
     opened === null
       ? emit(WalletOpened({ ...c, openedAt: now.toISOString() }))

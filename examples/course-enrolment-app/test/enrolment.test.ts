@@ -74,7 +74,7 @@ describe("subscribe: two rules, one decision", () => {
   });
 });
 
-// Both commands answer a repeat themselves (`idempotentBy: "decide"`); this checks they keep their word (ADR-0034).
+// Both commands answer a repeat themselves (`idempotentBy: byModel()`); this checks they keep their word (ADR-0034).
 describe("a repeated request is harmless", () => {
   test("define_course and subscribe", async () => {
     await assertRepeatHarmless(DefineCourse, define("math", 30));

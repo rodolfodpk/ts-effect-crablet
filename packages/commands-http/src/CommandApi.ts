@@ -166,7 +166,7 @@ export const checkImplementations = (
       if (!implementation.idempotent) {
         problems.push(
           `"${contract.name}": the command does not say how a repeat is recognised, and a client retries a request whose answer it lost. Declare idempotentBy: a query on a request id ` +
-            `the client sends (an effect that can happen many times, like a deposit), or "decide" when decide already answers a repeat (an effect that happens once per key, like opening a wallet)`
+            `the client sends (an effect that can happen many times, like a deposit), or byModel() when decide already answers a repeat from the model (an effect that happens once per key, like opening a wallet)`
         );
       }
     }

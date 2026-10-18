@@ -38,7 +38,8 @@ Spread the contract into `defineCommand` and add the decision ([tutorial step 2]
 
 - an effect that can happen many times (a deposit, a transfer): a query on a request id the client sends, `idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId })`.
   A repeat is `200` "already done"; the same id with a different body is `422` `IDEMPOTENCY_MISMATCH`;
-- an effect that happens once per key (define course `math`, subscribe `ann` to it): `idempotentBy: "decide"`, and `decide` answers the repeat with `noop(...)`.
+- an effect that happens once per key (define course `math`, subscribe `ann` to it): `idempotentBy: byModel()`, and `decide` answers the repeat with `noop(...)`.
+  It needs a model and takes no `consistency`: it decides under `strict()`, so a repeat racing the first request conflicts and reloads instead of appending too.
 
 Either way a repeat answers with the earlier write's marker. Check the answer in a test with `assertRepeatHarmless(Command, input, history?)` from
 `@crablet/commands/testing/Scenario`.

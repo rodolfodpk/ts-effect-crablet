@@ -1,12 +1,12 @@
 // A repeat must be the same request (ADR-0034): what `idempotentBy` decides about a key that was already used, and what a repeat answers with. Runs on
 // the in-memory event store; the Postgres store gives the same verdicts (packages/commands/test/integration/repeat-postgres.test.ts).
 import { describe, expect, test } from "bun:test";
-import { Effect, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import * as Schema from "effect/Schema";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
-import { defineCommand, emit, fail, noop } from "../src/Command.ts";
+import { byModel, concurrent, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { runHandler } from "../src/CommandExecutor.ts";
 import { IdempotencyMismatch } from "../src/Errors.ts";
 import type { ExecutionResult } from "../src/ExecutionResult.ts";
@@ -33,7 +33,7 @@ const Pay = defineCommand({
 const Open = defineCommand({
   name: "rp_open",
   input: Schema.Struct({ accountId: Schema.String }),
-  idempotentBy: "decide",
+  idempotentBy: byModel(),
   model: (c) => Account.of({ id: c.accountId }),
   decide: (account, c) => (account.open ? noop("ALREADY_OPEN") : emit(Opened(c)))
 });
@@ -105,7 +105,13 @@ describe("assertRepeatHarmless", () => {
   });
 
   test("fails for a \"decide\" claim that decide does not keep: the repeat appends again", async () => {
-    const Counted = defineCommand({ name: "rp_counted", input: Schema.Struct({ accountId: Schema.String }), idempotentBy: "decide", decide: (_, c) => emit(Opened(c)) });
+    const Counted = defineCommand({
+      name: "rp_counted",
+      input: Schema.Struct({ accountId: Schema.String }),
+      idempotentBy: byModel(),
+      model: (c) => Account.of({ id: c.accountId }),
+      decide: (_, c) => emit(Opened(c))
+    });
     await expect(assertRepeatHarmless(Counted, { accountId: "c" })).rejects.toThrow(/NOT HARMLESS/);
   });
 
@@ -114,7 +120,7 @@ describe("assertRepeatHarmless", () => {
     const Strict = defineCommand({
       name: "rp_strict",
       input: Schema.Struct({ accountId: Schema.String }),
-      idempotentBy: "decide",
+      idempotentBy: byModel(),
       model: (c) => Account.of({ id: c.accountId }),
       decide: (account, c) => (account.open ? fail(new AlreadyOpen("open")) : emit(Opened(c)))
     });
@@ -128,6 +134,21 @@ describe("assertRepeatHarmless", () => {
 
   test("tells the author when the first run did not append", async () => {
     await expect(assertRepeatHarmless(Open, { accountId: "f" }, [AppendEvent.ofUntagged("Nothing", {}), Opened({ accountId: "f" })])).rejects.toThrow(/the first run must append/);
+  });
+});
+
+describe("byModel() needs a model and decides under strict(): a racing repeat must conflict, reload and see the first", () => {
+  test("with no model, the definition is refused: there is no state to answer a repeat from", () => {
+    expect(() =>
+      // @ts-expect-error byModel() requires a model
+      defineCommand({ name: "rp_no_model", input: Schema.Struct({ accountId: Schema.String }), idempotentBy: byModel(), decide: (_, c) => emit(Opened(c)) })
+    ).toThrow(/idempotentBy byModel\(\) needs a model/);
+  });
+
+  test("with a consistency, the definition is refused: under concurrent(), two identical requests racing would both append", () => {
+    const loose = { name: "rp_loose", input: Schema.Struct({ accountId: Schema.String }), idempotentBy: byModel(), consistency: () => concurrent() };
+    // @ts-expect-error byModel() takes no consistency
+    expect(() => defineCommand({ ...loose, model: (c) => Account.of({ id: c.accountId }), decide: (account, c) => (account.open ? noop("ALREADY_OPEN") : emit(Opened(c))) })).toThrow(/idempotentBy byModel\(\) decides under strict\(\), so it takes no consistency/);
   });
 });
 

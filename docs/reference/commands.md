@@ -17,7 +17,7 @@ From `@crablet/commands/Command`.
 | `model` | no | none | `(input, { resolved }) => Model.of({ id })`, or `all({ a: ..., b: ... })` for several. Gives `decide` its state and the command its boundary. Without it, `decide` gets `undefined` and the default consistency is `concurrent()`. |
 | `errors` | for each domain error | `[]` | The `DomainError` classes `decide` or `resolve` can fail with. A missing class is a compile error that names it. The HTTP layer documents and maps them. |
 | `consistency` | no | `strict()` with a model, `concurrent()` without | `(input, { resolved }) => strict() \| concurrent({ guard })`. `strict()`: anything in the boundary changed since loading refuses the append. `concurrent({ guard })`: safe to run in parallel with itself; only the `guard` events can conflict (deposits). See [the default](#the-default-consistency). |
-| `idempotentBy` | for HTTP and automations | none | How a repeat of a request is recognised ([below](#how-a-repeat-is-recognised)): a query, `(input) => Event.where({ ... })`, keyed on something that identifies one **request** (a deposit id, a transfer id); or `"decide"`, when `decide` answers a repeat itself (an id the caller chose: a wallet, a course). Required for a command exposed over HTTP or issued by an automation. |
+| `idempotentBy` | for HTTP and automations | none | How a repeat of a request is recognised ([below](#how-a-repeat-is-recognised)): a query, `(input) => Event.where({ ... })`, keyed on something that identifies one **request** (a deposit id, a transfer id); or `byModel()`, when the model shows whether it happened and `decide` answers a repeat itself (an id the caller chose: a wallet, a course). Required for a command exposed over HTTP or issued by an automation. |
 | `retries` | no | `3` | How many times a `Conflict` re-runs the whole command on fresh state. `0` turns retrying off. |
 | `resolve` | no | none | `(input, read) => Effect`. A lookup before the model is chosen, for when the model's id is not in the input (a card number names a member). `read` has `load(model)` and `exists(query)` and no `append`. What it reads joins the command's condition, so a lookup that changes before the append refuses it and the command runs again ([ADR-0029](../adr/0029-a-lookup-cannot-write-and-is-protected.md)). Its result reaches `model`, `consistency` and `decide` as `resolved`. [Guide](../guides/build/look-something-up-first.md). A model with a period is read, not turned: to write into a period, make that model the command's `model`. |
 
@@ -55,12 +55,16 @@ recognises the repeat, with `idempotentBy` ([ADR-0034](../adr/0034-a-repeat-must
 | Form | When | A repeat of the same request | The same key, a different request |
 |---|---|---|---|
 | a query, `(c) => DepositMade.where({ deposit_id: c.depositId })` | the effect can happen many times (deposits, transfers), so state cannot tell a retry from a new request: the client sends a request id | "already done" (`200`), nothing appended | `IdempotencyMismatch` (`422`): the earlier request stands, this one is not applied |
-| `"decide"` | the effect happens once per key (open wallet X, define course Y): the model shows whether it happened | `decide` returns `noop(...)` | `decide` fails with a domain error (`WalletAlreadyExists`, `409`) |
+| `byModel()` | the effect happens once per key (open wallet X, define course Y): the model shows whether it happened | `decide` returns `noop(...)` | `decide` fails with a domain error (`WalletAlreadyExists`, `409`) |
 
 For a query, the framework stores a fingerprint of the request with its events (SHA-256 of the command name and its encoded input) and compares it when the
 key matches. The same automation trigger delivered again is always "already done", even if the automation built the input differently the second time.
-`"decide"` is a claim the framework cannot check by itself: `assertRepeatHarmless(Command, input, history?)` (`@crablet/commands/testing/Scenario`) runs the
+`byModel()` is a claim the framework cannot check by itself: `assertRepeatHarmless(Command, input, history?)` (`@crablet/commands/testing/Scenario`) runs the
 command twice and fails if the repeat appends anything or fails.
+
+`byModel()` needs a model and takes no `consistency`: it decides under `strict()`, the default with a model. Two identical requests that race both decide
+to append, and only the conflict, the rerun and its fresh load let `decide` see the first. The type checker refuses `byModel()` without a model or with a
+`consistency`, and so does `defineCommand` when it runs.
 
 ## An id that is already taken
 

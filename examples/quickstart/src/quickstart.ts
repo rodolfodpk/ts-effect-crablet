@@ -4,7 +4,7 @@
 import { Schema } from "effect";
 import { defineEvent } from "@crablet/commands/Event";
 import { all, defineModel } from "@crablet/commands/Model";
-import { defineCommand, emit, fail, noop } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
 import { given } from "@crablet/commands/testing/Scenario";
 
@@ -37,7 +37,7 @@ export const Subscribe = defineCommand({
   errors: [CourseNotFound, CourseFull, StudentAtLimit], // checked against `decide`, and documented by the REST API
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
-  idempotentBy: "decide", // the model shows whether it was done; decide answers a repeat
+  idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: ({ course, student }, c) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))

@@ -3,10 +3,11 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { OpenApi } from "effect/http-api";
-import { defineCommand, emit } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, noop } from "@crablet/commands/Command";
 import { commandContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
+import { defineModel } from "@crablet/commands/Model";
 import { ContractMismatch, checkImplementations, makeCommandApi } from "../src/CommandApi.ts";
 
 class Taken extends DomainError("Taken", { fields: { id: Schema.String }, kind: "conflict" }) {}
@@ -54,7 +55,13 @@ describe("checkImplementations", () => {
   test("a command that does not say how a repeat is recognised is refused: a client retries a request whose answer it lost (ADR-0034)", () => {
     const noKey = defineCommand({ ...LogContract, decide: (_s, c) => emit(Done({ id: c.note })) });
     expect(() => checkImplementations(contracts, { claim: Claim, log: noKey })).toThrow(/"log": the command does not say how a repeat is recognised/);
-    const decided = defineCommand({ ...LogContract, idempotentBy: "decide", decide: (_s, c) => emit(Done({ id: c.note })) });
+    const Logged = defineModel({ by: "id", initial: () => false }).on(Done, () => true);
+    const decided = defineCommand({
+      ...LogContract,
+      idempotentBy: byModel(),
+      model: (c) => Logged.of({ id: c.note }),
+      decide: (logged, c) => (logged ? noop("ALREADY_LOGGED") : emit(Done({ id: c.note })))
+    });
     expect(() => checkImplementations(contracts, { claim: Claim, log: decided })).not.toThrow();
   });
 
