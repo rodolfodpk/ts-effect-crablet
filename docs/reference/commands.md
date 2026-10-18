@@ -99,6 +99,7 @@ From `@crablet/commands/Model`.
 |---|---|
 | `defineModel({ by, initial })` | A model of one entity, identified by the tag key `by` (`"course_id"`). `initial()` is the state before any event. |
 | `.on(Event, (state, data, ctx) => state)` | How one event type changes the state. The handled types also make the boundary. Add `{ by: [...] }` when the event carries the entity under other tag keys (a transfer's `from_account_id` and `to_account_id`). |
+| | The event must carry the tag the model binds through (`by`, or every key of `{ by: [...] }`): an event that does not would match nothing, so the fold would miss it and the boundary would not see a concurrent change to it. A typo in `by` or a missing tag is a compile error, `this event does not carry the tag "…" the model binds through`. Tags a command adds at append time (`extraTags`, a model's `scope`) are not checked. |
 | `.ignores(Event, ...)` | Declares event types that carry the model's tags but do not change it, for the change-impact report ([Evolving events](../guides/build/evolving-events.md)). |
 | `.period(...)` | Turns the model over by period (`Period.year`, `month`, `week`, `day`, `custom`, with an optional time zone); the framework closes and opens periods in the command's own append ([Turn a period](../guides/build/turn-a-period.md)). |
 | `Model.of({ id })` | The model of one entity, used in a command's `model`. |

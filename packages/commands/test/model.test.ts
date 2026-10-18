@@ -71,8 +71,8 @@ describe("defineModel: the boundary query is derived from the handlers", () => {
   });
 
   test("a model without scope has no scope tags", () => {
-    const Plain = defineModel({ by: "k", initial: () => 0 }).on(Deposited, (n, d) => n + d.amount);
-    expect(Plain.of({ id: "x" }).query).toEqual(Query.of([Query.queryItemOf(["Deposited"], [Tag.of("k", "x")])]));
+    const Plain = defineModel({ by: "account_id", initial: () => 0 }).on(Deposited, (n, d) => n + d.amount);
+    expect(Plain.of({ id: "x" }).query).toEqual(Query.of([Query.queryItemOf(["Deposited"], [Tag.of("account_id", "x")])]));
   });
 });
 

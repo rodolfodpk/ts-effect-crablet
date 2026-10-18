@@ -34,6 +34,14 @@ type TagValue = string | number;
 type EventLike = { readonly type: string; readonly decode: (raw: unknown) => any };
 type DataOf<E> = E extends { readonly decode: (raw: unknown) => infer D } ? D : never;
 
+// The tag keys an event declares, read from its `where` (defineEvent's result); `string` for an event that does not say, which is then not checked.
+type TagKeysOf<E> = E extends { readonly where: (filter?: infer F) => any } ? keyof NonNullable<F> & string : string;
+// An event a model binds through `Needed` must carry those tags: one that does not would match nothing, so the fold would miss it and the boundary
+// would not see a concurrent change to it. The text is what the compiler shows.
+type Carrying<E, Needed extends string> = [Exclude<Needed, TagKeysOf<E>>] extends [never]
+  ? E
+  : `this event does not carry the tag "${Exclude<Needed, TagKeysOf<E>>}" the model binds through`;
+
 export interface HandlerCtx {
   // The full stored event, including its tags (e.g. to tell which side of a two-party event this is).
   readonly event: StoredEvent;
@@ -99,21 +107,21 @@ const queryOf = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, 
   return Query.of([...groups.values()].map((g) => Query.queryItemOf(g.types, g.tags)));
 };
 
-export interface ModelBuilder<S, Scope extends object> {
+export interface ModelBuilder<S, Scope extends object, By extends string = string> {
   // Handle an event of this kind. By default it is bound to the model's id via the `by` tag and
   // scoped by the model's `scope` tags. `by` lists other tag keys to bind through instead - one
   // query item per key, e.g. a transfer event touches a wallet as `from_wallet_id` OR `to_wallet_id`.
-  on<E extends EventLike>(
-    event: E,
+  on<E extends EventLike, const B extends ReadonlyArray<string> = []>(
+    event: Carrying<E, B extends readonly [] ? By : B[number]>,
     apply: Handler<S, DataOf<E>>,
-    opts?: { readonly by?: ReadonlyArray<string> }
-  ): ModelBuilder<S, Scope>;
+    opts?: { readonly by?: B }
+  ): ModelBuilder<S, Scope, By>;
   // Like `on`, for lifecycle events (open/close): bound by id only and NOT scoped, because they
   // matter regardless of which period or scope the model instance is about.
-  lifecycle<E extends EventLike>(event: E, apply: Handler<S, DataOf<E>>): ModelBuilder<S, Scope>;
+  lifecycle<E extends EventLike>(event: Carrying<E, By>, apply: Handler<S, DataOf<E>>): ModelBuilder<S, Scope, By>;
   // Declare event types that carry this model's binding tags but are deliberately NOT part of its decision. Changes nothing at runtime (the boundary and the fold
   // are the same); it records the intent, which the change-impact report (ModelImpact.ts, ADR-0017 rule A) reads to tell "forgotten" from "not relevant".
-  ignores(...events: ReadonlyArray<EventLike>): ModelBuilder<S, Scope>;
+  ignores(...events: ReadonlyArray<EventLike>): ModelBuilder<S, Scope, By>;
   of(args: { readonly id: string } & Scope): ModelInstance<S>;
   // Just the lifecycle events' query: the natural "guard" for a command that is otherwise
   // commutative (see withLifecycleGuard in CommandDecision.ts).
@@ -291,14 +299,15 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
   };
 };
 
-export const defineModel = <S, Scope extends object = {}>(def: {
-  // Default tag key that binds an event to this model's id (e.g. "wallet_id").
-  readonly by: string;
+export const defineModel = <S, const By extends string, Scope extends object = {}>(def: {
+  // Default tag key that binds an event to this model's id (e.g. "wallet_id"). Every event the model handles must carry it (or the keys its `by` option names).
+  readonly by: By;
   readonly initial: () => S;
-  // Extra tags that narrow the non-lifecycle events to a slice (e.g. a year/month period).
+  // Extra tags that narrow the non-lifecycle events to a slice (e.g. a year/month period). They are not checked against the events: a command usually adds
+  // them when it appends (`extraTags`), not the event's own `tags`.
   readonly scope?: (scope: Scope) => Record<string, TagValue>;
-}): ModelBuilder<S, Scope> => {
-  const build = (entries: ReadonlyArray<OnEntry<S>>, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope> => {
+}): ModelBuilder<S, Scope, By> => {
+  const build = (entries: ReadonlyArray<OnEntry<S>>, ignored: ReadonlyArray<string> = []): ModelBuilder<S, Scope, By> => {
     const queryFor = (id: string, scopeTags: ReadonlyArray<Tag.Tag>, lifecycleOnly: boolean): Query.Query => queryOf(entries, def.by, id, scopeTags, lifecycleOnly);
 
     const byType = new Map(entries.map((e) => [e.type, e] as const));
@@ -323,8 +332,8 @@ export const defineModel = <S, Scope extends object = {}>(def: {
       );
 
     return {
-      on: (event, apply, opts) => add(event, apply, opts),
-      lifecycle: (event, apply) => add(event, apply, { lifecycle: true }),
+      on: (event, apply, opts) => add(event as EventLike, apply as never, opts),
+      lifecycle: (event, apply) => add(event as EventLike, apply as never, { lifecycle: true }),
       lifecycleQuery: (id) => queryFor(id, [], true),
       period: (spec, config) => periodModel(entries, ignored, def, spec, config) as never,
       // a declaration only: the boundary and the fold are untouched
