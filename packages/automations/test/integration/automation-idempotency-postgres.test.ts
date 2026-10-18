@@ -188,6 +188,22 @@ const scenarios: ReadonlyArray<Scenario> = [
     expect: { ok: false, effects: 1, kinds: ["TOO BROAD"] }
   },
   {
+    name: "a key on the wallet, and the same request for both deposits: the second is answered 'already done' on the first pass",
+    build: (uid) => {
+      const w = world(uid);
+      const WalletNotified = defineEvent(`WalletNotified-${uid}`, { schema: Schema.Struct({ walletId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
+      const notifyWallet = defineCommand({
+        name: "NotifyWallet",
+        input: Schema.Struct({ walletId: Schema.String }),
+        idempotentBy: (c) => WalletNotified.where({ wallet_id: c.walletId }),
+        decide: (_, c) => emit(WalletNotified(c))
+      });
+      const automation = { ...w.automationOf(notifyWallet), decide: (event: StoredEvent) => Effect.succeed([executeCommand({ walletId: (event.data as In).walletId })]) };
+      return { automation, triggers: w.sameWallet };
+    },
+    expect: { ok: false, effects: 1, kinds: ["TOO BROAD"] }
+  },
+  {
     name: "a key on the wallet, two deposits to DIFFERENT wallets: not seen (the check is only as good as its triggers)",
     build: (uid) => {
       const w = world(uid);

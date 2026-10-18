@@ -63,6 +63,21 @@ describe("checkAutomationIdempotency", () => {
     expect(report.effects).toBe(1);
   });
 
+  test("a key too broad whose request is the same for both triggers: the second is answered 'already done' on the first pass", async () => {
+    const WalletNotified = defineEvent("WalletNotified", { schema: Schema.Struct({ walletId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
+    const notifyWallet = defineCommand({
+      name: "NotifyWallet",
+      input: Schema.Struct({ walletId: Schema.String }),
+      idempotentBy: (c) => WalletNotified.where({ wallet_id: c.walletId }),
+      decide: (_, c) => emit(WalletNotified(c))
+    });
+    const automation = { ...automationOf(notifyWallet), decide: (event: StoredEvent) => Effect.succeed([executeCommand({ walletId: dataOf(event).walletId })]) };
+    const report = await checkAutomationIdempotency(automation, triggers);
+    expect(report.ok).toBe(false);
+    expect(report.problems.some((p) => /TOO BROAD.*answered "already done" on the FIRST pass/.test(p))).toBe(true);
+    expect(report.effects).toBe(1);
+  });
+
   test("a key too broad is NOT seen with triggers that never share it (what the check is only as good as)", async () => {
     const broad = notifyWith((c) => Notified.where({ wallet_id: c.walletId }));
     const distinctWallets = [DepositMade({ walletId: "w1", depositId: "d1" }), DepositMade({ walletId: "w2", depositId: "d2" })];
