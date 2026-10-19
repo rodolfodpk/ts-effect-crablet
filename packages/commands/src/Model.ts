@@ -122,24 +122,33 @@ const queryOf = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, 
   return Query.of([...groups.values()].map((g) => Query.queryItemOf(g.types, g.tags)));
 };
 
-// An event about to be appended, as a handler sees it (a handler may read the event's tags).
+// An event about to be appended, as a handler sees it (a handler may read the event's tags). It is not stored yet, so it has no `position`.
 const asStored = (event: AppendEvent): StoredEvent => ({ type: event.type, data: event.eventData, tags: event.tags }) as unknown as StoredEvent;
 
+// The handler for each type, the way a load picks it: the last `.on` for a type wins.
+const handlersOf = <S>(entries: ReadonlyArray<OnEntry<S>>) => new Map(entries.map((e) => [e.type, e] as const));
+
 // Folds the events `query` matches, through the handlers declared for their types.
-const foldWith = <S>(entries: ReadonlyArray<OnEntry<S>>, query: Query.Query, id: string) => (state: S, events: ReadonlyArray<AppendEvent>): S =>
-  events.reduce((s, event) => {
-    const entry = entries.find((e) => e.type === event.type);
-    return entry !== undefined && queryMatches(query, { ...event, position: 0n }) ? entry.apply(s, event.eventData, { event: asStored(event), id }) : s;
-  }, state);
+const foldWith = <S>(entries: ReadonlyArray<OnEntry<S>>, query: Query.Query, id: string) => {
+  const byType = handlersOf(entries);
+  return (state: S, events: ReadonlyArray<AppendEvent>): S =>
+    events.reduce((s, event) => {
+      const entry = byType.get(event.type);
+      return entry !== undefined && queryMatches(query, { ...event, position: 0n }) ? entry.apply(s, event.eventData, { event: asStored(event), id }) : s;
+    }, state);
+};
 
 // The tags an event about this entity lacks to be read back (see Loaded.misses). It is "about this entity" when it carries one of the keys its
 // type is bound through, with this id; a lifecycle event is not scoped, so it needs nothing more.
-const missesWith = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, scopeTags: ReadonlyArray<Tag.Tag>) => (event: AppendEvent): ReadonlyArray<string> => {
-  const entry = entries.find((e) => e.type === event.type);
-  if (entry === undefined || entry.lifecycle) return [];
-  const has = (key: string, value: string) => event.tags.some((t) => t.key === key && t.value === value);
-  if (!(entry.by ?? [by]).some((key) => has(key, id))) return [];
-  return scopeTags.filter((t) => !has(t.key, t.value)).map((t) => `${t.key}=${t.value}`);
+const missesWith = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: string, scopeTags: ReadonlyArray<Tag.Tag>) => {
+  const byType = handlersOf(entries);
+  return (event: AppendEvent): ReadonlyArray<string> => {
+    const entry = byType.get(event.type);
+    if (entry === undefined || entry.lifecycle) return [];
+    const has = (key: string, value: string) => event.tags.some((t) => t.key === key && t.value === value);
+    if (!(entry.by ?? [by]).some((key) => has(key, id))) return [];
+    return scopeTags.filter((t) => !has(t.key, t.value)).map((t) => `${t.key}=${t.value}`);
+  };
 };
 
 export interface ModelBuilder<S, Scope extends object, By extends string = string> {

@@ -127,6 +127,21 @@ describe("assertRepeatHarmless", () => {
     await expect(assertRepeatHarmless(Strict, { accountId: "d" })).rejects.toThrow(/after its own events decide fails for the same request/);
   });
 
+  test("the check folds with the handler a load uses: with two .on for one type, the last one", async () => {
+    // A load keeps the last handler for a type; the first here would never mark the account open, so the check would refuse a correct command.
+    const Twice = defineModel({ by: "account_id", initial: () => ({ open: false }) })
+      .on(Opened, (s) => s)
+      .on(Opened, () => ({ open: true }));
+    const OpenTwice = defineCommand({
+      name: "rp_open_twice",
+      input: Schema.Struct({ accountId: Schema.String }),
+      idempotentBy: byModel(),
+      model: (c) => Twice.of({ id: c.accountId }),
+      decide: (account, c) => (account.open ? noop("ALREADY_OPEN") : emit(Opened(c)))
+    });
+    await assertRepeatHarmless(OpenTwice, { accountId: "e" });
+  });
+
   test("fails for a query key that never matches what the command appends: the repeat appends again", async () => {
     const Typo = defineCommand({
       name: "rp_typo",

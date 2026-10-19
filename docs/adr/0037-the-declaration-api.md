@@ -81,12 +81,15 @@ beginning of the log, so none was renamed.
 - **Breaking.** `automationHandlerOf`, `commandContract`, `idempotentBy: "decide"`, the `projectors`/`subscriptions` and `handlers` fields of the processors, and the examples' `makeXViewProjector` and `xViewSubscription` exports are removed, with no aliases. The project is pre-release ([ADR-0013](0013-api-evolution-additive-vs-breaking.md)).
 - **What an application imports for views and automations shrinks**: `defineView`, `viewTable`, `raw`, `defineAutomation`, and the two processors.
 - **A mistake in a model's tags, in `byModel()`, or in the value of `idempotentBy` is a compile error**, not a silent hole in a boundary or a defect at run time.
+  What the compiler cannot see is refused when the command appends, before anything is written: an event without the scope or period tags its own
+  model reads it by, and a `byModel()` command whose `decide` does not answer its own repeat with `noop(...)` ([ADR-0034](0034-a-repeat-must-be-the-same-request.md)).
 - **The type rules depend on `defineEvent`'s result.** An event built by hand without a `where` is not checked.
 
 ## Alternatives considered
 
 - **Keep `automationHandlerOf` beside `defineAutomation`.** Rejected: two ways to say one thing is what the review was about.
 - **Put polling and batch settings in `defineView`/`defineAutomation`.** Rejected: they are deployment settings. Declared with the view, they could not differ between deployments without changing the domain code.
-- **Check a model's `scope` tags as well.** Rejected: a command adds them at append time (`extraTags`), so the events do not declare them, and the check would refuse correct models.
+- **Check a model's `scope` tags in the type checker as well.** Rejected: a command adds them at append time (`extraTags`), so the events do not declare
+  them, and the check would refuse correct models. They are checked at append time instead, on the command's own events (`Loaded.misses`).
 - **Move the contract to `@crablet/commands-http`.** Rejected: the domain would then import the HTTP package to define its commands. Deriving the API from the commands instead would put the domain in the browser's bundle.
 - **Infer from `decide` (it can return `noop`) that a command answers repeats itself.** Rejected: too implicit, and `noop` also means "nothing to do".
