@@ -1,8 +1,8 @@
 // The final two-rule domain (src/domain/Enrolment.ts) in memory: no Docker.
 import { describe, expect, test } from "bun:test";
 import { InvalidInput } from "@crablet/commands/Errors";
-import { given } from "@crablet/commands/testing/Scenario";
-import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourse, StudentAtLimit, Subscribe } from "../src/domain/Enrolment.ts";
+import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
+import { CourseAlreadyDefined, CourseDefined, CourseFull, CourseNotFound, DefineCourse, StudentAtLimit, Subscribe } from "../src/domain/Enrolment.ts";
 
 const define = (courseId: string, capacity: number) => ({ courseId, capacity });
 const sub = (studentId: string, courseId: string) => ({ studentId, courseId });
@@ -71,5 +71,13 @@ describe("subscribe: two rules, one decision", () => {
     await s.when(DefineCourse, define("math", 1));
     await s.when(Subscribe, sub("ann", "math"));
     expect((await s.when(Subscribe, sub("ann", "math"))).outcome).toBe("idempotent"); // not CourseFull
+  });
+});
+
+// Both commands answer a repeat themselves (`idempotentBy: byModel()`); this checks they keep their word (ADR-0034).
+describe("a repeated request is harmless", () => {
+  test("define_course and subscribe", async () => {
+    await assertRepeatHarmless(DefineCourse, define("math", 30));
+    await assertRepeatHarmless(Subscribe, sub("ann", "math"), [CourseDefined({ courseId: "math", capacity: 30 })]);
   });
 });

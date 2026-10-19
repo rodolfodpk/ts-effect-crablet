@@ -1,4 +1,5 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md.
+import { viewsOf } from "../fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -108,11 +109,10 @@ describe("views module integration (real Postgres)", () => {
     const handle = await run(
       makeViewsProcessor({
         config: baseViewsConfig,
-        projectors: [fakeProjector(viewNameA, (events) => seenA.push(...events)), fakeProjector(viewNameB, (events) => seenB.push(...events))],
-        subscriptions: [
+        views: viewsOf([fakeProjector(viewNameA, (events) => seenA.push(...events)), fakeProjector(viewNameB, (events) => seenB.push(...events))], [
           viewSubscriptionOf(viewNameA, { eventTypes: new Set([typeA]) }),
           viewSubscriptionOf(viewNameB, { eventTypes: new Set([typeB]) })
-        ],
+        ]),
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );
@@ -176,8 +176,7 @@ describe("views module integration (real Postgres)", () => {
     const handle = await run(
       makeViewsProcessor({
         config: baseViewsConfig,
-        projectors: [projector],
-        subscriptions: [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })],
+        views: viewsOf([projector], [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })]),
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );
@@ -212,8 +211,7 @@ describe("views module integration (real Postgres)", () => {
     const handle = await run(
       makeViewsProcessor({
         config: { ...baseViewsConfig, pollingIntervalMs: 60_000 },
-        projectors: [fakeProjector(viewName, (events) => seen.push(...events))],
-        subscriptions: [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })],
+        views: viewsOf([fakeProjector(viewName, (events) => seen.push(...events))], [viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) })]),
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );

@@ -27,10 +27,13 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0004: Commit-time serialization failures are handled via Cause inspection, not typed errors](0004-commit-time-failures-via-cause-inspection.md) - accepted
 - [ADR-0002: Single EventStore implementation via Effect's ambient transaction context](0002-single-eventstore-implementation.md) - accepted
 - [ADR-0008: No command-type auto-discovery - handlers passed explicitly at every call site](0008-no-command-type-auto-discovery.md) - accepted
-- [ADR-0027: An id that is already taken is decided in `decide`, not flagged with `onDuplicate`](0027-a-taken-id-is-decided-not-flagged.md) - accepted
+- [ADR-0027: An id that is already taken is decided in `decide`, not flagged with `onDuplicate`](0027-a-taken-id-is-decided-not-flagged.md) - accepted; a match from a different request is no longer "already done" (0034)
 - [ADR-0029: A command's lookup cannot write, and what it reads is protected](0029-a-lookup-cannot-write-and-is-protected.md) - accepted
 - [ADR-0030: One polling config, with defaults; no `enabled`](0030-one-polling-config.md) - accepted
 - [ADR-0031: A package's API and its plumbing are separate, and the line is enforced](0031-api-and-plumbing-are-separate.md) - accepted
+- [ADR-0034: A repeat must be the same request, and every command says how it recognises one](0034-a-repeat-must-be-the-same-request.md) - **accepted**: a reused key with another body is a 422; a repeat carries a marker
+- [ADR-0035: The same trigger cannot append the same request twice](0035-the-same-trigger-cannot-append-the-same-request-twice.md) - **accepted**: the database's backstop behind an automation's `idempotentBy`
+- [ADR-0037: The declaration API: one shape, checked by the type checker](0037-the-declaration-api.md) - **accepted**: `define*(name, …).on(Event, handler)` for models, views and automations; `byModel()`; a model's tags checked
 
 ## Reading, delivery and the pollers
 
@@ -43,6 +46,9 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0021: Wake-ups are sent after the commit and coalesced, not inside every append](0021-wakeups-after-commit-and-coalesced.md) - **accepted**, narrowed by ADR-0028: built (coalesced wake-ups after the commit, with an `off` mode); 1.95 times the appends per second measured
 - [ADR-0028: The framework decides the wake-up and session settings it can work out itself](0028-settings-the-framework-decides.md) - accepted
 - [ADR-0023: A view's batch and its cursor commit in one transaction, so a repeated batch is applied once](0023-view-batch-and-cursor-in-one-transaction.md) - **accepted**: built for views; automations and the outbox excluded, with the reasons
+- [ADR-0032: A cursor moves only from where its batch started](0032-the-cursor-moves-only-from-where-its-batch-started.md) - **accepted**: amends 0023; overlapping batches are applied once
+- [ADR-0033: Delivery order is causal order, and a command's append is its transaction's first write](0033-delivery-order-is-causal-order.md) - **accepted**: what "in order" means, enforced
+- [ADR-0036: Outbox delivery: a stable event id, a publish timeout, and partial progress](0036-outbox-delivery-event-id-timeout-and-partial-progress.md) - **accepted**: `event_id` is the message id; no index
 - [ADR-0024: The leader lock and LISTEN can use a connection of their own, so the rest can go through a pooler](0024-session-connections-for-leader-and-listen.md) - **accepted**: built; tested on PgBouncer in Docker, not on RDS Proxy
 
 ## Storage and operation

@@ -19,11 +19,14 @@ export interface ProgressTracker<I> {
   // The same cursor, read with no side effect: for monitoring and management, which must not write (the outbox's `getCursor` refreshes the
   // leader columns, so reading it from a sampler would put a write on every sample and attribute the heartbeat to the sampler).
   readonly peekCursor: (id: I) => Effect.Effect<ProgressCursor, SqlError | ProgressTableNotReady>;
-  readonly updateCursor: (id: I, cursor: ProgressCursor) => Effect.Effect<void, SqlError>;
-  // `updateCursor`, but it says whether the cursor moved: false when the stored cursor was already at or past `cursor` (someone else advanced it
-  // first). Forward-only compare-and-set. A processor that runs the handler and this in ONE transaction (`EventProcessorDeps.atomically`) uses the
-  // answer as its fence: false means another processor handled the same batch, and the whole transaction is rolled back.
-  readonly advanceCursor?: (id: I, cursor: ProgressCursor) => Effect.Effect<boolean, SqlError>;
+  // Moves the cursor from `from` to `to`, only if it is still at `from`: a compare-and-set on where the batch started. A processor that read the cursor,
+  // handled a batch and comes back to find the cursor elsewhere (another processor moved it: a zombie and its successor, or two instances with
+  // different batch sizes) moves nothing, so batches that overlap are never both counted. Comparing with the batch's START, not "is the new cursor
+  // ahead", is what matters: two batches from the same start can end at different places (ADR-0032).
+  readonly updateCursor: (id: I, from: ProgressCursor, to: ProgressCursor) => Effect.Effect<void, SqlError>;
+  // `updateCursor`, but it says whether the cursor moved. A processor that runs the handler and this in ONE transaction (`EventProcessorDeps.atomically`)
+  // uses the answer as its fence: false means another processor moved the cursor first, and the whole transaction is rolled back.
+  readonly advanceCursor?: (id: I, from: ProgressCursor, to: ProgressCursor) => Effect.Effect<boolean, SqlError>;
   readonly recordError: (id: I, error: string, maxErrors: number) => Effect.Effect<void, SqlError>;
   readonly resetErrorCount: (id: I) => Effect.Effect<void, SqlError>;
   // Defaults "ACTIVE" when no row exists yet.

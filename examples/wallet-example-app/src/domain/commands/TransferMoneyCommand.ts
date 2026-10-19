@@ -14,6 +14,8 @@ export type TransferMoneyCommand = Schema.Schema.Type<(typeof TransferMoneyContr
 // lazily open one), sequentially because both may append.
 export const TransferMoney = defineCommand({
   ...TransferMoneyContract,
+  // A transfer can legitimately happen many times between the same wallets, so state cannot tell a retry from a new one: the client's transfer id does.
+  idempotentBy: (c) => MoneyTransferred.where({ [WalletTags.TRANSFER_ID]: c.transferId }),
   model: (c) => all({ from: WalletPeriodModel.of({ id: c.fromWalletId }), to: WalletPeriodModel.of({ id: c.toWalletId }) }),
   decide: ({ from, to }, c, { now }) =>
     !from.exists

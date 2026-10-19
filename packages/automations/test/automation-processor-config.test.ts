@@ -4,7 +4,7 @@ import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
 
 const { leaderElectionRetryIntervalMs: _moduleLevel, ...perProcessorDefaults } = defaultPollingConfig;
 import { makeAutomationProcessorConfigs } from "../src/internal/AutomationProcessorConfig.ts";
-import { automationHandlerOf } from "../src/AutomationHandler.ts";
+import { handlerOf } from "./fixtures/handlerOf.ts";
 import { testCommand } from "./fixtures/testCommand.ts";
 import type { AutomationsConfig } from "../src/AutomationsConfig.ts";
 import { noOp } from "../src/AutomationDecision.ts";
@@ -20,15 +20,19 @@ const baseConfig: AutomationsConfig = {
   maxErrors: 10
 };
 
-const fakeHandler = (automationName: string, fields: Parameters<typeof automationHandlerOf>[3] = {}) =>
-  automationHandlerOf(
+const fakeHandler = (automationName: string, fields: Parameters<typeof handlerOf>[3] = {}) =>
+  handlerOf(
     automationName,
     testCommand,
     () => Effect.succeed([noOp()]),
-    fields
+    { eventTypes: new Set(["Trigger"]), ...fields }
   );
 
 describe("makeAutomationProcessorConfigs", () => {
+  test("refuses an automation that handles no event: it would select nothing", () => {
+    expect(() => makeAutomationProcessorConfigs(baseConfig, [fakeHandler("idle", { eventTypes: new Set() })])).toThrow(/"idle" handles no event; add \.on\(Event, \.\.\.\)/);
+  });
+
   test("falls back to global AutomationsConfig defaults when a handler has no overrides", () => {
     const [config] = makeAutomationProcessorConfigs(baseConfig, [fakeHandler("send-welcome")]);
     expect(config!.processorId).toBe("send-welcome");

@@ -1,6 +1,7 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md. The consistency wrapper over REAL views, behind a real HttpApi: three views that apply the
 // same event after different delays, and one read endpoint that uses all three. Checks what a client sees on the wire (status, headers,
 // problem bodies), what the OpenAPI description promises, and what the derived client resolves.
+import { viewsOf } from "../../../views/test/fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -125,7 +126,7 @@ before(async () => {
       return list;
     })
   );
-  const handle = await runtime.runPromise(makeViewsProcessor({ config: viewsConfig, projectors, subscriptions, instanceId: `i-${crypto.randomUUID()}` }));
+  const handle = await runtime.runPromise(makeViewsProcessor({ config: viewsConfig, views: viewsOf(projectors, subscriptions), instanceId: `i-${crypto.randomUUID()}` }));
   await runtime.runPromise(handle.service.start);
   stopViews = () => runtime.runPromise(handle.service.stop);
 

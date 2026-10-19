@@ -8,7 +8,8 @@ left?" can get the number from before its own write. This page is how that is pr
 ## The marker
 
 A command's answer carries a **marker**: where in the log its write ended, as `<transactionId>:<position>`. The command waits for nothing else; it does
-not know which views exist.
+not know which views exist. A repeat ("already done") carries the earlier write's marker, so a client whose first answer was lost still reads its own write
+([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)).
 
 A read can carry the marker: `GET /api/courses/math?consistentWith=<marker>`. The server then answers only once **every view that endpoint reads** has
 reached the marker. Any client holding the marker can use it: the writer, a second tab, or another service the writer passed it to.

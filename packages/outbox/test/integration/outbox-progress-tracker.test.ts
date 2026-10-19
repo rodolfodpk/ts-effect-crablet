@@ -71,17 +71,19 @@ describe("the outbox progress tracker (against crablet_outbox_topic_progress)", 
     assert.strictEqual(result.failed, "FAILED");
   });
 
-  it("the cursor only moves forward", async () => {
+  it("the cursor moves only from where the batch started: a late write from the same start changes nothing, behind OR ahead", async () => {
     const k = key();
-    const cursor = await run(
+    const [moved, cursor] = await run(
       Effect.gen(function* () {
         const tracker = yield* makeOutboxProgressTracker("instance-a");
         yield* tracker.autoRegister(k, "instance-a");
-        yield* tracker.updateCursor(k, ProgressCursorNS.of("10", 50n));
-        yield* tracker.updateCursor(k, ProgressCursorNS.of("5", 20n)); // a late write from a leader that lost the lock
-        return yield* tracker.getCursor(k);
+        const first = yield* tracker.advanceCursor!(k, ProgressCursorNS.zero, ProgressCursorNS.of("10", 50n));
+        const behind = yield* tracker.advanceCursor!(k, ProgressCursorNS.zero, ProgressCursorNS.of("5", 20n)); // a late write from a leader that lost the lock
+        const ahead = yield* tracker.advanceCursor!(k, ProgressCursorNS.zero, ProgressCursorNS.of("20", 90n)); // a bigger batch from the same start
+        return [[first, behind, ahead], yield* tracker.getCursor(k)] as const;
       })
     );
+    assert.deepStrictEqual(moved, [true, false, false]);
     assert.deepStrictEqual(cursor, ProgressCursorNS.of("10", 50n));
   });
 
@@ -92,7 +94,7 @@ describe("the outbox progress tracker (against crablet_outbox_topic_progress)", 
         const sql = yield* SqlClient.SqlClient;
         const tracker = yield* makeOutboxProgressTracker("instance-sampler");
         yield* tracker.autoRegister(k, "instance-a");
-        yield* tracker.updateCursor(k, ProgressCursorNS.of("10", 50n));
+        yield* tracker.updateCursor(k, ProgressCursorNS.zero, ProgressCursorNS.of("10", 50n));
         const leaderOf = () => sql.unsafe<{ leader_instance: string | null }>("SELECT leader_instance FROM crablet_outbox_topic_progress WHERE topic = $1", [fromKey(k).topic]);
         yield* sql.unsafe("UPDATE crablet_outbox_topic_progress SET leader_instance = 'instance-a', leader_heartbeat = NULL WHERE topic = $1", [fromKey(k).topic]);
         const peeked = yield* tracker.peekCursor(k);

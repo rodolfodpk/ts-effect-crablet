@@ -9,7 +9,7 @@ projector is given** ([ADR-0023](../../adr/0023-view-batch-and-cursor-in-one-tra
 
 **Apply the change an event carries, not a total it recorded.** A commutative command (the wallet's deposit) does not wait for other deposits, so the balance it writes into its event is the balance it saw when it decided, and
 a deposit that committed in between makes it stale (the kind lab counted 2,916 of 38,747 deposits that way in a two-hour soak, and 0 of 34,479 debits). A view that copies that number loses money; one that adds the amount
-(`balance = balance + amount`) is right in any order. The wallet's balance view did copy it at first, and the kind lab's consistency check found 22 to 28 wallets wrong.
+(`balance = balance + amount`) is right in any order. The wallet's balance view did copy it at first, and the kind lab's consistency check found 22 to 28 wallets wrong. For the same reason a `set` on a row that commuting events also write keeps the last one *delivered*: delivery follows causality, not the order unrelated commands decided in ([ordering](../../concepts/views-and-delivery.md#ordering)).
 
 [← Task guides](../README.md)
 
@@ -24,7 +24,7 @@ in production](../operate/run-in-production.md)).
 
 A view is a list of what each event does to its tables: `defineView(name, { tables }).on(Event, (data) => operations)` ([ADR-0026](../../adr/0026-views-declared-as-operations.md)). A handler is a pure function from the decoded event to
 operations (`insert`, `update`, `upsert`, `remove`; `add` changes a column by an amount, which is the shape that keeps the view right in any order). The framework reads each payload through the event's own definition (an event it cannot read
-fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor and gives you the projector. You declare the table once, with `viewTable`, as the migration made it.
+fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and listens to the event types of your handlers. You declare the table once, with `viewTable`, as the migration made it.
 
 <!-- file: examples/course-enrolment-app/src/views/CourseSeatsViewProjector.ts#projector -->
 ```ts
@@ -35,14 +35,12 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 });
 
 // Seats per course: what each event does to the table, and nothing else. The handlers are pure (the decoded event in, operations out); the framework reads each payload through the event's own definition
-// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and takes the subscription's event types from
-// the handlers below. `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
+// (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and listens to the event types of the handlers
+// below (CourseDefined and StudentSubscribed). `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
 // An event delivered twice is applied once, but not here: the batch and the view's cursor commit in one transaction (ADR-0023), so the processor guarantees it.
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
   .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }));
-
-export const makeCourseSeatsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => CourseSeatsView.projector;
 ```
 
 A test compares the declared table with the migrated database ([`course-seats-table.test.ts`](../../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts), `checkViewTables`): a column a migration renames or retypes fails there,
@@ -50,67 +48,58 @@ not at the first event. And the same declaration runs in memory (`applyInMemory`
 
 ### When the operations are not enough
 
-`defineView` says six things: insert, update, upsert, remove, set, add (and `max`). A view that needs anything else (here, a number computed from the view's own rows, which is the count of the course's rows plus one) is a **hand-written projector**: `makeTransactionalViewProjector`
-with your own SQL, which is also what `raw((sql) => ...)` runs inside a declared view. You then do three things the framework did for you: read the payload with `decodeStored`, run the SQL on the `sql` you are given (so it commits with the view's cursor and the batch is applied once), and
-write the subscription. Nothing checks the SQL text, so write the test ([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
+`defineView` says six things: insert, update, upsert, remove, set, add (and `max`). For anything else (here, a number computed from the view's own rows, which is the count of the course's rows plus one), a handler returns
+`raw((sql) => ...)`: your own SQL, still in a `defineView`. The framework still reads the payload through the event's definition, runs your SQL on the `sql` of the view's cursor (so it commits with it, and the batch is applied
+once), and takes the event types from the handlers. Declare the table anyway, so the drift check covers it. Nothing checks the SQL text, and `raw` cannot run in memory (`applyInMemory` refuses it), so write the test
+([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
 The course app registers it next to the seats view (`startCourseViews`, as in step 4) and reads it with `SqlSchema` (`GET /api/courses/:courseId/enrolments`, tested end to end in [`course-enrolments.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments.test.ts)), so this approach has a write and a query on the same view.
 
 <!-- file: examples/course-enrolment-app/src/views/CourseEnrolmentsViewProjector.ts#hand-written -->
 ```ts
-// A hand-written projector, for what `defineView`'s operations cannot say: the seat number a student gets is the count of the course's rows PLUS ONE, computed by the database from the view's own table in the
-// same statement. You write the three things the framework would otherwise do: read the payload through the event's definition (`decodeStored`: an unreadable event fails the batch with a typed `EventDecodingError`),
-// run the SQL on the `sql` you are given (so it commits with the view's cursor, ADR-0023: the batch is applied once even if it is delivered twice), and say which events you want (the subscription below).
-// Nothing checks the SQL text; the integration test (test/integration/course-enrolments-view.test.ts) is what does.
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    if (event.type !== StudentSubscribed.type) return;
-    const data = yield* StudentSubscribed.decodeStored(event);
-    yield* sql.unsafe(
-      `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
-       SELECT $1::text, $2::text, count(*) + 1 FROM course_enrolments_view WHERE course_id = $1
-       ON CONFLICT (course_id, student_id) DO NOTHING`,
-      [data.courseId, data.studentId]
-    );
-  });
-
-export const makeCourseEnrolmentsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
-  makeTransactionalViewProjector(COURSE_ENROLMENTS_VIEW, handleEvent);
-
-export const courseEnrolmentsViewSubscription: ViewSubscription = viewSubscriptionOf(COURSE_ENROLMENTS_VIEW, {
-  eventTypes: new Set([StudentSubscribed.type])
+// The table, as the migration (db/migration/V102) made it, so the drift check covers it (test/integration/course-seats-table.test.ts).
+export const courseEnrolmentsTable = viewTable("course_enrolments_view", {
+  key: { course_id: text(), student_id: text() },
+  columns: { seat_number: integer() }
 });
+
+// For what the table operations cannot say, `raw` runs your own SQL: the seat number a student gets is the count of the course's rows PLUS ONE,
+// computed by the database from the view's own table in the same statement. It runs on the `sql` of the view's cursor, so it commits with it
+// (ADR-0023: the batch is applied once even if it is delivered twice); the payload is still read through the event's definition, and the view still
+// listens to the event types of its handlers. Nothing checks the SQL text, and `raw` cannot run in memory: the integration test
+// (test/integration/course-enrolments-view.test.ts) is what checks it.
+export const CourseEnrolmentsView = defineView(COURSE_ENROLMENTS_VIEW, { tables: [courseEnrolmentsTable] }).on(StudentSubscribed, (d) =>
+  raw((sql) =>
+    Effect.asVoid(
+      sql.unsafe(
+        `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
+         SELECT $1::text, $2::text, count(*) + 1 FROM course_enrolments_view WHERE course_id = $1
+         ON CONFLICT (course_id, student_id) DO NOTHING`,
+        [d.courseId, d.studentId]
+      )
+    )
+  )
+);
 ```
 
-The choice: **events that become adds, sets and removes: `defineView`; anything else: SQL.** A query builder (Kysely, Drizzle) is optional and not used here: it would only replace the SQL string.
+The choice: **events that become adds, sets and removes: the table operations; anything else: `raw` SQL.** Either way it is one `defineView`. A query builder (Kysely, Drizzle) is optional and not used here: it would only replace the SQL string.
 
 ## 3. Say which events it wants
 
-Nothing to write: the subscription takes its event types from the handlers, so it cannot drift from what the view does. A subscription can also filter by tag (`anyOfTags`), as the wallet's views do, and carry runtime overrides.
-
-<!-- file: examples/course-enrolment-app/src/views/CourseSeatsViewProjector.ts#subscription -->
-```ts
-export const courseSeatsViewSubscription: ViewSubscription = CourseSeatsView.subscription();
-```
+Nothing to write: the view listens to the event types of its handlers, so it cannot drift from what it does. What it reads besides them is declared with
+it: the wallet's views read any event that names a wallet, `defineView(name, { tables, anyOfTags: WalletTags.ANY_WALLET })`, because a transfer names
+its wallets as `from_wallet_id` and `to_wallet_id`.
 
 ## 4. Register it with the views processor
 
-Projectors and their subscriptions go to one processor. This is the wallet's, with four views; `service.start` is what actually begins processing. The entry point does not call it by hand: it uses `startBackgroundProcessorsScoped`, whose scope
+The views go to one processor. This is the wallet's, with four views (`walletViews`), and a per-view setting given by the view's name
+(`walletViewOverrides`: polling and batch size are deployment settings, not part of the view). `service.start` is what actually begins processing. The entry point does not call it by hand: it uses `startBackgroundProcessorsScoped`, whose scope
 stops the processors before the connection pool closes ([Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
 
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
 ```ts
-    const viewsHandle = yield* makeViewsProcessor({
-      config: polling,
-      projectors: [
-        yield* makeWalletBalanceViewProjector(),
-        yield* makeWalletTransactionViewProjector(),
-        yield* makeWalletSummaryViewProjector(),
-        yield* makeWalletStatementViewProjector()
-      ],
-      subscriptions: walletViewSubscriptions,
-      instanceId
-    });
+    const viewsHandle = yield* makeViewsProcessor({ config: polling, views: walletViews, overrides: walletViewOverrides, instanceId });
     if (roles.has("views")) yield* viewsHandle.service.start;
+    
 ```
 
 ## 5. Read it

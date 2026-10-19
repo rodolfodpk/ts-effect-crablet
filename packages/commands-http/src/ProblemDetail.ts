@@ -18,6 +18,7 @@ import type { ErrorKind } from "@crablet/commands/Errors";
 export const CommandApiBadRequestType = "urn:crablet:problem:command-api:bad-request";
 export const CommandApiDcbConcurrencyType = "urn:crablet:problem:command-api:dcb-concurrency";
 export const CommandApiUnexpectedErrorType = "urn:crablet:problem:command-api:unexpected-error";
+export const CommandApiIdempotencyMismatchType = "urn:crablet:problem:command-api:idempotency-mismatch";
 
 // One thing wrong with the request body: where (a path into it: property names and array indexes) and what, in the
 // schema check's own words. Never the received value.
@@ -73,6 +74,31 @@ export class CommandConflict extends Schema.Class<CommandConflict>("CommandConfl
       detail,
       violationCode,
       hint: "Refresh state and retry the command if it is still valid."
+    });
+  }
+}
+
+// A request id (`idempotentBy`) already used by a DIFFERENT request: the same key with another body (`IdempotencyMismatch`, ADR-0034). The earlier request
+// stands and this one was not applied. Not a conflict to retry: a retry with the same body gets the same answer. Send a new request id, or the original body.
+export class CommandIdempotencyMismatch extends Schema.Class<CommandIdempotencyMismatch>("CommandIdempotencyMismatch")(
+  {
+    type: Schema.Literal(CommandApiIdempotencyMismatchType),
+    title: Schema.Literal("Unprocessable Content"),
+    status: Schema.Literal(422),
+    detail: Schema.String,
+    violationCode: Schema.Literal("IDEMPOTENCY_MISMATCH"),
+    hint: Schema.Literal("This request id was already used with a different body. Send a new request id for a new request.")
+  },
+  { httpApiStatus: 422 }
+) {
+  static of(detail: string): CommandIdempotencyMismatch {
+    return new CommandIdempotencyMismatch({
+      type: CommandApiIdempotencyMismatchType,
+      title: "Unprocessable Content",
+      status: 422,
+      detail,
+      violationCode: "IDEMPOTENCY_MISMATCH",
+      hint: "This request id was already used with a different body. Send a new request id for a new request."
     });
   }
 }

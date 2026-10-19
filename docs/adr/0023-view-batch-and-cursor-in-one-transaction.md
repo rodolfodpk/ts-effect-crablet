@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-09). Built for views (`EventProcessorDeps.atomically`, `ProgressTracker.advanceCursor`, tests in `packages/views/test/integration/view-exactly-once.test.ts`). Not applied to automations or
+**Accepted** (2026-10-09). **Amended by [ADR-0032](0032-the-cursor-moves-only-from-where-its-batch-started.md)** (2026-10-18): the compare-and-set below was forward-only, which stops a repeat of the same batch but not two batches that overlap; the cursor now moves only from where its batch started. Built for views (`EventProcessorDeps.atomically`, `ProgressTracker.advanceCursor`, tests in `packages/views/test/integration/view-exactly-once.test.ts`). Not applied to automations or
 the outbox; "Alternatives" says why. The cost figures are from one run on a local Postgres in Docker, not from AWS.
 
 ## Context
@@ -54,6 +54,6 @@ For views, the handler's writes and the cursor move go in **one transaction**, a
   With `idempotentBy` kept (below) it adds only protection against a key too narrow, and it cannot undo a key too broad, because `idempotentBy` decides first.
 - **Automations keep `idempotentBy`, now required** (`automationHandlerOf` throws for a command without it) and checked by a test the author calls (`assertAutomationIdempotent`, with no database; its verdicts are
   compared with real Postgres by `automation-idempotency-postgres.test.ts`). It cannot choose the key for the author: a key too broad drops work in silence, and the test only sees it with triggers that share the key.
-- **The outbox stays at-least-once.** Its effect is outside the database and a rollback cannot undo it; a repeat is accepted, and the publisher contract says to deduplicate on `event.position`.
+- **The outbox stays at-least-once.** Its effect is outside the database and a rollback cannot undo it; a repeat is accepted, and the publisher contract says how to deduplicate (on `event.eventId` or the `(transactionId, position)` order since [ADR-0036](0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
 - **Make every view idempotent by itself** (a last-applied position per row). Rejected: the cursor orders by `(transaction_id, position)`, and position alone does not follow that order, so "ignore anything at or
   below the last position" could drop a legitimate event; and it moves the work into every view.

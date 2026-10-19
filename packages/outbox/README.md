@@ -10,7 +10,10 @@ A transactional outbox: events are published to something outside the database, 
 - **`TopicConfig`**, **`TopicPublisherPair`**, **`OutboxConfig`** - which events go to which topic and publisher. `config` is optional: `OutboxConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings).
 - **`OutboxManagementService`** - inspect and control topics.
 
-A publisher must be idempotent: after a crash an event can be published again.
+A publisher must tolerate a repeat: after a crash, a publish that timed out (`publishTimeoutMs`, default 30 s) or a change of leader, an event is published
+again. Give the destination `event.eventId` as the message id, so a broker that deduplicates by id drops the repeat; a consumer that keeps the order can
+skip anything at or below the last `(transactionId, position)` it applied. A publisher with `preferredMode: "individual"` that fails part-way keeps what it
+sent: the next attempt starts from the first event that failed ([ADR-0036](../../docs/adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
 
 ## Depends on
 

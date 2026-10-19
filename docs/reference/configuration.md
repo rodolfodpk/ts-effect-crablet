@@ -28,8 +28,9 @@ How a processor polls, backs off and gives up, in `PollingConfig` (`@crablet/eve
 `Partial<PollingConfig>` as `config`, or none: what is left out takes the default below ([ADR-0030](../adr/0030-one-polling-config.md)).
 
 ```ts
-makeViewsProcessor({ projectors, subscriptions });                                   // all defaults
-makeViewsProcessor({ projectors, subscriptions, config: { pollingIntervalMs: 200 } }); // one setting changed
+makeViewsProcessor({ views });                                                        // all defaults
+makeViewsProcessor({ views, config: { pollingIntervalMs: 200 } });                    // one setting changed, for every view
+makeViewsProcessor({ views, overrides: { "wallet-statement-view": { batchSize: 100 } } }); // one view's setting, by its name
 ```
 
 | Setting | Default | What it does |
@@ -42,6 +43,12 @@ makeViewsProcessor({ projectors, subscriptions, config: { pollingIntervalMs: 200
 | `backoffMaxSeconds` | `10` | The longest an idle processor waits between polls. A wake-up ends the wait. This bounds the delay if a wake-up is lost ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)). |
 | `maxErrors` | `10` | Errors in a row before the processor is marked `FAILED` and stops. |
 | `leaderElectionRetryIntervalMs` | `5000` | How often a follower tries to take the module's lock. Bounds the takeover after a crash. |
+
+The outbox module's `OutboxConfig` adds one setting of its own:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `publishTimeoutMs` | `30000` | How long one call to a publisher's `publishBatch` may take before it counts as a failure (and toward `maxErrors`). Without it a destination that hangs would hold its topic back for good. A timed-out publish may have reached the destination, so the events are published again ([ADR-0036](../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)). |
 
 A single view, automation or topic publisher can override `pollingIntervalMs`, `batchSize` and the four backoff settings of its own; `maxErrors` and the leader retry
 belong to the module (the leader retry is not part of a processor's config at all: there is one leader lock per module). A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some

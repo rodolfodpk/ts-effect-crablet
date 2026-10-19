@@ -109,11 +109,12 @@ describe("DIAG", () => {
     const view = `diag-d2-${crypto.randomUUID().slice(0, 6)}`;
     const tracker = await run(makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" }));
     await run(tracker.autoRegister(view, "diag"));
-    await run(tracker.updateCursor(view, ProgressCursor.of("900", 900n)));
+    await run(tracker.updateCursor(view, ProgressCursor.zero, ProgressCursor.of("900", 900n)));
     const high = await cursorOf(view);
-    await run(tracker.updateCursor(view, ProgressCursor.of("100", 100n)));
+    // A zombie's late write, from the start it read before the cursor moved.
+    await run(tracker.updateCursor(view, ProgressCursor.zero, ProgressCursor.of("100", 100n)));
     const low = await cursorOf(view);
-    console.log(`DIAG D2 cursor after writing 900: ${high}; after then writing 100: ${low} -> ${low < high ? "REGRESSED (no guard)" : "held"}`);
+    console.log(`DIAG D2 cursor after writing 900: ${high}; after then writing 100 from the old start: ${low} -> ${low < high ? "REGRESSED (no guard)" : "held"}`);
   });
 
   it("D1b: the leader process dies (session gone, fibers gone): how long until the follower takes over?", { timeout: 180_000 }, async () => {

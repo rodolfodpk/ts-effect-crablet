@@ -35,7 +35,7 @@ flowchart LR
 |---|---|
 | The leader stops gracefully | It releases the lock and wakes the followers; one takes over at once. |
 | The leader's process dies | Its database session ends and the lock with it. A follower takes over at its next retry, within the retry interval. |
-| The leader loses its database session but keeps running | A heartbeat asks Postgres whether *this* session still holds the lock. Before every batch, and before every cursor move, a **fence** checks the same thing, so the stale leader stops before it handles anything more. |
+| The leader loses its database session but keeps running | A heartbeat asks Postgres whether *this* session still holds the lock. Before every batch, and before every cursor move, a **fence** checks the same thing, so the stale leader stops at its next check. A check is not a lock: a batch already past it can still be handled once more, by the stale leader and its successor both. What makes that safe is the cursor, which moves only from where the batch started ([ADR-0032](../adr/0032-the-cursor-moves-only-from-where-its-batch-started.md)): a view's repeated batch is rolled back, an automation's repeated command appends nothing, and an outbox publication is at least once ([views and delivery](./views-and-delivery.md)). |
 
 The cursor can only move forward, so a stale leader that slipped past the fence still cannot rewind another leader's progress, and a view's batch
 commits with its cursor, so a batch handled twice is applied once ([views and delivery](./views-and-delivery.md)).

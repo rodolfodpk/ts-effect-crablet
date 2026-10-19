@@ -6,6 +6,7 @@ import { walletOpenedAutomation } from "../src/automations/WalletOpenedAutomatio
 import * as WalletEvents from "../src/domain/events/WalletEvents.ts";
 
 const event = (data: unknown): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type: WalletEvents.WALLET_OPENED,
   tags: [{ key: "wallet_id", value: "w1" }],
   data,

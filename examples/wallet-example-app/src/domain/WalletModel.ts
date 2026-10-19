@@ -190,10 +190,11 @@ export const periodTags = (walletId: string, period: PeriodInfo<WalletPeriodFiel
 // commands that only care about the wallet being open or closed (closing it).
 export const WalletLifecycleModel = defineModel({
   by: WalletTags.WALLET_ID,
-  initial: () => ({ exists: false })
+  initial: () => ({ exists: false, closed: false })
 })
-  .lifecycle(WalletOpened, () => ({ exists: true }))
-  .lifecycle(WalletClosed, () => ({ exists: false }));
+  .lifecycle(WalletOpened, () => ({ exists: true, closed: false }))
+  // `closed` tells a repeated close (already done) from a wallet that never existed.
+  .lifecycle(WalletClosed, () => ({ exists: false, closed: true }));
 
 // Whether a wallet id was ever opened, and with what - for opening one. A closed wallet still counts: its id is not reused.
 // It keeps the owner and the initial balance so that a retry of the same open is told apart from a different wallet under the same id.

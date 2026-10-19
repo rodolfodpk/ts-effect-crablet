@@ -221,8 +221,8 @@ has the write, or refuses it with a `503` if it cannot in time (the page shows t
 <!-- file: examples/course-enrolment-ui/src/main.ts#read-back-note -->
 ```ts
 // What the page says about the read it made after a write. With the write's marker the server answered only once the seat map had the write
-// (or refused: see `SeatMapBehind`), so the numbers include it; a write that appended nothing (an idempotent repeat) has no marker, so the read
-// asked for `latest`; with the checkbox off the read asked not to wait and may be stale.
+// (or refused: see `SeatMapBehind`), so the numbers include it; a repeat ("already subscribed") carries the earlier write's marker, so the same
+// holds; an answer with no marker made the read ask for `latest`; with the checkbox off the read asked not to wait and may be stale.
 export const readBackNote = (readBack: ReadBack): string => {
   switch (readBack) {
     case "with_marker":

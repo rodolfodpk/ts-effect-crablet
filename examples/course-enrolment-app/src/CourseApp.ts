@@ -9,16 +9,15 @@ import type { EventStore } from "@crablet/eventstore";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { EventProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
-import { makeViewsProcessor } from "@crablet/views";
+import { makeViewsProcessor, type RunnableView } from "@crablet/views";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
-import { courseSeatsViewSubscription, makeCourseSeatsViewProjector } from "./views/CourseSeatsViewProjector.ts";
-import type { ViewProjector } from "@crablet/views/ViewProjector";
-import { courseEnrolmentsViewSubscription, makeCourseEnrolmentsViewProjector } from "./views/CourseEnrolmentsViewProjector.ts";
+import { CourseSeatsView } from "./views/CourseSeatsViewProjector.ts";
+import { CourseEnrolmentsView } from "./views/CourseEnrolmentsViewProjector.ts";
 
 // The API definition lives in CourseApi.ts (browser-safe); re-exported so existing imports keep working.
 export { courseApiInfo, makeCourseApi } from "./CourseApi.ts";
@@ -82,14 +81,12 @@ export const startCourseViews = (
 ): Effect.Effect<EventProcessorHandle<ProcessorConfig<string>, string>, never, SqlClient.SqlClient | PgClient.PgClient | EventStore> =>
   Effect.gen(function* () {
     const delayMs = options.viewDelayMs ?? 0;
-    const delayed = (projector: ViewProjector<unknown>): ViewProjector<unknown> =>
-      delayMs > 0 ? { ...projector, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), projector.handle(events)) } : projector;
-    // Two views off the same events: the seats left (declared with defineView) and who took which seat (a hand-written projector).
-    const handle = yield* makeViewsProcessor({
-      projectors: [delayed(yield* makeCourseSeatsViewProjector()), delayed(yield* makeCourseEnrolmentsViewProjector())],
-      subscriptions: [courseSeatsViewSubscription, courseEnrolmentsViewSubscription],
-      instanceId
-    });
+    const delayed = (view: RunnableView): RunnableView =>
+      delayMs > 0
+        ? { ...view, projector: Effect.map(view.projector, (p) => ({ ...p, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), p.handle(events)) })) }
+        : view;
+    // Two views off the same events: the seats left (table operations) and who took which seat (its own SQL, through `raw`).
+    const handle = yield* makeViewsProcessor({ views: [delayed(CourseSeatsView), delayed(CourseEnrolmentsView)], instanceId });
     yield* handle.service.start;
     return handle;
   });

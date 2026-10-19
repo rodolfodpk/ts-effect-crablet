@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Metric } from "effect";
 import * as Schema from "effect/Schema";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
-import { defineCommand, emit, fail, noop } from "../src/Command.ts";
+import { byModel, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
@@ -299,5 +299,75 @@ describe("a model with a period", () => {
       expect(types(r)).toEqual(["PX_Reported"]);
       expect(s.log.map((e) => e.type)).toEqual(["PX_Opened", "PX_PeriodOpened", "PX_Credited", "PX_Reported"]);
     });
+  });
+});
+
+// byModel() is checked on every write (ADR-0034): after the command's own events, folded in the period it decided in, the same request must be
+// answered noop(...).
+const Flagged = defineEvent("PX_Flagged", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ acct: d.id }) });
+const FlagModel = defineModel({ by: "acct", initial: () => ({ exists: false, flagged: false }) })
+  .lifecycle(Opened, (s) => ({ ...s, exists: true }))
+  .on(PeriodOpened, (s) => ({ ...s, flagged: false }))
+  .on(Flagged, (s) => ({ ...s, flagged: true }))
+  .period(Period.month, {
+    opened: PeriodOpened,
+    closed: PeriodClosed,
+    open: (_, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, opening: 0 }),
+    close: (_, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, closing: 0 })
+  });
+const flagOnce = (name: string, tagged: boolean) =>
+  defineCommand({
+    name,
+    input: Schema.Struct({ id: Schema.String }),
+    model: (c) => FlagModel.of({ id: c.id }),
+    idempotentBy: byModel(),
+    decide: (a, c) => (a.flagged ? noop("ALREADY_FLAGGED") : emit(Flagged(c, tagged ? a.period.tags : [])))
+  });
+
+describe("byModel() on a model with a period", () => {
+  test("the first run, which also opens the period, and the repeat in the open period: created, then already done", async () => {
+    const s = given(Opened({ id: "a1" })).at(oct);
+    const first = await s.when(flagOnce("px_flag", true), { id: "a1" });
+    expect(types(first)).toEqual(["PX_PeriodOpened", "PX_Flagged"]);
+    const again = await s.when(flagOnce("px_flag", true), { id: "a1" });
+    expect(again.outcome).toBe("idempotent");
+    expect(again.reason).toBe("ALREADY_FLAGGED");
+  });
+
+  test("an event without the period's tags would not be read back by its own model: refused, and nothing is appended", async () => {
+    const s = given(Opened({ id: "a1" })).at(oct);
+    await expect(s.when(flagOnce("px_flag_untagged", false), { id: "a1" })).rejects.toThrow(/its model reads PX_Flagged by the tags year=2026, month=10, which the event does not carry/);
+    expect(types(await s.when(flagOnce("px_flag", true), { id: "a1" }))).toEqual(["PX_PeriodOpened", "PX_Flagged"]);
+  });
+});
+
+// A command's events about its own entity must carry the tags its model reads them by (ADR-0037), whatever its idempotentBy.
+describe("an event the command's own model would not read back", () => {
+  const Untagged = defineCommand({
+    name: "px_credit_untagged",
+    input,
+    errors: [NoSuchAccount],
+    model: (c) => Monthly.of({ id: c.id }),
+    idempotentBy: (c) => Credited.where({ op_id: c.opId }),
+    decide: (a, c) => (a.exists ? emit(Credited(c)) : fail(new NoSuchAccount({ id: c.id })))
+  });
+
+  test("a credit without the month it was decided in is refused, and nothing is appended", async () => {
+    const s = given(Opened({ id: "a1" })).at(oct);
+    await expect(s.when(Untagged, c(10, "o1"))).rejects.toThrow(/its model reads PX_Credited by the tags year=2026, month=10/);
+    expect(types(await s.when(Credit, c(10, "o1")))).toEqual(["PX_PeriodOpened", "PX_Credited"]);
+  });
+
+  test("an event about another entity, or a lifecycle event, needs none of this model's scope", async () => {
+    const OpenOther = defineCommand({
+      name: "px_open_other",
+      input: Schema.Struct({ id: Schema.String, other: Schema.String }),
+      model: (cc) => Monthly.of({ id: cc.id }),
+      idempotentBy: (cc) => Opened.where({ acct: cc.other }),
+      // an untagged credit for ANOTHER account, and a lifecycle event for this one: neither is a scoped event about this account
+      decide: (_, cc) => emit(Credited({ id: cc.other, amount: 1, opId: `x-${cc.other}` }), Opened({ id: cc.id }))
+    });
+    const r = await given().at(oct).when(OpenOther, { id: "a1", other: "b1" });
+    expect(r.outcome).toBe("created");
   });
 });

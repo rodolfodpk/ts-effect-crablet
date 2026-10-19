@@ -13,6 +13,7 @@ import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgr
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
+import { withOverridesByName, type ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import type { AutomationHandler } from "./AutomationHandler.ts";
 import type { AutomationsConfig } from "./AutomationsConfig.ts";
 import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/AutomationEventHandler.ts";
@@ -21,11 +22,12 @@ import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorCo
 export interface AutomationsDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
   readonly config?: AutomationsConfig;
-  // `AutomationHandler<any, any, any>`: a heterogeneous registry of automations, each with its own command type T, is type-erased here - each
-  // AutomationHandler keeps its own concrete T/E/HE at the call site that builds it; only the list passed here is erased. The wiring below
-  // reads only the EventSelection/automationName fields, which don't depend on T; T matters only to the per-decision dispatch
-  // (internal/AutomationEventHandler.ts).
-  readonly handlers: ReadonlyArray<AutomationHandler<any, any, any>>;
+  // The automations, each built with `defineAutomation(...).on(...)`. `AutomationHandler<any, any, any>`: a heterogeneous list, each with its own
+  // command type T, is type-erased here - each keeps its own concrete T/E/HE where it is defined. The wiring below reads only the
+  // EventSelection/automationName fields, which don't depend on T; T matters only to the per-decision dispatch (internal/AutomationEventHandler.ts).
+  readonly automations: ReadonlyArray<AutomationHandler<any, any, any>>;
+  // Per-automation polling, batch and backoff, by automation name: deployment settings, kept out of the automation's definition.
+  readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>>;
   readonly instanceId?: string;
 }
 
@@ -73,9 +75,10 @@ export const makeAutomationsProcessor = (
       idColumn: "automation_name"
     });
     const fetcher = yield* makeSqlEventFetcher();
-    const handler = makeAutomationEventHandler(deps.handlers, executeDecision);
-    const configs = makeAutomationProcessorConfigs(deps.config, deps.handlers);
-    const handlerByName = new Map(deps.handlers.map((h) => [h.automationName, h] as const));
+    const automations = withOverridesByName("automations", deps.automations, (a) => a.automationName, deps.overrides ?? {});
+    const handler = makeAutomationEventHandler(automations, executeDecision);
+    const configs = makeAutomationProcessorConfigs(deps.config, automations);
+    const handlerByName = new Map(automations.map((h) => [h.automationName, h] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
     const countSession = yield* holdSessionOnce("the automations module", wakeups === "off" ? 1 : 2);
@@ -86,7 +89,7 @@ export const makeAutomationsProcessor = (
       fetcher,
       handler,
       progressTracker,
-      // Safe: `configs` above is built 1:1 from `deps.handlers`, so every config.processorId this
+      // Safe: `configs` above is built 1:1 from `automations`, so every config.processorId this
       // gets called with is guaranteed to be a key in handlerByName.
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,

@@ -1,10 +1,6 @@
-import { Effect } from "effect";
-import type { SqlClient } from "effect/sql";
-import type { SqlError } from "effect/sql/SqlError";
-import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { defineView } from "@crablet/views/ProjectedView";
-import type { ViewProjector } from "@crablet/views/ViewProjector";
 import { bigint, decimal, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
+import * as WalletTags from "../domain/WalletTags.ts";
 import * as Wallet from "../domain/WalletModel.ts";
 import * as WalletEvents from "../domain/events/WalletEvents.ts";
 
@@ -29,7 +25,7 @@ const row = (
     { onConflict: "ignore" }
   );
 
-export const WalletTransactionView = defineView("wallet-transaction-view", { tables: [walletTransactionTable] })
+export const WalletTransactionView = defineView("wallet-transaction-view", { tables: [walletTransactionTable], anyOfTags: WalletTags.ANY_WALLET })
   .on(Wallet.DepositMade, (d, ctx) => row(ctx.position, d.depositId, d.walletId, WalletEvents.DEPOSIT_MADE, d.amount, d.description, d.depositedAt))
   .on(Wallet.WithdrawalMade, (d, ctx) => row(ctx.position, d.withdrawalId, d.walletId, WalletEvents.WITHDRAWAL_MADE, -d.amount, d.description, d.withdrawnAt))
   .on(Wallet.MoneyTransferred, (d, ctx) => [
@@ -37,4 +33,3 @@ export const WalletTransactionView = defineView("wallet-transaction-view", { tab
     row(ctx.position, `${d.transferId}-to`, d.toWalletId, WalletEvents.MONEY_TRANSFERRED, d.amount, d.description, d.transferredAt)
   ]);
 
-export const makeWalletTransactionViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => WalletTransactionView.projector;

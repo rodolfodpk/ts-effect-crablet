@@ -54,13 +54,13 @@ A command has two parts. Its **contract** - its name, its input Schema and the d
 
 <!-- file: examples/course-enrolment-app/src/domain/enrolment.contract.ts#contracts -->
 ```ts
-export const DefineCourseContract = commandContract({
+export const DefineCourseContract = defineContract({
   name: "define_course",
   input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
   errors: [CourseAlreadyDefined]
 });
 
-export const SubscribeContract = commandContract({
+export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   errors: [CourseNotFound, CourseFull, StudentAtLimit]
@@ -77,6 +77,7 @@ export const Subscribe = defineCommand({
   ...SubscribeContract,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
+  idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: ({ course, student }, c) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))

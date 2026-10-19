@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiBuilder, HttpApiClient, OpenApi } from "effect/http-api";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
-import { commandContract } from "@crablet/commands/Contract";
+import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import type { HttpClientError } from "effect/http/HttpClientError";
@@ -18,8 +18,8 @@ class SeatTaken extends DomainError("SeatTaken", { fields: { seatId: Schema.Stri
 class NoSuchSeat extends DomainError("NoSuchSeat", { fields: { seatId: Schema.String }, kind: "not_found" }) {}
 const SeatBooked = defineEvent("SeatBooked", { schema: Schema.Struct({ seatId: Schema.String }), tags: (d) => ({ seat_id: d.seatId }) });
 
-const BookContract = commandContract({ name: "book", input: Schema.Struct({ seatId: Schema.String, row: Schema.Int }), errors: [SeatTaken, NoSuchSeat] });
-const LogContract = commandContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
+const BookContract = defineContract({ name: "book", input: Schema.Struct({ seatId: Schema.String, row: Schema.Int }), errors: [SeatTaken, NoSuchSeat] });
+const LogContract = defineContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
 const contracts = [BookContract, LogContract];
 
 // ---- the API and the client derived from it ----

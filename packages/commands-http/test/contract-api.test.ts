@@ -3,19 +3,20 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { OpenApi } from "effect/http-api";
-import { defineCommand, emit } from "@crablet/commands/Command";
-import { commandContract } from "@crablet/commands/Contract";
+import { byModel, defineCommand, emit, noop } from "@crablet/commands/Command";
+import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
+import { defineModel } from "@crablet/commands/Model";
 import { ContractMismatch, checkImplementations, makeCommandApi } from "../src/CommandApi.ts";
 
 class Taken extends DomainError("Taken", { fields: { id: Schema.String }, kind: "conflict" }) {}
 const Done = defineEvent("ContractApiDone", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ id: d.id }) });
-const ClaimContract = commandContract({ name: "claim", input: Schema.Struct({ id: Schema.String }), errors: [Taken] });
-const LogContract = commandContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
+const ClaimContract = defineContract({ name: "claim", input: Schema.Struct({ id: Schema.String }), errors: [Taken] });
+const LogContract = defineContract({ name: "log", input: Schema.Struct({ note: Schema.String }) });
 const contracts = [ClaimContract, LogContract];
-const Claim = defineCommand({ ...ClaimContract, decide: (_s, c) => emit(Done(c)) });
-const Log = defineCommand({ ...LogContract, decide: (_s, c) => emit(Done({ id: c.note })) });
+const Claim = defineCommand({ ...ClaimContract, idempotentBy: (c) => Done.where({ id: c.id }), decide: (_s, c) => emit(Done(c)) });
+const Log = defineCommand({ ...LogContract, idempotentBy: (c) => Done.where({ id: c.note }), decide: (_s, c) => emit(Done({ id: c.note })) });
 
 describe("makeCommandApi from contracts", () => {
   test("describes one POST route per contract, named by the contract, plus the listing", () => {
@@ -49,6 +50,19 @@ describe("checkImplementations", () => {
   test("a command with a WIDER input (which the types cannot catch) is refused too", () => {
     const wider = defineCommand({ name: "log", input: Schema.Struct({ note: Schema.String, extra: Schema.String }), decide: (_s, c) => emit(Done({ id: c.note })) });
     expect(() => checkImplementations(contracts, { claim: Claim, log: wider })).toThrow(ContractMismatch);
+  });
+
+  test("a command that does not say how a repeat is recognised is refused: a client retries a request whose answer it lost (ADR-0034)", () => {
+    const noKey = defineCommand({ ...LogContract, decide: (_s, c) => emit(Done({ id: c.note })) });
+    expect(() => checkImplementations(contracts, { claim: Claim, log: noKey })).toThrow(/"log": the command does not say how a repeat is recognised/);
+    const Logged = defineModel({ by: "id", initial: () => false }).on(Done, () => true);
+    const decided = defineCommand({
+      ...LogContract,
+      idempotentBy: byModel(),
+      model: (c) => Logged.of({ id: c.note }),
+      decide: (logged, c) => (logged ? noop("ALREADY_LOGGED") : emit(Done({ id: c.note })))
+    });
+    expect(() => checkImplementations(contracts, { claim: Claim, log: decided })).not.toThrow();
   });
 
   test("lists every problem at once", () => {

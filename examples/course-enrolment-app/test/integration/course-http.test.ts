@@ -150,16 +150,19 @@ describe("tutorial step 3: the HTTP API", () => {
     }
   });
 
-  it("a repeat subscription appended nothing: it has no marker, and the seats are not counted twice", async () => {
+  it("a repeat subscription appended nothing: it answers with the first subscription's marker, and the seats are not counted twice", async () => {
     const courseId = `repeat-${uid()}`;
     await post("define_course", { courseId, capacity: 3 });
     const student = `ann-${uid()}`; // a fresh student: the 3-course limit is per student across the whole test file
-    assert.strictEqual((await post("subscribe", { studentId: student, courseId })).status, 201);
+    const first = await post("subscribe", { studentId: student, courseId });
+    assert.strictEqual(first.status, 201);
+    const firstMarker = (await json(first))["marker"];
     const repeat = await post("subscribe", { studentId: student, courseId });
     assert.strictEqual(repeat.status, 200);
     const body = await json(repeat);
     assert.strictEqual(body["status"], "IDEMPOTENT");
-    assert.strictEqual(body["marker"], null);
+    // decide answered the repeat from what it read, and the newest event it read is the first subscription (ADR-0034)
+    assert.strictEqual(body["marker"], firstMarker);
     assert.strictEqual((await json(await getCourse(courseId)))["subscribers"], 1);
   });
 

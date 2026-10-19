@@ -50,7 +50,7 @@ The command response already carries the write's position in the log as `lastTra
 ## Consequences
 
 - **The command path has no view logic.** A command can feed any number of views without the command, the executor or `commands-http` knowing.
-- **A retried command has no marker (checked, not yet fixed).** An idempotent repeat appends nothing, so its response has `marker: null`, and a client whose first response was lost loses read-your-write. The repeat can come from two places, and neither exposes a position today:
+- **A retried command has no marker (fixed by [ADR-0034](0034-a-repeat-must-be-the-same-request.md): a repeat now answers with the earlier write's marker).** An idempotent repeat appends nothing, so its response has `marker: null`, and a client whose first response was lost loses read-your-write. The repeat can come from two places, and neither exposes a position today:
   - `idempotentBy`: `append_events_if` evaluates the idempotency query as a boolean (`crablet_items_match_any`) and answers only `IDEMPOTENCY_VIOLATION`. Returning a marker needs a new migration that also returns the greatest `(transaction_id, position)` among the matching events (the latest one is a safe bound for "the earlier write is visible"), `Duplicate` carrying it, and the executor passing it through.
   - `noop` from `decide`: the compiled handler has the model load's cursor (the last settled event of the boundary, which is what justified the no-op) but the `NoOp` decision does not carry it. Adding it is a small change inside `commands`, with no SQL.
   Both are a follow-up to phase 1 (see the plan); until then the marker is `null` on a repeat and a client should read with `consistentWith=latest` after a retry.

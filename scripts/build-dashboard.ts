@@ -183,10 +183,11 @@ const panels = (): ReadonlyArray<Panel> => {
     { expr: `sum(${rate("crablet_eventstore_wakeups_sent")})`, legend: "sent" },
     { expr: `sum(${rate("crablet_eventstore_wakeups_saved")})`, legend: "saved by coalescing" }
   ]));
-  out.push(series("Contention", "Commands that retried after a conflict, appends the DCB condition refused, and commands recognised as repeats.", "ops", [
+  out.push(series("Contention", "Commands that retried after a conflict, appends the DCB condition refused, commands recognised as repeats, and request ids reused by a different request.", "ops", [
     { expr: `sum(${rate("crablet_command_conflict_retries")})`, legend: "conflict retries" },
     { expr: `sum(${rate("crablet_eventstore_concurrency_violations")})`, legend: "concurrency violations" },
-    { expr: `sum(${rate("crablet_command_idempotent_duplicates")})`, legend: "idempotent duplicates" }
+    { expr: `sum(${rate("crablet_command_idempotent_duplicates")})`, legend: "idempotent duplicates" },
+    { expr: `sum by (command_type) (${rate("crablet_command_idempotency_mismatches")})`, legend: "idempotency mismatches {{command_type}}" }
   ]));
   out.push(series("Command time (p95)", "95th percentile of handling one command, by command type, retries included.", "ms",
     [{ expr: `histogram_quantile(0.95, sum by (le, command_type) (${rate("crablet_command_handle_duration_milliseconds_bucket")}))`, legend: "{{command_type}}" }]));

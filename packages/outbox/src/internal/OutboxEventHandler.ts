@@ -5,12 +5,14 @@ import * as OutboxMetrics from "@crablet/metrics-otel/OutboxMetrics";
 import { fromKey } from "../TopicPublisherPair.ts";
 import type { OutboxPublisher } from "../OutboxPublisher.ts";
 import { publishToOutbox } from "./OutboxPublishingService.ts";
+import { defaultPublishTimeoutMs } from "../OutboxConfig.ts";
 
 // Decodes the publisher name from the pair key, looks up
 // the registered OutboxPublisher, delegates to OutboxPublishingService; dies loudly on an
 // unregistered publisher (a misconfiguration, not a recoverable typed failure).
 export const makeOutboxEventHandler = (
-  publishers: ReadonlyArray<OutboxPublisher>
+  publishers: ReadonlyArray<OutboxPublisher>,
+  publishTimeoutMs: number = defaultPublishTimeoutMs
 ): EventHandler<string, unknown, never> => {
   const byName = new Map(publishers.map((p) => [p.name, p] as const));
 
@@ -21,7 +23,7 @@ export const makeOutboxEventHandler = (
 
     return OutboxMetrics.observe(
       OutboxMetrics.publish,
-      publishToOutbox(publisher, events).pipe(
+      publishToOutbox(publisher, events, publishTimeoutMs).pipe(
         Effect.tap((handled) =>
           Metric.update(Metric.withAttributes(OutboxMetrics.eventsPublished, { publisher: publisherName }), handled)
         )

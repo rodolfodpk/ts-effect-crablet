@@ -23,6 +23,9 @@ export const EVENTS_CHANNEL = "crablet_events";
 // A queried event (as opposed to AppendEvent, which
 // is what's written).
 export interface StoredEvent {
+  // The event's stable public id (a uuidv7): what a sink is given as the message id, the same on every republish (ADR-0036). NOT an order:
+  // events are ordered by (transactionId, position), and an id sorts by when it was generated.
+  readonly eventId: string;
   readonly type: string;
   readonly tags: ReadonlyArray<Tag>;
   readonly data: unknown;
@@ -53,6 +56,10 @@ export interface ProjectionResult<T> {
   // condition using it can never skip one. In Postgres: `(xmin of a snapshot taken before the read, 0)`: a read sees every event whose
   // transaction id is below its xmin. A model over several entities uses the earliest of its members' horizons (ADR-0018, decision 8).
   readonly horizon: LogPosition;
+  // The newest event this read returned, settled or not (the read's start when it returned none): an upper bound on what the read
+  // saw, which `logPosition` (the last SETTLED one) is not. A command that decides "already done" from what it read answers with it as
+  // its marker, so a reader that waits for it sees the earlier write (ADR-0034).
+  readonly latest: LogPosition;
 }
 
 // PATTERN PRIMER - `Effect.Effect<A, E, R>`, the type every function in this codebase returns
@@ -92,6 +99,10 @@ export interface EventStoreService {
   ) => Effect.Effect<ProjectionResult<T>, SqlError | EventDecodingError>;
 
   readonly exists: (query: Query) => Effect.Effect<boolean, SqlError>;
+
+  // What an idempotency query matches, as the `Duplicate` an append with that query would fail with, or null when it matches nothing. The
+  // command executor checks it before deciding, so a repeat is answered without running the command again (ADR-0034).
+  readonly findDuplicate: (query: Query) => Effect.Effect<Duplicate | null, SqlError>;
 
   // Runs `effect` and, once it has SUCCEEDED, sends the wake-up for every event it appended (ADR-0021). Put it OUTSIDE the transaction that commits those events: the
   // notification must go out after the commit, or a poller wakes, finds nothing and sleeps. `CommandExecutor` does this for every command attempt. An application that appends
@@ -137,6 +148,7 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
     return idx < 0 ? { key: raw, value: "" } : { key: raw.slice(0, idx), value: raw.slice(idx + 1) };
   });
   return {
+    eventId: row.event_id,
     type: row.type,
     tags,
     data: row.data,
@@ -198,6 +210,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
 
         let state = projectors[0]!.initialState;
         let lastLogPosition = after;
+        let latest = after;
 
         for (const row of rows) {
           const event = parseRow(row);
@@ -219,9 +232,10 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
           if (row.settled !== false) {
             lastLogPosition = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
           }
+          latest = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
         }
 
-        return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin } };
+        return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin }, latest };
       });
 
     // Asks the database for a yes or no (it stops at the first match) instead of reading every matching event.
@@ -291,7 +305,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
             );
           });
 
-    const service: EventStoreService = { append, project: tracedProject, exists, withWakeups };
+    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => Sql.findDuplicate(sql, query), withWakeups };
 
     return service;
   })

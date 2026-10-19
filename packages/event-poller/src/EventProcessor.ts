@@ -11,7 +11,7 @@ import type { ProgressTracker } from "./ProgressTracker.ts";
 import type { EventFetcher } from "./EventFetcher.ts";
 import * as ProgressCursorNS from "./ProgressCursor.ts";
 import type { ProgressCursor } from "./ProgressCursor.ts";
-import type { EventHandler } from "./EventHandler.ts";
+import { HandledPrefix, type EventHandler } from "./EventHandler.ts";
 import * as EventSelectionNS from "./EventSelection.ts";
 import type { EventSelection } from "./EventSelection.ts";
 import * as BackoffStateNS from "./BackoffState.ts";
@@ -87,9 +87,10 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   // How often a follower tries to take the module's leader lock (the module's `leaderElectionRetryIntervalMs`). Default: `defaultPollingConfig`'s.
   readonly leaderRetryIntervalMs?: number;
   // Runs an effect in ONE database transaction (`sql.withTransaction`). When it is set, and the tracker has `advanceCursor`, a batch is handled and
-  // its cursor moved in that one transaction: the handler's writes and the cursor commit together or not at all. The cursor move is a forward-only
-  // compare-and-set, and when it moves nothing (another processor already handled this batch) the transaction is rolled back, so each event is
-  // applied once even when two processors take the same batch (a zombie and its successor) or a crash falls between the handler and the cursor.
+  // its cursor moved in that one transaction: the handler's writes and the cursor commit together or not at all. The cursor move is a compare-and-set
+  // on where the batch started, and when it moves nothing (another processor moved the cursor first) the transaction is rolled back, so each event is
+  // applied once even when two processors take the same or overlapping batches (a zombie and its successor) or a crash falls between the handler and
+  // the cursor (ADR-0023, ADR-0032).
   // Only for processors whose effects are all in this database (views); the outbox and the automations do things a rollback cannot undo.
   readonly atomically?: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E | SqlError>;
 }
@@ -201,7 +202,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
               yield* fence;
               const handled = yield* deps.handler.handle(id, events).pipe(Effect.mapError((error) => new HandlerFailed(error)));
               yield* fence;
-              if (!(yield* advance(id, next))) return yield* Effect.fail(new CursorSuperseded());
+              if (!(yield* advance(id, ready.cursor, next))) return yield* Effect.fail(new CursorSuperseded());
               return handled;
             })
           ).pipe(
@@ -210,7 +211,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
             ),
             Effect.catch((err): Effect.Effect<number, unknown> =>
               err instanceof CursorSuperseded
-                ? Effect.logWarning(`processor ${String(id)}: another processor already handled this batch; rolled back`).pipe(Effect.as(-1))
+                ? Effect.logWarning(`processor ${String(id)}: another processor moved the cursor first; this batch was rolled back`).pipe(Effect.as(-1))
                 : Effect.fail(err instanceof HandlerFailed ? err.error : err)
             ),
             Effect.flatMap((handled) =>
@@ -224,11 +225,27 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
           : Effect.gen(function* () {
               yield* fence;
               const handled = yield* deps.handler.handle(id, events).pipe(
-                Effect.tapError((err) => deps.progressTracker.recordError(id, String(err), config.maxErrors))
+                // Part-way through (HandledPrefix): what was handled stays handled. Move the cursor past it (the same compare-and-set as below), then fail
+                // with the cause, so the next tick redelivers from the first event that was not handled, not the whole batch (ADR-0036).
+                Effect.catch((err): Effect.Effect<never, unknown> =>
+                  err instanceof HandledPrefix
+                    ? Effect.gen(function* () {
+                        if (err.handled > 0) {
+                          yield* fence;
+                          yield* deps.progressTracker.updateCursor(id, ready.cursor, ProgressCursorNS.after(events[err.handled - 1]!));
+                        }
+                        return yield* Effect.fail(err.cause);
+                      })
+                    : Effect.fail(err)
+                ),
+                Effect.tapError((err) => (err instanceof LeadershipLost ? Effect.void : deps.progressTracker.recordError(id, String(err), config.maxErrors)))
               );
 
               yield* fence;
-              yield* deps.progressTracker.updateCursor(id, next);
+              // The same compare-and-set as the atomic path. Here the handler's effects are already done and cannot be undone, so a cursor that did not
+              // move (another processor moved it first) only means this batch was handled twice, which at-least-once allows.
+              const moved = advance !== undefined ? yield* advance(id, ready.cursor, next) : (yield* deps.progressTracker.updateCursor(id, ready.cursor, next), true);
+              if (!moved) yield* Effect.logWarning(`processor ${String(id)}: another processor moved the cursor first; this batch was handled twice`);
               yield* deps.progressTracker.resetErrorCount(id);
               return handled;
             })

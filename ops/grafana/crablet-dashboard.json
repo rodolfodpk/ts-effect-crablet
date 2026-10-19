@@ -2130,7 +2130,7 @@
       "id": 40,
       "type": "timeseries",
       "title": "Contention",
-      "description": "Commands that retried after a conflict, appends the DCB condition refused, and commands recognised as repeats.",
+      "description": "Commands that retried after a conflict, appends the DCB condition refused, commands recognised as repeats, and request ids reused by a different request.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -2172,6 +2172,17 @@
           },
           "expr": "sum(rate(crablet_command_idempotent_duplicates[$__rate_interval]))",
           "legendFormat": "idempotent duplicates",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum by (command_type) (rate(crablet_command_idempotency_mismatches[$__rate_interval]))",
+          "legendFormat": "idempotency mismatches {{command_type}}",
           "instant": false,
           "range": true
         }

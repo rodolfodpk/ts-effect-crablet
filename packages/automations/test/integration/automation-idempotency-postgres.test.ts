@@ -19,6 +19,7 @@ import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import type { AutomationHandler } from "../../src/AutomationHandler.ts";
 import { executeCommand } from "../../src/AutomationDecision.ts";
+import { IdempotencyMismatch } from "@crablet/commands/Errors";
 import {
   checkAutomationIdempotency,
   type IdempotencyBackend,
@@ -58,6 +59,7 @@ const postgresBackend: IdempotencyBackend = {
         for (const e of events) {
           const appended = yield* store.append([e]);
           const rows = yield* sql.unsafe<{
+            event_id: string;
             type: string;
             tags: string[];
             data: unknown;
@@ -67,11 +69,12 @@ const postgresBackend: IdempotencyBackend = {
             correlation_id: string | null;
             causation_id: string | null;
           }>(
-            "SELECT type, tags, data, transaction_id::text AS transaction_id, position::text AS position, occurred_at, correlation_id, causation_id::text AS causation_id FROM crablet_events WHERE transaction_id = $1::xid8 ORDER BY position",
+            "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position::text AS position, occurred_at, correlation_id, causation_id::text AS causation_id FROM crablet_events WHERE transaction_id = $1::xid8 ORDER BY position",
             [appended.transactionId]
           );
           for (const row of rows) {
             stored.push({
+              eventId: row.event_id,
               type: row.type,
               tags: row.tags.map((raw: string) => {
                 const i = raw.indexOf("=");
@@ -98,6 +101,7 @@ const postgresBackend: IdempotencyBackend = {
     );
     if (Exit.isSuccess(exit)) return { _tag: "done", wasIdempotent: exit.value.wasIdempotent, reason: exit.value.reason } as const;
     const failure = exit.cause.reasons.find(Cause.isFailReason);
+    if (failure?.error instanceof IdempotencyMismatch) return { _tag: "mismatch" } as const;
     return { _tag: "failed", detail: failure === undefined ? Cause.pretty(exit.cause) : JSON.stringify(failure.error) } as const;
   },
   count: () =>
@@ -180,6 +184,22 @@ const scenarios: ReadonlyArray<Scenario> = [
     build: (uid) => {
       const w = world(uid);
       return { automation: w.automationOf(w.notify((c) => w.Notified.where({ wallet_id: c.walletId }))), triggers: w.sameWallet };
+    },
+    expect: { ok: false, effects: 1, kinds: ["TOO BROAD"] }
+  },
+  {
+    name: "a key on the wallet, and the same request for both deposits: the second is answered 'already done' on the first pass",
+    build: (uid) => {
+      const w = world(uid);
+      const WalletNotified = defineEvent(`WalletNotified-${uid}`, { schema: Schema.Struct({ walletId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
+      const notifyWallet = defineCommand({
+        name: "NotifyWallet",
+        input: Schema.Struct({ walletId: Schema.String }),
+        idempotentBy: (c) => WalletNotified.where({ wallet_id: c.walletId }),
+        decide: (_, c) => emit(WalletNotified(c))
+      });
+      const automation = { ...w.automationOf(notifyWallet), decide: (event: StoredEvent) => Effect.succeed([executeCommand({ walletId: (event.data as In).walletId })]) };
+      return { automation, triggers: w.sameWallet };
     },
     expect: { ok: false, effects: 1, kinds: ["TOO BROAD"] }
   },

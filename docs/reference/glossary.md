@@ -6,8 +6,9 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 ## The idea
 
+- **Event id** - `event_id`, a uuidv7 every stored event gets: its stable public identity, the message id an outbox publisher gives its destination. It is not an order: events are ordered by `(transaction_id, position)` ([ADR-0036](../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
 - **Event** - a fact that happened, immutable, stored in one log shared by everything (`StudentSubscribed`, `DepositMade`). Defined with `defineEvent`: a name, a payload schema and the tags it can be found by. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
-- **Tag** - a `key=value` label on an event saying what it is about (`course_id=math`). Events are found by their tags; there are no streams. [DCB guide](../concepts/dcb-guide.md)
+- **Tag** - a `key=value` label on an event saying what it is about (`course_id=math`). Events are found by their tags; there are no streams. A model binds through one, and every event it handles must carry it. [DCB guide](../concepts/dcb-guide.md)
 - **Query** - a set of "event types, with these tags" items that selects events from the log.
 - **Dynamic Consistency Boundary (DCB)** - the set of events a command's decision depends on, chosen by the command itself by querying, instead of fixed in advance as an aggregate. Two commands conflict only if one adds an event the other's boundary would have included. [DCB guide](../concepts/dcb-guide.md)
 - **Model** - what events mean for one entity or rule: a pure fold from events to state (`defineModel`). The same declaration gives the boundary, so the fold and the boundary cannot drift apart. [Tutorial step 1](../tutorial/01-the-rule-in-memory.md)
@@ -17,7 +18,7 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Domain error** - a refusal that belongs to the business (`CourseFull`), declared on the command, with a `kind` the HTTP layer maps to a status code.
 - **Append condition** - "append these events only if nothing matching this query is newer than this position". It makes the check and the write one atomic step. [ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md)
 - **Conflict** - the append condition failed because the boundary changed. The command is re-run with fresh state (`retries`, default 3).
-- **Idempotent** - repeating the operation has no further effect. A command can declare `idempotentBy`, keyed on a request id, and a repeat answers "already done"; an id the caller chose that is already taken is decided in `decide` instead ([ADR-0027](../adr/0027-a-taken-id-is-decided-not-flagged.md)); delivery by the pollers is at-least-once, so an automation's command must declare it (`automationHandlerOf` refuses one that does not), an outbox publisher should deduplicate on `event.position`, and a view's projector is covered when it writes through the `sql` it is given (its batch and cursor commit together, ADR-0023).
+- **Idempotent** - repeating the operation has no further effect. A command declares `idempotentBy`, keyed on a request id (or `byModel()`, when the model shows it), and a repeat answers "already done" with the earlier write's marker, while the same id carrying a different request is refused ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)); an id the caller chose that is already taken is decided in `decide` instead ([ADR-0027](../adr/0027-a-taken-id-is-decided-not-flagged.md)); delivery by the pollers is at-least-once, so an automation's command must declare it (`defineAutomation` refuses one that does not), an outbox publisher gives its destination `event.eventId` as the message id (or skips what is at or below the last `(transactionId, position)` it applied), and a view's projector is covered when it writes through the `sql` it is given (its batch and cursor commit together, ADR-0023).
 - **Commutative command** - one that is safe to run in parallel with itself (deposits). It declares `concurrent({ guard })`; only the guard events can conflict.
 
 ## Positions and delivery
@@ -36,12 +37,12 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 
 ## Reading and reacting
 
-- **View** - a read model kept in a table by a projector. It updates asynchronously. [Tutorial step 4](../tutorial/04-read-your-own-writes.md)
+- **View** - a read model kept in a table, declared with `defineView(name, { tables }).on(Event, ...)`: what each event does to its rows. It updates asynchronously. [Tutorial step 4](../tutorial/04-read-your-own-writes.md)
 - **Projector** - the handler that turns events into view rows (`ViewProjector`).
 - **Marker** - a token a command returns saying where in the log its write ended. A read that carries it (`?consistentWith=<marker>`) waits until the views have that write. [Reading your own writes](../concepts/read-your-writes.md)
 - **Strict read** - the default: the answer is right or a `503`, never stale.
 - **Outbox** - events published to something outside the database, per topic, from the same log and with the same delivery guarantees. [Reference](./README.md#packages)
-- **Automation** - a reaction: when an event appears, issue a follow-up command.
+- **Automation** - a reaction: when an event appears, issue a follow-up command, declared with `defineAutomation(name, command).on(Event, (data) => input)`. [Add an automation](../guides/build/add-an-automation.md)
 - **Ping** - the small server-sent event that tells a client "something changed, read again". [ADR-0014](../adr/0014-live-updates-by-ping.md)
 
 ## The project

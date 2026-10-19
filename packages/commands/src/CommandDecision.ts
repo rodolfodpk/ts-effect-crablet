@@ -29,11 +29,17 @@ export interface Append {
   // "boundary" when the condition is the decision model itself, "guard" when it is a lifecycle
   // guard on an otherwise commutative command.
   readonly conflictKind: "boundary" | "guard";
+  // The request's fingerprint (Repeat.ts), when the command has an idempotency key: stored on the events, and compared if the append finds
+  // the key already used (ADR-0034).
+  readonly requestFingerprint?: string | null;
 }
 
 export interface NoOp {
   readonly _tag: "NoOp";
   readonly reason: string | null;
+  // Where the earlier write is, for a repeat: the latest event the key matched, or the newest event the decision read. A reader that waits
+  // for it sees that write (ADR-0034). Null when there is nothing to point at (a no-op of a command with no model).
+  readonly marker?: { readonly position: bigint; readonly transactionId: string } | null;
 }
 
 export type CommandDecision = Append | NoOp;
@@ -88,5 +94,5 @@ export const nonCommutative = (
   logPosition: LogPosition
 ): Append => make(eventList(events), AppendCondition.of(logPosition, decisionModel));
 
-export const noOp = (reason: string | null = null): NoOp => ({ _tag: "NoOp", reason });
+export const noOp = (reason: string | null = null, marker: NoOp["marker"] = null): NoOp => ({ _tag: "NoOp", reason, marker });
 

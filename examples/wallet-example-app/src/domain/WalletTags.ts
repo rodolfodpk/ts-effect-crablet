@@ -24,3 +24,6 @@ export const DAY = "day";
 export const HOUR = "hour";
 // The N-minute period (WALLET_PERIOD=minutes:N, WalletPeriod.ts): the number of the slot since the epoch.
 export const BUCKET = "bucket";
+
+// Any of the tags that name a wallet: what the wallet's views read (a transfer names its wallets as from/to).
+export const ANY_WALLET: ReadonlySet<string> = new Set([WALLET_ID, FROM_WALLET_ID, TO_WALLET_ID]);

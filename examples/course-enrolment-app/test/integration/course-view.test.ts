@@ -9,7 +9,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { CourseDefined, StudentSubscribed } from "../../src/domain/Enrolment.ts";
-import { makeCourseSeatsViewProjector } from "../../src/views/CourseSeatsViewProjector.ts";
+import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;
@@ -33,6 +33,7 @@ after(async () => {
 });
 
 const stored = (type: string, data: unknown, position: bigint): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: [],
   data,
@@ -56,7 +57,7 @@ describe("course seats view projector", () => {
     const row = await runtime.runPromise(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        const projector = yield* makeCourseSeatsViewProjector();
+        const projector = yield* CourseSeatsView.projector;
         yield* projector.handle([defined, first]);
         yield* projector.handle([redefined, second, early]);
         const rows = yield* sql.unsafe<{ subscribers: number; capacity: number }>("SELECT subscribers, capacity FROM course_seats_view WHERE course_id = $1", [courseId]);

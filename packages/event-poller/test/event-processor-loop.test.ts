@@ -6,6 +6,7 @@ import type { LeaderHandle } from "@crablet/eventstore/Leader";
 import type { WakeupBatch } from "@crablet/eventstore/Listen";
 import * as LeaderMetrics from "@crablet/metrics-otel/LeaderMetrics";
 import { makeEventProcessor } from "../src/EventProcessor.ts";
+import { HandledPrefix } from "../src/EventHandler.ts";
 import { processorConfigOf } from "../src/ProcessorConfig.ts";
 import * as EventSelection from "../src/EventSelection.ts";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
@@ -13,6 +14,7 @@ import { makeInMemoryEventFetcher } from "./fixtures/InMemoryEventFetcher.ts";
 import { makeInMemoryEventHandler } from "./fixtures/InMemoryEventHandler.ts";
 
 const storedEvent = (position: bigint, type = "TestEvent", transactionId = position.toString()): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: [],
   data: {},
@@ -546,5 +548,48 @@ describe("EventProcessor.startScoped: the scope owns the processors", () => {
       expect(yield* handle.service.getStatus(PROCESSOR_ID)).toBe("ACTIVE"); // the processor is intact, and no fiber is left behind to poll against a closed pool
     });
     await Effect.runPromise(Effect.provide(program, TestClock.layer()));
+  });
+});
+
+// ADR-0036: a handler that fails part-way through a batch, after handling some events for good (HandledPrefix), keeps them: the cursor moves past them,
+// the error is recorded, and the next tick starts from the first event that was not handled - not the whole batch again.
+describe("a handler that fails part-way through a batch", () => {
+  test("the cursor moves past what was handled, the error is recorded, and the redelivery starts at the first event that failed", async () => {
+    const seen: Array<bigint> = [];
+    let refuse = true;
+    const program = Effect.gen(function* () {
+      const eventsRef = yield* Ref.make<ReadonlyArray<StoredEvent>>([1n, 2n, 3n, 4n, 5n].map((p) => storedEvent(p)));
+      const { tracker, rows } = yield* makeInMemoryProgressTracker<string>();
+      const handle = yield* makeEventProcessor({
+        configs: [processorConfigOf(PROCESSOR_ID, { batchSize: 10 })],
+        fetcher: makeInMemoryEventFetcher(eventsRef),
+        handler: {
+          handle: (_id, events) =>
+            Effect.gen(function* () {
+              for (let i = 0; i < events.length; i++) {
+                if (refuse && events[i]!.position === 3n) return yield* Effect.fail(new HandledPrefix({ handled: i, cause: "destination refused event 3" }));
+                seen.push(events[i]!.position);
+              }
+              return events.length;
+            })
+        },
+        progressTracker: tracker,
+        selectionOf: () => EventSelection.empty(),
+        instanceId: "test-instance",
+        acquireLeader: Effect.succeed(alwaysLeader()),
+        wakeupStream: Stream.never
+      });
+      const first = yield* Effect.exit(handle.service.process(PROCESSOR_ID));
+      const afterFailure = (yield* rows).get(PROCESSOR_ID)!;
+      refuse = false;
+      yield* handle.service.process(PROCESSOR_ID);
+      return { first, afterFailure, afterRetry: (yield* rows).get(PROCESSOR_ID)! };
+    });
+    const { first, afterFailure, afterRetry } = await run(program);
+    expect(Exit.isFailure(first) && String(Cause.squash(first.cause))).toBe("destination refused event 3");
+    expect(afterFailure.cursor.position).toBe(2n);
+    expect(afterFailure.errorCount).toBe(1);
+    expect(seen).toEqual([1n, 2n, 3n, 4n, 5n]);
+    expect(afterRetry.cursor.position).toBe(5n);
   });
 });

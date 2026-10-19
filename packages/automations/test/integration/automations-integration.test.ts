@@ -14,8 +14,7 @@ import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit, noop } from "@crablet/commands/Command";
 import { defineEvent } from "@crablet/commands/Event";
 import { makeAutomationsProcessor } from "../../src/AutomationsModule.ts";
-import { automationHandlerOf } from "../../src/AutomationHandler.ts";
-import { executeCommand, noOp } from "../../src/AutomationDecision.ts";
+import { defineAutomation } from "../../src/AutomationHandler.ts";
 import type { AutomationsConfig } from "../../src/AutomationsConfig.ts";
 
 let db: TestDb;
@@ -119,22 +118,14 @@ describe("automations module integration (real Postgres)", () => {
       decide: (_, c) => emit(ConfirmationSent(c))
     });
 
-    const automation = automationHandlerOf(
-      automationName,
-      sendConfirmation,
-      (event) =>
-        Effect.succeed([
-          executeCommand({
-            orderId: event.tags.find((t) => t.key === "order_id")!.value
-          })
-        ]),
-      { eventTypes: new Set([triggerType]) }
-    );
+    // The trigger is appended raw below (no payload, the order id in its tag): its definition says so.
+    const OrderPlaced = defineEvent(triggerType, { schema: Schema.Struct({}), tags: () => ({}) });
+    const automation = defineAutomation(automationName, sendConfirmation).on(OrderPlaced, (_, ctx) => ({ orderId: ctx.tag("order_id")! }));
 
     const handle = await run(
       makeAutomationsProcessor({
         config: baseAutomationsConfig,
-        handlers: [automation],
+        automations: [automation],
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );
@@ -177,21 +168,20 @@ describe("automations module integration (real Postgres)", () => {
     }
   });
 
-  it("a NoOp decision advances progress without appending any resulting event", { timeout: 20_000 }, async () => {
+  it("a handler that asks for nothing advances progress without appending any resulting event", { timeout: 20_000 }, async () => {
     const runId = crypto.randomUUID();
     const automationName = `noop-automation-${runId}`;
     const triggerType = `NoopTrigger-${runId}`;
 
     const NoopDone = defineEvent(`NoopDone-${runId}`, { schema: Schema.Struct({}), tags: () => ({ noop: "x" }) });
     const noopCommand = defineCommand({ name: "NoopCommand", input: Schema.Unknown, idempotentBy: () => NoopDone.where({ noop: "x" }), decide: () => noop() });
-    const automation = automationHandlerOf(automationName, noopCommand, () => Effect.succeed([noOp()]), {
-      eventTypes: new Set([triggerType])
-    });
+    const NoopTrigger = defineEvent(triggerType, { schema: Schema.Struct({}), tags: () => ({}) });
+    const automation = defineAutomation(automationName, noopCommand).on(NoopTrigger, () => undefined);
 
     const handle = await run(
       makeAutomationsProcessor({
         config: baseAutomationsConfig,
-        handlers: [automation],
+        automations: [automation],
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );

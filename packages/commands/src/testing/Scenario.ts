@@ -5,7 +5,7 @@ import type { Conflict } from "@crablet/eventstore/AppendErrors";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import type { Command } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
-import type { InvalidInput } from "../Errors.ts";
+import type { IdempotencyMismatch, InvalidInput } from "../Errors.ts";
 import type { ExecutionResult } from "../ExecutionResult.ts";
 
 // BDD-style tests of command logic with NO database:
@@ -43,8 +43,9 @@ export interface ScenarioResult<Err> {
   readonly outcome: ScenarioOutcome;
   // Exactly the events this `when` appended; empty on failure.
   readonly events: ReadonlyArray<StoredEvent>;
-  // The command's typed failure: a domain error from `decide`, `InvalidInput` or `Conflict`.
-  readonly error: Err | InvalidInput | Conflict | undefined;
+  // The command's typed failure: a domain error from `decide`, `InvalidInput`, `Conflict`, or `IdempotencyMismatch` (its key was used by a
+  // different request).
+  readonly error: Err | InvalidInput | Conflict | IdempotencyMismatch | undefined;
   // For an idempotent outcome, why nothing was appended.
   readonly reason: string | null;
 }
@@ -107,4 +108,25 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
   const store = makeInMemoryEventStore();
   store.seed(...events);
   return scenarioOver(store, null);
+};
+
+// Checks a command's answer to a repeat (ADR-0034): run the command, then run it again with the same input, as a client does when it lost the
+// first answer. The first run must append (give it the `history` it needs); the second must append nothing and answer "already done" - not a second effect, and not an error for a request that succeeded. Works for both forms
+// of `idempotentBy`. Throws, naming what is wrong, so a failed check fails the test in any runner.
+export const assertRepeatHarmless = async <In, Err>(command: Command<In, Err>, input: unknown, history: ReadonlyArray<AppendEvent> = []): Promise<void> => {
+  if (!command.idempotent) {
+    throw new Error(`command "${command.name}" does not say how a repeat is recognised: declare idempotentBy (a query on a request id, or byModel())`);
+  }
+  const scenario = given(...history);
+  const first = await scenario.when(command, input);
+  if (first.outcome !== "created") {
+    throw new Error(`command "${command.name}": the first run must append, but it ended ${first.outcome}${first.error !== undefined ? ` (${String(first.error)})` : ` (${first.reason})`}; give it the history it needs`);
+  }
+  const second = await scenario.when(command, input);
+  if (second.events.length > 0) {
+    throw new Error(`command "${command.name}": NOT HARMLESS - the repeat appended ${second.events.map((e) => e.type).join(", ")} again. Its idempotentBy does not recognise the repeat.`);
+  }
+  if (second.outcome !== "idempotent") {
+    throw new Error(`command "${command.name}": the repeat of a request that succeeded failed (${String(second.error)}); a client retrying a lost answer would be told it failed. Answer a repeat with noop(...) in decide.`);
+  }
 };

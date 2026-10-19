@@ -16,9 +16,9 @@ import { CommandOutcome, CourseResponse, Problem, defineCourseCall, getCourse, l
 // MODEL
 
 const Text = FieldValidation.Field(Schema.String);
-// How the page read the data back after a write: with the write's marker (the server waits for the seat map to have that write), with `latest`
-// (the write appended nothing, so it has no marker: the read waits for everything committed so far), or `eventual` (the checkbox is off: the
-// read does not wait, so it may be stale).
+// How the page read the data back after a write: with the write's marker (the server waits for the seat map to have that write; a repeat's marker
+// is the earlier write's), with `latest` (the answer had no marker - nothing written and nothing earlier to point at: the read waits for everything
+// committed so far), or `eventual` (the checkbox is off: the read does not wait, so it may be stale).
 export const ReadBack = Schema.Literals(["with_marker", "latest", "eventual"]);
 export type ReadBack = typeof ReadBack.Type
 const Defined = Schema.Struct({ courseId: Schema.String, capacity: Schema.Int, outcome: CommandOutcome, readBack: ReadBack });
@@ -150,7 +150,7 @@ export const SubscribeStudent = Command.define("SubscribeStudent", {
 // UPDATE
 
 // After a write, read the course the write was about: this is "read your own writes". With the checkbox on, the read carries the write's marker
-// (or `latest` when the write appended nothing, so it has none) and the server waits for the seat map; off, it asks not to wait and may be stale.
+// (a repeat carries the earlier write's; `latest` when the answer had none) and the server waits for the seat map; off, it asks not to wait and may be stale.
 const readBack = (model: Model, courseId: string, outcome: CommandOutcome) => {
   const kind: ReadBack = !model.readWithMarker ? "eventual" : outcome.marker === null ? "latest" : "with_marker";
   const read = kind === "eventual" ? { consistentWith: null, eventual: true } : { consistentWith: kind === "latest" ? "latest" : outcome.marker };
@@ -363,8 +363,8 @@ export const describeProblem = (problem: Problem): string => {
 
 // #region read-back-note
 // What the page says about the read it made after a write. With the write's marker the server answered only once the seat map had the write
-// (or refused: see `SeatMapBehind`), so the numbers include it; a write that appended nothing (an idempotent repeat) has no marker, so the read
-// asked for `latest`; with the checkbox off the read asked not to wait and may be stale.
+// (or refused: see `SeatMapBehind`), so the numbers include it; a repeat ("already subscribed") carries the earlier write's marker, so the same
+// holds; an answer with no marker made the read ask for `latest`; with the checkbox off the read asked not to wait and may be stale.
 export const readBackNote = (readBack: ReadBack): string => {
   switch (readBack) {
     case "with_marker":

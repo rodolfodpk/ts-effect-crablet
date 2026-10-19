@@ -4,7 +4,7 @@
 //   - a student takes at most 3 courses.
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
 import * as Schema from "effect/Schema";
-import { defineCommand, emit, fail, noop } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
 import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
 import { defineEvent } from "@crablet/commands/Event";
 import { all, defineModel } from "@crablet/commands/Model";
@@ -46,6 +46,7 @@ export const DefineCourse = defineCommand({
   ...DefineCourseContract,
   // The same course again is a retry ("already defined"); another course under the same id is a conflict.
   model: (c) => CourseModel.of({ id: c.courseId }),
+  idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: (course, c) =>
     !course.exists
       ? emit(CourseDefined(c))
@@ -60,6 +61,7 @@ export const Subscribe = defineCommand({
   ...SubscribeContract,
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
+  idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: ({ course, student }, c) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))

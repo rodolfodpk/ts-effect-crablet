@@ -7,8 +7,8 @@ import { makeConsistentRead } from "@crablet/views-http";
 import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
-import { courseSeatsViewSubscription } from "../views/CourseSeatsViewProjector.ts";
-import { courseEnrolmentsViewSubscription } from "../views/CourseEnrolmentsViewProjector.ts";
+import { CourseSeatsView } from "../views/CourseSeatsViewProjector.ts";
+import { CourseEnrolmentsView } from "../views/CourseEnrolmentsViewProjector.ts";
 
 // `text` as a SQL LIKE pattern that matches ids STARTING with it: `\`, `%` and `_` are escaped, or "a_" would also match "ab".
 export const likePrefix = (text: string): string => `${text.replace(/[\\%_]/g, "\\$&")}%`;
@@ -46,7 +46,7 @@ const findSeats = (sql: SqlClient.SqlClient) =>
 // A row of course_enrolments_view as the database sends it.
 const EnrolmentRow = Schema.Struct({ student_id: Schema.String, seat_number: Schema.Int });
 
-// The students of one course, by seat number: the read side of the hand-written projector.
+// The students of one course, by seat number: the read side of the view written with its own SQL.
 const listEnrolments = (sql: SqlClient.SqlClient) =>
   SqlSchema.findAll({
     Request: Schema.Struct({ courseId: Schema.String }),
@@ -87,7 +87,7 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
           "listCourses",
           consistentRead(
             {
-              reads: [courseSeatsViewSubscription],
+              reads: [CourseSeatsView],
               parse: (request: { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string; readonly q?: string } }) => {
                 const limit = parseLimit(request.query.limit);
                 return limit === null
@@ -112,7 +112,7 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
           "getEnrolments",
           consistentRead(
             {
-              reads: [courseEnrolmentsViewSubscription],
+              reads: [CourseEnrolmentsView],
               parse: (request: { readonly params: { readonly courseId: string }; readonly query: ConsistencyParams }) => Effect.succeed(request.params)
             },
             (params: { readonly courseId: string }) =>
@@ -127,7 +127,7 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
           "getCourse",
           consistentRead(
             {
-              reads: [courseSeatsViewSubscription],
+              reads: [CourseSeatsView],
               parse: (request: { readonly params: { readonly courseId: string }; readonly query: ConsistencyParams }) => Effect.succeed(request.params)
             },
             (params: { readonly courseId: string }) =>

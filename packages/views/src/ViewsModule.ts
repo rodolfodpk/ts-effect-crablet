@@ -14,14 +14,24 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ViewProjector } from "./ViewProjector.ts";
 import type { ViewSubscription } from "./ViewSubscription.ts";
 import type { ViewsConfig } from "./ViewsConfig.ts";
+import { withOverridesByName, type ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
+
+// What the processor needs of a view: `defineView(...)`'s result has it.
+export interface RunnableView {
+  readonly name: string;
+  readonly projector: Effect.Effect<ViewProjector<unknown>, never, SqlClient.SqlClient>;
+  readonly subscription: () => ViewSubscription;
+}
 
 export interface ViewsDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
   readonly config?: ViewsConfig;
-  readonly projectors: ReadonlyArray<ViewProjector>;
-  readonly subscriptions: ReadonlyArray<ViewSubscription>;
+  // The views, each built with `defineView(...).on(...)`.
+  readonly views: ReadonlyArray<RunnableView>;
+  // Per-view polling, batch and backoff, by view name: deployment settings, kept out of the view's definition.
+  readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>>;
   readonly instanceId?: string;
 }
 
@@ -48,9 +58,12 @@ export const makeViewsProcessor = (
       notifyChannel: VIEW_PROGRESS_CHANNEL
     });
     const fetcher = yield* makeSqlEventFetcher();
-    const handler = makeViewEventHandler(deps.projectors);
-    const configs = makeViewProcessorConfigs(deps.config, deps.subscriptions);
-    const subscriptionByViewName = new Map(deps.subscriptions.map((s) => [s.viewName, s] as const));
+    const projectors: Array<ViewProjector> = [];
+    for (const view of deps.views) projectors.push(yield* view.projector);
+    const subscriptions = withOverridesByName("views", deps.views.map((v) => v.subscription()), (s) => s.viewName, deps.overrides ?? {});
+    const handler = makeViewEventHandler(projectors);
+    const configs = makeViewProcessorConfigs(deps.config, subscriptions);
+    const subscriptionByViewName = new Map(subscriptions.map((s) => [s.viewName, s] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
     const countSession = yield* holdSessionOnce("the views module", wakeups === "off" ? 1 : 2);
@@ -61,7 +74,7 @@ export const makeViewsProcessor = (
       fetcher,
       handler,
       progressTracker,
-      // Safe: `configs` above is built 1:1 from `deps.subscriptions`, so every config.processorId
+      // Safe: `configs` above is built 1:1 from `subscriptions`, so every config.processorId
       // this gets called with is guaranteed to be a key in subscriptionByViewName.
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),

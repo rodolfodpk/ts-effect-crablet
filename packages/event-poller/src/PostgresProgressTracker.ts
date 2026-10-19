@@ -81,34 +81,31 @@ export const makePostgresProgressTracker = <I extends string>(
         )
       );
 
-    // Forward-only: the cursor never moves back. A processor that lost leadership without knowing it (a zombie) and writes late
-    // changes nothing, and no ping is sent for an update that did not advance (docs/history/plans/reliability-and-scale-diagnostic.md, D2).
-    // One statement, forward-only: the row changes only when the stored cursor is behind `cursor`. It returns a row exactly when the cursor moved
-    // (with `notifyChannel`, the ping is that row, so a cursor that did not move sends no ping).
-    const moveCursor = (id: I, cursor: ProgressCursor): Effect.Effect<ReadonlyArray<unknown>, SqlError> =>
+    // One statement, a compare-and-set on the batch's start: the row changes only when the stored cursor is still `from`. It returns a row exactly when
+    // the cursor moved (with `notifyChannel`, the ping is that row, so a cursor that did not move sends no ping). A processor that lost leadership without
+    // knowing it (a zombie) and writes late changes nothing, and neither does one whose batch overlaps a batch another processor already committed (ADR-0032).
+    const moveCursor = (id: I, from: ProgressCursor, to: ProgressCursor): Effect.Effect<ReadonlyArray<unknown>, SqlError> =>
       spec.notifyChannel === undefined
         ? sql.unsafe(
             `UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
-             WHERE ${idCol} = $1 AND (last_transaction_id, last_position) < ($3::xid8, $2::bigint)
+             WHERE ${idCol} = $1 AND (last_transaction_id, last_position) = ($4::xid8, $5::bigint)
              RETURNING 1 AS moved`,
-            [id, cursor.position.toString(), cursor.transactionId]
+            [id, to.position.toString(), to.transactionId, from.transactionId, from.position.toString()]
           )
         : // One statement: the update and the notify commit together, and no row means no notify.
           sql.unsafe(
             `WITH updated AS (
                UPDATE ${table} SET last_position = $2, last_transaction_id = $3::xid8, last_updated_at = now()
-               WHERE ${idCol} = $1 AND (last_transaction_id, last_position) < ($3::xid8, $2::bigint)
+               WHERE ${idCol} = $1 AND (last_transaction_id, last_position) = ($5::xid8, $6::bigint)
                RETURNING ${idCol} AS id, last_transaction_id::text AS transaction_id, last_position::text AS position)
              SELECT pg_notify($4, json_build_object('id', id, 'transactionId', transaction_id, 'position', position)::text) FROM updated`,
-            [id, cursor.position.toString(), cursor.transactionId, spec.notifyChannel]
+            [id, to.position.toString(), to.transactionId, spec.notifyChannel, from.transactionId, from.position.toString()]
           );
 
-    // Forward-only: the cursor never moves back. A processor that lost leadership without knowing it (a zombie) and writes late
-    // changes nothing, and no ping is sent for an update that did not advance (docs/history/plans/reliability-and-scale-diagnostic.md, D2).
-    const updateCursor = (id: I, cursor: ProgressCursor): Effect.Effect<void, SqlError> => Effect.asVoid(moveCursor(id, cursor));
+    const updateCursor = (id: I, from: ProgressCursor, to: ProgressCursor): Effect.Effect<void, SqlError> => Effect.asVoid(moveCursor(id, from, to));
 
-    const advanceCursor = (id: I, cursor: ProgressCursor): Effect.Effect<boolean, SqlError> =>
-      Effect.map(moveCursor(id, cursor), (rows) => rows.length > 0);
+    const advanceCursor = (id: I, from: ProgressCursor, to: ProgressCursor): Effect.Effect<boolean, SqlError> =>
+      Effect.map(moveCursor(id, from, to), (rows) => rows.length > 0);
 
     const recordError = (id: I, error: string, maxErrors: number): Effect.Effect<void, SqlError> =>
       Effect.asVoid(

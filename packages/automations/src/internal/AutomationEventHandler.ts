@@ -5,6 +5,7 @@ import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import type { AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import type { Command } from "@crablet/commands/Command";
+import type { IdempotencyMismatch } from "@crablet/commands/Errors";
 import * as AutomationMetrics from "@crablet/metrics-otel/AutomationMetrics";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
@@ -25,7 +26,7 @@ const withEventContext = <A, E, R>(event: StoredEvent, effect: Effect.Effect<A, 
 export type ExecuteDecision = <T, HE>(
   command: Command<T, HE>,
   input: T
-) => Effect.Effect<unknown, HE | AppendTooLarge | Conflict | SqlError, never>;
+) => Effect.Effect<unknown, HE | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError, never>;
 
 // Routes handle(automationName, events) to the
 // registered AutomationHandler for that name; dies loudly on an unregistered automation (mirrors
@@ -37,7 +38,7 @@ export type ExecuteDecision = <T, HE>(
 // how many decisions it produced - the return value is `events.length`, not a decision tally,
 // matching at-least-once redelivery semantics the same way ViewEventHandler/OutboxEventHandler do.
 export const makeAutomationEventHandler = (
-  // `AutomationHandler<any, any, any>` - see AutomationsDeps.handlers (AutomationsModule.ts) on why this
+  // `AutomationHandler<any, any, any>` - see AutomationsDeps.automations (AutomationsModule.ts) on why this
   // registry is type-erased at the internal-wiring boundary, never in the public API.
   handlers: ReadonlyArray<AutomationHandler<any, any, any>>,
   executeDecision: ExecuteDecision

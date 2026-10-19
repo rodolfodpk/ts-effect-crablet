@@ -1,9 +1,4 @@
-import { Effect } from "effect";
-import type { SqlClient } from "effect/sql";
-import type { SqlError } from "effect/sql/SqlError";
-import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { defineView, type ViewContext } from "@crablet/views/ProjectedView";
-import type { ViewProjector } from "@crablet/views/ViewProjector";
 import { decimal, integer, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
 import * as WalletTags from "../domain/WalletTags.ts";
 import * as Wallet from "../domain/WalletModel.ts";
@@ -40,7 +35,7 @@ const bump = (ctx: ViewContext, tag: string, column: "total_deposits" | "total_w
     : walletStatementTable.update({ statement_id: statementId }, { add: { [column]: amount, transaction_count: 1 } });
 };
 
-export const WalletStatementView = defineView("wallet-statement-view", { tables: [walletStatementTable] })
+export const WalletStatementView = defineView("wallet-statement-view", { tables: [walletStatementTable], anyOfTags: WalletTags.ANY_WALLET })
   .on(Wallet.WalletStatementOpened, (d) =>
     walletStatementTable.insert(
       {
@@ -66,4 +61,3 @@ export const WalletStatementView = defineView("wallet-statement-view", { tables:
     bump(ctx, WalletTags.TO_STATEMENT_ID, "total_transfers_in", d.amount)
   ]);
 
-export const makeWalletStatementViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => WalletStatementView.projector;

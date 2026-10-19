@@ -1,10 +1,6 @@
-import { Effect } from "effect";
-import type { SqlClient } from "effect/sql";
-import type { SqlError } from "effect/sql/SqlError";
-import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { defineView } from "@crablet/views/ProjectedView";
-import type { ViewProjector } from "@crablet/views/ViewProjector";
 import { decimal, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
+import * as WalletTags from "../domain/WalletTags.ts";
 import * as Wallet from "../domain/WalletModel.ts";
 
 export const walletSummaryTable = viewTable("wallet_summary_view", {
@@ -26,7 +22,7 @@ export const walletSummaryTable = viewTable("wallet_summary_view", {
 // A repeated batch is applied once because the view's batch and its cursor commit together (ADR-0023); there is no junction table.
 // Deliberately no FK to wallet_balance_view (both are independent async projections off the same event stream, so summary's own projector can process
 // WalletOpened before balance's does).
-export const WalletSummaryView = defineView("wallet-summary-view", { tables: [walletSummaryTable] })
+export const WalletSummaryView = defineView("wallet-summary-view", { tables: [walletSummaryTable], anyOfTags: WalletTags.ANY_WALLET })
   .on(Wallet.WalletOpened, (d) => walletSummaryTable.insert({ wallet_id: d.walletId, current_balance: d.initialBalance }, { onConflict: "replace" }))
   .on(Wallet.DepositMade, (d) =>
     walletSummaryTable.upsert({ wallet_id: d.walletId }, { add: { total_deposits: d.amount, current_balance: d.amount }, max: { last_transaction_at: d.depositedAt } })
@@ -40,4 +36,3 @@ export const WalletSummaryView = defineView("wallet-summary-view", { tables: [wa
   ])
   .on(Wallet.WalletClosed, (d) => walletSummaryTable.remove({ wallet_id: d.walletId }));
 
-export const makeWalletSummaryViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> => WalletSummaryView.projector;

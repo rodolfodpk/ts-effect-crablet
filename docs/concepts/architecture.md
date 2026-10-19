@@ -112,7 +112,8 @@ sequenceDiagram
   H-->>C: 201 with a marker, or 400, 404, 409 as problem+json
 ```
 
-The idempotency check runs inside the append before the concurrency check, so a repeat of an already-done operation is an idempotent success, never a spurious conflict. The
+The idempotency check runs inside the append before the concurrency check, so a repeat of an already-done operation is an idempotent success, never a spurious conflict;
+a repeat answers with the earlier write's marker, and the same key carrying a different request is refused with `IdempotencyMismatch` ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)). The
 command is audited when auditing is on. See [ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md) and [ADR-0010](../adr/0010-declarative-command-api.md).
 
 ## Two commands that conflict
@@ -150,7 +151,7 @@ union of their boundaries, and its cursor is the earliest of the members' read h
 
 ## From event to view
 
-A poller turns the log into a read model. Delivery is at-least-once, and the cursor makes sure nothing is skipped. A view's writes and its cursor commit in one transaction, so a batch handled twice (after a crash, or by a zombie leader and its successor) is applied once: the second one finds the cursor already moved and is rolled back ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md)). Only writes made through the `sql` the projector receives are covered; any other effect, and every automation and outbox publisher, must be idempotent.
+A poller turns the log into a read model. Delivery is at-least-once, and the cursor makes sure nothing is skipped. A view's writes and its cursor commit in one transaction, so a batch handled twice (after a crash, or by a zombie leader and its successor, even when their batches only overlap) is applied once: the cursor moves only if it is still where the batch started, so the second one finds it moved and is rolled back ([ADR-0023](../adr/0023-view-batch-and-cursor-in-one-transaction.md), [ADR-0032](../adr/0032-the-cursor-moves-only-from-where-its-batch-started.md)). Only writes made through the `sql` the projector receives are covered; any other effect, and every automation and outbox publisher, must be idempotent.
 
 ```mermaid
 sequenceDiagram

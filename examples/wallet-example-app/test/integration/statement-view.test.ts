@@ -13,7 +13,7 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { Tag } from "@crablet/eventstore/Tag";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { makeWalletStatementViewProjector } from "../../src/views/WalletStatementViewProjector.ts";
+import { WalletStatementView } from "../../src/views/WalletStatementViewProjector.ts";
 import * as WalletEvents from "../../src/domain/events/WalletEvents.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -42,6 +42,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient | PgClient.Pg
 
 let nextPosition = 1n;
 const fakeEvent = (type: string, tags: Record<string, string>, data: unknown): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: Object.entries(tags).map(([key, value]): Tag => ({ key, value })),
   data,
@@ -73,7 +74,7 @@ const statementRow = (statementId: string) =>
 const handle = (events: ReadonlyArray<StoredEvent>) =>
   run(
     Effect.gen(function* () {
-      const projector = yield* makeWalletStatementViewProjector();
+      const projector = yield* WalletStatementView.projector;
       return yield* projector.handle(events);
     })
   );

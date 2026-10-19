@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (2026-10-11). Built: `onDuplicate` is removed from `defineCommand`; the wallet's `OpenWallet` and the course app's `DefineCourse` decide a taken
+**Accepted** (2026-10-11). **Narrowed by [ADR-0034](0034-a-repeat-must-be-the-same-request.md)** (2026-10-18): a match from a *different* request under the same key (another body) is no longer "already done" but `IdempotencyMismatch` (422), and `idempotentBy: byModel()` names the pattern this record introduced. Built: `onDuplicate` is removed from `defineCommand`; the wallet's `OpenWallet` and the course app's `DefineCourse` decide a taken
 id from a model. Narrows [ADR-0010](0010-declarative-command-api.md), which listed idempotency as "`idempotentBy` (+ `onDuplicate`)".
 
 ## Context

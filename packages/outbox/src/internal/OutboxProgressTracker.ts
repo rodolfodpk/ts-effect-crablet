@@ -82,19 +82,24 @@ export const makeOutboxProgressTracker = (
       );
     };
 
-    // Forward-only, like PostgresProgressTracker: a late write from a leader that lost the lock moves nothing.
-    const updateCursor = (key: string, cursor: ProgressCursor): Effect.Effect<void, SqlError> => {
+    // A compare-and-set on the batch's start, like PostgresProgressTracker: the cursor moves only if it is still `from`, so a late write from a leader that
+    // lost the lock, or a batch that overlaps one another processor already moved past, moves nothing (ADR-0032).
+    const moveCursor = (key: string, from: ProgressCursor, to: ProgressCursor): Effect.Effect<ReadonlyArray<unknown>, SqlError> => {
       const { topic, publisher } = fromKey(key);
-      return Effect.asVoid(
-        sql.unsafe(
-          `UPDATE crablet_outbox_topic_progress
-           SET last_position = $3, last_transaction_id = $5::xid8, last_published_at = now(), updated_at = now(),
-               leader_instance = $4, leader_heartbeat = now()
-           WHERE topic = $1 AND publisher = $2 AND (last_transaction_id, last_position) < ($5::xid8, $3::bigint)`,
-          [topic, publisher, cursor.position.toString(), instanceId, cursor.transactionId]
-        )
+      return sql.unsafe(
+        `UPDATE crablet_outbox_topic_progress
+         SET last_position = $3, last_transaction_id = $5::xid8, last_published_at = now(), updated_at = now(),
+             leader_instance = $4, leader_heartbeat = now()
+         WHERE topic = $1 AND publisher = $2 AND (last_transaction_id, last_position) = ($6::xid8, $7::bigint)
+         RETURNING 1 AS moved`,
+        [topic, publisher, to.position.toString(), instanceId, to.transactionId, from.transactionId, from.position.toString()]
       );
     };
+
+    const updateCursor = (key: string, from: ProgressCursor, to: ProgressCursor): Effect.Effect<void, SqlError> => Effect.asVoid(moveCursor(key, from, to));
+
+    const advanceCursor = (key: string, from: ProgressCursor, to: ProgressCursor): Effect.Effect<boolean, SqlError> =>
+      Effect.map(moveCursor(key, from, to), (rows) => rows.length > 0);
 
     // No last_error_at column on this table (unlike crablet_view_progress/crablet_automation_progress).
     const recordError = (key: string, error: string, maxErrors: number): Effect.Effect<void, SqlError> => {
@@ -153,6 +158,7 @@ export const makeOutboxProgressTracker = (
       getCursor,
       peekCursor,
       updateCursor,
+      advanceCursor,
       recordError,
       resetErrorCount,
       getStatus,

@@ -14,6 +14,9 @@ export interface EventSelection {
   readonly exactTags: ReadonlyMap<string, string>;
 }
 
+// What a view or an automation declares besides its event types, which come from its `.on` handlers: a tag every event must carry, ...
+export type DeclaredSelection = Partial<Omit<EventSelection, "eventTypes">>;
+
 export const empty = (): EventSelection => ({
   eventTypes: new Set(),
   requiredTags: new Set(),

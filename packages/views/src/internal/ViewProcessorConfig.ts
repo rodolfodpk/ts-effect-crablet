@@ -6,4 +6,9 @@ import type { ViewSubscription } from "../ViewSubscription.ts";
 export const makeViewProcessorConfigs = (
   config: ViewsConfig = {},
   subscriptions: ReadonlyArray<ViewSubscription>
-): ReadonlyArray<ProcessorConfig<string>> => subscriptions.map((subscription) => processorConfigFrom(subscription.viewName, config, subscription));
+): ReadonlyArray<ProcessorConfig<string>> => {
+  // A view with no `.on` would select nothing: refused, not run idle.
+  const empty = subscriptions.filter((s) => s.eventTypes.size === 0).map((s) => `"${s.viewName}"`);
+  if (empty.length > 0) throw new Error(`views: ${empty.join(", ")} ${empty.length === 1 ? "handles" : "handle"} no event; add .on(Event, ...)`);
+  return subscriptions.map((subscription) => processorConfigFrom(subscription.viewName, config, subscription));
+};

@@ -63,15 +63,20 @@ const ensureWallets = async (count: number): Promise<void> => {
   await Promise.all(fresh.map((walletId) => post("open_wallet", { walletId, owner: "load", initialBalance: 1_000 })));
 };
 
+// One request in twenty is sent twice at once, unchanged, the way a client resends a request whose answer it lost: the repeat must be "already done"
+// (ADR-0034), and the chaos page's "nothing happened twice" check would see it if it were not.
+const sent = (command: string, body: unknown): Promise<void> =>
+  Math.random() < 0.05 ? Promise.all([post(command, body), post(command, body)]).then(() => undefined) : post(command, body);
+
 const once = (): Promise<void> => {
   const roll = Math.random();
   const active = wallets.slice(0, Math.max(2, config.wallets));
   const walletId = pick(active);
-  if (roll < 0.45) return post("deposit", { depositId: id(), walletId, amount: 1 + Math.floor(Math.random() * 100), description: "load" });
-  if (roll < 0.65) return post("withdraw", { withdrawalId: id(), walletId, amount: 1 + Math.floor(Math.random() * 50), description: "load" });
+  if (roll < 0.45) return sent("deposit", { depositId: id(), walletId, amount: 1 + Math.floor(Math.random() * 100), description: "load" });
+  if (roll < 0.65) return sent("withdraw", { withdrawalId: id(), walletId, amount: 1 + Math.floor(Math.random() * 50), description: "load" });
   if (roll < 0.85) {
     const to = pick(active.filter((w) => w !== walletId));
-    return post("transfer_money", { transferId: id(), fromWalletId: walletId, toWalletId: to, amount: 1 + Math.floor(Math.random() * 30), description: "load" });
+    return sent("transfer_money", { transferId: id(), fromWalletId: walletId, toWalletId: to, amount: 1 + Math.floor(Math.random() * 30), description: "load" });
   }
   if (roll < 0.95) return post("withdraw", { withdrawalId: id(), walletId, amount: 1_000_000, description: "too much, on purpose" });
   return post("deposit", { depositId: id(), walletId: `missing-${id()}`, amount: 5, description: "no such wallet, on purpose" });

@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { InvalidInput } from "@crablet/commands/Errors";
-import { given } from "@crablet/commands/testing/Scenario";
+import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
 import { CloseWallet } from "../src/domain/commands/CloseWalletCommand.ts";
 import { Deposit } from "../src/domain/commands/DepositCommand.ts";
 import { OpenWallet } from "../src/domain/commands/OpenWalletCommand.ts";
@@ -192,14 +192,30 @@ describe("TransferMoney", () => {
 });
 
 describe("CloseWallet", () => {
-  test("closes an open wallet; afterwards it no longer exists for deposits, and cannot be closed twice", async () => {
+  test("closes an open wallet; afterwards it no longer exists for deposits, and a repeated close is already done", async () => {
     const s = given(opened("w1", 5));
     expect((await s.when(CloseWallet, { walletId: "w1" })).events.map((e) => e.type)).toEqual(["WalletClosed"]);
     expect((await s.when(Deposit, dep("w1", "d1"))).error).toBeInstanceOf(WalletNotFound);
-    expect((await s.when(CloseWallet, { walletId: "w1" })).error).toBeInstanceOf(WalletNotFound);
+    const again = await s.when(CloseWallet, { walletId: "w1" });
+    expect(again.outcome).toBe("idempotent");
+    expect(again.events).toEqual([]);
   });
 
   test("an unknown wallet is WalletNotFound", async () => {
     expect((await given().when(CloseWallet, { walletId: "ghost" })).error).toBeInstanceOf(WalletNotFound);
   });
+});
+
+// Every command the HTTP API exposes says how it recognises a repeat (ADR-0034), and keeps its word: a client that lost the first answer and sends
+// the same request again gets "already done", never a second effect.
+describe("a repeated request is harmless, for every command over HTTP", () => {
+  // #region repeat-harmless
+  test("open, deposit, withdraw, transfer, close", async () => {
+    await assertRepeatHarmless(OpenWallet, { walletId: "w1", owner: "Ann", initialBalance: 50 });
+    await assertRepeatHarmless(Deposit, dep("w1", "d1"), [opened("w1", 0)]);
+    await assertRepeatHarmless(Withdraw, wd("w1", "x1", 5), [opened("w1", 50)]);
+    await assertRepeatHarmless(TransferMoney, { transferId: "t1", fromWalletId: "a", toWalletId: "b", amount: 40, description: "" }, [opened("a", 100), opened("b", 0)]);
+    await assertRepeatHarmless(CloseWallet, { walletId: "w1" }, [opened("w1", 0)]);
+  });
+  // #endregion repeat-harmless
 });

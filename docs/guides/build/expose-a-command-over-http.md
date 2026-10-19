@@ -10,17 +10,19 @@ runs it with `curl`.
 
 ## 1. Declare the contract
 
-Its own file, importing nothing that decides anything, so a browser can import it too.
+Its own file, importing nothing that decides anything, so a browser can import it too: the module that declares the API, and a typed client, then
+load `name`, `input` and `errors` without `decide`, the models or the events. The command spreads it in, so the input schema is written once. A contract
+is optional: a command that is not a public API (an automation's command) writes `name`, `input` and `errors` inline.
 
 <!-- file: examples/course-enrolment-app/src/domain/enrolment.contract.ts#contracts -->
 ```ts
-export const DefineCourseContract = commandContract({
+export const DefineCourseContract = defineContract({
   name: "define_course",
   input: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
   errors: [CourseAlreadyDefined]
 });
 
-export const SubscribeContract = commandContract({
+export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   errors: [CourseNotFound, CourseFull, StudentAtLimit]
@@ -32,6 +34,17 @@ Each error class carries a `kind` (`not_found`, `invalid`, `conflict`, `forbidde
 ## 2. Build the command from the contract
 
 Spread the contract into `defineCommand` and add the decision ([tutorial step 2](../../tutorial/02-postgres-and-the-second-rule.md)).
+
+**Say how a repeat is recognised.** A client retries a request whose answer it lost, so the server refuses, when it starts, a command with no `idempotentBy`
+([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md)):
+
+- an effect that can happen many times (a deposit, a transfer): a query on a request id the client sends, `idempotentBy: (c) => DepositMade.where({ deposit_id: c.depositId })`.
+  A repeat is `200` "already done"; the same id with a different body is `422` `IDEMPOTENCY_MISMATCH`;
+- an effect that happens once per key (define course `math`, subscribe `ann` to it): `idempotentBy: byModel()`, and `decide` answers the repeat with `noop(...)`.
+  It needs a model and takes no `consistency`: it decides under `strict()`, so a repeat racing the first request conflicts and reloads instead of appending too.
+
+Either way a repeat answers with the earlier write's marker. Check the answer in a test with `assertRepeatHarmless(Command, input, history?)` from
+`@crablet/commands/testing/Scenario`.
 
 ## 3. List the contracts
 

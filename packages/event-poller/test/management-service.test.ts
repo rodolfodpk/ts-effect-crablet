@@ -20,7 +20,7 @@ describe("ProcessorManagementService: lag and backoff reporting", () => {
   test("getLag computes MAX(position) - lastPosition", async () => {
     const { tracker } = await run(makeInMemoryProgressTracker<string>());
     await run(tracker.autoRegister("view-a", "test-instance"));
-    await run(tracker.updateCursor("view-a", ProgressCursorNS.of("7", 7n)));
+    await run(tracker.updateCursor("view-a", ProgressCursorNS.zero, ProgressCursorNS.of("7", 7n)));
 
     const management = makeProcessorManagementService({
       progressTracker: tracker,
@@ -92,7 +92,7 @@ describe("ProcessorManagementService: backlog", () => {
   const serviceOver = async (sql: SqlClient.SqlClient, selectionOf?: () => EventSelection.EventSelection | undefined) => {
     const { tracker } = await run(makeInMemoryProgressTracker<string>());
     await run(tracker.autoRegister("view-a", "test-instance"));
-    await run(tracker.updateCursor("view-a", ProgressCursorNS.of("7", 7n)));
+    await run(tracker.updateCursor("view-a", ProgressCursorNS.zero, ProgressCursorNS.of("7", 7n)));
     // Reading the backlog must not go through getCursor (the outbox's refreshes the leader columns): make that one fail loudly.
     const guarded = { ...tracker, getCursor: () => Effect.die(new Error("getCursor must not be used for monitoring")) };
     return makeProcessorManagementService({

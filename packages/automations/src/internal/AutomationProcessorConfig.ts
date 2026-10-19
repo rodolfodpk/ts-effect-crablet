@@ -6,6 +6,11 @@ import type { AutomationHandler } from "../AutomationHandler.ts";
 // ViewProcessorConfig.ts uses (not outbox's cross-join, since an automation has no secondary "publisher"-like dimension).
 export const makeAutomationProcessorConfigs = (
   config: AutomationsConfig = {},
-  // See AutomationsDeps.handlers (AutomationsModule.ts) on this registry's type erasure.
+  // See AutomationsDeps.automations (AutomationsModule.ts) on this registry's type erasure.
   handlers: ReadonlyArray<AutomationHandler<any, any, any>>
-): ReadonlyArray<ProcessorConfig<string>> => handlers.map((handler) => processorConfigFrom(handler.automationName, config, handler));
+): ReadonlyArray<ProcessorConfig<string>> => {
+  // An automation with no `.on` would select nothing: refused, not run idle.
+  const empty = handlers.filter((h) => h.eventTypes.size === 0).map((h) => `"${h.automationName}"`);
+  if (empty.length > 0) throw new Error(`automations: ${empty.join(", ")} ${empty.length === 1 ? "handles" : "handle"} no event; add .on(Event, ...)`);
+  return handlers.map((handler) => processorConfigFrom(handler.automationName, config, handler));
+};

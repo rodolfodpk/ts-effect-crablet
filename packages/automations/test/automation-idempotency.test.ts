@@ -7,7 +7,7 @@ import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import type { StoredEvent } from "@crablet/eventstore";
 import { assertAutomationIdempotent, checkAutomationIdempotency } from "../src/testing/AutomationIdempotency.ts";
-import { automationHandlerOf, type AutomationHandler } from "../src/AutomationHandler.ts";
+import { defineAutomation, type AutomationHandler } from "../src/AutomationHandler.ts";
 import { executeCommand } from "../src/AutomationDecision.ts";
 
 // The scenario: a deposit is made; the automation notifies about it. A deposit has its own id; a wallet has many deposits.
@@ -48,11 +48,11 @@ describe("checkAutomationIdempotency", () => {
     expect(report).toEqual({ ok: true, problems: [], effects: 2 });
   });
 
-  test("a command with no idempotentBy: the repeat appends again", async () => {
+  test("a command with no idempotentBy: the repeat is stopped only by the framework's backstop, which is reported (ADR-0035)", async () => {
     const report = await checkAutomationIdempotency(automationOf(notifyWith()), triggers);
     expect(report.ok).toBe(false);
     expect(report.problems).toHaveLength(1);
-    expect(report.problems[0]).toMatch(/NOT IDEMPOTENT.*appended 2 more event/);
+    expect(report.problems[0]).toMatch(/NOT IDEMPOTENT.*stopped 2 time\(s\) only by the framework's backstop/);
   });
 
   test("a key too broad (the wallet): the second deposit's notification would be dropped", async () => {
@@ -60,6 +60,21 @@ describe("checkAutomationIdempotency", () => {
     const report = await checkAutomationIdempotency(automationOf(broad), triggers);
     expect(report.ok).toBe(false);
     expect(report.problems.some((p) => /TOO BROAD.*FIRST pass/.test(p))).toBe(true);
+    expect(report.effects).toBe(1);
+  });
+
+  test("a key too broad whose request is the same for both triggers: the second is answered 'already done' on the first pass", async () => {
+    const WalletNotified = defineEvent("WalletNotified", { schema: Schema.Struct({ walletId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
+    const notifyWallet = defineCommand({
+      name: "NotifyWallet",
+      input: Schema.Struct({ walletId: Schema.String }),
+      idempotentBy: (c) => WalletNotified.where({ wallet_id: c.walletId }),
+      decide: (_, c) => emit(WalletNotified(c))
+    });
+    const automation = { ...automationOf(notifyWallet), decide: (event: StoredEvent) => Effect.succeed([executeCommand({ walletId: dataOf(event).walletId })]) };
+    const report = await checkAutomationIdempotency(automation, triggers);
+    expect(report.ok).toBe(false);
+    expect(report.problems.some((p) => /TOO BROAD.*answered "already done" on the FIRST pass/.test(p))).toBe(true);
     expect(report.effects).toBe(1);
   });
 
@@ -103,11 +118,9 @@ describe("assertAutomationIdempotent", () => {
     await expect(assertAutomationIdempotent(automationOf(notifyWith()), triggers)).rejects.toThrow(/automation "notify-deposit" is not idempotent/);
   });
 
-  test("returns the report when all is well, for an automation built with automationHandlerOf", async () => {
+  test("returns the report when all is well, for an automation built with defineAutomation", async () => {
     const good = notifyWith((c) => Notified.where({ deposit_id: c.depositId }));
-    const automation = automationHandlerOf("notify-deposit", good, (e) => Effect.succeed([executeCommand({ walletId: dataOf(e).walletId, depositId: dataOf(e).depositId })]), {
-      eventTypes: new Set(["DepositMade"])
-    });
+    const automation = defineAutomation("notify-deposit", good).on(DepositMade, (d) => ({ walletId: d.walletId, depositId: d.depositId }));
     expect((await assertAutomationIdempotent(automation, triggers)).effects).toBe(2);
   });
 });

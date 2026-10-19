@@ -49,12 +49,30 @@ What you can assert on the result of `.when`:
 
 - `outcome`: `"created"` (events were appended) or `"idempotent"` (the operation had already been done; nothing appended);
 - `events`: the events that were appended, with `type`, `data` and `tags`;
-- `error`: a domain error, `InvalidInput` for a bad payload, or `Conflict` from the append.
+- `error`: a domain error, `InvalidInput` for a bad payload, `Conflict` from the append, or `IdempotencyMismatch` when the request's id was already used by a
+  different request.
 
 `given(...)` takes events; a scenario value can run several `when`s in a row, and `.log` is everything in the store afterwards (empty after a refusal, because a failed
 command's changes are rolled back).
 
 A `.when` that ends `"idempotent"` leaves the log as it was: the real executor rolls that transaction back too (an idempotent result writes no audit row).
+
+## Test that a repeat is harmless
+
+A client retries a request whose answer it lost. `assertRepeatHarmless(Command, input, history?)` runs the command, then runs it again with the same input,
+and fails if the repeat appends anything or fails: it checks what `idempotentBy` promises, whichever form it takes
+([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md)). The wallet checks every command its API exposes this way:
+
+<!-- file: examples/wallet-example-app/test/wallet-commands.test.ts#repeat-harmless -->
+```ts
+test("open, deposit, withdraw, transfer, close", async () => {
+  await assertRepeatHarmless(OpenWallet, { walletId: "w1", owner: "Ann", initialBalance: 50 });
+  await assertRepeatHarmless(Deposit, dep("w1", "d1"), [opened("w1", 0)]);
+  await assertRepeatHarmless(Withdraw, wd("w1", "x1", 5), [opened("w1", 50)]);
+  await assertRepeatHarmless(TransferMoney, { transferId: "t1", fromWalletId: "a", toWalletId: "b", amount: 40, description: "" }, [opened("a", 100), opened("b", 0)]);
+  await assertRepeatHarmless(CloseWallet, { walletId: "w1" }, [opened("w1", 0)]);
+});
+```
 
 ## What this does not cover
 

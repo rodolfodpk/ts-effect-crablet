@@ -25,11 +25,12 @@ The checked-in descriptions of the two examples: [`wallet-openapi.json`](../api/
 | Status | When | Body |
 |---|---|---|
 | `201` | the command appended events | the result, with a `marker` |
-| `200` | an idempotent repeat, or `noop` | the result; nothing appended |
+| `200` | an idempotent repeat, or `noop` | the result; nothing appended. Its `marker` points at the earlier write (null only when there is nothing to point at) |
 | `400` | the input does not match the schema, or a domain error of kind `invalid` | a problem: every failing field, or the error's fields |
 | `403` | a domain error of kind `forbidden` | a problem with the error's fields |
 | `404` | a domain error of kind `not_found` | a problem with the error's fields |
 | `409` | a domain error of kind `conflict`; a `Conflict` after the retries ran out | a problem; a DCB conflict has its own shape, with `violationCode` `DCB_VIOLATION` or `GUARD_VIOLATION` |
+| `422` | the request's id (`idempotentBy`) was already used by a different request | a problem with `violationCode` `IDEMPOTENCY_MISMATCH`; the earlier request stands. Send a new id for a new request ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)) |
 | `500` | anything unexpected, including a stored event that cannot be read | a generic problem; the message is not echoed |
 
 Every problem is `application/problem+json` (RFC 7807) and documented per command in the OpenAPI description.

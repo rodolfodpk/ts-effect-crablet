@@ -8,7 +8,7 @@ import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Tag from "@crablet/eventstore/Tag";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { concurrent, defineCommand, emit, fail, noop, strict } from "../src/Command.ts";
-import { DomainError, InvalidInput } from "../src/Errors.ts";
+import { DomainError, IdempotencyMismatch, InvalidInput } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
 
@@ -79,9 +79,9 @@ describe("defineCommand: the decision", () => {
   test("noop, and emitting nothing, are no-ops (nothing to append)", async () => {
     const fake = makeInMemoryEventStore();
     const Nothing = defineCommand({ name: "n", input, decide: () => noop("not needed") });
-    expect(await succeeded(fake, Nothing.handler(cmd))).toEqual({ _tag: "NoOp", reason: "not needed" });
+    expect(await succeeded(fake, Nothing.handler(cmd))).toEqual({ _tag: "NoOp", reason: "not needed", marker: null }); // no model: nothing to point at
     const Empty = defineCommand({ name: "e", input, decide: () => emit() });
-    expect(await succeeded(fake, Empty.handler(cmd))).toEqual({ _tag: "NoOp", reason: "NO_EVENTS" });
+    expect(await succeeded(fake, Empty.handler(cmd))).toEqual({ _tag: "NoOp", reason: "NO_EVENTS", marker: null });
   });
 });
 
@@ -205,7 +205,7 @@ describe("defineCommand: idempotency", () => {
       idempotentBy: (c) => Incremented.where({ op_id: c.opId }),
       decide: (_, c) => (calls.push("decide"), emit(Incremented(c)))
     });
-    expect(await succeeded(fake, C.handler(cmd))).toEqual({ _tag: "NoOp", reason: "DUPLICATE_OPERATION" });
+    expect(await succeeded(fake, C.handler(cmd))).toEqual({ _tag: "NoOp", reason: "DUPLICATE_OPERATION", marker: { position: 2n, transactionId: "2" } }); // the earlier write
     expect(calls).toEqual([]);
   });
 
@@ -396,9 +396,9 @@ describe("defineCommand: declared errors", () => {
 });
 
 describe("defineCommand: inferred types", () => {
-  test("the handler's failures are exactly what decide can fail with (plus SqlError from the store)", () => {
+  test("the handler's failures are exactly what decide can fail with (plus SqlError from the store and IdempotencyMismatch, the framework's refusal of a reused key)", () => {
     type SqlErr = import("effect/sql/SqlError").SqlError;
-    assertType<Equal<HandlerErr<typeof Increment>, NotOpen | TooLarge | SqlErr>>();
+    assertType<Equal<HandlerErr<typeof Increment>, NotOpen | TooLarge | SqlErr | IdempotencyMismatch>>();
     // a refusal type that decide cannot produce is NOT in the union
     assertType<Equal<(typeof Increment)["handler"] extends (...a: any[]) => Effect.Effect<any, infer E, any> ? (Duplicate extends E ? true : false) : never, false>>();
     // a repeat found by idempotentBy is a success, never a failure; resolve's failures are added

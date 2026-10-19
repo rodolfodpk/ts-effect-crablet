@@ -87,7 +87,8 @@ What to notice:
   append is refused and the whole command is re-run (up to 3 times) with fresh state.
 - **`idempotentBy`** makes a repeated `transferId` "already done" instead of a second transfer - and it is
   checked *before* deciding, so a retry after the money has moved does not wrongly fail with
-  `InsufficientFunds`.
+  `InsufficientFunds`. The same `transferId` with a *different* body (another amount) is not a repeat: it is refused
+  with `IdempotencyMismatch` ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)).
 
 ## What the tests show
 
@@ -191,6 +192,9 @@ export const Subscribe = defineCommand({
 });
 ```
 
+A model's `by` is a tag key, and every event it handles must carry it: the compiler refuses one that does not, because such an event would match
+nothing and the boundary would not see it. Tag keys are snake_case (`course_id`), as stored and queried in SQL, while the data stays camelCase.
+
 What to notice:
 
 - **One event, two models.** `CourseModel` counts subscribers; `StudentModel` lists a student's courses. Both
@@ -260,4 +264,5 @@ one of its types AND that carries all of its tags. What this framework does with
   repeat is just another failed condition. Here `idempotentBy` is a second, independent check that runs *before* the
   concurrency check and reports a repeat as "already done" instead of as a conflict. The practical difference: a retry
   after the state has moved on (a transfer whose sender is now empty) is recognised as a repeat instead of
-  being re-decided or refused as a conflict.
+  being re-decided or refused as a conflict. A key reused by a different request is refused, and a repeat answers with
+  the earlier write's marker ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)).

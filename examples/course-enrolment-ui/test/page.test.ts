@@ -221,7 +221,7 @@ describe("reading your own writes", () => {
     );
   });
 
-  test("a repeat that wrote nothing has no marker: the read back asks for `latest`, and the page says why", () => {
+  test("an answer with no marker (nothing written, nothing earlier to point at): the read back asks for `latest`, and the page says why", () => {
     Story.story(
       update,
       Story.given<Model>(filledSubscribe),

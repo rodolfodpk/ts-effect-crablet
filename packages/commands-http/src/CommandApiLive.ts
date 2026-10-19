@@ -17,7 +17,7 @@ import { apiDocsLayer, apiLayerOptions } from "./ApiDescription.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
 import { kindOf, type InputIssue } from "@crablet/commands/Errors";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, domainProblemOf } from "./ProblemDetail.ts";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, domainProblemOf } from "./ProblemDetail.ts";
 
 // What running a command needs from the environment: the executor plus what `execute` itself uses.
 export type CommandApiRequirements = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient;
@@ -102,8 +102,10 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
         Effect.catchTag("Conflict", (e) =>
           Effect.fail(CommandConflict.of(e.message, e.kind === "guard" ? "GUARD_VIOLATION" : "DCB_VIOLATION"))
         ),
+        // A request id reused with a different body: 422, never "already done" (ADR-0034).
+        Effect.catchTag("IdempotencyMismatch", (e) => Effect.fail(CommandIdempotencyMismatch.of(e.message))),
         Effect.catch((error) => {
-          if (error instanceof CommandConflict) return Effect.fail(error);
+          if (error instanceof CommandConflict || error instanceof CommandIdempotencyMismatch) return Effect.fail(error);
           const kind = kindOf(error);
           return Effect.fail(kind !== undefined ? domainProblemOf(kind, error) : error);
         })
@@ -117,7 +119,14 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       // chosen here, after the command ran.
       return HttpServerResponse.jsonUnsafe(
         result.wasIdempotent
-          ? { status: "IDEMPOTENT" as const, reason: result.reason, lastPosition: null, lastTransactionId: null, marker: null }
+          ? {
+              status: "IDEMPOTENT" as const,
+              reason: result.reason,
+              // Where the earlier write is (ADR-0034); null when there is nothing to point at.
+              lastPosition: result.lastPosition === null ? null : String(result.lastPosition),
+              lastTransactionId: result.lastTransactionId,
+              marker: result.lastPosition === null || result.lastTransactionId === null ? null : formatMarker({ transactionId: result.lastTransactionId, position: result.lastPosition })
+            }
           : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, marker: formatMarker({ transactionId: result.lastTransactionId!, position: result.lastPosition! }) },
         {
           status: result.wasIdempotent ? 200 : 201,

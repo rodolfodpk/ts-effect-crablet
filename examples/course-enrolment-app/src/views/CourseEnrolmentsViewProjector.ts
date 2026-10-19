@@ -1,35 +1,32 @@
 import { Effect } from "effect";
-import type { SqlClient } from "effect/sql";
-import type { SqlError } from "effect/sql/SqlError";
-import type { StoredEvent } from "@crablet/eventstore";
-import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
-import { makeTransactionalViewProjector, type ViewProjector } from "@crablet/views/ViewProjector";
-import { viewSubscriptionOf, type ViewSubscription } from "@crablet/views/ViewSubscription";
+import { defineView } from "@crablet/views/ProjectedView";
+import { integer, raw, text, viewTable } from "@crablet/views/ViewTable";
 import { StudentSubscribed } from "../domain/Enrolment.ts";
 
 export const COURSE_ENROLMENTS_VIEW = "course-enrolments-view";
 
 // #region hand-written
-// A hand-written projector, for what `defineView`'s operations cannot say: the seat number a student gets is the count of the course's rows PLUS ONE, computed by the database from the view's own table in the
-// same statement. You write the three things the framework would otherwise do: read the payload through the event's definition (`decodeStored`: an unreadable event fails the batch with a typed `EventDecodingError`),
-// run the SQL on the `sql` you are given (so it commits with the view's cursor, ADR-0023: the batch is applied once even if it is delivered twice), and say which events you want (the subscription below).
-// Nothing checks the SQL text; the integration test (test/integration/course-enrolments-view.test.ts) is what does.
-const handleEvent = (event: StoredEvent, sql: SqlClient.SqlClient): Effect.Effect<void, SqlError | EventDecodingError, never> =>
-  Effect.gen(function* () {
-    if (event.type !== StudentSubscribed.type) return;
-    const data = yield* StudentSubscribed.decodeStored(event);
-    yield* sql.unsafe(
-      `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
-       SELECT $1::text, $2::text, count(*) + 1 FROM course_enrolments_view WHERE course_id = $1
-       ON CONFLICT (course_id, student_id) DO NOTHING`,
-      [data.courseId, data.studentId]
-    );
-  });
-
-export const makeCourseEnrolmentsViewProjector = (): Effect.Effect<ViewProjector<SqlError | EventDecodingError>, never, SqlClient.SqlClient> =>
-  makeTransactionalViewProjector(COURSE_ENROLMENTS_VIEW, handleEvent);
-
-export const courseEnrolmentsViewSubscription: ViewSubscription = viewSubscriptionOf(COURSE_ENROLMENTS_VIEW, {
-  eventTypes: new Set([StudentSubscribed.type])
+// The table, as the migration (db/migration/V102) made it, so the drift check covers it (test/integration/course-seats-table.test.ts).
+export const courseEnrolmentsTable = viewTable("course_enrolments_view", {
+  key: { course_id: text(), student_id: text() },
+  columns: { seat_number: integer() }
 });
+
+// For what the table operations cannot say, `raw` runs your own SQL: the seat number a student gets is the count of the course's rows PLUS ONE,
+// computed by the database from the view's own table in the same statement. It runs on the `sql` of the view's cursor, so it commits with it
+// (ADR-0023: the batch is applied once even if it is delivered twice); the payload is still read through the event's definition, and the view still
+// listens to the event types of its handlers. Nothing checks the SQL text, and `raw` cannot run in memory: the integration test
+// (test/integration/course-enrolments-view.test.ts) is what checks it.
+export const CourseEnrolmentsView = defineView(COURSE_ENROLMENTS_VIEW, { tables: [courseEnrolmentsTable] }).on(StudentSubscribed, (d) =>
+  raw((sql) =>
+    Effect.asVoid(
+      sql.unsafe(
+        `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
+         SELECT $1::text, $2::text, count(*) + 1 FROM course_enrolments_view WHERE course_id = $1
+         ON CONFLICT (course_id, student_id) DO NOTHING`,
+        [d.courseId, d.studentId]
+      )
+    )
+  )
+);
 // #endregion hand-written

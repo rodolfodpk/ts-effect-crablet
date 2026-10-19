@@ -9,9 +9,9 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { Tag } from "@crablet/eventstore/Tag";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { makeWalletBalanceViewProjector } from "../../src/views/WalletBalanceViewProjector.ts";
-import { makeWalletTransactionViewProjector } from "../../src/views/WalletTransactionViewProjector.ts";
-import { makeWalletSummaryViewProjector } from "../../src/views/WalletSummaryViewProjector.ts";
+import { WalletBalanceView } from "../../src/views/WalletBalanceViewProjector.ts";
+import { WalletTransactionView } from "../../src/views/WalletTransactionViewProjector.ts";
+import { WalletSummaryView } from "../../src/views/WalletSummaryViewProjector.ts";
 import * as WalletEvents from "../../src/domain/events/WalletEvents.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -40,6 +40,7 @@ const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient | PgClient.Pg
 
 let nextPosition = 1n;
 const fakeEvent = (type: string, tags: Record<string, string>, data: unknown): StoredEvent => ({
+  eventId: crypto.randomUUID(),
   type,
   tags: Object.entries(tags).map(([key, value]): Tag => ({ key, value })),
   data,
@@ -57,7 +58,7 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
 
     await run(
       Effect.gen(function* () {
-        const projector = yield* makeWalletBalanceViewProjector();
+        const projector = yield* WalletBalanceView.projector;
         yield* projector.handle([
           fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: fromWalletId }, { walletId: fromWalletId, owner: "Alice", initialBalance: 100, openedAt: new Date().toISOString() }),
           fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: toWalletId }, { walletId: toWalletId, owner: "Bob", initialBalance: 0, openedAt: new Date().toISOString() })
@@ -87,7 +88,7 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
 
     await run(
       Effect.gen(function* () {
-        const projector = yield* makeWalletBalanceViewProjector();
+        const projector = yield* WalletBalanceView.projector;
         yield* projector.handle([fakeEvent(WalletEvents.WALLET_CLOSED, { wallet_id: fromWalletId }, { walletId: fromWalletId, closedAt: new Date().toISOString() })]);
       })
     );
@@ -107,7 +108,7 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
 
     await run(
       Effect.gen(function* () {
-        const projector = yield* makeWalletTransactionViewProjector();
+        const projector = yield* WalletTransactionView.projector;
         yield* projector.handle([
           fakeEvent(WalletEvents.DEPOSIT_MADE, { wallet_id: walletId }, { depositId: "d1", walletId, amount: 20, newBalance: 20, depositedAt: new Date().toISOString(), description: "x" }),
           fakeEvent(
@@ -139,7 +140,7 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
     const walletId = `wallet-${crypto.randomUUID()}`;
     await run(
       Effect.gen(function* () {
-        const projector = yield* makeWalletSummaryViewProjector();
+        const projector = yield* WalletSummaryView.projector;
         yield* projector.handle([
           fakeEvent(WalletEvents.WALLET_OPENED, { wallet_id: walletId }, { walletId, owner: "Alice", initialBalance: 0, openedAt: new Date().toISOString() })
         ]);
@@ -182,8 +183,8 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
       fakeEvent(WalletEvents.WITHDRAWAL_MADE, { wallet_id: walletId }, { withdrawalId: "w1", walletId, amount: 15, newBalance: 105, withdrawnAt: at(), description: "x" })
     ];
     await run(Effect.gen(function* () {
-      const balance = yield* makeWalletBalanceViewProjector();
-      const summary = yield* makeWalletSummaryViewProjector();
+      const balance = yield* WalletBalanceView.projector;
+      const summary = yield* WalletSummaryView.projector;
       const batch = events();
       yield* balance.handle(batch);
       yield* summary.handle(batch);
@@ -207,9 +208,9 @@ describe("WalletBalanceViewProjector / WalletTransactionViewProjector / WalletSu
     // a DepositMade in an older shape: `newBalance` and `depositedAt` did not exist
     const unreadable = (): StoredEvent => fakeEvent(WalletEvents.DEPOSIT_MADE, { wallet_id: walletId }, { walletId, depositId: "d1", amount: 5 });
     for (const [name, make, table] of [
-      ["balance", makeWalletBalanceViewProjector, "wallet_balance_view"],
-      ["transaction", makeWalletTransactionViewProjector, "wallet_transaction_view"],
-      ["summary", makeWalletSummaryViewProjector, "wallet_summary_view"]
+      ["balance", () => WalletBalanceView.projector, "wallet_balance_view"],
+      ["transaction", () => WalletTransactionView.projector, "wallet_transaction_view"],
+      ["summary", () => WalletSummaryView.projector, "wallet_summary_view"]
     ] as const) {
       const bad = unreadable();
       const exit = await run(Effect.exit(Effect.flatMap(make(), (projector) => projector.handle([good(), bad]))));

@@ -20,7 +20,8 @@ import { makeConsistentRead } from "@crablet/views-http";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
-import { walletBalanceViewSubscription, walletSummaryViewSubscription } from "../src/views/WalletViewConfig.ts";
+import { WalletBalanceView } from "../src/views/WalletBalanceViewProjector.ts";
+import { WalletSummaryView } from "../src/views/WalletSummaryViewProjector.ts";
 
 const QUICK = process.env["QUICK"] !== undefined;
 
@@ -71,17 +72,17 @@ describe("DIAG", () => {
       await run(Effect.flatMap(EventStore, (s) => s.append([AppendEvent.of("UnrelatedForDiag", "unrelated", "x", {})]))); // the last event is one no view handles
 
       interface Req { readonly query: { readonly consistentWith?: string; readonly id?: string } }
-      const endpointFor = (reads: typeof walletBalanceViewSubscription[], after_: boolean) => {
+      const endpointFor = (reads: ReadonlyArray<typeof WalletBalanceView>, after_: boolean) => {
         const read = after_ ? makeConsistentRead() : makeConsistentRead({ settle: settleBefore });
         return read(
           { reads, parse: (req: Req) => Effect.succeed(req.query.id!) },
           (id: string) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [id]))
         ) as (req: Req) => Effect.Effect<unknown, unknown, SqlClient.SqlClient>;
       };
-      const scenarios: ReadonlyArray<readonly [string, typeof walletBalanceViewSubscription[], boolean]> = [
-        ["default read, one view", [walletBalanceViewSubscription], false],
-        ["read with the write's marker, one view", [walletBalanceViewSubscription], true],
-        ["default read, two views (balance + summary)", [walletBalanceViewSubscription, walletSummaryViewSubscription], false]
+      const scenarios: ReadonlyArray<readonly [string, ReadonlyArray<typeof WalletBalanceView>, boolean]> = [
+        ["default read, one view", [WalletBalanceView], false],
+        ["read with the write's marker, one view", [WalletBalanceView], true],
+        ["default read, two views (balance + summary)", [WalletBalanceView, WalletSummaryView], false]
       ];
 
       sidecar = sh("run", "-d", "--rm", "--cap-add", "NET_ADMIN", "--network", `container:${db.container.getId()}`, "alpine", "sh", "-c", "apk add -q iproute2-tc && tc qdisc add dev eth0 root netem delay 0ms && sleep 3600");

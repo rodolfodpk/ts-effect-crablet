@@ -1,4 +1,5 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md. `waitUntilProcessed`: read your own writes from a view.
+import { viewsOf } from "../fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -74,7 +75,7 @@ const startView = async (viewName: string, eventType: string) => {
   );
   const subscription = viewSubscriptionOf(viewName, { eventTypes: new Set([eventType]) });
   const handle = await run(
-    makeViewsProcessor({ config: slowViews, projectors: [projector], subscriptions: [subscription], instanceId: `i-${crypto.randomUUID()}` })
+    makeViewsProcessor({ config: slowViews, views: viewsOf([projector], [subscription]), instanceId: `i-${crypto.randomUUID()}` })
   );
   await run(handle.service.start);
   return { subscription, stop: () => run(handle.service.stop) };

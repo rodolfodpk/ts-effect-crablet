@@ -179,9 +179,12 @@ describe("EventStore public API parity (Phase 1)", () => {
         })
       );
 
-    await call();
+    const first = await call();
     const second = await callExpectingDuplicate();
-    assert.ok(second instanceof Duplicate, `expected Duplicate, got ${JSON.stringify(second)}`);
+    assert.ok(second instanceof Duplicate, `expected Duplicate, got ${String(second)}`);
+    // It says what it matched (ADR-0034): the earlier event, and the request behind it (a raw append stores no fingerprint and has no cause).
+    assert.deepStrictEqual(second.latest, { position: first.lastPosition, transactionId: first.transactionId });
+    assert.deepStrictEqual(second.requests, [{ fingerprint: null, causationId: null }]);
   });
 
   it("transaction_id audit-linkage invariant: command and event share the same transaction_id", async () => {
