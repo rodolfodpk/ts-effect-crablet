@@ -10,6 +10,7 @@
     "./InputJsonSchema": "./src/InputJsonSchema.ts",
     "./ApiDescription": "./src/ApiDescription.ts",
     "./CommandApiLive": "./src/CommandApiLive.ts",
+    "./ServeApi": "./src/ServeApi.ts",
     "./Cors": "./src/Cors.ts"
   },
   "dependencies": {

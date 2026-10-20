@@ -23,8 +23,7 @@ import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet
 import { processorsGroup } from "@crablet/processors-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import { makeProcessorsApiGroupLive, type ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
-import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
-import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
+import { serveApi } from "@crablet/commands-http/ServeApi";
 import { walletViewOverrides, walletViews } from "./views/WalletViewConfig.ts";
 import { allRoles, type Role, type Roles } from "./roles.ts";
 import { defaultPolling, type Polling } from "./polling.ts";
@@ -186,21 +185,19 @@ export const makeWalletApi = (basePath: `/${string}` = "/api/commands") =>
     walletApiInfo
   );
 
+// The API's type: what the server's read group is implemented against (`HttpApiBuilder.group(api, "walletQueries", ...)`).
+export type WalletApi = ReturnType<typeof makeWalletApi>;
+
 // Serves the API: the commands and reads, the OpenAPI document (at /openapi.json unless `openApiPath` says
 // otherwise) and, when asked for, a documentation page.
 export const makeWalletApiLayer = (config: WalletAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = makeWalletApi(basePath);
-
-  const commandsLive = makeCommandApiGroupLive(api, walletContracts, walletImplementations, {
-    basePath,
-    correlationHeaderEnabled: true
-  });
-  const queryLive = makeWalletQueryApiLive(api);
-
-  return Layer.merge(
-    // the reads' wait is woken by the view progress hub (one database LISTEN for the process, ADR-0016) instead of polling
-    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(commandsLive), Layer.provide(Layer.provide(queryLive, ViewProgressHubLive))),
-    apiDocsLayer(api, config)
-  );
+  // the reads' wait is woken by the view progress hub (one database LISTEN for the process, ADR-0016) instead of polling
+  return serveApi(api, {
+    commands: { contracts: walletContracts, implementations: walletImplementations, basePath, correlationHeaderEnabled: true },
+    groups: [makeWalletQueryApiLive(api)],
+    openApiPath: config.openApiPath,
+    docs: config.docs
+  }).pipe(Layer.provide(ViewProgressHubLive));
 };

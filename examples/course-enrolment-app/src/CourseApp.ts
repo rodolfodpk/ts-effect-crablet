@@ -1,10 +1,8 @@
 import { Effect, Layer, type Duration, type Scope } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
-import { HttpApiBuilder } from "effect/http-api";
-import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
-import { corsLayer, type CorsConfig } from "@crablet/commands-http/Cors";
-import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
+import type { CorsConfig } from "@crablet/commands-http/Cors";
+import { serveApi } from "@crablet/commands-http/ServeApi";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import { startViewsProcessor, type RunnableView } from "@crablet/views";
@@ -41,26 +39,22 @@ export interface CourseAppConfig {
   readonly viewProgressHub?: Layer.Layer<ViewProgressHub, never, PgClient.PgClient>;
 }
 
-// Serves the API, its OpenAPI document and, when asked for, a documentation page.
+// Serves the API: the commands, the reads and the live feed, the OpenAPI document and, when asked for, a documentation page and CORS.
+// ONE view progress hub (one database LISTEN) for the whole process, shared by the feed and by the reads' wait (ADR-0016): it is provided once, to
+// the whole API.
+// #region serve
 export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
   const api = makeCourseApi(basePath);
-  const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath });
-  const queryLive = makeCourseQueryApiLive(api);
-  const feedLive = makeCourseFeedApiLive(api, { views: [CourseSeatsView], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
-  // ONE view progress hub (one database LISTEN) for the whole process, shared by the feed and by the reads' wait (ADR-0016): the same layer value is
-  // provided to both, and Effect builds a layer value once per build.
-  const hub = config.viewProgressHub ?? ViewProgressHubLive;
-  const served = Layer.merge(
-    HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(
-      Layer.provide(commandsLive),
-      Layer.provide(Layer.provide(queryLive, hub)),
-      Layer.provide(Layer.provide(feedLive, hub))
-    ),
-    apiDocsLayer(api, config)
-  );
-  return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));
+  return serveApi(api, {
+    commands: { contracts: courseContracts, implementations: courseImplementations, basePath },
+    groups: [makeCourseQueryApiLive(api), makeCourseFeedApiLive(api, { views: [CourseSeatsView], maxLifetime: config.maxFeedLifetime })],
+    openApiPath: config.openApiPath,
+    docs: config.docs,
+    cors: config.cors
+  }).pipe(Layer.provide(config.viewProgressHub ?? ViewProgressHubLive));
 };
+// #endregion serve
 
 // Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback), owned by the Scope:
 // closing the scope stops it and releases its leader lock, so another instance takes over at once. Close it before closing the database pool.

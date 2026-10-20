@@ -1,10 +1,10 @@
 import { Effect, Layer, Option, Schema } from "effect";
-import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { HttpApiBuilder } from "effect/http-api";
 import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import { makeConsistentRead } from "@crablet/views-http";
-import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
+import { defaultReadConsistency, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
+import type { WalletApi } from "../WalletApp.ts";
 import { WalletBalanceView } from "../views/WalletBalanceViewProjector.ts";
 import { WalletSummaryView } from "../views/WalletSummaryViewProjector.ts";
 import { WalletTransactionView } from "../views/WalletTransactionViewProjector.ts";
@@ -104,19 +104,9 @@ export const walletReadConsistency: ReadConsistencyConfig = defaultReadConsisten
 const consistentRead = makeConsistentRead({ config: walletReadConsistency });
 // #endregion read-consistency
 
-interface WalletRequest {
-  readonly params: { readonly walletId: string };
-  readonly query: ConsistencyParams;
-}
-
-// Same `any`-cast composability boundary @crablet/commands-http/CommandApiLive.ts's
-// makeCommandApiGroupLive establishes and documents - HttpApiBuilder.group's own signature can't
-// statically prove an arbitrary caller-supplied `Groups` contains this literal group name.
-export const makeWalletQueryApiLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
-  api: HttpApi.HttpApi<ApiId, Groups>
-): Layer.Layer<HttpApiGroup.Service<ApiId, "walletQueries">, never, SqlClient.SqlClient> => {
-  const groupBuilder = HttpApiBuilder.group as any;
-  return groupBuilder(api, "walletQueries", (handlers: any) =>
+// The read group, implemented against the wallet API itself: each handler's request and response are checked against its endpoint.
+export const makeWalletQueryApiLive = (api: WalletApi) =>
+  HttpApiBuilder.group(api, "walletQueries", (handlers) =>
     Effect.succeed(
       handlers
         // The list of wallets, from the balance view, by keyset on wallet_id (no OFFSET, so a wallet that appears between two requests cannot shift the pages). Like every read it waits for its view.
@@ -125,7 +115,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
           consistentRead(
             {
               reads: [WalletBalanceView],
-              parse: (request: { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string } }) => {
+              parse: (request) => {
                 const limit = parseLimit(request.query.limit);
                 if (limit === null) return Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`));
                 const after = request.query.after === undefined ? null : decodeWalletCursor(request.query.after);
@@ -133,7 +123,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
                 return Effect.succeed({ limit, after });
               }
             },
-            ({ limit, after }: { readonly limit: number; readonly after: string | null }) =>
+            ({ limit, after }) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
                 const rows = yield* Effect.orDie(listBalances(sql)({ after, limit: limit + 1 }));
@@ -149,8 +139,8 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
         .handle(
           "getWallet",
           consistentRead(
-            { reads: [WalletBalanceView], parse: (request: WalletRequest) => Effect.succeed(request.params) },
-            (params: { readonly walletId: string }) =>
+            { reads: [WalletBalanceView], parse: (request) => Effect.succeed(request.params) },
+            (params) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
                 const found = yield* Effect.orDie(findBalance(sql)({ walletId: params.walletId }));
@@ -174,7 +164,7 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
           consistentRead(
             {
               reads: [WalletTransactionView],
-              parse: (request: WalletRequest & { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string } }) => {
+              parse: (request) => {
                 const limit = parseLimit(request.query.limit);
                 if (limit === null) return Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`));
                 const cursor = request.query.after === undefined ? null : decodeTransactionCursor(request.query.after);
@@ -210,8 +200,8 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
         .handle(
           "getWalletSummary",
           consistentRead(
-            { reads: [WalletSummaryView], parse: (request: WalletRequest) => Effect.succeed(request.params) },
-            (params: { readonly walletId: string }) =>
+            { reads: [WalletSummaryView], parse: (request) => Effect.succeed(request.params) },
+            (params) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
                 const found = yield* Effect.orDie(findSummary(sql)({ walletId: params.walletId }));
@@ -231,4 +221,3 @@ export const makeWalletQueryApiLive = <ApiId extends string, Groups extends Http
         )
     )
   );
-};
