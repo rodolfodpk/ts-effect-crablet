@@ -165,6 +165,11 @@ export interface Command<
   readonly idempotent: boolean;
 }
 
+// The input a caller hands to `run` (or a test to `when`): the input before the schema decodes it, so a misspelt or missing field is a compile
+// error. For most schemas it is the decoded type; a field read through a transformation (a date from a string) is given in its encoded form.
+// `unknown` for a command whose schema type is erased (`Command<In, Err>`), as a transport has it.
+export type RawInput<I extends Schema.Constraint> = Schema.Codec.Encoded<I>;
+
 export const defaultRetries = 3;
 
 export const defineCommand = <

@@ -3,7 +3,8 @@ import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import type { Conflict } from "@crablet/eventstore/AppendErrors";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
-import type { Command } from "../Command.ts";
+import type * as Schema from "effect/Schema";
+import type { Command, RawInput } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
 import type { IdempotencyMismatch, InvalidInput } from "../Errors.ts";
 import type { ExecutionResult } from "../ExecutionResult.ts";
@@ -54,8 +55,8 @@ export interface Scenario {
   readonly store: InMemoryEventStore;
   // The whole event log so far (the given events plus everything appended by earlier `when`s).
   readonly log: ReadonlyArray<StoredEvent>;
-  // Run a command with raw (unvalidated) input, like a request arriving.
-  readonly when: <In, Err>(command: Command<In, Err>, input: unknown) => Promise<ScenarioResult<Err>>;
+  // Run a command with its input before decoding, like a request arriving: typed from the command's schema, and validated as `run` does.
+  readonly when: <In, Err, I extends Schema.Constraint>(command: Command<In, Err, I>, input: RawInput<I>) => Promise<ScenarioResult<Err>>;
   // The same scenario (same store, same log) with the clock fixed at `date`: what a model with a period reads as "now" (`.period`, Period.ts). Without it the real clock is used.
   readonly at: (date: Date) => Scenario;
 }
@@ -113,7 +114,7 @@ export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
 // Checks a command's answer to a repeat (ADR-0034): run the command, then run it again with the same input, as a client does when it lost the
 // first answer. The first run must append (give it the `history` it needs); the second must append nothing and answer "already done" - not a second effect, and not an error for a request that succeeded. Works for both forms
 // of `idempotentBy`. Throws, naming what is wrong, so a failed check fails the test in any runner.
-export const assertRepeatHarmless = async <In, Err>(command: Command<In, Err>, input: unknown, history: ReadonlyArray<AppendEvent> = []): Promise<void> => {
+export const assertRepeatHarmless = async <In, Err, I extends Schema.Constraint>(command: Command<In, Err, I>, input: RawInput<I>, history: ReadonlyArray<AppendEvent> = []): Promise<void> => {
   if (!command.idempotent) {
     throw new Error(`command "${command.name}" does not say how a repeat is recognised: declare idempotentBy (a query on a request id, or byModel())`);
   }

@@ -6,7 +6,8 @@ import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { type AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
-import type { Command } from "./Command.ts";
+import type * as Schema from "effect/Schema";
+import type { Command, RawInput } from "./Command.ts";
 import { recordCommand } from "./CommandAudit.ts";
 import type * as CD from "./CommandDecision.ts";
 import { IdempotencyMismatch, type InvalidInput } from "./Errors.ts";
@@ -20,8 +21,8 @@ export type CommandHandler<T, E = never> = (command: T) => Effect.Effect<CD.Comm
 
 // Commands are always run explicitly - there is no command-type auto-discovery (ADR-0008).
 export interface CommandExecutorService {
-  // Run a defined command (see Command.ts). `run` takes UNTRUSTED input: it is validated against the
-  // command's schema first (`InvalidInput`). `runDecoded` takes input that is already the command's
+  // Run a defined command (see Command.ts). `run` takes the input before decoding (`RawInput`, typed from the command's schema, so a
+  // misspelt field does not compile) and still validates it at run time (`InvalidInput`): checks such as `isGreaterThanOrEqualTo` are not types. `runDecoded` takes input that is already the command's
   // typed input (e.g. built by an automation) and skips validation.
   //
   // Both re-run the whole command - a fresh transaction and a fresh load - up to `command.retries`
@@ -29,9 +30,9 @@ export interface CommandExecutorService {
   // this run loaded it); `decide` is pure and the transaction rolled back, so retrying is safe. Only a
   // `Conflict` is retried, and the last one is reported if the retries run out. A repeat that
   // `idempotentBy` finds is an idempotent success.
-  readonly run: <In, Err>(
-    command: Command<In, Err>,
-    input: unknown
+  readonly run: <In, Err, I extends Schema.Constraint>(
+    command: Command<In, Err, I>,
+    input: RawInput<I>
   ) => Effect.Effect<
     ExecutionResult,
     Err | InvalidInput | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
@@ -224,7 +225,7 @@ export const CommandExecutorLive = Layer.effect(
         EventStore | CommandAuditStore | SqlClient.SqlClient
       >;
 
-    const run = <In, Err>(command: Command<In, Err>, input: unknown) =>
+    const run = <In, Err, I extends Schema.Constraint>(command: Command<In, Err, I>, input: RawInput<I>) =>
       Effect.flatMap(command.decodeInput(input), (decoded) => runDecoded(command, decoded));
 
     const service: CommandExecutorService = { run, runDecoded };

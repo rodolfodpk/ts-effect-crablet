@@ -125,5 +125,9 @@ declares), and names the payload's type: `type Deposit = typeof DepositMade.Type
 `CommandExecutor.run(command, input)` validates the input, then in one transaction checks idempotency, runs `resolve`, loads the model, calls
 `decide` and appends. It retries on `Conflict`. `CommandExecutor` comes from `Crablet.layer` ([configuration](./configuration.md)).
 
+`input` is typed from the command's schema, as it is before decoding (`RawInput`, `@crablet/commands/Command`): a misspelt, missing or wrongly typed field
+does not compile. For most schemas that is the decoded type; a field read through a transformation (a date from a string) is given in its encoded form.
+It is still validated when the command runs (`InvalidInput`), since checks such as a minimum are not in the type. `when`, below, takes the same.
+
 In tests, `given(...events).when(command, input)` from `@crablet/commands/testing/Scenario` runs the same pipeline on the in-memory store
 ([Test a command](../guides/build/test-a-command.md)).
