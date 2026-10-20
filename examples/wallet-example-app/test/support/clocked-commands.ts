@@ -7,7 +7,7 @@ import { all } from "@crablet/commands/Model";
 import * as Tag from "@crablet/eventstore/Tag";
 import { InsufficientFunds, WalletNotFound } from "../../src/domain/errors/WalletErrors.ts";
 import { DepositContract, TransferMoneyContract, WithdrawContract } from "../../src/domain/WalletContracts.ts";
-import { DepositMade, MoneyTransferred, WalletPeriodModel, WithdrawalMade, periodTags, statementIdOf } from "../../src/domain/WalletModel.ts";
+import { DepositMade, MoneyTransferred, WalletPeriodModel, WithdrawalMade, statementTags, statementIdOf } from "../../src/domain/WalletModel.ts";
 import * as WalletTags from "../../src/domain/WalletTags.ts";
 
 export type Pause = Effect.Effect<void> | undefined;
@@ -34,7 +34,7 @@ export const pausableDeposit = (afterLoad?: Pause) =>
     consistency: (c: any) => concurrent({ guard: WalletPeriodModel.lifecycleQuery(c.walletId) }),
     idempotentBy: (c: any) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
     decide: (wallet: any, c: any, { now }: { now: DateTime.Utc }) =>
-      wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: DateTime.formatIso(now) }, periodTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
+      wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
   } as never);
 
 export const pausableWithdraw = (afterLoad?: Pause) =>
@@ -47,7 +47,7 @@ export const pausableWithdraw = (afterLoad?: Pause) =>
         ? fail(new WalletNotFound({ walletId: c.walletId }))
         : wallet.balance < c.amount
           ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-          : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: DateTime.formatIso(now) }, periodTags(c.walletId, wallet.period)))
+          : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period)))
   } as never);
 
 export const pausableTransfer = (afterLoad?: Pause) =>

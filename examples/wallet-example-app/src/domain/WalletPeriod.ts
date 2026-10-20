@@ -27,12 +27,9 @@ export const minutesPeriod = (minutes: number): WalletPeriodSpec => {
   });
 };
 
-// The month level, as the same spec type: its `key` is only ever called with fields its own `fieldsAt` or `fieldsOf` made (year and month), which the wider type does not know.
-const monthPeriod = Period.month as unknown as WalletPeriodSpec;
-
 export const periodFromEnv = (value: string | undefined = process.env["WALLET_PERIOD"]): WalletPeriodSpec => {
   const v = value?.trim();
-  if (v === undefined || v === "" || v === "month") return monthPeriod;
+  if (v === undefined || v === "" || v === "month") return Period.month;
   const m = /^minutes:(\d+)$/.exec(v);
   if (m === null) throw new Error(`WALLET_PERIOD must be "month" or "minutes:N" (N from 1 to 1440), got "${value}"`);
   return minutesPeriod(Number(m[1]));

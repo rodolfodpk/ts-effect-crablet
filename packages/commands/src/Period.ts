@@ -17,7 +17,9 @@ export interface PeriodSpec<F extends PeriodFields = PeriodFields> {
   // The period an opening event's DATA says it opened, or null if the data does not carry it.
   readonly fieldsOf: (data: unknown) => F | null;
   // A canonical key: equal periods have equal keys, and keys of one level sort in time order ("2026-10", "2026-10-09").
-  readonly key: (fields: F) => string;
+  // A method, so that its parameter is checked bivariantly: the framework only calls it with fields this spec's own `fieldsAt` or `fieldsOf` made,
+  // so a spec with narrower fields (`Period.month`) can stand where a wider fields type is expected (one of several levels chosen at start-up).
+  key(fields: F): string;
   // The tag keys that scope a model (and its opening and closing events) to one period.
   readonly tagKeys: ReadonlyArray<string>;
 }
