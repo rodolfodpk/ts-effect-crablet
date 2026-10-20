@@ -10,7 +10,7 @@ What `defineView` and `viewTable` accept. The guarantees a view gets are in [vie
 From `@crablet/views/ProjectedView`. `defineView(name, { tables, anyOfTags? }).on(Event, (data, ctx) => operations)`: each handler is pure and returns operations as
 data. The view listens to the event types of its handlers; what it reads besides them (`anyOfTags`, `requiredTags`, `exactTags`) is declared with it.
 The declaration gives the tables the view owns (for the drift check, `checkViewTables`) and an in-memory run (`applyInMemory`), and it is what
-`makeViewsProcessor({ views })` runs and a consistent read (`reads: [View]`) waits for ([ADR-0037](../adr/0037-the-declaration-api.md)).
+`startViewsProcessor({ views })` runs and a consistent read (`reads: [View]`) waits for ([ADR-0037](../adr/0037-the-declaration-api.md)).
 
 | Operation | What it does |
 |---|---|

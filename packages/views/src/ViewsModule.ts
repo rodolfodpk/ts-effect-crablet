@@ -1,11 +1,11 @@
-import { Effect, Stream } from "effect";
+import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
-import { makeEventProcessor, type EventProcessorHandle } from "@crablet/event-poller";
+import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
@@ -85,3 +85,8 @@ export const makeViewsProcessor = (
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });
+
+// Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loops and releases the
+// leader lock. What an application uses. `makeViewsProcessor` builds without starting (a handle for status, a test that drives `start`/`stop` itself).
+export const startViewsProcessor = (deps: ViewsDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
+  Effect.tap(makeViewsProcessor(deps), (handle) => handle.service.startScoped);

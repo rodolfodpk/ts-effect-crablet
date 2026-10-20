@@ -5,11 +5,9 @@ import { HttpApiBuilder } from "effect/http-api";
 import { apiDocsLayer, apiLayerOptions } from "@crablet/commands-http/ApiDescription";
 import { corsLayer, type CorsConfig } from "@crablet/commands-http/Cors";
 import { makeCommandApiGroupLive } from "@crablet/commands-http/CommandApiLive";
-import type { EventStore } from "@crablet/eventstore";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
-import type { EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
-import { makeViewsProcessor, type RunnableView } from "@crablet/views";
+import type { ProcessorHandle } from "@crablet/event-poller";
+import { startViewsProcessor, type RunnableView } from "@crablet/views";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
@@ -64,9 +62,8 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   return config.cors === undefined ? served : Layer.merge(served, corsLayer(config.cors));
 };
 
-// Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback).
-// Building its Layer alone would NOT process anything: `.service.start` forks the long-lived fibers that do the work, and
-// they are only stopped by `.service.stop` - call it before closing the database pool.
+// Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback), owned by the Scope:
+// closing the scope stops it and releases its leader lock, so another instance takes over at once. Close it before closing the database pool.
 //
 // `viewDelayMs` is a DEMO knob (default 0, off): it holds every batch back that long before the view applies it, so a read
 // made right after a write is visibly stale (`?consistency=eventual`) and a read that carries the write's marker has something to wait for. The delay is spent
@@ -78,22 +75,12 @@ export interface CourseViewsOptions {
 export const startCourseViews = (
   instanceId: string = defaultInstanceId(),
   options: CourseViewsOptions = {}
-): Effect.Effect<EventProcessorHandle<ProcessorConfig<string>, string>, never, SqlClient.SqlClient | PgClient.PgClient | EventStore> =>
-  Effect.gen(function* () {
-    const delayMs = options.viewDelayMs ?? 0;
-    const delayed = (view: RunnableView): RunnableView =>
-      delayMs > 0
-        ? { ...view, projector: Effect.map(view.projector, (p) => ({ ...p, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), p.handle(events)) })) }
-        : view;
-    // Two views off the same events: the seats left (table operations) and who took which seat (its own SQL, through `raw`).
-    const handle = yield* makeViewsProcessor({ views: [delayed(CourseSeatsView), delayed(CourseEnrolmentsView)], instanceId });
-    yield* handle.service.start;
-    return handle;
-  });
-
-// The same, owned by a Scope: closing the scope stops the view processor and releases its leader lock. What an entry point should use.
-export const startCourseViewsScoped = (
-  instanceId?: string,
-  options?: CourseViewsOptions
-): Effect.Effect<EventProcessorHandle<ProcessorConfig<string>, string>, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | Scope.Scope> =>
-  Effect.acquireRelease(startCourseViews(instanceId, options), (handle) => handle.service.stop);
+): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> => {
+  const delayMs = options.viewDelayMs ?? 0;
+  const delayed = (view: RunnableView): RunnableView =>
+    delayMs > 0
+      ? { ...view, projector: Effect.map(view.projector, (p) => ({ ...p, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), p.handle(events)) })) }
+      : view;
+  // Two views off the same events: the seats left (table operations) and who took which seat (its own SQL, through `raw`).
+  return startViewsProcessor({ views: [delayed(CourseSeatsView), delayed(CourseEnrolmentsView)], instanceId });
+};

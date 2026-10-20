@@ -27,8 +27,9 @@ export const startCourseAppForTest = async (
       password: Redacted.make(conn.password)
     })
   );
-  const views = await runtime.runPromise(startCourseViews(undefined, viewsOptions));
   const scope = await runtime.runPromise(Scope.make());
+  // The view processor first: the scope closes in reverse, so the server stops before the views, and both before the pool.
+  await runtime.runPromise(Scope.provide(startCourseViews(undefined, viewsOptions), scope));
   const context = await runtime.runPromise(
     Scope.provide(
       Layer.build(
@@ -42,8 +43,6 @@ export const startCourseAppForTest = async (
   return {
     baseUrl: `http://localhost:${port}`,
     stop: async () => {
-      // stop the view processor's fibers BEFORE closing the pool, or they keep polling a closed pool
-      await runtime.runPromise(views.service.stop);
       // Closing the server interrupts any request still open (a live-update connection): that is reported as an interrupt cause, which is
       // the expected way for it to end, so it is not an error here.
       await runtime.runPromise(Effect.exit(Scope.close(scope, Exit.void)));
