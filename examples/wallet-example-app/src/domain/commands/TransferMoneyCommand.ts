@@ -25,9 +25,8 @@ export const TransferMoney = defineCommand({
           : emit(
               MoneyTransferred(
                 { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: now.toISOString() },
-                // both wallets share the current period; each side's own statement id is tagged for the views
+                // both wallets share the current period, whose tags the framework adds; each side's own statement id is tagged for the views
                 [
-                  ...from.period.tags,
                   Tag.of(WalletTags.FROM_STATEMENT_ID, statementIdOf(c.fromWalletId, from.period.key)),
                   Tag.of(WalletTags.TO_STATEMENT_ID, statementIdOf(c.toWalletId, to.period.key))
                 ]

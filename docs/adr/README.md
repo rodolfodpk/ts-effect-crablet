@@ -37,6 +37,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0038: A caller's input is typed, and a processor starts in a scope](0038-typed-run-input-and-scoped-processors.md) - **accepted**: `run` and `when` take the schema's input type; `start*Processor` owns a processor by a Scope
 - [ADR-0039: A topic takes its publishers, and the feed takes views](0039-a-topic-takes-its-publishers.md) - **accepted**: `defineTopic(name, { publishers: [publisher] })`; no second list matched by name
 - [ADR-0040: A result carries one marker, and a domain file has one import](0040-one-marker-and-one-domain-import.md) - **accepted**: `ExecutionResult.marker`; `@crablet/commands/Domain`
+- [ADR-0041: The framework adds the tags a command's own model reads its events by](0041-the-framework-adds-a-models-tags.md) - **accepted**: missing scope and period tags are added at append; another value is refused
 - [ADR-0042: An API is served in one layer, and its groups are typed against it](0042-serve-an-api-in-one-layer.md) - **accepted**: `serveApi`; read groups without `as any`; `problemOf`
 
 ## Reading, delivery and the pollers

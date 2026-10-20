@@ -47,8 +47,9 @@ export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
 
 ## Write the command
 
-The model is built from the id alone; the state `decide` receives carries `period: { key, fields, tags }`. Put `period.tags` on the events the command appends, and stamp them with `now`: it is the instant the period
-was decided at, so a timestamp and a period agree, also under a test clock.
+The model is built from the id alone; the state `decide` receives carries `period: { key, fields, tags }`. The period's tags go on the events the command appends by themselves: the framework adds
+them to every event the command's model reads, so the next load and the boundary find it ([ADR-0041](../../adr/0041-the-framework-adds-a-models-tags.md)). An event tagged with another period is refused.
+The wallet adds only its own tag, the statement an event belongs to. Stamp the events with `now`: it is the instant the period was decided at, so a timestamp and a period agree, also under a test clock.
 
 <!-- file: examples/wallet-example-app/src/domain/commands/DepositCommand.ts#period-command -->
 ```ts
@@ -59,7 +60,7 @@ export const Deposit = defineCommand({
   idempotentBy: (c) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
   decide: (wallet, c, { now }) =>
     wallet.exists
-      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, periodTags(c.walletId, wallet.period)))
+      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, statementTags(c.walletId, wallet.period)))
       : fail(new WalletNotFound({ walletId: c.walletId }))
 });
 ```

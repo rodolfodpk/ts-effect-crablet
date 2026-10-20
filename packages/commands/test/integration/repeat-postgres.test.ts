@@ -12,6 +12,8 @@ import { byModel, defineCommand, emit } from "../../src/Command.ts";
 import { defineModel } from "../../src/Model.ts";
 import { IdempotencyMismatch } from "../../src/Errors.ts";
 import { defineEvent } from "../../src/Event.ts";
+import { EventStore } from "@crablet/eventstore";
+import * as Tag from "@crablet/eventstore/Tag";
 
 let db: TestDb;
 before(async () => {
@@ -120,22 +122,36 @@ describe("byModel() is checked on every write (ADR-0034, real Postgres)", () => 
   });
 });
 
-describe("a command's events must be read back by its own model (ADR-0037, real Postgres)", () => {
-  it("an event its scoped model handles, about its entity, without the scope's tag is refused before anything is appended", { timeout: 30_000 }, async () => {
-    const Logged = defineEvent("RPG_Logged", { schema: Schema.Struct({ deskId: Schema.String, entryId: Schema.String }), tags: (d) => ({ desk_id: d.deskId, entry_id: d.entryId }) });
-    const DeskMonth = defineModel({ by: "desk_id", initial: () => 0, scope: (s: { month: number }) => ({ month: s.month }) }).on(Logged, (n) => n + 1);
-    const Log = defineCommand({
-      name: "rpg_log",
+describe("a command's events are read back by its own model (ADR-0041, real Postgres)", () => {
+  const Logged = defineEvent("RPG_Logged", { schema: Schema.Struct({ deskId: Schema.String, entryId: Schema.String }), tags: (d) => ({ desk_id: d.deskId, entry_id: d.entryId }) });
+  const DeskMonth = defineModel({ by: "desk_id", initial: () => 0, scope: (s: { month: number }) => ({ month: s.month }) }).on(Logged, (n) => n + 1);
+  const logIn = (name: string, extraTags: ReadonlyArray<Tag.Tag>) =>
+    defineCommand({
+      name,
       input: Schema.Struct({ deskId: Schema.String, entryId: Schema.String }),
       model: (c) => DeskMonth.of({ id: c.deskId, month: 10 }),
       idempotentBy: (c) => Logged.where({ entry_id: c.entryId }),
-      // forgets the month its model reads it by
-      decide: (_, c) => emit(Logged(c))
+      decide: (_, c) => emit(Logged(c, extraTags))
     });
+  const tagsOn = (deskId: string) =>
+    run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ tags: ReadonlyArray<string> }>("SELECT tags FROM crablet_events WHERE tags @> ARRAY[$1]::text[]", [`desk_id=${deskId}`])));
+
+  it("an event its scoped model handles, about its entity, built without the scope's tag is stored with it, and the model reads it back", { timeout: 30_000 }, async () => {
+    const Log = logIn("rpg_log", []); // forgets the month its model reads it by
+    const deskId = crypto.randomUUID();
+    await run(Effect.flatMap(CommandExecutor, (x) => x.run(Log, { deskId, entryId: "e1" })));
+    const rows = await tagsOn(deskId);
+    assert.equal(rows.length, 1);
+    assert.ok(rows[0]!.tags.includes("month=10"), "the month is added");
+    const count = await run(Effect.flatMap(EventStore, (store) => Effect.map(DeskMonth.of({ id: deskId, month: 10 }).load(store), (l) => l.state)));
+    assert.equal(count, 1, "the next load finds it");
+  });
+
+  it("an event tagged with another value of the scope is refused before anything is appended", { timeout: 30_000 }, async () => {
+    const Log = logIn("rpg_log_other_month", [Tag.of("month", "9")]);
     const deskId = crypto.randomUUID();
     const exit = await runExit(Effect.flatMap(CommandExecutor, (x) => x.run(Log, { deskId, entryId: "e1" })));
     assert.ok(Exit.isFailure(exit), "refused");
-    const rows = await run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT 1 FROM crablet_events WHERE tags @> ARRAY[$1]::text[]", [`desk_id=${deskId}`])));
-    assert.equal(rows.length, 0, "nothing appended");
+    assert.equal((await tagsOn(deskId)).length, 0, "nothing appended");
   });
 });
