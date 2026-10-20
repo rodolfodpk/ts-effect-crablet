@@ -42,3 +42,7 @@ export const makeCourseApi = (basePath: `/${string}` = "/api/commands") =>
       .add(courseFeedGroup),
     courseApiInfo
   );
+
+// The API's type: what the server's groups are implemented against (`HttpApiBuilder.group(api, "courseQueries", ...)`), so their handlers are
+// checked against the endpoints, with nothing written by hand.
+export type CourseApi = ReturnType<typeof makeCourseApi>;

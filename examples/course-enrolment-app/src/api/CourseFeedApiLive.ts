@@ -1,10 +1,10 @@
-import { Duration, Effect, Layer, Stream } from "effect";
+import { Duration, Effect, Stream } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import type { HttpApi, HttpApiGroup } from "effect/http-api";
-import type { SqlClient } from "effect/sql";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import { viewProgressFeed } from "@crablet/views/ViewProgressFeed";
+import type { SqlClient } from "effect/sql";
 import type { ViewProgressHub } from "@crablet/views/ViewProgressHub";
+import type { CourseApi } from "../CourseApi.ts";
 
 // A connection is ended after this long and the page reconnects (the Subscription does it by itself), so no proxy or load balancer holds
 // one for ever.
@@ -23,17 +23,17 @@ export const parseFeedViews = (raw: string, known: ReadonlySet<string>): Readonl
   return names.length > 0 && names.every((n) => known.has(n)) ? new Set(names) : null;
 };
 
-// Same `any`-cast composability boundary as the other Live groups.
-export const makeCourseFeedApiLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
-  api: HttpApi.HttpApi<ApiId, Groups>,
-  options: CourseFeedOptions
-): Layer.Layer<HttpApiGroup.Service<ApiId, "courseFeed">, never, ViewProgressHub | SqlClient.SqlClient> => {
+// The live feed group, implemented against the course API itself. It needs a `ViewProgressHub`: provide one for the whole API, so the feed and
+// the reads share it (serveApi, CourseApp.ts).
+export const makeCourseFeedApiLive = (api: CourseApi, options: CourseFeedOptions) => {
   const known = new Set(options.views.map((v) => v.name));
   const maxLifetime = options.maxLifetime ?? defaultMaxFeedLifetime;
-  const groupBuilder = HttpApiBuilder.group as any;
-  return groupBuilder(api, "courseFeed", (handlers: any) =>
-    Effect.succeed(
-      handlers.handle("viewChanges", ({ query }: { query: { views: string } }) =>
+  return HttpApiBuilder.group(api, "courseFeed", (handlers) =>
+    Effect.gen(function* () {
+      // The streams run after their handler returns, so they are given the group's services (the hub, the database), taken once when the
+      // group is built: providing the hub to the whole API (serveApi) then gives every connection the same one.
+      const services = yield* Effect.context<ViewProgressHub | SqlClient.SqlClient>();
+      return handlers.handle("viewChanges", ({ query }) =>
         Effect.gen(function* () {
           const names = parseFeedViews(query.views, known);
           if (names === null) {
@@ -41,10 +41,11 @@ export const makeCourseFeedApiLive = <ApiId extends string, Groups extends HttpA
           }
           return viewProgressFeed(names).pipe(
             Stream.map((ping) => ({ view: ping.id, transactionId: ping.transactionId, position: ping.position })),
-            Stream.interruptWhen(Effect.sleep(maxLifetime))
+            Stream.interruptWhen(Effect.sleep(maxLifetime)),
+            Stream.provideContext(services)
           );
         })
-      )
-    )
+      );
+    })
   );
 };

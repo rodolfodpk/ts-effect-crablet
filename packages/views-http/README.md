@@ -7,6 +7,7 @@ write; with no marker it waits for everything committed. The default is strict: 
 
 - **`makeConsistentRead`** (`/ReadConsistency`, `/ReadQuery`) - wrap a read handler so it honours the marker, with a policy (strict, or bounded and marked stale).
   The waiting itself is `settleViews` from [`@crablet/views`](../views/README.md): one statement for where the log ends and where each view is, then a wait for only the views still behind ([ADR-0015](../../docs/adr/0015-read-consistency-by-marker.md)).
+- Write a read group against the API's own type (`HttpApiBuilder.group(api, "courseQueries", ...)` with `api: CourseApi`), not generic over any API: `consistentRead`'s `parse` and handler are then typed from the endpoint, with nothing annotated.
 - **`ReadProblems`** - the `503` (`ViewsUnavailable`) and the other problem bodies, as schema fragments to add to your endpoints.
 
 ## Depends on

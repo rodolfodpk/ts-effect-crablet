@@ -69,7 +69,30 @@ A missing or extra command does not compile.
 const courseImplementations: Implementations<typeof courseContracts> = { define_course: DefineCourse, subscribe: Subscribe };
 ```
 
-## 5. Regenerate the description
+## 5. Serve it
+
+`serveApi` (`@crablet/commands-http/ServeApi`) serves the whole API in one layer: the commands, your other groups (here the reads and the live feed), the
+OpenAPI document and, when asked for, a documentation page and CORS. A group the API declares and you do not implement stays a requirement of the layer,
+so it does not compile. Write each group against the API's own type (`HttpApiBuilder.group(api, "courseQueries", ...)`, `api: CourseApi`): its
+handlers are then checked against their endpoints, and a hand-written endpoint fails with `problemOf(new CourseNotFound(...))`, typed from the error.
+Provide what the groups need once, to the whole layer: the reads and the feed then share one view progress hub, one database `LISTEN`.
+
+<!-- file: examples/course-enrolment-app/src/CourseApp.ts#serve -->
+```ts
+export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
+  const basePath = (config.basePath ?? "/api/commands") as `/${string}`;
+  const api = makeCourseApi(basePath);
+  return serveApi(api, {
+    commands: { contracts: courseContracts, implementations: courseImplementations, basePath },
+    groups: [makeCourseQueryApiLive(api), makeCourseFeedApiLive(api, { views: [CourseSeatsView], maxLifetime: config.maxFeedLifetime })],
+    openApiPath: config.openApiPath,
+    docs: config.docs,
+    cors: config.cors
+  }).pipe(Layer.provide(config.viewProgressHub ?? ViewProgressHubLive));
+};
+```
+
+## 6. Regenerate the description
 
 The OpenAPI document is checked in ([`docs/api/`](../../api)) and a unit test fails if it is stale, so an API change shows up as a diff. In the course app:
 `node scripts/generate-openapi.ts` from `examples/course-enrolment-app`. A command answers with a **marker**; a read that carries it sees that write

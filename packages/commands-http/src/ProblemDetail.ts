@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { HttpApiSchema } from "effect/http-api"; // also registers the `httpApiStatus` schema annotation used below
-import type { ErrorKind } from "@crablet/commands/Errors";
+import type { Cause } from "effect";
+import { kindOf, type DomainErrorKind, type ErrorKind, type KindedError } from "@crablet/commands/Errors";
 
 // RFC 7807 (Problem Details for HTTP APIs) response bodies for the command API.
 //
@@ -125,6 +126,21 @@ export const domainProblemOf = (kind: ErrorKind, error: unknown): object => {
     fields
   };
 };
+
+// A domain error's problem body, typed from the error itself: what a hand-written endpoint fails with for an error its schema declares
+// (`problemSchemaOf(CourseNotFound)`), so the handler is checked against it. The kind comes from the error's class.
+//
+//     if (!row) return yield* Effect.fail(problemOf(new CourseNotFound({ courseId })));
+export interface ProblemOf<E extends { readonly _tag: string }> {
+  readonly type: string;
+  readonly title: string;
+  readonly status: number;
+  readonly detail: string;
+  readonly errorType: E["_tag"];
+  readonly fields: Omit<E, keyof Cause.YieldableError | "_tag" | typeof DomainErrorKind>;
+}
+export const problemOf = <E extends KindedError & { readonly _tag: string }>(error: E): ProblemOf<E> =>
+  domainProblemOf(kindOf(error) ?? "invalid", error) as ProblemOf<E>;
 
 // The response schema of ONE declared domain error: exactly what `domainProblemOf` produces for it, with
 // the error's own fields typed. Used to document and to encode the response; the API description gets one

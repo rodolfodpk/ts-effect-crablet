@@ -1,10 +1,10 @@
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { SqlClient, SqlSchema } from "effect/sql";
-import { CommandApiBadRequest, domainProblemOf } from "@crablet/commands-http/ProblemDetail";
+import { CommandApiBadRequest, problemOf } from "@crablet/commands-http/ProblemDetail";
 import { makeConsistentRead } from "@crablet/views-http";
-import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
+import { defaultReadConsistency, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
+import type { CourseApi } from "../CourseApi.ts";
 import { CourseNotFound } from "../domain/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
 import { CourseSeatsView } from "../views/CourseSeatsViewProjector.ts";
@@ -71,13 +71,9 @@ export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadCons
 const consistentRead = makeConsistentRead({ config: courseReadConsistency });
 // #endregion read-consistency
 
-// Same `any`-cast composability boundary commands-http's makeCommandApiGroupLive documents: HttpApiBuilder.group's
-// signature cannot prove an arbitrary caller-supplied `Groups` contains this literal group name.
-export const makeCourseQueryApiLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
-  api: HttpApi.HttpApi<ApiId, Groups>
-): Layer.Layer<HttpApiGroup.Service<ApiId, "courseQueries">, never, SqlClient.SqlClient> => {
-  const groupBuilder = HttpApiBuilder.group as any;
-  return groupBuilder(api, "courseQueries", (handlers: any) =>
+// The read group, implemented against the course API itself: each handler's request and response are checked against its endpoint.
+export const makeCourseQueryApiLive = (api: CourseApi) =>
+  HttpApiBuilder.group(api, "courseQueries", (handlers) =>
     Effect.succeed(
       handlers
         // Keyset pagination on the course id (no OFFSET: a page costs the same however deep it is, and a course added or removed
@@ -88,7 +84,7 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
           consistentRead(
             {
               reads: [CourseSeatsView],
-              parse: (request: { readonly query: ConsistencyParams & { readonly limit?: string; readonly after?: string; readonly q?: string } }) => {
+              parse: (request) => {
                 const limit = parseLimit(request.query.limit);
                 return limit === null
                   ? Effect.fail(CommandApiBadRequest.of(`limit must be a whole number from 1 to ${maxPageSize}`))
@@ -113,9 +109,9 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
           consistentRead(
             {
               reads: [CourseEnrolmentsView],
-              parse: (request: { readonly params: { readonly courseId: string }; readonly query: ConsistencyParams }) => Effect.succeed(request.params)
+              parse: (request) => Effect.succeed(request.params)
             },
-            (params: { readonly courseId: string }) =>
+            (params) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
                 const rows = yield* listEnrolments(sql)({ courseId: params.courseId }).pipe(Effect.orDie);
@@ -128,18 +124,17 @@ export const makeCourseQueryApiLive = <ApiId extends string, Groups extends Http
           consistentRead(
             {
               reads: [CourseSeatsView],
-              parse: (request: { readonly params: { readonly courseId: string }; readonly query: ConsistencyParams }) => Effect.succeed(request.params)
+              parse: (request) => Effect.succeed(request.params)
             },
-            (params: { readonly courseId: string }) =>
+            (params) =>
               Effect.gen(function* () {
                 const sql = yield* SqlClient.SqlClient;
                 const found = yield* findSeats(sql)({ courseId: params.courseId }).pipe(Effect.orDie);
                 const row = Option.getOrUndefined(found);
-                if (!row) return yield* Effect.fail(domainProblemOf("not_found", new CourseNotFound({ courseId: params.courseId })));
+                if (!row) return yield* Effect.fail(problemOf(new CourseNotFound({ courseId: params.courseId })));
                 return { courseId: row.course_id, capacity: row.capacity, subscribers: row.subscribers, seatsLeft: row.capacity - row.subscribers };
               })
           )
         )
     )
   );
-};
