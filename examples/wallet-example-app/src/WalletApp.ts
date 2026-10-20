@@ -7,16 +7,15 @@ import { HttpApi, HttpApiBuilder } from "effect/http-api";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor } from "@crablet/commands";
-import type { EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import type { ProcessorHandle } from "@crablet/event-poller";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { monitorProcessors } from "@crablet/event-poller/MonitorProcessors";
-import { makeViewsProcessor } from "@crablet/views";
+import { makeViewsProcessor, startViewsProcessor } from "@crablet/views";
 import { makeViewManagementService } from "@crablet/views/ViewManagementService";
 import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
-import { makeAutomationsProcessor } from "@crablet/automations";
+import { makeAutomationsProcessor, startAutomationsProcessor } from "@crablet/automations";
 import { makeAutomationManagementService } from "@crablet/automations/AutomationManagementService";
-import { makeOutboxProcessor } from "@crablet/outbox";
+import { makeOutboxProcessor, startOutboxProcessor } from "@crablet/outbox";
 import { makeOutboxManagementService } from "@crablet/outbox/OutboxManagementService";
 import { topicConfigOf } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
@@ -47,64 +46,49 @@ export interface WalletAppConfig {
   readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string };
 }
 
-// The 3 EventProcessorHandles started by startBackgroundProcessors - a caller that uses it directly (every E2E test file) must call `.service.stop` on each
-// before tearing down the underlying connection pool. The entry point uses `startBackgroundProcessorsScoped` below instead, and the scope does that.
-// `.service.start` forks its daemon fibers via `Effect.forkDetach` (see EventProcessor.ts's own
-// primer), deliberately detached from any scope/parent fiber - so closing a Scope or disposing a
-// ManagedRuntime does NOT stop them on its own; only `.service.stop`'s explicit
-// `Fiber.interruptAll` does. Omitting this leaves the poll loops running forever, retrying against
-// a closed pool - the hang this comment is here to prevent from recurring.
+// The three processors of the wallet. Every handle exists whatever the roles (the admin API reads status through them); only the modules named in
+// `roles` are started.
 export interface BackgroundProcessors {
-  // The roles this process runs. Every handle exists either way (the admin API reads status through them); only the modules named here are started.
+  // The roles this process runs.
   readonly roles: Roles;
-  readonly viewsHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
-  readonly automationsHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
-  readonly outboxHandle: EventProcessorHandle<ProcessorConfig<string>, string>;
+  readonly viewsHandle: ProcessorHandle;
+  readonly automationsHandle: ProcessorHandle;
+  readonly outboxHandle: ProcessorHandle;
 }
 
-// #region stop-processors
-export const stopBackgroundProcessors = (processors: BackgroundProcessors): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    yield* processors.viewsHandle.service.stop;
-    yield* processors.automationsHandle.service.stop;
-    yield* processors.outboxHandle.service.stop;
-  });
-// #endregion stop-processors
-
-// Builds and starts the 3 background processors (views/automations/outbox). Building/providing
-// their Layers alone would NOT process any events - each EventProcessorHandle's own `.service.start`
-// forks the long-lived daemon fibers that actually do the work (same requirement every prior
-// phase's own integration tests already had to satisfy).
-export const startBackgroundProcessors = (
-  instanceId: string = defaultInstanceId(),
-  // Injectable for testability (outbox-e2e.test.ts swaps in a capturing test publisher instead of
-  // asserting on log output) - defaults to the same makeLogPublisher() the real app uses.
-  outboxPublishers: ReadonlyArray<OutboxPublisher> = [makeLogPublisher()],
-  // The roles to start (ADR-0022). Default: all of them, one process. A handle of a role that is not started is still built: building one opens no connection and runs no loop.
-  roles: Roles = allRoles,
+export interface BackgroundProcessorsOptions {
+  readonly instanceId?: string;
+  // Where the outbox publishes. Default: the log publisher the real app uses; outbox-e2e.test.ts passes a capturing one.
+  readonly outboxPublishers?: ReadonlyArray<OutboxPublisher>;
+  // The roles to start (ADR-0022). Default: all of them, one process.
+  readonly roles?: Roles;
   // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
-  polling: Polling = defaultPolling
+  readonly polling?: Polling;
+}
+
+// Builds the three background processors (views, automations, outbox) and starts those of the roles, owned by the Scope: closing it stops them
+// and releases their leader locks (the other instances take over at once), so close it before the connection pool.
+export const startBackgroundProcessors = (
+  options: BackgroundProcessorsOptions = {}
 ): Effect.Effect<
   BackgroundProcessors,
   never,
-  SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor
+  SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope
 > =>
   Effect.gen(function* () {
+    const { instanceId = defaultInstanceId(), outboxPublishers = [makeLogPublisher()], roles = allRoles, polling = defaultPolling } = options;
+    // A role that is not started still has its handle: building one opens no connection and runs no loop.
     // #region views-processor
-    const viewsHandle = yield* makeViewsProcessor({ config: polling, views: walletViews, overrides: walletViewOverrides, instanceId });
-    if (roles.has("views")) yield* viewsHandle.service.start;
+    const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId };
+    const viewsHandle = yield* (roles.has("views") ? startViewsProcessor(views) : makeViewsProcessor(views));
     // #endregion views-processor
 
     // #region automations-processor
-    const automationsHandle = yield* makeAutomationsProcessor({
-      config: polling,
-      automations: [walletOpenedAutomation],
-      instanceId
-    });
-    if (roles.has("automations")) yield* automationsHandle.service.start;
+    const automations = { config: polling, automations: [walletOpenedAutomation], instanceId };
+    const automationsHandle = yield* (roles.has("automations") ? startAutomationsProcessor(automations) : makeAutomationsProcessor(automations));
     // #endregion automations-processor
 
-    const outboxHandle = yield* makeOutboxProcessor({
+    const outbox = {
       config: polling,
       topics: [
         topicConfigOf("wallet-events", {
@@ -114,23 +98,11 @@ export const startBackgroundProcessors = (
       ],
       publishers: outboxPublishers,
       instanceId
-    });
-    if (roles.has("outbox")) yield* outboxHandle.service.start;
+    };
+    const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor(outbox) : makeOutboxProcessor(outbox));
 
     return { roles, viewsHandle, automationsHandle, outboxHandle };
   });
-
-// The same, owned by a Scope: closing the scope stops the three processors and releases their leader locks (the others take over at once). This is what an entry point
-// should use; `startBackgroundProcessors` and `stopBackgroundProcessors` are for tests and for callers that manage the lifetime themselves.
-// #region start-scoped
-export const startBackgroundProcessorsScoped = (
-  instanceId?: string,
-  outboxPublishers?: ReadonlyArray<OutboxPublisher>,
-  roles?: Roles,
-  polling?: Polling
-): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
-  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles, polling), stopBackgroundProcessors);
-// #endregion start-scoped
 
 // What each module's processors are for, as the admin API shows it.
 const wallet = {

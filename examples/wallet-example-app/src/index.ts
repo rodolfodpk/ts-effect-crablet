@@ -6,7 +6,7 @@ import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import { monitorStorage } from "@crablet/eventstore/Storage";
 import { migrateIfFresh } from "./migrate.ts";
-import { startBackgroundProcessorsScoped, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
+import { startBackgroundProcessors, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
 import { hasWorkers, rolesFromEnv } from "./roles.ts";
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
 
   const program = Effect.gen(function* () {
     // Every handle is built; only the modules named in WALLET_ROLES are started. A process with only `api` runs no loop and holds no leader lock.
-    const processors = yield* startBackgroundProcessorsScoped(undefined, undefined, roles, polling);
+    const processors = yield* startBackgroundProcessors({ roles, polling });
     yield* monitorBackgroundProcessors(processors);
     const status = processStatus(roles, { views: processors.viewsHandle.isLeader, automations: processors.automationsHandle.isLeader, outbox: processors.outboxHandle.isLeader }, Date.now());
     if (hasWorkers(roles)) yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges

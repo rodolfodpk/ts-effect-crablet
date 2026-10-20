@@ -187,35 +187,26 @@ api pod, waiting for views that run in another pod, took 109 ms in all):
 
 ## 3. Start the processors, serve, and fail loudly
 
-Building a processor's layer does not process anything: `service.start` forks the fibers that do. Let a **Scope** own them: `service.startScoped` starts the processors and registers
-their stop, so closing the scope interrupts the fibers, releases the leader lock and announces it, and it does so even if the program fails or is interrupted. The entry point below
+Start each processor with its module's `start*Processor` (`startViewsProcessor`, `startAutomationsProcessor`, `startOutboxProcessor`): it builds the processor and starts it, owned by a
+**Scope**, so closing the scope interrupts the fibers, releases the leader lock and announces it, and it does so even if the program fails or is interrupted. The entry point below
 is scoped and runs under `NodeRuntime.runMain`, which turns SIGINT and SIGTERM into an interrupt, so a deploy that stops the process stops the processors first, then closes the pool.
 
 <!-- file: examples/course-enrolment-app/src/index.ts#launch -->
 ```ts
 const program = Effect.gen(function* () {
-  yield* startCourseViewsScoped(undefined, { viewDelayMs });
+  yield* startCourseViews(undefined, { viewDelayMs });
   yield* Effect.log(`course-enrolment-app listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
   yield* Layer.launch(server);
 });
 
 // The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the view processor stops and releases its leader lock (another instance
 // takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
-NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer) as Effect.Effect<void, never, never>);
+NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer));
 ```
 
-The wallet wraps its three processors the same way (`service.start` and `service.stop` stay available for tests, and for callers that manage the lifetime themselves):
-
-<!-- file: examples/wallet-example-app/src/WalletApp.ts#start-scoped -->
-```ts
-export const startBackgroundProcessorsScoped = (
-  instanceId?: string,
-  outboxPublishers?: ReadonlyArray<OutboxPublisher>,
-  roles?: Roles,
-  polling?: Polling
-): Effect.Effect<BackgroundProcessors, never, SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope> =>
-  Effect.acquireRelease(startBackgroundProcessors(instanceId, outboxPublishers, roles, polling), stopBackgroundProcessors);
-```
+The wallet starts its three processors the same way, with `startViewsProcessor`, `startAutomationsProcessor` and `startOutboxProcessor`, and only those of the
+roles the process runs (`startBackgroundProcessors` in [`WalletApp.ts`](../../../examples/wallet-example-app/src/WalletApp.ts)). `make*Processor` builds a processor without starting it,
+and `service.start` and `service.stop` stay available for tests that drive the lifetime themselves.
 
 ## 4. Several instances
 

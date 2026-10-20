@@ -10,7 +10,7 @@ import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { Polling } from "../../src/polling.ts";
 import { allRoles, type Roles } from "../../src/roles.ts";
-import { startBackgroundProcessors, stopBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
+import { startBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
 
 export type CoreServices = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
 
@@ -41,7 +41,11 @@ export const startWalletAppForTest = async (
 
   const { context, processors } = await runtime.runPromise(
     Effect.gen(function* () {
-      const processors = yield* startBackgroundProcessors(options.instanceId, outboxPublishers, roles, options.polling);
+      // In the test's scope, ahead of the server: the scope closes in reverse, so the server stops first, then the processors, both before the pool.
+      const processors = yield* Scope.provide(
+        startBackgroundProcessors({ instanceId: options.instanceId, outboxPublishers, roles, polling: options.polling }),
+        scope
+      );
       if (!roles.has("api")) return { context: Context.empty(), processors };
 
       const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
@@ -62,15 +66,7 @@ export const startWalletAppForTest = async (
   return {
     baseUrl: roles.has("api") ? `http://localhost:${port}` : "",
     processors,
-    // Must stop the background processors' daemon fibers (see stopBackgroundProcessors' own
-    // primer) BEFORE closing the scope/disposing the runtime - otherwise they keep polling
-    // against a pool that's about to close, spinning forever instead of exiting.
-    stop: () =>
-      runtime.runPromise(
-        Effect.gen(function* () {
-          yield* stopBackgroundProcessors(processors);
-          yield* Scope.close(scope, Exit.void);
-        })
-      )
+    // Closing the scope stops the server and then the background processors, before the caller disposes of the runtime (and its pool).
+    stop: () => runtime.runPromise(Scope.close(scope, Exit.void))
   };
 };

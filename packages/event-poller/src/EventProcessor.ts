@@ -95,6 +95,9 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   readonly atomically?: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E | SqlError>;
 }
 
+// A module's processor (views, automations, outbox), as its `make*Processor` and `start*Processor` return it.
+export type ProcessorHandle = EventProcessorHandle<ProcessorConfig<string>, string>;
+
 export interface EventProcessorHandle<C extends ProcessorConfig<I>, I extends string> {
   readonly service: EventProcessorService<C, I>;
   readonly backoffSnapshot: (processorId: I) => Effect.Effect<BackoffSnapshot | null>;

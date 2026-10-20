@@ -62,8 +62,9 @@ const startApp = async (conn: ConnInfo, options: { readonly pool: number; readon
   const runtime = ManagedRuntime.make(
     Crablet.layer({ host: conn.host, port: conn.port, database: conn.database, username: conn.username, password: Redacted.make(conn.password), maxConnections: options.pool })
   );
-  const views = await runtime.runPromise(startCourseViews(undefined, { viewDelayMs: options.viewDelayMs }));
   const scope = await runtime.runPromise(Scope.make());
+  // The view processor first: the scope closes in reverse, so the server stops before the views, and both before the pool.
+  await runtime.runPromise(Scope.provide(startCourseViews(undefined, { viewDelayMs: options.viewDelayMs }), scope));
   const context = await runtime.runPromise(
     Scope.provide(
       Layer.build(
@@ -77,7 +78,6 @@ const startApp = async (conn: ConnInfo, options: { readonly pool: number; readon
   return {
     baseUrl: `http://localhost:${port}`,
     stop: async () => {
-      await runtime.runPromise(views.service.stop);
       await runtime.runPromise(Effect.exit(Scope.close(scope, Exit.void)));
       await runtime.dispose();
     }

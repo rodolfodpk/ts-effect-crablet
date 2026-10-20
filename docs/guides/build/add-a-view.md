@@ -92,14 +92,13 @@ its wallets as `from_wallet_id` and `to_wallet_id`.
 ## 4. Register it with the views processor
 
 The views go to one processor. This is the wallet's, with four views (`walletViews`), and a per-view setting given by the view's name
-(`walletViewOverrides`: polling and batch size are deployment settings, not part of the view). `service.start` is what actually begins processing. The entry point does not call it by hand: it uses `startBackgroundProcessorsScoped`, whose scope
-stops the processors before the connection pool closes ([Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
+(`walletViewOverrides`: polling and batch size are deployment settings, not part of the view). `startViewsProcessor` builds the processor and starts it, owned by the scope, which
+stops it before the connection pool closes; a process that does not run the views role only builds it (`makeViewsProcessor`), for the admin API's status ([Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
 
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
 ```ts
-    const viewsHandle = yield* makeViewsProcessor({ config: polling, views: walletViews, overrides: walletViewOverrides, instanceId });
-    if (roles.has("views")) yield* viewsHandle.service.start;
-    
+const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId };
+const viewsHandle = yield* (roles.has("views") ? startViewsProcessor(views) : makeViewsProcessor(views));
 ```
 
 ## 5. Read it
