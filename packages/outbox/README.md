@@ -7,7 +7,7 @@ A transactional outbox: events are published to something outside the database, 
 
 - **`startOutboxProcessor`** (`/OutboxModule`) - runs the publishers, leader-gated, fed by the poller, owned by the Scope (`makeOutboxProcessor` builds without starting).
 - **`OutboxPublisher`** - the one thing you implement: `publishBatch(events)` (or one event at a time, with `preferredMode: "individual"`). `makeLogPublisher` is a ready-made one that logs.
-- **`TopicConfig`**, **`TopicPublisherPair`**, **`OutboxConfig`** - which events go to which topic and publisher. `config` is optional: `OutboxConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings).
+- **`defineTopic(name, { anyOfTags, publishers: [publisher] })`** (`/TopicConfig`), **`TopicPublisherPair`**, **`OutboxConfig`** - which events go to which topic, and the publishers themselves: the processor runs the publishers of its topics, so a topic cannot name one it does not have. `config` is optional: `OutboxConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings).
 - **`OutboxManagementService`** - inspect and control topics.
 
 A publisher must tolerate a repeat: after a crash, a publish that timed out (`publishTimeoutMs`, default 30 s) or a change of leader, an event is published

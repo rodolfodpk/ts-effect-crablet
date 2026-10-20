@@ -17,7 +17,7 @@ import { makeAutomationsProcessor, startAutomationsProcessor } from "@crablet/au
 import { makeAutomationManagementService } from "@crablet/automations/AutomationManagementService";
 import { makeOutboxProcessor, startOutboxProcessor } from "@crablet/outbox";
 import { makeOutboxManagementService } from "@crablet/outbox/OutboxManagementService";
-import { topicConfigOf } from "@crablet/outbox/TopicConfig";
+import { defineTopic } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { processorsGroup } from "@crablet/processors-http";
@@ -91,12 +91,11 @@ export const startBackgroundProcessors = (
     const outbox = {
       config: polling,
       topics: [
-        topicConfigOf("wallet-events", {
+        defineTopic("wallet-events", {
           anyOfTags: new Set(["wallet_id", "from_wallet_id", "to_wallet_id"]),
-          publishers: outboxPublishers.map((p) => p.name)
+          publishers: outboxPublishers
         })
       ],
-      publishers: outboxPublishers,
       instanceId
     };
     const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor(outbox) : makeOutboxProcessor(outbox));

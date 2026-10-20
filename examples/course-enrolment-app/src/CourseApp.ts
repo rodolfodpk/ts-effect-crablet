@@ -9,7 +9,7 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import { startViewsProcessor, type RunnableView } from "@crablet/views";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
-import { COURSE_SEATS_VIEW, courseContracts, makeCourseApi } from "./CourseApi.ts";
+import { courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
@@ -47,7 +47,7 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
   const api = makeCourseApi(basePath);
   const commandsLive = makeCommandApiGroupLive(api, courseContracts, courseImplementations, { basePath });
   const queryLive = makeCourseQueryApiLive(api);
-  const feedLive = makeCourseFeedApiLive(api, { views: [COURSE_SEATS_VIEW], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
+  const feedLive = makeCourseFeedApiLive(api, { views: [CourseSeatsView], ...(config.maxFeedLifetime !== undefined ? { maxLifetime: config.maxFeedLifetime } : {}) });
   // ONE view progress hub (one database LISTEN) for the whole process, shared by the feed and by the reads' wait (ADR-0016): the same layer value is
   // provided to both, and Effect builds a layer value once per build.
   const hub = config.viewProgressHub ?? ViewProgressHubLive;

@@ -1,28 +1,32 @@
 import { describe, expect, test } from "bun:test";
-import { topicConfigOf } from "../src/TopicConfig.ts";
+import { defineTopic } from "../src/TopicConfig.ts";
+import { makeLogPublisher } from "../src/OutboxPublisher.ts";
 
-describe("topicConfigOf", () => {
-  test("normalizes plain publisher name strings into assignments", () => {
-    const config = topicConfigOf("orders", { publishers: ["kafka", "webhook"] });
+const kafka = makeLogPublisher("kafka");
+const webhook = makeLogPublisher("webhook");
+
+describe("defineTopic", () => {
+  test("takes the publishers themselves, as assignments", () => {
+    const config = defineTopic("orders", { publishers: [kafka, webhook] });
     expect(config.topic).toBe("orders");
-    expect(config.publishers).toEqual([{ name: "kafka" }, { name: "webhook" }]);
+    expect(config.publishers).toEqual([{ publisher: kafka }, { publisher: webhook }]);
   });
 
   test("preserves full assignment objects with per-publisher overrides", () => {
-    const config = topicConfigOf("orders", {
-      publishers: [{ name: "kafka", pollingIntervalMs: 200 }, "webhook"]
+    const config = defineTopic("orders", {
+      publishers: [{ publisher: kafka, pollingIntervalMs: 200 }, webhook]
     });
-    expect(config.publishers).toEqual([{ name: "kafka", pollingIntervalMs: 200 }, { name: "webhook" }]);
+    expect(config.publishers).toEqual([{ publisher: kafka, pollingIntervalMs: 200 }, { publisher: webhook }]);
   });
 
   test("fills EventSelection defaults when omitted", () => {
-    const config = topicConfigOf("orders", { publishers: [] });
+    const config = defineTopic("orders", { publishers: [] });
     expect(config.eventTypes.size).toBe(0);
     expect(config.requiredTags.size).toBe(0);
   });
 
   test("carries provided EventSelection fields", () => {
-    const config = topicConfigOf("orders", {
+    const config = defineTopic("orders", {
       eventTypes: new Set(["OrderPlaced"]),
       publishers: []
     });

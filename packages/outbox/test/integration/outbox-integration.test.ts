@@ -8,7 +8,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { makeOutboxProcessor } from "../../src/OutboxModule.ts";
-import { topicConfigOf } from "../../src/TopicConfig.ts";
+import { defineTopic } from "../../src/TopicConfig.ts";
 import type { OutboxConfig } from "../../src/OutboxConfig.ts";
 import type { OutboxPublisher } from "../../src/OutboxPublisher.ts";
 
@@ -97,12 +97,8 @@ describe("outbox module integration (real Postgres)", () => {
       makeOutboxProcessor({
         config: baseOutboxConfig,
         topics: [
-          topicConfigOf(topicA, { eventTypes: new Set([typeA]), publishers: ["pubA"] }),
-          topicConfigOf(topicB, { eventTypes: new Set([typeB]), publishers: ["pubB"] })
-        ],
-        publishers: [
-          fakePublisher("pubA", (events) => seenA.push(...events)),
-          fakePublisher("pubB", (events) => seenB.push(...events))
+          defineTopic(topicA, { eventTypes: new Set([typeA]), publishers: [fakePublisher("pubA", (events) => seenA.push(...events))] }),
+          defineTopic(topicB, { eventTypes: new Set([typeB]), publishers: [fakePublisher("pubB", (events) => seenB.push(...events))] })
         ],
         instanceId: `instance-${crypto.randomUUID()}`
       })
@@ -141,10 +137,14 @@ describe("outbox module integration (real Postgres)", () => {
     const handle = await run(
       makeOutboxProcessor({
         config: baseOutboxConfig,
-        topics: [topicConfigOf(topic, { eventTypes: new Set([eventType]), publishers: ["good", "bad"] })],
-        publishers: [
-          fakePublisher("good", (events) => seenGood.push(...events)),
-          { name: "bad", publishBatch: () => Effect.fail("simulated publish failure") }
+        topics: [
+          defineTopic(topic, {
+            eventTypes: new Set([eventType]),
+            publishers: [
+              fakePublisher("good", (events) => seenGood.push(...events)),
+              { name: "bad", publishBatch: () => Effect.fail("simulated publish failure") }
+            ]
+          })
         ],
         instanceId: `instance-${crypto.randomUUID()}`
       })
@@ -189,8 +189,7 @@ describe("outbox module integration (real Postgres)", () => {
     const handle = await run(
       makeOutboxProcessor({
         config: { ...baseOutboxConfig, pollingIntervalMs: 60_000 },
-        topics: [topicConfigOf(topic, { eventTypes: new Set([eventType]), publishers: ["pub"] })],
-        publishers: [fakePublisher("pub", (events) => seen.push(...events))],
+        topics: [defineTopic(topic, { eventTypes: new Set([eventType]), publishers: [fakePublisher("pub", (events) => seen.push(...events))] })],
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );
