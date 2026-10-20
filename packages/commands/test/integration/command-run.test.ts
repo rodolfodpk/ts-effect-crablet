@@ -187,7 +187,8 @@ describe("CommandExecutor.run: idempotency with strict consistency", () => {
 describe("CommandExecutor.run: input", () => {
   it("run validates untrusted input (InvalidInput); runDecoded trusts already-typed input", async () => {
     const cmd = bookSeat();
-    const bad = await exitsOf([Effect.flatMap(CommandExecutor, (e) => e.run(cmd, { seatId: 5 }))]);
+    // Ill-typed on purpose: what an untyped caller (a script reading JSON) could send.
+    const bad = await exitsOf([Effect.flatMap(CommandExecutor, (e) => e.run(cmd, { seatId: 5 } as never))]);
     assert.ok(failureOf(bad[0]) instanceof InvalidInput);
 
     const s = seat();
