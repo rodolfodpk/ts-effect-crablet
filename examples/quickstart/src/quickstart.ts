@@ -2,10 +2,7 @@
 // It runs the real command pipeline against the in-memory store - no database needed - and prints what happened.
 // The README shows the region below; `packages/commands/test/guides-sync.test.ts` fails if the two differ.
 import { Schema } from "effect";
-import { defineEvent } from "@crablet/commands/Event";
-import { all, defineModel } from "@crablet/commands/Model";
-import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
-import { DomainError } from "@crablet/commands/Errors";
+import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emit, fail, noop } from "@crablet/commands/Domain";
 import { given } from "@crablet/commands/testing/Scenario";
 
 // #region readme

@@ -13,6 +13,7 @@
     "./Period": "./src/Period.ts",
     "./Errors": "./src/Errors.ts",
     "./Command": "./src/Command.ts",
+    "./Domain": "./src/Domain.ts",
     "./Contract": "./src/Contract.ts",
     "./VerifyEvents": "./src/VerifyEvents.ts",
     "./ModelImpact": "./src/ModelImpact.ts",

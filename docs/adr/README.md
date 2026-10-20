@@ -36,6 +36,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0037: The declaration API: one shape, checked by the type checker](0037-the-declaration-api.md) - **accepted**: `define*(name, …).on(Event, handler)` for models, views and automations; `byModel()`; a model's tags checked
 - [ADR-0038: A caller's input is typed, and a processor starts in a scope](0038-typed-run-input-and-scoped-processors.md) - **accepted**: `run` and `when` take the schema's input type; `start*Processor` owns a processor by a Scope
 - [ADR-0039: A topic takes its publishers, and the feed takes views](0039-a-topic-takes-its-publishers.md) - **accepted**: `defineTopic(name, { publishers: [publisher] })`; no second list matched by name
+- [ADR-0040: A result carries one marker, and a domain file has one import](0040-one-marker-and-one-domain-import.md) - **accepted**: `ExecutionResult.marker`; `@crablet/commands/Domain`
 
 ## Reading, delivery and the pollers
 

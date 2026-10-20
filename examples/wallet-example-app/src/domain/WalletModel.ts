@@ -1,8 +1,5 @@
 import * as Schema from "effect/Schema";
-import { defineEvent } from "@crablet/commands/Event";
-import { defineModel, type PeriodInfo } from "@crablet/commands/Model";
-import * as Tag from "@crablet/eventstore/Tag";
-import { personal } from "@crablet/commands/Personal";
+import { defineEvent, defineModel, type PeriodInfo, personal, Tag } from "@crablet/commands/Domain";
 import * as WalletTags from "./WalletTags.ts";
 import { periodFromEnv, type WalletPeriodFields } from "./WalletPeriod.ts";
 

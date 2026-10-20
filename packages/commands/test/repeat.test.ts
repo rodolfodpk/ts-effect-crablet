@@ -53,12 +53,12 @@ describe("a repeat of the same request", () => {
     const run = <A>(e: Effect.Effect<A, unknown, any>) => Effect.runPromise(Effect.provide(e, store.layer) as Effect.Effect<A>);
     const first = await run(runHandler(Pay.handler, { accountId: "a", paymentId: "p1", amount: 10 }));
     const again = await run(runHandler(Pay.handler, { accountId: "a", paymentId: "p1", amount: 10 }));
-    expect([again.lastPosition, again.lastTransactionId]).toEqual([first.lastPosition, first.lastTransactionId]);
+    expect(again.marker).toEqual(first.marker);
 
     const opened = await run(runHandler(Open.handler, { accountId: "b" }));
     const reopened = await run(runHandler(Open.handler, { accountId: "b" }));
     expect(reopened.wasIdempotent).toBe(true);
-    expect([reopened.lastPosition, reopened.lastTransactionId]).toEqual([opened.lastPosition, opened.lastTransactionId]);
+    expect(reopened.marker).toEqual(opened.marker);
   });
 });
 

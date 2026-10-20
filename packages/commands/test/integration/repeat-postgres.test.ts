@@ -52,7 +52,7 @@ describe("a repeat must be the same request (ADR-0034, real Postgres)", () => {
     const first = await run(Effect.flatMap(CommandExecutor, (x) => x.run(Pay, { paymentId, amount: 10 })));
     const again = await run(Effect.flatMap(CommandExecutor, (x) => x.run(Pay, { paymentId, amount: 10 })));
     assert.equal(again.wasIdempotent, true);
-    assert.deepEqual([again.lastPosition, again.lastTransactionId], [first.lastPosition, first.lastTransactionId]);
+    assert.deepEqual(again.marker, first.marker);
 
     const other = await runExit(Effect.flatMap(CommandExecutor, (x) => x.run(Pay, { paymentId, amount: 20 })));
     assert.ok(Exit.isFailure(other) && String(other.cause).includes("IdempotencyMismatch"));

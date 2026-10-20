@@ -5,6 +5,10 @@
 What `defineEvent`, `defineModel` and `defineCommand` accept, and what a command can answer. The ideas behind them are in
 [consistency boundaries](../concepts/dcb-guide.md); the decision is [ADR-0010](../adr/0010-declarative-command-api.md).
 
+A domain file imports all of it from one place, `@crablet/commands/Domain`: `defineEvent`, `defineModel`, `all`, `Period`, `defineCommand`, `emit`, `noop`,
+`fail`, `byModel`, `strict`, `concurrent`, `defineContract`, `DomainError`, `personal` and `Tag`. The narrower entry points named below stay, and a
+module a browser imports (a contract, its errors) uses them: `/Domain` reaches the command pipeline.
+
 ## `defineCommand` options
 
 From `@crablet/commands/Command`.
@@ -43,7 +47,11 @@ A `noop` reason is a short code in `UPPER_SNAKE_CASE` (`ALREADY_SUBSCRIBED`, `AL
 `idempotentBy` finds the operation already done, `ALREADY_DONE_FOR_TRIGGER` when an automation's redelivered trigger was recognised by the framework's backstop
 rather than by `idempotentBy` ([ADR-0035](../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)), and `NO_EVENTS` when `emit()` has no events. A client can switch on it.
 
-An idempotent result carries a marker, the same `lastPosition` and `lastTransactionId` a created one has: where the earlier write is (the latest event the
+`run` returns an `ExecutionResult`: `wasIdempotent`, `reason` and `marker`, where the write ended (a `Marker` from `@crablet/eventstore/Marker`, the pair
+`{ transactionId, position }`). Pass it to `waitUntilProcessed`, or give it to a client as one string with `formatMarker`; the HTTP response carries both
+forms (`lastPosition`, `lastTransactionId` and `marker`).
+
+An idempotent result carries a marker too: where the earlier write is (the latest event the
 key matched, or the newest event the decision read). A client whose first answer was lost reads its own write with it. It is null only when there is
 nothing to point at (a no-op of a command with no model).
 

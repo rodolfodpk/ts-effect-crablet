@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
+import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Domain";
 import { OpenWalletContract } from "../WalletContracts.ts";
 import { WalletOpened, WalletOpeningModel } from "../WalletModel.ts";
 import { WalletAlreadyExists } from "../errors/WalletErrors.ts";

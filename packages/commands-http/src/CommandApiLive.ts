@@ -118,16 +118,15 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       // Raw response: the status (201 created / 200 idempotent) and optional correlation header are
       // chosen here, after the command ran.
       return HttpServerResponse.jsonUnsafe(
-        result.wasIdempotent
-          ? {
-              status: "IDEMPOTENT" as const,
-              reason: result.reason,
-              // Where the earlier write is (ADR-0034); null when there is nothing to point at.
-              lastPosition: result.lastPosition === null ? null : String(result.lastPosition),
-              lastTransactionId: result.lastTransactionId,
-              marker: result.lastPosition === null || result.lastTransactionId === null ? null : formatMarker({ transactionId: result.lastTransactionId, position: result.lastPosition })
-            }
-          : { status: "CREATED" as const, reason: null, lastPosition: String(result.lastPosition), lastTransactionId: result.lastTransactionId!, marker: formatMarker({ transactionId: result.lastTransactionId!, position: result.lastPosition! }) },
+        // The response spells the marker out (position and transaction id as strings) beside its one-string form. Null for an idempotent
+        // result with nothing to point at (ADR-0034); a created one always has a marker.
+        {
+          status: result.wasIdempotent ? ("IDEMPOTENT" as const) : ("CREATED" as const),
+          reason: result.wasIdempotent ? result.reason : null,
+          lastPosition: result.marker === null ? null : String(result.marker.position),
+          lastTransactionId: result.marker?.transactionId ?? null,
+          marker: result.marker === null ? null : formatMarker(result.marker)
+        },
         {
           status: result.wasIdempotent ? 200 : 201,
           ...(correlationId !== null ? { headers: { [CORRELATION_HEADER]: correlationId } } : {})

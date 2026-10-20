@@ -1,4 +1,4 @@
-import { Period, type PeriodSpec } from "@crablet/commands/Period";
+import { Period, type PeriodSpec } from "@crablet/commands/Domain";
 
 // The wallet's statement period: a calendar month, or (for the kind lab, so that a period turns while you watch) N minutes. WALLET_PERIOD picks it: unset or `month`, or `minutes:N` with N from 1 to 1440.
 //

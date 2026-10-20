@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
-import { defineCommand, emit } from "@crablet/commands/Command";
-import { personal } from "@crablet/commands/Personal";
+import { defineCommand, emit, personal } from "@crablet/commands/Domain";
 import * as WalletTags from "../WalletTags.ts";
 import { WelcomeNotificationSent } from "./WelcomeNotificationSent.ts";
 

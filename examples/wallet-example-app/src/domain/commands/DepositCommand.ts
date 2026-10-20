@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Command";
+import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Domain";
 import { WalletNotFound } from "../errors/WalletErrors.ts";
 import { DepositContract } from "../WalletContracts.ts";
 import { DepositMade, WalletPeriodModel, periodTags } from "../WalletModel.ts";
