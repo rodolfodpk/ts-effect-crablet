@@ -82,7 +82,7 @@ export const runHandler = <T, E>(
     const fingerprint = decision.requestFingerprint ?? null;
     const causationId = yield* CorrelationContext.causationId;
     const outcome = yield* CorrelationContext.withRequestFingerprint(fingerprint)(eventStore.append(decision.events, decision.condition)).pipe(
-      Effect.map((appended) => ({ lastPosition: appended.lastPosition, transactionId: appended.transactionId })),
+      Effect.map((appended) => ({ marker: { position: appended.lastPosition, transactionId: appended.transactionId } })),
       Effect.catchTag("Conflict", (conflict) =>
         // A lifecycle-guard decision reports its conflict as a guard conflict.
         Effect.fail(
@@ -111,7 +111,7 @@ export const runHandler = <T, E>(
       )
     );
 
-    return "repeat" in outcome ? ExecutionResultNS.idempotent(outcome.reason, outcome.repeat) : ExecutionResultNS.created(outcome.lastPosition, outcome.transactionId);
+    return "repeat" in outcome ? ExecutionResultNS.idempotent(outcome.reason, outcome.repeat) : ExecutionResultNS.created(outcome.marker);
   });
 
 // An append the key found already done: where the earlier write is, and why (ExecutionResult.reason).

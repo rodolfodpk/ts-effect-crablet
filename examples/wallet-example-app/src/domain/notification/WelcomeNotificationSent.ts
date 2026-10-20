@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
-import { defineEvent } from "@crablet/commands/Event";
-import { personal } from "@crablet/commands/Personal";
+import { defineEvent, personal } from "@crablet/commands/Domain";
 import * as WalletTags from "../WalletTags.ts";
 
 export const WelcomeNotificationSent = defineEvent("WelcomeNotificationSent", {

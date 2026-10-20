@@ -4,10 +4,8 @@
 //   - a student takes at most 3 courses.
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
 import * as Schema from "effect/Schema";
-import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Command";
+import { all, byModel, defineCommand, defineEvent, defineModel, emit, fail, noop } from "@crablet/commands/Domain";
 import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
-import { defineEvent } from "@crablet/commands/Event";
-import { all, defineModel } from "@crablet/commands/Model";
 
 // #region events
 export const CourseDefined = defineEvent("CourseDefined", {

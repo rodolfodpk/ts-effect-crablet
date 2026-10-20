@@ -65,7 +65,7 @@ describe("the same trigger cannot append the same request twice (ADR-0035, real 
     assert.equal(first.wasIdempotent, false);
     assert.equal(again.wasIdempotent, true);
     assert.equal(again.reason, "ALREADY_DONE_FOR_TRIGGER");
-    assert.deepEqual([again.lastPosition, again.lastTransactionId], [first.lastPosition, first.lastTransactionId], "with the earlier write's marker");
+    assert.deepEqual(again.marker, first.marker, "with the earlier write's marker");
     const rows = await notified(walletId);
     assert.equal(rows.length, 1);
     assert.match(rows[0]!.emit_key ?? "", /^[0-9a-f]{64}\/1$/);
