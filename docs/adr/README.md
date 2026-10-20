@@ -35,6 +35,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0035: The same trigger cannot append the same request twice](0035-the-same-trigger-cannot-append-the-same-request-twice.md) - **accepted**: the database's backstop behind an automation's `idempotentBy`
 - [ADR-0037: The declaration API: one shape, checked by the type checker](0037-the-declaration-api.md) - **accepted**: `define*(name, …).on(Event, handler)` for models, views and automations; `byModel()`; a model's tags checked
 - [ADR-0038: A caller's input is typed, and a processor starts in a scope](0038-typed-run-input-and-scoped-processors.md) - **accepted**: `run` and `when` take the schema's input type; `start*Processor` owns a processor by a Scope
+- [ADR-0039: A topic takes its publishers, and the feed takes views](0039-a-topic-takes-its-publishers.md) - **accepted**: `defineTopic(name, { publishers: [publisher] })`; no second list matched by name
 
 ## Reading, delivery and the pollers
 

@@ -9,19 +9,18 @@ import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } f
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
-import type { OutboxPublisher } from "./OutboxPublisher.ts";
 import type { TopicConfig } from "./TopicConfig.ts";
 import { defaultPublishTimeoutMs, type OutboxConfig } from "./OutboxConfig.ts";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 import { makeOutboxEventHandler } from "./internal/OutboxEventHandler.ts";
-import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts";
+import { makeOutboxProcessorConfigs, publishersOf } from "./internal/OutboxProcessorConfig.ts";
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
 
 export interface OutboxDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
   readonly config?: OutboxConfig;
+  // The topics, each built with `defineTopic(...)`. The publishers are theirs: the processor runs the publishers its topics name.
   readonly topics: ReadonlyArray<TopicConfig>;
-  readonly publishers: ReadonlyArray<OutboxPublisher>;
   readonly instanceId?: string;
 }
 
@@ -45,7 +44,7 @@ export const makeOutboxProcessor = (
     const progressTracker = yield* makeOutboxProgressTracker(instanceId);
     const fetcher = yield* makeSqlEventFetcher();
     const { publishTimeoutMs, ...pollingConfig } = deps.config ?? {};
-    const handler = makeOutboxEventHandler(deps.publishers, publishTimeoutMs ?? defaultPublishTimeoutMs);
+    const handler = makeOutboxEventHandler(publishersOf(deps.topics), publishTimeoutMs ?? defaultPublishTimeoutMs);
     const configs = makeOutboxProcessorConfigs(pollingConfig, deps.topics);
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));
 

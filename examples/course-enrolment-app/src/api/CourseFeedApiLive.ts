@@ -10,9 +10,10 @@ import type { ViewProgressHub } from "@crablet/views/ViewProgressHub";
 // one for ever.
 export const defaultMaxFeedLifetime = Duration.minutes(5);
 
-// The views the feed may be asked about: an unknown name is a 400 (a typo would otherwise be a silent, never-firing connection).
+// The views the feed may be asked about (`defineView`'s results, as a consistent read takes them): a request names them, and an unknown name is a
+// 400 (a typo would otherwise be a silent, never-firing connection).
 export interface CourseFeedOptions {
-  readonly views: ReadonlyArray<string>;
+  readonly views: ReadonlyArray<{ readonly name: string }>;
   readonly maxLifetime?: Duration.Input;
 }
 
@@ -27,7 +28,7 @@ export const makeCourseFeedApiLive = <ApiId extends string, Groups extends HttpA
   api: HttpApi.HttpApi<ApiId, Groups>,
   options: CourseFeedOptions
 ): Layer.Layer<HttpApiGroup.Service<ApiId, "courseFeed">, never, ViewProgressHub | SqlClient.SqlClient> => {
-  const known = new Set(options.views);
+  const known = new Set(options.views.map((v) => v.name));
   const maxLifetime = options.maxLifetime ?? defaultMaxFeedLifetime;
   const groupBuilder = HttpApiBuilder.group as any;
   return groupBuilder(api, "courseFeed", (handlers: any) =>
