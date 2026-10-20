@@ -177,9 +177,9 @@ export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
 });
 // #endregion period-model
 
-// The tags that place a period-scoped event (deposit, withdrawal) in its month and statement.
-export const periodTags = (walletId: string, period: PeriodInfo<WalletPeriodFields>): ReadonlyArray<Tag.Tag> => [
-  ...period.tags,
+// The tag that places a period-scoped event (deposit, withdrawal) in its statement, for the statement view. The period's own tags (year, month)
+// are added by the framework, to every event the command's model reads (ADR-0041).
+export const statementTags = (walletId: string, period: PeriodInfo<WalletPeriodFields>): ReadonlyArray<Tag.Tag> => [
   Tag.of(WalletTags.STATEMENT_ID, statementIdOf(walletId, period.key))
 ];
 

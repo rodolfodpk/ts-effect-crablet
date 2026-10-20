@@ -280,27 +280,28 @@ export const defineCommand = <
       if (decision._tag === "Noop") return CD.noOp(decision.reason, markerOf(loaded?.latest));
       if (decision.events.length === 0) return CD.noOp("NO_EVENTS", markerOf(loaded?.latest));
 
-      // An event the command's own model handles, about its entity, must carry the tags the model reads it by (its scope, the period it decided
-      // in): otherwise the next load, and the boundary, would miss it (ADR-0037). Nothing is appended.
-      if (loaded?.misses !== undefined) {
-        for (const event of decision.events) {
-          const missing = loaded.misses(event);
-          if (missing.length > 0) {
-            return yield* Effect.die(
-              new Error(
-                `command "${def.name}": its model reads ${event.type} by the tags ${missing.join(", ")}, which the event does not carry; the next load, ` +
-                  `and the boundary, would miss it. Add them when building it (in a model with a period, ${event.type}(data, state.period.tags)). Nothing was appended.`
-              )
-            );
-          }
+      // An event the command's own model handles, about its entity, needs the tags the model reads it by (its scope, the period it decided in), or
+      // the next load, and the boundary, would miss it: the missing ones are added here (ADR-0041). One tagged with another value is refused, and
+      // nothing is appended.
+      const own: Array<AppendEvent> = [];
+      for (const event of decision.events) {
+        const completed = loaded?.complete?.(event) ?? { event, conflicts: [] };
+        if (completed.conflicts.length > 0) {
+          return yield* Effect.die(
+            new Error(
+              `command "${def.name}": its model reads ${event.type} by the tags ${completed.conflicts.join(", ")}, but the event carries another value for ` +
+                `${completed.conflicts.length === 1 ? "it" : "them"}; the next load, and the boundary, would miss it. Nothing was appended.`
+            )
+          );
         }
+        own.push(completed.event);
       }
 
       // byModel() claims that the model shows the request was done, and `decide` answers its repeat (ADR-0034). Checked on every write, in memory:
       // after the command's own events, the same request must be answered `noop(...)`. If not, a retry would append again (or fail where it
       // succeeded), so nothing is appended.
       if (isByModel(def.idempotentBy) && loaded?.fold !== undefined) {
-        const again = def.decide(loaded.fold(loaded.state as S, decision.events), input, { now, resolved }) as Decision<ErrorOf<D>>;
+        const again = def.decide(loaded.fold(loaded.state as S, own), input, { now, resolved }) as Decision<ErrorOf<D>>;
         if (again._tag !== "Noop") {
           return yield* Effect.die(
             new Error(
@@ -315,7 +316,7 @@ export const defineCommand = <
       // this same append, ahead of the command's own, and only because the command has events of its own (a refusal, a no-op, an idempotent repeat never get here).
       // What `resolve` read joins the condition the way `all(...)` joins its members: the queries are added, and the cursor is the earliest read horizon (Model.ts, `all`).
       const consistency = def.consistency?.(input, { resolved }) ?? (model !== null ? strict() : concurrent());
-      const events = [...(loaded?.prefix ?? []), ...decision.events];
+      const events = [...(loaded?.prefix ?? []), ...own];
       const readQuery = reads.length > 0 ? Query.of(reads.flatMap((r) => r.query.items)) : null;
       const cursorFrom = (base: LogPosition | null): LogPosition =>
         reads.reduce<LogPosition | null>((c, r) => (c === null ? r.horizon : LogPositionNS.earliest(c, r.horizon)), base) ?? LogPositionNS.zero();

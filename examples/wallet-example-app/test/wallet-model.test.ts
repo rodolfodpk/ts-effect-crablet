@@ -12,8 +12,11 @@ import * as M from "../src/domain/WalletModel.ts";
 const Y = 2026;
 const MO = 9;
 const at = "2026-09-01T00:00:00.000Z";
-const period = (walletId: string, month = MO) =>
-  M.periodTags(walletId, { key: `${Y}-0${month}`, fields: { year: Y, month }, tags: [Tag.of("year", String(Y)), Tag.of("month", String(month))] });
+// What a period-scoped event ends up carrying: the period's tags (the framework adds them when a command appends) and its statement.
+const period = (walletId: string, month = MO) => {
+  const tags = [Tag.of("year", String(Y)), Tag.of("month", String(month))];
+  return [...tags, ...M.statementTags(walletId, { key: `${Y}-0${month}`, fields: { year: Y, month }, tags })];
+};
 
 const item = (types: string[], tags: Array<[string, string]>) => Query.queryItemOf(types, tags.map(([k, v]) => Tag.of(k, v)));
 // the wallet's boundary for one period: its lifecycle events, plus that period's statement events,
