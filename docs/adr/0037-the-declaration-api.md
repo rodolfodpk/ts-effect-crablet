@@ -12,6 +12,8 @@
 - `withOverridesByName` (`@crablet/event-poller/ProcessorRuntimeOverrides`);
 - `crablet.internal` lists for `@crablet/automations` (`./AutomationDecision`) and, in `@crablet/views`, `./ViewProjector` and `./ViewSubscription` ([ADR-0031](0031-api-and-plumbing-are-separate.md)).
 
+Amended by [ADR-0041](0041-the-framework-adds-a-models-tags.md): an event that lacks its model's scope or period tags gets them at append, instead of being refused.
+
 Builds on [ADR-0026](0026-views-declared-as-operations.md) (views declared as operations) and [ADR-0010](0010-declarative-command-api.md) (the
 declarative command API).
 

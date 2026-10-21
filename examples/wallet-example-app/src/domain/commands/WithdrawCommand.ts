@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Domain";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
 import { WithdrawContract } from "../WalletContracts.ts";
-import { WalletPeriodModel, WithdrawalMade, periodTags } from "../WalletModel.ts";
+import { WalletPeriodModel, WithdrawalMade, statementTags } from "../WalletModel.ts";
 import * as WalletTags from "../WalletTags.ts";
 
 export type WithdrawCommand = Schema.Schema.Type<(typeof WithdrawContract)["input"]>;
@@ -20,5 +20,5 @@ export const Withdraw = defineCommand({
       ? fail(new WalletNotFound({ walletId: c.walletId }))
       : wallet.balance < c.amount
         ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: now.toISOString() }, periodTags(c.walletId, wallet.period)))
+        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: now.toISOString() }, statementTags(c.walletId, wallet.period)))
 });

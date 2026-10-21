@@ -9,6 +9,7 @@ import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
 import { Period } from "../src/Period.ts";
 import { given } from "../src/testing/Scenario.ts";
+import * as Tag from "@crablet/eventstore/Tag";
 
 const Opened = defineEvent("PX_Opened", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ acct: d.id }) });
 const Credited = defineEvent("PX_Credited", { schema: Schema.Struct({ id: Schema.String, amount: Schema.Number, opId: Schema.String }), tags: (d) => ({ acct: d.id, op_id: d.opId }) });
@@ -334,15 +335,16 @@ describe("byModel() on a model with a period", () => {
     expect(again.reason).toBe("ALREADY_FLAGGED");
   });
 
-  test("an event without the period's tags would not be read back by its own model: refused, and nothing is appended", async () => {
+  test("an event built without the period's tags gets them, so its own model reads it back and the repeat is already done", async () => {
     const s = given(Opened({ id: "a1" })).at(oct);
-    await expect(s.when(flagOnce("px_flag_untagged", false), { id: "a1" })).rejects.toThrow(/its model reads PX_Flagged by the tags year=2026, month=10, which the event does not carry/);
-    expect(types(await s.when(flagOnce("px_flag", true), { id: "a1" }))).toEqual(["PX_PeriodOpened", "PX_Flagged"]);
+    expect(types(await s.when(flagOnce("px_flag_untagged", false), { id: "a1" }))).toEqual(["PX_PeriodOpened", "PX_Flagged"]);
+    expect((await s.when(flagOnce("px_flag_untagged", false), { id: "a1" })).outcome).toBe("idempotent");
   });
 });
 
-// A command's events about its own entity must carry the tags its model reads them by (ADR-0037), whatever its idempotentBy.
-describe("an event the command's own model would not read back", () => {
+// A command's events about its own entity get the tags its model reads them by (ADR-0041), whatever its idempotentBy; one that carries another
+// value for one of them is refused.
+describe("an event the command's own model reads back", () => {
   const Untagged = defineCommand({
     name: "px_credit_untagged",
     input,
@@ -352,10 +354,25 @@ describe("an event the command's own model would not read back", () => {
     decide: (a, c) => (a.exists ? emit(Credited(c)) : fail(new NoSuchAccount({ id: c.id })))
   });
 
-  test("a credit without the month it was decided in is refused, and nothing is appended", async () => {
+  test("a credit built without the month it was decided in is appended with it, as one built with state.period.tags", async () => {
     const s = given(Opened({ id: "a1" })).at(oct);
-    await expect(s.when(Untagged, c(10, "o1"))).rejects.toThrow(/its model reads PX_Credited by the tags year=2026, month=10/);
-    expect(types(await s.when(Credit, c(10, "o1")))).toEqual(["PX_PeriodOpened", "PX_Credited"]);
+    const r = await s.when(Untagged, c(10, "o1"));
+    expect(types(r)).toEqual(["PX_PeriodOpened", "PX_Credited"]);
+    expect(r.events[1]!.tags).toEqual(expect.arrayContaining([Tag.of("year", "2026"), Tag.of("month", "10")]));
+  });
+
+  test("a credit tagged with another month is refused, and nothing is appended", async () => {
+    const LastMonth = defineCommand({
+      name: "px_credit_last_month",
+      input,
+      errors: [NoSuchAccount],
+      model: (cc) => Monthly.of({ id: cc.id }),
+      idempotentBy: (cc) => Credited.where({ op_id: cc.opId }),
+      decide: (a, cc) => (a.exists ? emit(Credited(cc, [Tag.of("year", "2026"), Tag.of("month", "9")])) : fail(new NoSuchAccount({ id: cc.id })))
+    });
+    const s = given(Opened({ id: "a1" })).at(oct);
+    await expect(s.when(LastMonth, c(10, "o1"))).rejects.toThrow(/its model reads PX_Credited by the tags month=10, but the event carries another value for it/);
+    expect(s.log.map((e) => e.type)).toEqual(["PX_Opened"]);
   });
 
   test("an event about another entity, or a lifecycle event, needs none of this model's scope", async () => {
