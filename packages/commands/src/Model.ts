@@ -1,4 +1,4 @@
-import { Clock, Effect, Metric } from "effect";
+import { Clock, Effect, Metric, DateTime } from "effect";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
@@ -210,8 +210,8 @@ export interface PeriodContext<F> {
   readonly id: string;
   readonly key: string;
   readonly fields: F;
-  // The instant of the turn, ISO 8601, from the clock.
-  readonly at: string;
+  // The instant of the turn, from the clock (the `now` of the command that turns it): what an `Instant` field of the opening or closing event takes.
+  readonly at: DateTime.Utc;
 }
 export interface PeriodModel<S> {
   readonly of: (args: { readonly id: string }) => ModelInstance<S>;
@@ -287,9 +287,9 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
   const load = (eventStore: EventStoreService, id: string) =>
     Effect.gen(function* () {
       const now = new Date(yield* Clock.currentTimeMillis);
-      const at = now.toISOString();
+      const at = DateTime.fromDateUnsafe(now);
       const context = (fields: F): PeriodContext<F> => ({ id, key: spec.key(fields), fields, at });
-      const target = spec.fieldsAt(now);
+      const target = spec.fieldsAt(DateTime.fromDateUnsafe(now));
       const withPeriod = (s: S, fields: F) => ({ ...(s as object), period: info(fields) }) as S & { readonly period: PeriodInfo<F> };
       const stamp = { now } as const;
       // A fold in the period decided in, which keeps the state's `period` (a handler need not carry it).

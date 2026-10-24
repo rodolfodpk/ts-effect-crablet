@@ -33,13 +33,13 @@ A column is changed one way in one operation.
 From `@crablet/views/ViewTable`. Declares a table's columns and key, as the migration made it. The migration stays the truth: `checkViewTables`
 (`@crablet/views/ViewTableCheck`) compares the declaration with the migrated database and reports mismatches; it never generates DDL.
 
-| Column type | Postgres |
-|---|---|
-| `text()` | `text` |
-| `integer()` | `integer` |
-| `decimal()` | `numeric` |
-| `bigint()` | `bigint` |
-| `timestamptz()` | `timestamptz` |
+| Column type | Postgres | A handler gives it |
+|---|---|---|
+| `text()` | `text` | `string` |
+| `integer()` | `integer` | `number` |
+| `decimal()` | `numeric` | `number` |
+| `bigint()` | `bigint` | `bigint` |
+| `timestamptz()` | `timestamptz` | `DateTime.Utc`, what an event's `Instant` field holds ([ADR-0044](../adr/0044-time-in-the-domain-is-a-datetime.md)) |
 
 Each column can add `.nullable()` and `.default(value)`.
 

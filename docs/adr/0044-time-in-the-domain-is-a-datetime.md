@@ -36,12 +36,11 @@ A payment window written that way needed a helper schema, three conversions, and
 
 ## Consequences
 
-- The wallet's commands stamp their text fields with `DateTime.formatIso(now)`, and its welcome notification now uses `now` instead of `new Date()`.
+- The wallet's commands stamped their text fields with `DateTime.formatIso(now)` at first, and its welcome notification now uses `now` instead of `new Date()`.
 - The tests that fix the clock (`Scenario.at(date)`) are unchanged: `at` still takes a `Date`, and the scenario's clock turns it into `now`.
-- Not changed yet, each a follow-up:
-  - `Period.custom`'s `fieldsAt(now)` still receives a `Date`;
-  - a view's `timestamptz` column takes ISO text, so a view writing an `Instant` field formats it; letting it take a `DateTime` would let the
-    wallet's events move to `Instant` with no formatting anywhere.
+- Followed up (2026-10-24): a period's `fieldsAt(now)` and the turn's `at` are `DateTime.Utc`; a view's `timestamptz` column takes and gives a
+  `DateTime.Utc`; and the wallet's events declare their instants as `Instant`, stamped with `now` and written to the views as they are, with no
+  formatting anywhere.
 
 ## Alternatives considered
 

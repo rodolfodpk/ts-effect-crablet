@@ -3,7 +3,7 @@
 // turns the period itself, and a command can no longer append before its decision) every wallet lost money (60 of 60 in the first run); with the real Deposit none does.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Redacted, DateTime } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
@@ -53,8 +53,8 @@ const unguardedDeposit = (c: DepositInput) =>
       const statementId = `wallet:${c.walletId}:${year}-${String(month).padStart(2, "0")}`;
       const isOpen = yield* es.exists(WalletStatementOpened.where({ [WalletTags.STATEMENT_ID]: statementId }));
       const balance = (yield* WalletModel.of({ id: c.walletId, year, month }).load(es)).state.balance;
-      if (!isOpen) yield* es.append([WalletStatementOpened({ walletId: c.walletId, statementId, year, month, openingBalance: balance, openedAt: now.toISOString() })]);
-      yield* es.append([DepositMade({ ...c, newBalance: balance + c.amount, depositedAt: now.toISOString() }, [Tag.of(WalletTags.YEAR, String(year)), Tag.of(WalletTags.MONTH, String(month)), Tag.of(WalletTags.STATEMENT_ID, statementId)])]);
+      if (!isOpen) yield* es.append([WalletStatementOpened({ walletId: c.walletId, statementId, year, month, openingBalance: balance, openedAt: DateTime.fromDateUnsafe(now) })]);
+      yield* es.append([DepositMade({ ...c, newBalance: balance + c.amount, depositedAt: DateTime.fromDateUnsafe(now) }, [Tag.of(WalletTags.YEAR, String(year)), Tag.of(WalletTags.MONTH, String(month)), Tag.of(WalletTags.STATEMENT_ID, statementId)])]);
     })));
   });
 

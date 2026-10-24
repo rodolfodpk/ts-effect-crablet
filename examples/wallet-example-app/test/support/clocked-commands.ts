@@ -34,7 +34,7 @@ export const pausableDeposit = (afterLoad?: Pause) =>
     consistency: (c: any) => concurrent({ guard: WalletPeriodModel.lifecycleQuery(c.walletId) }),
     idempotentBy: (c: any) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
     decide: (wallet: any, c: any, { now }: { now: DateTime.Utc }) =>
-      wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
+      wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now }, statementTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
   } as never);
 
 export const pausableWithdraw = (afterLoad?: Pause) =>
@@ -47,7 +47,7 @@ export const pausableWithdraw = (afterLoad?: Pause) =>
         ? fail(new WalletNotFound({ walletId: c.walletId }))
         : wallet.balance < c.amount
           ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-          : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period)))
+          : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: now }, statementTags(c.walletId, wallet.period)))
   } as never);
 
 export const pausableTransfer = (afterLoad?: Pause) =>
@@ -62,7 +62,7 @@ export const pausableTransfer = (afterLoad?: Pause) =>
           : from.balance < c.amount
             ? fail(new InsufficientFunds({ walletId: c.fromWalletId, currentBalance: from.balance, requestedAmount: c.amount }))
             : emit(
-                MoneyTransferred({ ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: DateTime.formatIso(now) }, [
+                MoneyTransferred({ ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: now }, [
                   Tag.of(WalletTags.YEAR, String(from.period.fields.year)),
                   Tag.of(WalletTags.MONTH, String(from.period.fields.month)),
                   Tag.of(WalletTags.FROM_STATEMENT_ID, statementIdOf(c.fromWalletId, from.period.key)),

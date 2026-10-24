@@ -1,4 +1,3 @@
-import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Domain";
 import { WalletNotFound } from "../errors/WalletErrors.ts";
@@ -16,7 +15,7 @@ export const CloseWallet = defineCommand({
   idempotentBy: byModel(),
   decide: (wallet, c, { now }) =>
     wallet.exists
-      ? emit(WalletClosed({ walletId: c.walletId, closedAt: DateTime.formatIso(now) }))
+      ? emit(WalletClosed({ walletId: c.walletId, closedAt: now }))
       : wallet.closed
         ? noop("ALREADY_CLOSED")
         : fail(new WalletNotFound({ walletId: c.walletId }))

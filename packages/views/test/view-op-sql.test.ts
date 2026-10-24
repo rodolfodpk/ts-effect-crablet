@@ -1,3 +1,4 @@
+import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { compile } from "../src/internal/ViewOpSql.ts";
 import { bigint, decimal, integer, text, timestamptz, viewTable } from "../src/ViewTable.ts";
@@ -34,9 +35,9 @@ describe("compile", () => {
   });
 
   test("update: add, set and max, then the key", () => {
-    expect(c(summary.update({ wallet_id: "w" }, { add: { total_deposits: 3 }, set: { note: "x" }, max: { last_transaction_at: "2026-01-01T00:00:00Z" } }) as never)).toEqual({
+    expect(c(summary.update({ wallet_id: "w" }, { add: { total_deposits: 3 }, set: { note: "x" }, max: { last_transaction_at: DateTime.makeUnsafe("2026-01-01T00:00:00Z") } }) as never)).toEqual({
       text: 'UPDATE "wallet_summary_view" SET "total_deposits" = "total_deposits" + $1, "note" = $2, "last_transaction_at" = GREATEST("last_transaction_at", $3) WHERE "wallet_id" = $4',
-      params: [3, "x", "2026-01-01T00:00:00Z", "w"]
+      params: [3, "x", "2026-01-01T00:00:00.000Z", "w"]
     });
   });
 
@@ -45,9 +46,9 @@ describe("compile", () => {
   });
 
   test("upsert: the amounts start the row, and add to an existing one", () => {
-    expect(c(summary.upsert({ wallet_id: "w" }, { add: { total_deposits: 3, current_balance: -3 }, max: { last_transaction_at: "2026-01-01T00:00:00Z" } }) as never)).toEqual({
+    expect(c(summary.upsert({ wallet_id: "w" }, { add: { total_deposits: 3, current_balance: -3 }, max: { last_transaction_at: DateTime.makeUnsafe("2026-01-01T00:00:00Z") } }) as never)).toEqual({
       text: 'INSERT INTO "wallet_summary_view" ("wallet_id", "total_deposits", "current_balance", "last_transaction_at") VALUES ($1, $2, $3, $4) ON CONFLICT ("wallet_id") DO UPDATE SET "total_deposits" = "wallet_summary_view"."total_deposits" + EXCLUDED."total_deposits", "current_balance" = "wallet_summary_view"."current_balance" + EXCLUDED."current_balance", "last_transaction_at" = GREATEST("wallet_summary_view"."last_transaction_at", EXCLUDED."last_transaction_at")',
-      params: ["w", 3, -3, "2026-01-01T00:00:00Z"]
+      params: ["w", 3, -3, "2026-01-01T00:00:00.000Z"]
     });
   });
 

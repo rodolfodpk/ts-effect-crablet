@@ -1,5 +1,6 @@
 // The wallet's commands with a statement period of 5 minutes (WALLET_PERIOD=minutes:5), the way the kind lab runs them. The period model is read when the model module is loaded, and `bun test` loads the
 // modules once for all the files, so this file runs on its own: `bun run test:unit:period` sets the variable. Without it every test here is skipped.
+import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { given } from "@crablet/commands/testing/Scenario";
 import { Deposit } from "../src/domain/commands/DepositCommand.ts";
@@ -9,7 +10,7 @@ import { WalletOpened } from "../src/domain/WalletModel.ts";
 
 const on = process.env["WALLET_PERIOD"] === "minutes:5";
 const t = on ? test : test.skip;
-const at = new Date().toISOString();
+const at = DateTime.nowUnsafe();
 const opened = (walletId: string, initialBalance: number) => WalletOpened({ walletId, owner: "Ann", initialBalance, openedAt: at });
 const dep = (walletId: string, depositId: string, amount = 10) => ({ depositId, walletId, amount, description: "" });
 const tags = (e: { tags: ReadonlyArray<{ key: string; value: string }> }) => Object.fromEntries(e.tags.map((x) => [x.key, x.value]));

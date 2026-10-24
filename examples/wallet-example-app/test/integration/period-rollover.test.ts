@@ -7,7 +7,7 @@
 // version of these tests also paused in, no longer exists: there is no `prepare`.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Deferred, Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
+import { Deferred, Effect, Exit, Layer, ManagedRuntime, Redacted, DateTime } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { EventStore, makeEventStoreLayer } from "@crablet/eventstore";
@@ -123,7 +123,7 @@ describe("a command that decided on a month which closed before it appended", ()
     const id = newWallet();
     await open(id);
     // this month's statement opened and nothing done on it (what an OpenWallet that opens the first statement would leave)
-    await runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append([WalletStatementOpened({ walletId: id, statementId: `wallet:${id}:${ym(thisMonth).year}-${String(ym(thisMonth).month).padStart(2, "0")}`, ...ym(thisMonth), openingBalance: 100, openedAt: thisMonth.toISOString() })]))) as never);
+    await runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append([WalletStatementOpened({ walletId: id, statementId: `wallet:${id}:${ym(thisMonth).year}-${String(ym(thisMonth).month).padStart(2, "0")}`, ...ym(thisMonth), openingBalance: 100, openedAt: DateTime.fromDateUnsafe(thisMonth) })]))) as never);
     const p = await pausedOnce();
     const aRun = runAt(p.clock, pausableDeposit(p.pause), dep(id, 7));
     await p.reached();
@@ -172,9 +172,9 @@ const monthsBefore = (d: Date, n: number) => new Date(Date.UTC(d.getUTCFullYear(
 const stmtId = (id: string, d: Date) => `wallet:${id}:${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 const append = (events: ReadonlyArray<any>) => runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append(events))) as never);
 const periodTagsOf = (id: string, d: Date) => [Tag.of(WalletTags.YEAR, String(ym(d).year)), Tag.of(WalletTags.MONTH, String(ym(d).month)), Tag.of(WalletTags.STATEMENT_ID, stmtId(id, d))];
-const opening = (id: string, d: Date, openingBalance: number) => WalletStatementOpened({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance, openedAt: d.toISOString() });
-const closing = (id: string, d: Date, balance: number) => WalletStatementClosed({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance: balance, closingBalance: balance, closedAt: d.toISOString() });
-const walletOpened = (id: string) => WalletOpened({ walletId: id, owner: "x", initialBalance: 100, openedAt: monthsBefore(thisMonth, 3).toISOString() });
+const opening = (id: string, d: Date, openingBalance: number) => WalletStatementOpened({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance, openedAt: DateTime.fromDateUnsafe(d) });
+const closing = (id: string, d: Date, balance: number) => WalletStatementClosed({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance: balance, closingBalance: balance, closedAt: DateTime.fromDateUnsafe(d) });
+const walletOpened = (id: string) => WalletOpened({ walletId: id, owner: "x", initialBalance: 100, openedAt: DateTime.fromDateUnsafe(monthsBefore(thisMonth, 3)) });
 const transfer = (from: string, to: string, amount: number) => ({ transferId: crypto.randomUUID(), fromWalletId: from, toWalletId: to, amount, description: "" });
 
 describe("a transfer that turns the month of both its wallets", () => {
@@ -210,7 +210,7 @@ describe("a log written before the framework turned periods", () => {
     const id = newWallet();
     const [m2, m1, m0] = [monthsBefore(thisMonth, 2), monthsBefore(thisMonth, 1), thisMonth];
     await append([walletOpened(id), opening(id, m2, 100)]); // m-2 opened, nothing done on it, never closed (the old resolver closed only periods with transactions)
-    await append([opening(id, m1, 100), DepositMade({ depositId: crypto.randomUUID(), walletId: id, amount: 20, newBalance: 120, depositedAt: m1.toISOString(), description: "" } as never, periodTagsOf(id, m1))]); // m-1: opened, 20 deposited
+    await append([opening(id, m1, 100), DepositMade({ depositId: crypto.randomUUID(), walletId: id, amount: 20, newBalance: 120, depositedAt: DateTime.fromDateUnsafe(m1), description: "" } as never, periodTagsOf(id, m1))]); // m-1: opened, 20 deposited
     await append([closing(id, m1, 120), opening(id, m0, 120)]); // m-1 closed with transactions, m opened
     assert.ok(ok(await runAt(() => m0, Deposit, dep(id, 5))), "in the open period: no turn");
     assert.strictEqual(await balance(id, m0), 125);
@@ -224,7 +224,7 @@ describe("a log written before the framework turned periods", () => {
   it("a period left open for months turns straight to the current one: one closing, one opening", { timeout: 60_000 }, async () => {
     const id = newWallet();
     const old = monthsBefore(thisMonth, 4);
-    await append([walletOpened(id), opening(id, old, 100), DepositMade({ depositId: crypto.randomUUID(), walletId: id, amount: 10, newBalance: 110, depositedAt: old.toISOString(), description: "" } as never, periodTagsOf(id, old))]);
+    await append([walletOpened(id), opening(id, old, 100), DepositMade({ depositId: crypto.randomUUID(), walletId: id, amount: 10, newBalance: 110, depositedAt: DateTime.fromDateUnsafe(old), description: "" } as never, periodTagsOf(id, old))]);
     assert.ok(ok(await runAt(() => thisMonth, Deposit, dep(id, 5))));
     assert.strictEqual(await balance(id, thisMonth), 115);
     assert.strictEqual(await countOf(id, "WalletStatementClosed"), 1);

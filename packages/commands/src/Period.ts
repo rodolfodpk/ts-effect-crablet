@@ -7,13 +7,14 @@
 //       .period(Period.month, { opened: StatementOpened, closed: StatementClosed, open: ..., close: ... });
 //
 // Levels follow UTC unless called with a zone (`Period.day({ timeZone: "America/Sao_Paulo" })`); `Period.week` follows ISO weeks (or weeks from Sunday). An hour is not here yet; `Period.custom` is the way to any other cycle.
+import { DateTime } from "effect";
 import * as Tag from "@crablet/eventstore/Tag";
 
 export type PeriodFields = Readonly<Record<string, number>>;
 
 export interface PeriodSpec<F extends PeriodFields = PeriodFields> {
   // The period `now` falls in.
-  readonly fieldsAt: (now: Date) => F;
+  readonly fieldsAt: (now: DateTime.Utc) => F;
   // The period an opening event's DATA says it opened, or null if the data does not carry it.
   readonly fieldsOf: (data: unknown) => F | null;
   // A canonical key: equal periods have equal keys, and keys of one level sort in time order ("2026-10", "2026-10-09").
@@ -53,8 +54,9 @@ interface CalendarDate {
 }
 const formatters = new Map<string, Intl.DateTimeFormat>();
 // The calendar date `now` falls on in a zone. A zone that does not exist is refused here, when the level is defined (Intl throws a RangeError naming it).
-const calendarIn = (timeZone: string | undefined): ((now: Date) => CalendarDate) => {
-  if (timeZone === undefined || timeZone === "UTC") return (now) => ({ year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: now.getUTCDate() });
+const calendarIn = (timeZone: string | undefined): ((now: DateTime.Utc) => CalendarDate) => {
+  if (timeZone === undefined || timeZone === "UTC")
+    return (now) => ({ year: DateTime.getPartUtc(now, "year"), month: DateTime.getPartUtc(now, "month"), day: DateTime.getPartUtc(now, "day") });
   let format = formatters.get(timeZone);
   if (format === undefined) {
     format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" });
@@ -62,7 +64,7 @@ const calendarIn = (timeZone: string | undefined): ((now: Date) => CalendarDate)
   }
   const f = format;
   return (now) => {
-    const parts = f.formatToParts(now);
+    const parts = f.formatToParts(DateTime.toDateUtc(now));
     const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
     return { year: get("year"), month: get("month"), day: get("day") };
   };

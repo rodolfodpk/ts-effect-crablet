@@ -1,6 +1,7 @@
 // The wallet's commands, tested BDD-style with NO database: given a history, when a command arrives,
 // then what happened. Runs the real pipeline (validation, idempotency check, the statement period,
 // model load, decide, conditional append) against the in-memory event store.
+import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { InvalidInput } from "@crablet/commands/Errors";
@@ -13,7 +14,7 @@ import { Withdraw } from "../src/domain/commands/WithdrawCommand.ts";
 import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "../src/domain/errors/WalletErrors.ts";
 import { WalletClosed, WalletOpened } from "../src/domain/WalletModel.ts";
 
-const at = new Date().toISOString();
+const at = DateTime.nowUnsafe();
 const opened = (walletId: string, initialBalance: number) => WalletOpened({ walletId, owner: "Ann", initialBalance, openedAt: at });
 const dep = (walletId: string, depositId: string, amount = 10) => ({ depositId, walletId, amount, description: "" });
 const wd = (walletId: string, withdrawalId: string, amount: number) => ({ withdrawalId, walletId, amount, description: "" });

@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
-import { defineEvent, personal } from "@crablet/commands/Domain";
+import { defineEvent, Instant, personal } from "@crablet/commands/Domain";
 import * as WalletTags from "../WalletTags.ts";
 
 export const WelcomeNotificationSent = defineEvent("WelcomeNotificationSent", {
-  schema: Schema.Struct({ walletId: Schema.String, owner: personal(Schema.String), sentAt: Schema.String }),
+  schema: Schema.Struct({ walletId: Schema.String, owner: personal(Schema.String), sentAt: Instant }),
   tags: (d) => ({ [WalletTags.WALLET_ID]: d.walletId })
 });
 

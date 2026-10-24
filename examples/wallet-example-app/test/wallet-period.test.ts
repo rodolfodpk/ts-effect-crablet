@@ -1,9 +1,10 @@
 // The wallet's statement period setting (WALLET_PERIOD): month by default, or a slot of N minutes.
+import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { Period } from "@crablet/commands/Period";
 import { minutesPeriod, periodFromEnv } from "../src/domain/WalletPeriod.ts";
 
-const at = (iso: string) => new Date(iso);
+const at = (iso: string) => DateTime.makeUnsafe(iso);
 
 describe("periodFromEnv", () => {
   test("unset, blank and `month` are the calendar month", () => {

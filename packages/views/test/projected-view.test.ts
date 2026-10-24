@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Effect, DateTime } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { ViewEvent } from "../src/ProjectedView.ts";
@@ -8,15 +8,16 @@ import { applyInMemory, rowsOf } from "../src/ViewMemory.ts";
 import { decimal, integer, text, timestamptz, viewTable } from "../src/ViewTable.ts";
 
 // A view needs only `type` and `decodeStored` of an event definition (what `defineEvent` gives), so the tests do not depend on @crablet/commands.
-const eventOf = <D>(type: string, valid: (raw: any) => boolean): ViewEvent<D> => ({
+// `read` turns the stored payload into the decoded one, as a schema would (an instant's text into a DateTime).
+const eventOf = <D>(type: string, valid: (raw: any) => boolean, read: (raw: any) => D = (raw) => raw): ViewEvent<D> => ({
   type,
   decodeStored: (event) =>
     valid(event.data)
-      ? Effect.succeed(event.data as D)
+      ? Effect.succeed(read(event.data))
       : Effect.fail(new EventDecodingError({ message: "cannot be read", type, position: event.position, transactionId: event.transactionId, issues: [] }))
 });
 const Opened = eventOf<{ id: string; balance: number }>("Opened", (d) => typeof d.id === "string" && typeof d.balance === "number");
-const Deposited = eventOf<{ id: string; amount: number; at: string }>("Deposited", (d) => typeof d.amount === "number");
+const Deposited = eventOf<{ id: string; amount: number; at: DateTime.Utc }>("Deposited", (d) => typeof d.amount === "number", (d) => ({ ...d, at: DateTime.makeUnsafe(d.at) }));
 const Closed = eventOf<{ id: string }>("Closed", (d) => typeof d.id === "string");
 
 const accounts = viewTable("accounts", {
@@ -117,7 +118,7 @@ describe("applyInMemory", () => {
     const v = defineView("v", { tables: [accounts] })
       .on(Deposited, (d) => accounts.update({ id: d.id }, { add: { balance: d.amount } }))
       .on(Opened, (d) => accounts.insert({ id: d.id, balance: d.balance }, { onConflict: "ignore" }));
-    const db = await run(applyInMemory(v, [stored("Deposited", { id: "a", amount: 5, at: "x" }), stored("Opened", { id: "a", balance: 1 }), stored("Opened", { id: "a", balance: 9 })]));
+    const db = await run(applyInMemory(v, [stored("Deposited", { id: "a", amount: 5, at: "2026-01-01T00:00:00Z" }), stored("Opened", { id: "a", balance: 1 }), stored("Opened", { id: "a", balance: 9 })]));
     expect(rowsOf(db, accounts)).toEqual([{ id: "a", balance: 1, deposits: 0, last_at: null }]);
   });
 });

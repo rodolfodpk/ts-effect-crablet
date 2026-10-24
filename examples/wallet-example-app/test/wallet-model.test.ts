@@ -2,7 +2,7 @@
 // (While the hand-written WalletQueryPatterns/WalletBalanceProjector still existed, this file proved the
 // model equal to them; they are gone, so the expectations are now written out directly.)
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { Effect, DateTime } from "effect";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import { all } from "@crablet/commands/Model";
@@ -11,7 +11,7 @@ import * as M from "../src/domain/WalletModel.ts";
 
 const Y = 2026;
 const MO = 9;
-const at = "2026-09-01T00:00:00.000Z";
+const at = DateTime.makeUnsafe("2026-09-01T00:00:00.000Z");
 // What a period-scoped event ends up carrying: the period's tags (the framework adds them when a command appends) and its statement.
 const period = (walletId: string, month = MO) => {
   const tags = [Tag.of("year", String(Y)), Tag.of("month", String(month))];

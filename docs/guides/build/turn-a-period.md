@@ -40,7 +40,7 @@ export const WalletPeriodModel = walletFold.period(periodFromEnv(), {
 - The wallet's period comes from `periodFromEnv()` ([`WalletPeriod.ts`](../../../examples/wallet-example-app/src/domain/WalletPeriod.ts)): `Period.month` by default, or `Period.custom` with a slot of N minutes when `WALLET_PERIOD=minutes:N`, which the kind lab uses to turn a period every few minutes instead of once a month ([run the lab](../operate/run-the-kind-lab.md)). Choose it for a **new database**: statements written as months carry no `bucket`, so the framework cannot find the period of a wallet whose last statement was written the other way.
 - `Period.month` is a value, not a string: it carries the type of its fields (`{ year, month }`) and the framework derives from it the period "now" falls in, the tags that scope the model, a canonical key (`"2026-10"`) and
   which period an opening event opened. Levels today: `Period.year`, `Period.month`, `Period.day` and `Period.week`, in UTC; called with a zone (`Period.day({ timeZone: "America/Sao_Paulo" })`) they follow that zone's calendar. A week is an ISO week (starting on Monday, belonging to the year that holds most of its days: 1 January 2027 is still week 53 of 2026), or `Period.week({ startsOn: "sunday" })`. `Period.custom({ fieldsAt, fieldsOf, key, tagKeys })` is the way to a fiscal year or a shift.
-- `open(carry, p)` builds the opening event from the state the old period ended with; `close(state, p)` builds the closing event. `p` is `{ id, key, fields, at }`. Keep both **total**: they also run for an entity
+- `open(carry, p)` builds the opening event from the state the old period ended with; `close(state, p)` builds the closing event. `p` is `{ id, key, fields, at }`, with `at` the instant of the turn as a `DateTime.Utc` (the command's `now`), which an `Instant` field takes as it is. Keep both **total**: they also run for an entity
   that does not exist yet (the command then refuses, and the turn is dropped).
 - Both events need the model's binding tag (`wallet_id`) and the tags of the level (`year`, `month`): without them a period's query would never find its own opening, and every command would open it again. The
   framework checks this the first time it turns a period and names the missing tag.
@@ -60,7 +60,7 @@ export const Deposit = defineCommand({
   idempotentBy: (c) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
   decide: (wallet, c, { now }) =>
     wallet.exists
-      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period)))
+      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now }, statementTags(c.walletId, wallet.period)))
       : fail(new WalletNotFound({ walletId: c.walletId }))
 });
 ```

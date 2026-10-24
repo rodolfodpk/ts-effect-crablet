@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { defineEvent, defineModel, type PeriodInfo, personal, Tag } from "@crablet/commands/Domain";
+import { defineEvent, defineModel, Instant, type PeriodInfo, personal, Tag } from "@crablet/commands/Domain";
 import * as WalletTags from "./WalletTags.ts";
 import { periodFromEnv, type WalletPeriodFields } from "./WalletPeriod.ts";
 
@@ -13,14 +13,14 @@ export const WalletOpened = defineEvent("WalletOpened", {
     walletId: Schema.String,
     owner: personal(Schema.String), // a person's name: marked once, so the audit, the log API and the description treat it as personal data
     initialBalance: Schema.Number,
-    openedAt: Schema.String
+    openedAt: Instant
   }),
   tags: (d) => ({ [WalletTags.WALLET_ID]: d.walletId })
 });
 
 // Tombstone: no balance, no period scoping - closing is a lifecycle event, not a transaction.
 export const WalletClosed = defineEvent("WalletClosed", {
-  schema: Schema.Struct({ walletId: Schema.String, closedAt: Schema.String }),
+  schema: Schema.Struct({ walletId: Schema.String, closedAt: Instant }),
   tags: (d) => ({ [WalletTags.WALLET_ID]: d.walletId })
 });
 
@@ -39,7 +39,7 @@ export const WalletStatementOpened = defineEvent("WalletStatementOpened", {
     statementId: Schema.String,
     ...period,
     openingBalance: Schema.Number,
-    openedAt: Schema.String
+    openedAt: Instant
   }),
   tags: (d) => ({
     [WalletTags.WALLET_ID]: d.walletId,
@@ -57,7 +57,7 @@ export const WalletStatementClosed = defineEvent("WalletStatementClosed", {
     ...period,
     openingBalance: Schema.Number,
     closingBalance: Schema.Number,
-    closedAt: Schema.String
+    closedAt: Instant
   }),
   tags: (d) => ({
     [WalletTags.WALLET_ID]: d.walletId,
@@ -75,7 +75,7 @@ export const DepositMade = defineEvent("DepositMade", {
     walletId: Schema.String,
     amount: Schema.Number,
     newBalance: Schema.Number,
-    depositedAt: Schema.String,
+    depositedAt: Instant,
     description: Schema.String
   }),
   tags: (d) => ({ [WalletTags.WALLET_ID]: d.walletId, [WalletTags.DEPOSIT_ID]: d.depositId })
@@ -87,7 +87,7 @@ export const WithdrawalMade = defineEvent("WithdrawalMade", {
     walletId: Schema.String,
     amount: Schema.Number,
     newBalance: Schema.Number,
-    withdrawnAt: Schema.String,
+    withdrawnAt: Instant,
     description: Schema.String
   }),
   tags: (d) => ({ [WalletTags.WALLET_ID]: d.walletId, [WalletTags.WITHDRAWAL_ID]: d.withdrawalId })
@@ -101,7 +101,7 @@ export const MoneyTransferred = defineEvent("MoneyTransferred", {
     amount: Schema.Number,
     fromBalance: Schema.Number,
     toBalance: Schema.Number,
-    transferredAt: Schema.String,
+    transferredAt: Instant,
     description: Schema.String
   }),
   tags: (d) => ({
