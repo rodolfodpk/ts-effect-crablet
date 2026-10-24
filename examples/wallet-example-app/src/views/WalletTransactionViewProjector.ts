@@ -1,3 +1,4 @@
+import type { DateTime } from "effect";
 import { defineView } from "@crablet/views/ProjectedView";
 import { bigint, decimal, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
 import * as WalletTags from "../domain/WalletTags.ts";
@@ -18,7 +19,7 @@ const row = (
   eventType: string,
   amount: number,
   description: string,
-  occurredAt: string
+  occurredAt: DateTime.Utc
 ) =>
   walletTransactionTable.insert(
     { transaction_id: transactionId, event_position: position, wallet_id: walletId, event_type: eventType, amount, description, occurred_at: occurredAt },

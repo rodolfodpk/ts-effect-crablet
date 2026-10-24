@@ -32,7 +32,7 @@ export class CourseNotPriced extends DomainError("CourseNotPriced", { fields: { 
 export class NotSubscribed extends DomainError("NotSubscribed", { fields: { courseId: Schema.String, studentId: Schema.String }, kind: "not_found" }) {}
 export class AlreadyPaid extends DomainError("AlreadyPaid", { fields: { courseId: Schema.String, studentId: Schema.String }, kind: "conflict" }) {}
 export class WrongAmount extends DomainError("WrongAmount", { fields: { expected: Schema.Int, given: Schema.Int }, kind: "invalid" }) {}
-export class PaymentWindowClosed extends DomainError("PaymentWindowClosed", { fields: { courseId: Schema.String, studentId: Schema.String, closedAt: Schema.String }, kind: "conflict" }) {}
+export class PaymentWindowClosed extends DomainError("PaymentWindowClosed", { fields: { courseId: Schema.String, studentId: Schema.String, closedAt: Instant }, kind: "conflict" }) {}
 
 // #region models
 // The course's price. It reads the course's definition and its prices only, so pricing a course does not conflict with its subscriptions.
@@ -86,7 +86,7 @@ export const PaySubscription = defineCommand({
       : subscription.status === "paid"
         ? fail(new AlreadyPaid({ courseId: c.courseId, studentId: c.studentId }))
         : windowClosed(subscription, now)
-          ? fail(new PaymentWindowClosed({ courseId: c.courseId, studentId: c.studentId, closedAt: DateTime.formatIso(subscription.windowClosesAt!) }))
+          ? fail(new PaymentWindowClosed({ courseId: c.courseId, studentId: c.studentId, closedAt: subscription.windowClosesAt! }))
           : pricing.price === null
             ? fail(new CourseNotPriced({ courseId: c.courseId }))
             : c.amount !== pricing.price

@@ -1,4 +1,4 @@
-import type { Effect } from "effect";
+import type { DateTime, Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 
@@ -22,8 +22,8 @@ interface ValueOf {
   readonly integer: number;
   readonly decimal: number;
   readonly bigint: bigint;
-  // An ISO-8601 instant, as events carry them.
-  readonly timestamptz: string;
+  // An Effect DateTime.Utc: what an event's `Instant` field holds, so a handler passes it as it is.
+  readonly timestamptz: DateTime.Utc;
 }
 
 export interface Col<K extends Kind, Null extends boolean, Def extends boolean> {

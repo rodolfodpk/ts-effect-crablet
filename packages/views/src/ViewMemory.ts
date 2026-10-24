@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { ProjectedView } from "./ProjectedView.ts";
@@ -27,7 +27,7 @@ const startRow = (table: ViewTableDef, key: Readonly<Record<string, unknown>>): 
 const larger = (c: AnyCol, a: unknown, b: unknown): unknown => {
   if (a === null || a === undefined) return b;
   if (b === null || b === undefined) return a;
-  if (c.kind === "timestamptz") return Date.parse(a as string) >= Date.parse(b as string) ? a : b;
+  if (c.kind === "timestamptz") return DateTime.isGreaterThanOrEqualTo(a as DateTime.Utc, b as DateTime.Utc) ? a : b;
   return (a as number | bigint) >= (b as number | bigint) ? a : b;
 };
 
@@ -106,7 +106,7 @@ export const normalizeRow = (table: ViewTableDef, row: Readonly<Record<string, u
           : c.kind === "bigint"
             ? BigInt(v as string | number | bigint)
             : c.kind === "timestamptz"
-              ? (v instanceof Date ? v : new Date(v as string)).getTime()
+              ? DateTime.isDateTime(v) ? DateTime.toEpochMillis(v) : (v instanceof Date ? v : new Date(v as string)).getTime()
               : v;
   }
   return out;

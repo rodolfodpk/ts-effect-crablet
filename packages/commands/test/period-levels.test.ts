@@ -1,8 +1,9 @@
 // The levels of Period.ts: UTC by default, a time zone on request, ISO weeks. Pure functions of an instant: no database, no scenario.
+import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { Period } from "../src/Period.ts";
 
-const at = (iso: string) => new Date(iso);
+const at = (iso: string) => DateTime.makeUnsafe(iso);
 
 describe("UTC levels (the default, a value)", () => {
   test("year, month and day at an instant", () => {

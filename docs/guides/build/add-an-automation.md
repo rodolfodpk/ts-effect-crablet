@@ -19,7 +19,7 @@ export const SendWelcomeNotification = defineCommand({
   name: "SendWelcomeNotificationCommand",
   input,
   idempotentBy: (c) => WelcomeNotificationSent.where({ [WalletTags.WALLET_ID]: c.walletId }),
-  decide: (_, c, { now }) => emit(WelcomeNotificationSent({ walletId: c.walletId, owner: c.owner, sentAt: DateTime.formatIso(now) }))
+  decide: (_, c, { now }) => emit(WelcomeNotificationSent({ walletId: c.walletId, owner: c.owner, sentAt: now }))
 });
 ```
 
@@ -65,8 +65,8 @@ each produce an effect.
 test("welcome notification: one per wallet, and a redelivered WalletOpened does it again for none", async () => {
   // triggers that should each produce an effect: two DIFFERENT wallets
   await assertAutomationIdempotent(walletOpenedAutomation, [
-    WalletOpened({ walletId: "w1", owner: "Ana", initialBalance: 0, openedAt: "2026-10-09T00:00:00Z" }),
-    WalletOpened({ walletId: "w2", owner: "Bo", initialBalance: 0, openedAt: "2026-10-09T00:00:00Z" })
+    WalletOpened({ walletId: "w1", owner: "Ana", initialBalance: 0, openedAt: DateTime.makeUnsafe("2026-10-09T00:00:00Z") }),
+    WalletOpened({ walletId: "w2", owner: "Bo", initialBalance: 0, openedAt: DateTime.makeUnsafe("2026-10-09T00:00:00Z") })
   ]);
 });
 ```

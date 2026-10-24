@@ -1,3 +1,4 @@
+import { DateTime } from "effect";
 import { Period, type PeriodSpec } from "@crablet/commands/Domain";
 
 // The wallet's statement period: a calendar month, or (for the kind lab, so that a period turns while you watch) N minutes. WALLET_PERIOD picks it: unset or `month`, or `minutes:N` with N from 1 to 1440.
@@ -15,7 +16,7 @@ export const minutesPeriod = (minutes: number): WalletPeriodSpec => {
   if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) throw new Error(`a period of N minutes needs N from 1 to 1440, got ${minutes}`);
   return Period.custom<WalletPeriodFields>({
     fieldsAt: (now) => {
-      const bucket = Math.floor(now.getTime() / (minutes * MINUTE_MS));
+      const bucket = Math.floor(DateTime.toEpochMillis(now) / (minutes * MINUTE_MS));
       return { year: new Date(bucket * minutes * MINUTE_MS).getUTCFullYear(), bucket };
     },
     fieldsOf: (data) => {

@@ -1,4 +1,3 @@
-import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Domain";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
@@ -21,5 +20,5 @@ export const Withdraw = defineCommand({
       ? fail(new WalletNotFound({ walletId: c.walletId }))
       : wallet.balance < c.amount
         ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period)))
+        : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: now }, statementTags(c.walletId, wallet.period)))
 });

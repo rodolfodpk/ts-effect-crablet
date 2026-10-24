@@ -3,7 +3,7 @@
 import { viewsOf } from "../fixtures/viewsOf.ts";
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted, DateTime } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
@@ -30,10 +30,11 @@ const moves = viewTable("pv_moves", {
   columns: { account_id: text(), amount: decimal() }
 });
 
-const eventOf = <D>(type: string): ViewEvent<D> => ({
+// `read` turns the stored payload into the decoded one, as a schema would (an instant's text into a DateTime).
+const eventOf = <D>(type: string, read: (raw: any) => D = (raw) => raw): ViewEvent<D> => ({
   type,
   decodeStored: (event) =>
-    Effect.succeed(event.data as D).pipe(
+    Effect.sync(() => read(event.data)).pipe(
       Effect.filterOrFail(
         (d) => typeof d === "object" && d !== null,
         () => new EventDecodingError({ message: "cannot be read", type, position: event.position, transactionId: event.transactionId, issues: [] })
@@ -41,8 +42,8 @@ const eventOf = <D>(type: string): ViewEvent<D> => ({
     )
 });
 const Opened = eventOf<{ id: string; balance: number; note: string }>("PvOpened");
-const Deposited = eventOf<{ id: string; moveId: string; amount: number; at: string }>("PvDeposited");
-const Withdrawn = eventOf<{ id: string; moveId: string; amount: number; at: string }>("PvWithdrawn");
+const Deposited = eventOf<{ id: string; moveId: string; amount: number; at: DateTime.Utc }>("PvDeposited", (d) => ({ ...d, at: DateTime.makeUnsafe(d.at) }));
+const Withdrawn = eventOf<{ id: string; moveId: string; amount: number; at: DateTime.Utc }>("PvWithdrawn", (d) => ({ ...d, at: DateTime.makeUnsafe(d.at) }));
 const Noted = eventOf<{ id: string; note: string | null }>("PvNoted");
 const Closed = eventOf<{ id: string }>("PvClosed");
 

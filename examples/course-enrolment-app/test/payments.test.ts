@@ -1,6 +1,6 @@
 // Prices, payments and releases (src/domain/Payments.ts): in memory, no Docker.
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
@@ -117,7 +117,7 @@ describe("the payment window: three days from the subscription", () => {
     expect((await s.at(at(PAYMENT_WINDOW_MS - 1)).when(PaySubscription, pay("ann", "p-1"))).outcome).toBe("created");
     const late = await s.at(at(PAYMENT_WINDOW_MS)).when(PaySubscription, pay("bob", "p-2"));
     expect(late.error).toBeInstanceOf(PaymentWindowClosed);
-    expect(late.error).toMatchObject({ closedAt: at(PAYMENT_WINDOW_MS).toISOString() });
+    expect(DateTime.toEpochMillis((late.error as PaymentWindowClosed).closedAt)).toBe(at(PAYMENT_WINDOW_MS).getTime());
   });
   // #endregion payment-window-test
 

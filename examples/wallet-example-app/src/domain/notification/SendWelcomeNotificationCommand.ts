@@ -1,4 +1,3 @@
-import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, personal } from "@crablet/commands/Domain";
 import * as WalletTags from "../WalletTags.ts";
@@ -15,6 +14,6 @@ export const SendWelcomeNotification = defineCommand({
   name: "SendWelcomeNotificationCommand",
   input,
   idempotentBy: (c) => WelcomeNotificationSent.where({ [WalletTags.WALLET_ID]: c.walletId }),
-  decide: (_, c, { now }) => emit(WelcomeNotificationSent({ walletId: c.walletId, owner: c.owner, sentAt: DateTime.formatIso(now) }))
+  decide: (_, c, { now }) => emit(WelcomeNotificationSent({ walletId: c.walletId, owner: c.owner, sentAt: now }))
 });
 // #endregion automation-command

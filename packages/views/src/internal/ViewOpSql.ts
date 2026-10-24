@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { ViewOp, ViewTableDef } from "../ViewTable.ts";
@@ -15,7 +15,8 @@ type Data = Exclude<ViewOp, { readonly op: "raw" }>;
 
 const q = (name: string): string => `"${name}"`;
 // bigint goes over the wire as text: the driver cannot serialise a JS bigint.
-const param = (value: unknown): unknown => (typeof value === "bigint" ? value.toString() : value);
+// A bigint goes as text, and an instant (a timestamptz column's DateTime) as ISO-8601 text, which Postgres casts to the column's type.
+const param = (value: unknown): unknown => (typeof value === "bigint" ? value.toString() : DateTime.isDateTime(value) ? DateTime.formatIso(value) : value);
 
 const keyColumns = (table: ViewTableDef): ReadonlyArray<string> => Object.keys(table.key);
 

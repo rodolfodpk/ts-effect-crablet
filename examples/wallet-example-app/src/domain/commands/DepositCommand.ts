@@ -1,4 +1,3 @@
-import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Domain";
 import { WalletNotFound } from "../errors/WalletErrors.ts";
@@ -18,7 +17,7 @@ export const Deposit = defineCommand({
   idempotentBy: (c) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
   decide: (wallet, c, { now }) =>
     wallet.exists
-      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: DateTime.formatIso(now) }, statementTags(c.walletId, wallet.period)))
+      ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now }, statementTags(c.walletId, wallet.period)))
       : fail(new WalletNotFound({ walletId: c.walletId }))
 });
 // #endregion period-command

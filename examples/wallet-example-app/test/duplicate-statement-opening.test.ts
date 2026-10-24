@@ -1,11 +1,12 @@
 // What a second `WalletStatementOpened` for a statement that is already open does to the balance. Commands that raced on a wallet with no statement each opened one (see statement-open-race.test.ts); the
 // later opening carries the balance its writer READ, which is older than a deposit that committed in between. The model resets the period's balance to an opening's `openingBalance`, so the deposit disappears.
+import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { given } from "@crablet/commands/testing/Scenario";
 import { Deposit } from "../src/domain/commands/DepositCommand.ts";
 import { WalletOpened, WalletStatementOpened } from "../src/domain/WalletModel.ts";
 
-const at = new Date().toISOString();
+const at = DateTime.nowUnsafe();
 const dep = (walletId: string, depositId: string, amount: number) => ({ depositId, walletId, amount, description: "" });
 
 describe("a duplicate statement opening", () => {

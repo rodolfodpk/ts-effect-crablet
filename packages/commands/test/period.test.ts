@@ -167,7 +167,7 @@ describe("a model with a period", () => {
   test("Period.custom: a fiscal year that starts in April turns on 1 April, not on 1 January", async () => {
     // fiscal year N runs from April of N to March of N+1; its fields are { fy }
     const fiscal = Period.custom({
-      fieldsAt: (now: Date) => ({ fy: now.getUTCMonth() >= 3 ? now.getUTCFullYear() : now.getUTCFullYear() - 1 }),
+      fieldsAt: (now: DateTime.Utc) => ({ fy: DateTime.getPartUtc(now, "month") >= 4 ? DateTime.getPartUtc(now, "year") : DateTime.getPartUtc(now, "year") - 1 }),
       fieldsOf: (data: unknown) => {
         const fy = (data as { fy?: unknown } | null)?.fy;
         return typeof fy === "number" ? { fy } : null;
