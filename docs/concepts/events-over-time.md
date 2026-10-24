@@ -31,7 +31,7 @@ handled or explicitly ignored by that model. The change-impact report lists them
 | **Erasing a person's data from the log** | **Not built.** The payload is stored as written. Encrypting personal fields so their key can be destroyed (crypto-shredding) is planned, not available. |
 
 If you must be able to erase personal data on request, keep it outside the log today (in a table you own, referenced by an opaque id), or wait for
-crypto-shredding. `personal(...)` is in `@crablet/commands/Personal`; the [tutorial](../tutorial/01-the-rule-in-memory.md) shows it in context.
+crypto-shredding. `personal(...)` is in `@crablet/commands/Domain` (and `/Personal`, for a contract a browser imports); the [tutorial](../tutorial/01-the-rule-in-memory.md) shows it in context.
 
 ## Growth
 

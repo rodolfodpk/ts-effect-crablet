@@ -5,7 +5,7 @@ This is the package most application code imports.
 
 ## What it gives you
 
-A domain file imports what it declares with from **`/Domain`**, in one import: `defineEvent`, `defineModel` and `all`, `Period`, `defineCommand` with `emit`/`noop`/`fail`/`byModel`, `defineContract`, `DomainError`, `personal` and `Tag`. A module a browser imports (a
+A domain file imports what it declares from **`/Domain`**, in one import: `defineEvent`, `defineModel` and `all`, `Period`, `defineCommand` with `emit`/`noop`/`fail`/`byModel`/`strict`/`concurrent`, `defineContract`, `DomainError`, `personal` and `Tag`. A module a browser imports (a
 contract, its errors) uses the narrow entry points (`/Contract`, `/Errors`), because `/Domain` reaches the command pipeline.
 
 
