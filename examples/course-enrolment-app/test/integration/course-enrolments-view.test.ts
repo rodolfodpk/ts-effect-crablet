@@ -7,7 +7,7 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { StudentSubscribed } from "../../src/domain/Enrolment.ts";
+import { StudentSubscribed, SubscriptionReleased } from "../../src/domain/Enrolment.ts";
 import { CourseEnrolmentsView } from "../../src/views/CourseEnrolmentsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -30,6 +30,10 @@ const subscribed = (studentId: string, courseId: string, data: unknown = { stude
   eventId: crypto.randomUUID(),
   type: StudentSubscribed.type, tags: [], data, transactionId: "1", position: position++, occurredAt: new Date(), correlationId: null, causationId: null
 });
+const released = (studentId: string, courseId: string): StoredEvent => ({
+  eventId: crypto.randomUUID(),
+  type: SubscriptionReleased.type, tags: [], data: { studentId, courseId }, transactionId: "1", position: position++, occurredAt: new Date(), correlationId: null, causationId: null
+});
 const seats = (courseId: string) =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -48,6 +52,12 @@ describe("course enrolments view (its own SQL, through raw)", () => {
     assert.deepStrictEqual(await seats(b), [{ student_id: "cy", seat_number: 1 }]);
   });
 
+  it("a release removes the student's row, and a seat number is never given twice", async () => {
+    const c = `c-${crypto.randomUUID().slice(0, 8)}`;
+    await handle([subscribed("ann", c), subscribed("bob", c), released("ann", c), subscribed("cy", c)]);
+    assert.deepStrictEqual(await seats(c), [{ student_id: "bob", seat_number: 2 }, { student_id: "cy", seat_number: 3 }]);
+  });
+
   it("an unreadable event fails the batch with a typed EventDecodingError, and nothing of the batch is written", async () => {
     const c = `c-${crypto.randomUUID().slice(0, 8)}`;
     const exit = await handle([subscribed("ann", c), subscribed("bob", c, { studentId: 42 })]);
@@ -57,6 +67,6 @@ describe("course enrolments view (its own SQL, through raw)", () => {
   });
 
   it("its subscription is the event type it handles", () => {
-    assert.deepStrictEqual([...CourseEnrolmentsView.subscription().eventTypes], [StudentSubscribed.type]);
+    assert.deepStrictEqual([...CourseEnrolmentsView.subscription().eventTypes], [StudentSubscribed.type, SubscriptionReleased.type]);
   });
 });

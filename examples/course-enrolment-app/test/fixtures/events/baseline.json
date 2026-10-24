@@ -56,5 +56,70 @@
       "course_id=c-1"
     ],
     "note": "first release"
+  },
+  {
+    "type": "SubscriptionReleased",
+    "payload": {
+      "studentId": "s-1",
+      "courseId": "c-1"
+    },
+    "tags": [
+      "student_id=s-1",
+      "course_id=c-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "CoursePriced",
+    "payload": {
+      "courseId": "c-1",
+      "price": 12000
+    },
+    "tags": [
+      "course_id=c-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "SubscriptionPaid",
+    "payload": {
+      "courseId": "c-1",
+      "studentId": "s-1",
+      "paymentId": "p-1",
+      "amount": 12000
+    },
+    "tags": [
+      "course_id=c-1",
+      "student_id=s-1",
+      "payment_id=p-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "StudentSubscribed",
+    "payload": {
+      "studentId": "s-1",
+      "courseId": "c-1",
+      "subscribedAt": "2026-10-24T10:00:00.000Z"
+    },
+    "tags": [
+      "student_id=s-1",
+      "course_id=c-1"
+    ],
+    "note": "subscribedAt added (optional): the payment window starts from it"
+  },
+  {
+    "type": "ReceiptSent",
+    "payload": {
+      "paymentId": "p-1",
+      "courseId": "c-1",
+      "studentId": "s-1",
+      "amount": 12000,
+      "sentAt": "2026-10-24T10:05:00.000Z"
+    },
+    "tags": [
+      "payment_id=p-1"
+    ],
+    "note": "first release"
   }
 ]
