@@ -6,7 +6,7 @@
 // `@crablet/eventstore/Tag`), which stay. It reaches the command pipeline, so a module a browser imports (a contract, the errors) keeps
 // importing `/Contract` and `/Errors` instead. Running, testing and wiring are elsewhere: `CommandExecutor` (`@crablet/commands`),
 // `Crablet.layer` (`/Crablet`), `given` (`/testing/Scenario`).
-export { defineEvent, type EventDef } from "./Event.ts";
+export { defineEvent, Instant, type EventDef } from "./Event.ts";
 export { all, defineModel, type HandlerCtx, type ModelInstance, type PeriodInfo } from "./Model.ts";
 export { Period, type PeriodSpec } from "./Period.ts";
 export {

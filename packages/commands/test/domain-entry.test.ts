@@ -8,7 +8,7 @@ import * as Tag from "@crablet/eventstore/Tag";
 describe("@crablet/commands/Domain", () => {
   test("gives every declaration a domain file uses, and nothing else", () => {
     expect(Object.keys(Domain).sort()).toEqual(
-      ["DomainError", "Period", "Tag", "all", "byModel", "concurrent", "defineCommand", "defineContract", "defineEvent", "defineModel", "emit", "fail", "noop", "personal", "strict"].sort()
+      ["DomainError", "Instant", "Period", "Tag", "all", "byModel", "concurrent", "defineCommand", "defineContract", "defineEvent", "defineModel", "emit", "fail", "noop", "personal", "strict"].sort()
     );
   });
 

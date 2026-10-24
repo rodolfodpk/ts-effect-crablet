@@ -54,6 +54,13 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   readonly where: (filter?: { readonly [K in TagKeys]?: TagValue }) => Query.Query;
 }
 
+// An instant in an event's payload: stored as ISO-8601 text in UTC, read as an Effect `DateTime.Utc`. Text that is not an instant fails to decode,
+// loudly, and the type checker refuses a plain string where an `Instant` is declared.
+//
+//     schema: Schema.Struct({ courseId: Schema.String, subscribedAt: Instant })
+//     DateTime.add(data.subscribedAt, { days: 3 })
+export const Instant = Schema.DateTimeUtcFromString;
+
 export const defineEvent = <
   Type extends string,
   S extends Schema.Constraint,
@@ -63,20 +70,38 @@ export const defineEvent = <
   def: { readonly schema: S; readonly tags: (data: Schema.Schema.Type<S>) => T }
 ): EventDef<Type, Schema.Schema.Type<S>, Extract<keyof T, string>> => {
   const decodeRaw = Schema.decodeUnknownSync(def.schema as never) as unknown as (raw: unknown, options?: { readonly errors?: "first" | "all" }) => Schema.Schema.Type<S>;
+  const encodeRaw = Schema.encodeUnknownSync(def.schema as never) as unknown as (value: unknown, options?: { readonly errors?: "first" | "all" }) => unknown;
   const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1();
+  const issuesOf = (error: unknown): ReadonlyArray<DecodingIssue> | undefined => {
+    const issue = (error as { _tag?: string; issue?: SchemaIssue.Issue } | null)?._tag === "SchemaError" ? (error as { issue: SchemaIssue.Issue }).issue : undefined;
+    if (issue === undefined) return undefined;
+    return formatIssues(issue).issues.map((i) => ({
+      path: (i.path ?? []).map((segment) => (typeof segment === "object" && segment !== null && "key" in segment ? (segment as { key: PropertyKey }).key : segment)).map((k) => (typeof k === "number" ? k : String(k))),
+      message: i.message
+    }));
+  };
   // Every problem is reported (`errors: "all"`), as paths and messages only: the schema's default messages do not echo the value, so they are safe to log
   // for events that carry personal data (ADR-0017). Anything that is not a schema failure is rethrown as it is.
   const decode = (raw: unknown): Schema.Schema.Type<S> => {
     try {
       return decodeRaw(raw, { errors: "all" });
     } catch (error) {
-      const issue = (error as { _tag?: string; issue?: SchemaIssue.Issue } | null)?._tag === "SchemaError" ? (error as { issue: SchemaIssue.Issue }).issue : undefined;
-      if (issue === undefined) throw error;
-      const issues: ReadonlyArray<DecodingIssue> = formatIssues(issue).issues.map((i) => ({
-        path: (i.path ?? []).map((segment) => (typeof segment === "object" && segment !== null && "key" in segment ? (segment as { key: PropertyKey }).key : segment)).map((k) => (typeof k === "number" ? k : String(k))),
-        message: i.message
-      }));
+      const issues = issuesOf(error);
+      if (issues === undefined) throw error;
       throw new EventDecodingFailure(type, issues);
+    }
+  };
+
+  // What is stored is the payload ENCODED by its schema, the shape `decode` reads back: a field that transforms (an `Instant`, stored as ISO text and read
+  // as a DateTime) is stored as its text, and a command folding the events it is about to append reads them as it reads stored ones. A payload that does
+  // not fit its schema is a defect, caught where the event is built; the message names paths, never values (personal data).
+  const encode = (data: Schema.Schema.Type<S>): unknown => {
+    try {
+      return encodeRaw(data, { errors: "all" });
+    } catch (error) {
+      const issues = issuesOf(error);
+      if (issues === undefined) throw error;
+      throw new Error(`event "${type}" cannot be built: ${issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`);
     }
   };
 
@@ -108,7 +133,7 @@ export const defineEvent = <
         : [value as TagValue | null | undefined];
       for (const one of values) builder.tag(key, one);
     }
-    const built = builder.tags(extraTags).data(data).build();
+    const built = builder.tags(extraTags).data(encode(data)).build();
     guardTags(data, built.tags);
     return built;
   };
