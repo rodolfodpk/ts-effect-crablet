@@ -115,8 +115,10 @@ const problemTitleOf = { not_found: "Not Found", invalid: "Bad Request", conflic
 export const domainProblemOf = (kind: ErrorKind, error: unknown): object => {
   const tag = (error as { _tag?: string })._tag ?? "DomainError";
   const message = (error as { message?: string }).message;
-  const declared = (error as { constructor?: { fields?: Record<string, unknown> } }).constructor?.fields ?? {};
-  const fields = Object.fromEntries(Object.keys(declared).map((key) => [key, (error as Record<string, unknown>)[key]]));
+  const declared = (error as { constructor?: { fields?: Record<string, Schema.Top> } }).constructor?.fields ?? {};
+  const values = Object.fromEntries(Object.keys(declared).map((key) => [key, (error as Record<string, unknown>)[key]]));
+  // Encoded by the error's own field schemas, as an event's payload is: a field that transforms (an `Instant`) goes out as its text.
+  const fields = Schema.encodeUnknownSync(Schema.Struct(declared as never))(values);
   return {
     type: `urn:crablet:problem:command-api:${kind.replace("_", "-")}`,
     title: problemTitleOf[kind],
