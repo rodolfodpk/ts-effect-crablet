@@ -1,7 +1,7 @@
 // The wallet's Deposit, Withdraw and TransferMoney with a pause point, for tests of the month rollover (docs/history/plans/period-rollover.md). They are the real commands' rules (same contract, model, consistency
 // and decide). The clock is not a parameter any more: the framework reads the Effect `Clock`, so a test runs a command under `atClock(() => date)`. `afterLoad` runs after the model is loaded and before the
 // append - where a command that decided in one month can find, on arriving, that another has turned it.
-import { Clock, Effect } from "effect";
+import { Clock, Effect, DateTime } from "effect";
 import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Command";
 import { all } from "@crablet/commands/Model";
 import * as Tag from "@crablet/eventstore/Tag";
@@ -33,8 +33,8 @@ export const pausableDeposit = (afterLoad?: Pause) =>
     model: (c: any) => afterLoadOf(WalletPeriodModel.of({ id: c.walletId }), afterLoad),
     consistency: (c: any) => concurrent({ guard: WalletPeriodModel.lifecycleQuery(c.walletId) }),
     idempotentBy: (c: any) => DepositMade.where({ [WalletTags.DEPOSIT_ID]: c.depositId }),
-    decide: (wallet: any, c: any, { now }: { now: Date }) =>
-      wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: now.toISOString() }, periodTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
+    decide: (wallet: any, c: any, { now }: { now: DateTime.Utc }) =>
+      wallet.exists ? emit(DepositMade({ ...c, newBalance: wallet.balance + c.amount, depositedAt: DateTime.formatIso(now) }, periodTags(c.walletId, wallet.period))) : fail(new WalletNotFound({ walletId: c.walletId }))
   } as never);
 
 export const pausableWithdraw = (afterLoad?: Pause) =>
@@ -42,19 +42,19 @@ export const pausableWithdraw = (afterLoad?: Pause) =>
     ...WithdrawContract,
     model: (c: any) => afterLoadOf(WalletPeriodModel.of({ id: c.walletId }), afterLoad),
     idempotentBy: (c: any) => WithdrawalMade.where({ [WalletTags.WITHDRAWAL_ID]: c.withdrawalId }),
-    decide: (wallet: any, c: any, { now }: { now: Date }) =>
+    decide: (wallet: any, c: any, { now }: { now: DateTime.Utc }) =>
       !wallet.exists
         ? fail(new WalletNotFound({ walletId: c.walletId }))
         : wallet.balance < c.amount
           ? fail(new InsufficientFunds({ walletId: c.walletId, currentBalance: wallet.balance, requestedAmount: c.amount }))
-          : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: now.toISOString() }, periodTags(c.walletId, wallet.period)))
+          : emit(WithdrawalMade({ ...c, newBalance: wallet.balance - c.amount, withdrawnAt: DateTime.formatIso(now) }, periodTags(c.walletId, wallet.period)))
   } as never);
 
 export const pausableTransfer = (afterLoad?: Pause) =>
   defineCommand({
     ...TransferMoneyContract,
     model: (c: any) => afterLoadOf(all({ from: WalletPeriodModel.of({ id: c.fromWalletId }), to: WalletPeriodModel.of({ id: c.toWalletId }) }), afterLoad),
-    decide: ({ from, to }: any, c: any, { now }: { now: Date }) =>
+    decide: ({ from, to }: any, c: any, { now }: { now: DateTime.Utc }) =>
       !from.exists
         ? fail(new WalletNotFound({ walletId: c.fromWalletId }))
         : !to.exists
@@ -62,7 +62,7 @@ export const pausableTransfer = (afterLoad?: Pause) =>
           : from.balance < c.amount
             ? fail(new InsufficientFunds({ walletId: c.fromWalletId, currentBalance: from.balance, requestedAmount: c.amount }))
             : emit(
-                MoneyTransferred({ ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: now.toISOString() }, [
+                MoneyTransferred({ ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: DateTime.formatIso(now) }, [
                   Tag.of(WalletTags.YEAR, String(from.period.fields.year)),
                   Tag.of(WalletTags.MONTH, String(from.period.fields.month)),
                   Tag.of(WalletTags.FROM_STATEMENT_ID, statementIdOf(c.fromWalletId, from.period.key)),

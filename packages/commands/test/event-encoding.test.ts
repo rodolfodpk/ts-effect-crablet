@@ -19,7 +19,7 @@ const Open = defineCommand({
   input: Schema.Struct({ accountId: Schema.String }),
   model: (c) => Account.of({ id: c.accountId }),
   idempotentBy: byModel(),
-  decide: (s, c, { now }) => (s.openedAt !== null ? noop("ALREADY_OPEN") : emit(Opened({ accountId: c.accountId, openedAt: DateTime.fromDateUnsafe(now) })))
+  decide: (s, c, { now }) => (s.openedAt !== null ? noop("ALREADY_OPEN") : emit(Opened({ accountId: c.accountId, openedAt: now })))
 });
 
 const at = new Date("2026-11-02T09:00:00.000Z");

@@ -19,7 +19,7 @@ export const SendWelcomeNotification = defineCommand({
   name: "SendWelcomeNotificationCommand",
   input,
   idempotentBy: (c) => WelcomeNotificationSent.where({ [WalletTags.WALLET_ID]: c.walletId }),
-  decide: (_, c) => emit(WelcomeNotificationSent({ walletId: c.walletId, owner: c.owner, sentAt: new Date().toISOString() }))
+  decide: (_, c, { now }) => emit(WelcomeNotificationSent({ walletId: c.walletId, owner: c.owner, sentAt: DateTime.formatIso(now) }))
 });
 ```
 

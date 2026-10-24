@@ -1,4 +1,4 @@
-import { Clock, Effect } from "effect";
+import { Clock, DateTime, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore, existsProjector, type EventStoreService } from "@crablet/eventstore";
@@ -49,9 +49,10 @@ export interface Fail<E> {
 }
 export type Decision<E = never> = Emit | Noop | Fail<E>;
 
-// What `decide` is told besides the state and the input: the instant of this attempt, and what `resolve` looked up.
+// What `decide` is told besides the state and the input: the instant of this attempt, as an Effect `DateTime.Utc` (the type an `Instant` field
+// holds, so it is stamped on an event as it is), and what `resolve` looked up.
 export interface DecideContext<R = undefined> {
-  readonly now: Date;
+  readonly now: DateTime.Utc;
   readonly resolved: R;
 }
 
@@ -207,7 +208,7 @@ export const defineCommand = <
   //     It needs a model and decides under strict() (no `consistency`): a racing repeat conflicts, reloads, and `decide` sees the first.
   // Required by any caller that may repeat a request (a client retry, an automation redelivery); `assertRepeatHarmless` (testing) checks the answer.
   readonly idempotentBy?: IdempotentBy<IB, Schema.Schema.Type<I>>;
-  // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
+  // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it (`subscribedAt: now`, with an `Instant` field) instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
   readonly decide: (state: S, input: Schema.Schema.Type<I>, context: DecideContext<R>) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
@@ -272,7 +273,7 @@ export const defineCommand = <
       const loaded = model !== null ? yield* model.load(eventStore) : null;
 
       // 4. Decide (pure).
-      const now = loaded?.now ?? new Date(yield* Clock.currentTimeMillis);
+      const now = DateTime.fromDateUnsafe(loaded?.now ?? new Date(yield* Clock.currentTimeMillis));
       const decision = def.decide(loaded?.state as S, input, { now, resolved }) as Decision<ErrorOf<D>>;
       if (decision._tag === "Fail") return yield* Effect.fail(decision.error);
       // A no-op answers with the newest event the decision read: whatever made it "already done" is at or before it.

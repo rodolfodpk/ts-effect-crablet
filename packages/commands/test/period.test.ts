@@ -1,6 +1,6 @@
 // `.period`: a model that declares its period once, and a command that never writes the rollover itself (docs/history/plans/period-rollover.md). In memory, with a clock: `given(...).at(date).when(...)`.
 import { describe, expect, test } from "bun:test";
-import { Effect, Metric } from "effect";
+import { Effect, Metric, DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import { byModel, defineCommand, emit, fail, noop } from "../src/Command.ts";
@@ -218,7 +218,7 @@ describe("a model with a period", () => {
       input,
       errors: [NoSuchAccount],
       model: (cc) => Monthly.of({ id: cc.id }),
-      decide: (a, cc, { now }) => (a.exists ? emit(Stamped({ id: cc.id, at: now.toISOString() }, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
+      decide: (a, cc, { now }) => (a.exists ? emit(Stamped({ id: cc.id, at: DateTime.formatIso(now) }, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
     });
     const r = await given(Opened({ id: "a1" })).at(nov).when(Stamp, c(1, "o1"));
     expect(types(r)).toEqual(["PX_PeriodOpened", "PX_Stamped"]);
@@ -227,7 +227,7 @@ describe("a model with a period", () => {
 
   test("a command without a period model gets the clock as `now` too", async () => {
     const Plain = defineEvent("PX_Plain", { schema: Schema.Struct({ at: Schema.String }), tags: () => ({ acct: "x" }) });
-    const Cmd = defineCommand({ name: "px_plain", input, decide: (_s, _c, { now }) => emit(Plain({ at: now.toISOString() })) });
+    const Cmd = defineCommand({ name: "px_plain", input, decide: (_s, _c, { now }) => emit(Plain({ at: DateTime.formatIso(now) })) });
     const r = await given().at(dec).when(Cmd, c(1, "o1"));
     expect(r.events[0]!.data).toMatchObject({ at: dec.toISOString() });
   });

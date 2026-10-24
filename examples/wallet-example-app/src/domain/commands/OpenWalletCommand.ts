@@ -1,3 +1,4 @@
+import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Domain";
 import { OpenWalletContract } from "../WalletContracts.ts";
@@ -15,7 +16,7 @@ export const OpenWallet = defineCommand({
   idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: ({ opened }, c, { now }) =>
     opened === null
-      ? emit(WalletOpened({ ...c, openedAt: now.toISOString() }))
+      ? emit(WalletOpened({ ...c, openedAt: DateTime.formatIso(now) }))
       : opened.owner === c.owner && opened.initialBalance === c.initialBalance
         ? noop("ALREADY_OPENED")
         : fail(new WalletAlreadyExists({ walletId: c.walletId }))

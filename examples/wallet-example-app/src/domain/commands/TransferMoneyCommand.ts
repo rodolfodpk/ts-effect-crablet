@@ -1,3 +1,4 @@
+import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, defineCommand, emit, fail, Tag } from "@crablet/commands/Domain";
 import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
@@ -24,7 +25,7 @@ export const TransferMoney = defineCommand({
           ? fail(new InsufficientFunds({ walletId: c.fromWalletId, currentBalance: from.balance, requestedAmount: c.amount }))
           : emit(
               MoneyTransferred(
-                { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: now.toISOString() },
+                { ...c, fromBalance: from.balance - c.amount, toBalance: to.balance + c.amount, transferredAt: DateTime.formatIso(now) },
                 // both wallets share the current period; each side's own statement id is tagged for the views
                 [
                   ...from.period.tags,

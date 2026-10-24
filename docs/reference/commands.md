@@ -17,7 +17,7 @@ From `@crablet/commands/Command`.
 |---|---|---|---|
 | `name` | yes | | The command's name, 1 to 64 characters. Also its HTTP path: `POST /api/commands/<name>`. |
 | `input` | yes | | The `Schema` the input is validated against. Every failing field is reported, not just the first. |
-| `decide` | yes | | `(state, input, { now, resolved }) => emit(...) \| fail(error) \| noop(reason)`. A pure function. `now` is the instant of this attempt; stamp events with it instead of `new Date()`. `resolved` is what `resolve` looked up. |
+| `decide` | yes | | `(state, input, { now, resolved }) => emit(...) \| fail(error) \| noop(reason)`. A pure function. `now` is the instant of this attempt, a `DateTime.Utc` from the clock; stamp events with it instead of `new Date()` (an `Instant` field takes it as it is, a text field `DateTime.formatIso(now)`). `resolved` is what `resolve` looked up. |
 | `model` | no | none | `(input, { resolved }) => Model.of({ id })`, or `all({ a: ..., b: ... })` for several. Gives `decide` its state and the command its boundary. Without it, `decide` gets `undefined` and the default consistency is `concurrent()`. |
 | `errors` | for each domain error | `[]` | The `DomainError` classes `decide` or `resolve` can fail with. A missing class is a compile error that names it. The HTTP layer documents and maps them. |
 | `consistency` | no | `strict()` with a model, `concurrent()` without | `(input, { resolved }) => strict() \| concurrent({ guard })`. `strict()`: anything in the boundary changed since loading refuses the append. `concurrent({ guard })`: safe to run in parallel with itself; only the `guard` events can conflict (deposits). See [the default](#the-default-consistency). |
