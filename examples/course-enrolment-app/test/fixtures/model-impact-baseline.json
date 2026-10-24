@@ -1,0 +1,5 @@
+[
+  {"model":"CourseModel","eventType":"CourseConfirmed","reason":"Seats and capacity do not depend on whether the course was confirmed to start."},
+  {"model":"CourseModel","eventType":"RoomBooked","reason":"Seats and capacity do not depend on the room the course is in."},
+  {"model":"CourseModel","eventType":"TeacherAssigned","reason":"Seats and capacity do not depend on who teaches the course."}
+]

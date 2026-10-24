@@ -16,6 +16,7 @@
       "name": "course-enrolment-app",
       "version": "0.0.0",
       "dependencies": {
+        "@crablet/automations": "workspace:*",
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
         "@crablet/db-migrations": "workspace:*",
