@@ -5,7 +5,7 @@
 What `defineEvent`, `defineModel` and `defineCommand` accept, and what a command can answer. The ideas behind them are in
 [consistency boundaries](../concepts/dcb-guide.md); the decision is [ADR-0010](../adr/0010-declarative-command-api.md).
 
-A domain file imports all of it from one place, `@crablet/commands/Domain`: `defineEvent`, `defineModel`, `all`, `Period`, `defineCommand`, `emit`, `noop`,
+A domain file imports all of it from one place, `@crablet/commands/Domain`: `defineEvent`, `Instant`, `defineModel`, `all`, `Period`, `defineCommand`, `emit`, `noop`,
 `fail`, `byModel`, `strict`, `concurrent`, `defineContract`, `DomainError`, `personal` and `Tag`. The narrower entry points named below stay, and a
 module a browser imports (a contract, its errors) uses them: `/Domain` reaches the command pipeline.
 
@@ -127,6 +127,10 @@ queried in SQL, so they follow the database's convention.
 
 The result builds an event (`DepositMade({ ... })`), finds events (`DepositMade.where({ deposit_id })`, which accepts only the tag keys the event
 declares), and names the payload's type: `type Deposit = typeof DepositMade.Type`, as with an Effect `Schema`.
+
+The payload is stored **encoded** by its schema and read back decoded, so a field may transform: `Instant` (an instant, stored as ISO-8601 text in
+UTC, read as an Effect `DateTime.Utc`) is built with a `DateTime` and read as one, and a plain string where an `Instant` is declared does not compile.
+A payload that does not fit its schema fails where the event is built, with a message that names the paths, not the values.
 
 ## Running a command
 
