@@ -6,7 +6,7 @@ import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
 import { applyInMemory, rowsOf } from "@crablet/views/ViewMemory";
-import { CourseDefined, StudentSubscribed } from "../src/domain/Enrolment.ts";
+import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
 import { ConfirmCourse, CourseConfirmed, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
 import { confirmCourseWhenReady } from "../src/automations/ConfirmCourseAutomation.ts";
 import { CourseReadinessView, courseReadinessTable } from "../src/views/CourseReadinessViewProjector.ts";
@@ -46,6 +46,11 @@ describe("confirm_course: the completeness condition", () => {
     expect(again.reason).toBe("ALREADY_CONFIRMED");
     expect(again.events).toEqual([]);
     await assertRepeatHarmless(ConfirmCourse, { courseId: "math" }, parts("math"));
+  });
+
+  test("a released subscription no longer counts: back to waiting", async () => {
+    const result = await given(...parts("math"), SubscriptionReleased({ studentId: "cy", courseId: "math" })).when(ConfirmCourse, { courseId: "math" });
+    expect(result.reason).toBe("WAITING");
   });
 
   test("another course's events are not this course's: the tag correlates them", async () => {

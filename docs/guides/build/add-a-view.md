@@ -36,11 +36,12 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 
 // Seats per course: what each event does to the table, and nothing else. The handlers are pure (the decoded event in, operations out); the framework reads each payload through the event's own definition
 // (a payload it cannot read fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and listens to the event types of the handlers
-// below (CourseDefined and StudentSubscribed). `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one, it never copies a total.
+// below (CourseDefined, StudentSubscribed and SubscriptionReleased). `DefineCourse` refuses a second definition, and the insert also keeps the first capacity (`ignore`); a subscription ADDS one and a release takes one away, never copying a total.
 // An event delivered twice is applied once, but not here: the batch and the view's cursor commit in one transaction (ADR-0023), so the processor guarantees it.
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
-  .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }));
+  .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }))
+  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }));
 ```
 
 A test compares the declared table with the migrated database ([`course-seats-table.test.ts`](../../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts), `checkViewTables`): a column a migration renames or retypes fails there,
@@ -48,7 +49,7 @@ not at the first event. And the same declaration runs in memory (`applyInMemory`
 
 ### When the operations are not enough
 
-`defineView` says six things: insert, update, upsert, remove, set, add (and `max`). For anything else (here, a number computed from the view's own rows, which is the count of the course's rows plus one), a handler returns
+`defineView` says six things: insert, update, upsert, remove, set, add (and `max`). For anything else (here, a number computed from the view's own rows, which is the highest seat number of the course plus one), a handler returns
 `raw((sql) => ...)`: your own SQL, still in a `defineView`. The framework still reads the payload through the event's definition, runs your SQL on the `sql` of the view's cursor (so it commits with it, and the batch is applied
 once), and takes the event types from the handlers. Declare the table anyway, so the drift check covers it. Nothing checks the SQL text, and `raw` cannot run in memory (`applyInMemory` refuses it), so write the test
 ([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
@@ -62,23 +63,25 @@ export const courseEnrolmentsTable = viewTable("course_enrolments_view", {
   columns: { seat_number: integer() }
 });
 
-// For what the table operations cannot say, `raw` runs your own SQL: the seat number a student gets is the count of the course's rows PLUS ONE,
-// computed by the database from the view's own table in the same statement. It runs on the `sql` of the view's cursor, so it commits with it
-// (ADR-0023: the batch is applied once even if it is delivered twice); the payload is still read through the event's definition, and the view still
-// listens to the event types of its handlers. Nothing checks the SQL text, and `raw` cannot run in memory: the integration test
-// (test/integration/course-enrolments-view.test.ts) is what checks it.
-export const CourseEnrolmentsView = defineView(COURSE_ENROLMENTS_VIEW, { tables: [courseEnrolmentsTable] }).on(StudentSubscribed, (d) =>
-  raw((sql) =>
-    Effect.asVoid(
-      sql.unsafe(
-        `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
-         SELECT $1::text, $2::text, count(*) + 1 FROM course_enrolments_view WHERE course_id = $1
-         ON CONFLICT (course_id, student_id) DO NOTHING`,
-        [d.courseId, d.studentId]
+// For what the table operations cannot say, `raw` runs your own SQL: the seat number a student gets is the highest of the course's seat numbers
+// PLUS ONE (so a number given back by a release is not given again), computed by the database from the view's own table in the same statement. It runs
+// on the `sql` of the view's cursor, so it commits with it (ADR-0023: the batch is applied once even if it is delivered twice); the payload is still read
+// through the event's definition, and the view still listens to the event types of its handlers. Nothing checks the SQL text, and `raw` cannot run in
+// memory: the integration test (test/integration/course-enrolments-view.test.ts) is what checks it. A release is a table operation (`remove`).
+export const CourseEnrolmentsView = defineView(COURSE_ENROLMENTS_VIEW, { tables: [courseEnrolmentsTable] })
+  .on(StudentSubscribed, (d) =>
+    raw((sql) =>
+      Effect.asVoid(
+        sql.unsafe(
+          `INSERT INTO course_enrolments_view (course_id, student_id, seat_number)
+           SELECT $1::text, $2::text, COALESCE(max(seat_number), 0) + 1 FROM course_enrolments_view WHERE course_id = $1
+           ON CONFLICT (course_id, student_id) DO NOTHING`,
+          [d.courseId, d.studentId]
+        )
       )
     )
   )
-);
+  .on(SubscriptionReleased, (d) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: d.studentId }));
 ```
 
 The choice: **events that become adds, sets and removes: the table operations; anything else: `raw` SQL.** Either way it is one `defineView`. A query builder (Kysely, Drizzle) is optional and not used here: it would only replace the SQL string.

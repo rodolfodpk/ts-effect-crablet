@@ -75,8 +75,9 @@ export const CourseReadiness = defineModel({
   .on(TeacherAssigned, (s, d) => ({ ...s, teacherId: d.teacherId }))
   .on(RoomBooked, (s, d) => ({ ...s, room: d.room }))
   .on(StudentSubscribed, (s) => ({ ...s, students: s.students + 1 }))
+  .on(SubscriptionReleased, (s) => ({ ...s, students: s.students - 1 }))
   .on(CourseConfirmed, (s) => ({ ...s, confirmed: true }))
-  .ignores(CourseDefined);
+  .ignores(CourseDefined, CoursePriced, SubscriptionPaid);
 ```
 
 ## 3. The command decides when it is complete
@@ -140,6 +141,7 @@ export const CourseReadinessView = defineView(COURSE_READINESS_VIEW, { tables: [
   .on(TeacherAssigned, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { teacher_id: d.teacherId } }))
   .on(RoomBooked, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { room: d.room } }))
   .on(StudentSubscribed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { add: { students: 1 } }))
+  .on(SubscriptionReleased, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { add: { students: -1 } }))
   .on(CourseConfirmed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "confirmed" } }));
 ```
 

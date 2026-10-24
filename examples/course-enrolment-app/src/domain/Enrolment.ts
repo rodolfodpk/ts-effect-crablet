@@ -4,7 +4,7 @@
 //   - a student takes at most 3 courses.
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
 import * as Schema from "effect/Schema";
-import { all, byModel, defineCommand, defineEvent, defineModel, emit, fail, noop } from "@crablet/commands/Domain";
+import { all, byModel, defineCommand, defineEvent, defineModel, emit, fail, Instant, noop } from "@crablet/commands/Domain";
 import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
 
 // #region events
@@ -13,8 +13,15 @@ export const CourseDefined = defineEvent("CourseDefined", {
   tags: (d) => ({ course_id: d.courseId })
 });
 
-// One fact, tagged with BOTH the student and the course it concerns.
+// One fact, tagged with BOTH the student and the course it concerns. `subscribedAt` is the decision's `now`, so a rule about time reads the
+// business time, not when the row was stored. Optional, because subscriptions stored before it have none.
 export const StudentSubscribed = defineEvent("StudentSubscribed", {
+  schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String, subscribedAt: Schema.optionalKey(Instant) }),
+  tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
+});
+
+// A subscription given back (one left unpaid: src/domain/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
+export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
   schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
@@ -29,10 +36,12 @@ export const CourseModel = defineModel({
   initial: () => ({ exists: false, capacity: 0, subscribers: 0 })
 })
   .on(CourseDefined, (c, d) => ({ ...c, exists: true, capacity: d.capacity }))
-  .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }));
+  .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }))
+  .on(SubscriptionReleased, (c) => ({ ...c, subscribers: c.subscribers - 1 }));
 
 export const StudentModel = defineModel({ by: "student_id", initial: () => ({ courses: [] as ReadonlyArray<string> }) })
-  .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }));
+  .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }))
+  .on(SubscriptionReleased, (s, d) => ({ courses: s.courses.filter((c) => c !== d.courseId) }));
 // #endregion models
 
 // The errors and the public contracts are in enrolment.contract.ts (so a browser can import them without the rules below); re-exported for the server code.
@@ -60,7 +69,7 @@ export const Subscribe = defineCommand({
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
   idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
-  decide: ({ course, student }, c) =>
+  decide: ({ course, student }, c, { now }) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))
       : student.courses.includes(c.courseId)
@@ -69,6 +78,6 @@ export const Subscribe = defineCommand({
           ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
           : student.courses.length >= MAX_COURSES_PER_STUDENT
             ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
-            : emit(StudentSubscribed(c))
+            : emit(StudentSubscribed({ ...c, subscribedAt: now }))
 });
 // #endregion subscribe

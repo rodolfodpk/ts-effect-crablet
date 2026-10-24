@@ -28,8 +28,15 @@ export const CourseDefined = defineEvent("CourseDefined", {
   tags: (d) => ({ course_id: d.courseId })
 });
 
-// One fact, tagged with BOTH the student and the course it concerns.
+// One fact, tagged with BOTH the student and the course it concerns. `subscribedAt` is the decision's `now`, so a rule about time reads the
+// business time, not when the row was stored. Optional, because subscriptions stored before it have none.
 export const StudentSubscribed = defineEvent("StudentSubscribed", {
+  schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String, subscribedAt: Schema.optionalKey(Instant) }),
+  tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
+});
+
+// A subscription given back (one left unpaid: src/domain/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
+export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
   schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
@@ -43,11 +50,16 @@ export const CourseModel = defineModel({
   initial: () => ({ exists: false, capacity: 0, subscribers: 0 })
 })
   .on(CourseDefined, (c, d) => ({ ...c, exists: true, capacity: d.capacity }))
-  .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }));
+  .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }))
+  .on(SubscriptionReleased, (c) => ({ ...c, subscribers: c.subscribers - 1 }));
 
 export const StudentModel = defineModel({ by: "student_id", initial: () => ({ courses: [] as ReadonlyArray<string> }) })
-  .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }));
+  .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }))
+  .on(SubscriptionReleased, (s, d) => ({ courses: s.courses.filter((c) => c !== d.courseId) }));
 ```
+
+A subscription can also be given back: `SubscriptionReleased`, appended when one is left unpaid (the course app's payments,
+`src/domain/Payments.ts`). Both models undo it, and that is all a release takes; the rules below do not change.
 
 A command has two parts. Its **contract** - its name, its input Schema and the domain errors it can fail with - is the public part. It lives in
 `src/domain/enrolment.contract.ts` (the error classes too), and that file imports nothing that decides anything:
@@ -78,7 +90,7 @@ export const Subscribe = defineCommand({
   // The boundary is the union of the course's events and the student's events.
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
   idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
-  decide: ({ course, student }, c) =>
+  decide: ({ course, student }, c, { now }) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))
       : student.courses.includes(c.courseId)
@@ -87,9 +99,12 @@ export const Subscribe = defineCommand({
           ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
           : student.courses.length >= MAX_COURSES_PER_STUDENT
             ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
-            : emit(StudentSubscribed(c))
+            : emit(StudentSubscribed({ ...c, subscribedAt: now }))
 });
 ```
+
+`decide` also receives `now`, the instant of this attempt from the clock, and the subscription records it (`subscribedAt`): a rule about time reads
+that business time later, and a test fixes the clock with `at(date)`.
 
 Adding the second rule was: a second model, `all({ course, student })` instead of one model, and one more branch in `decide`. Nothing was
 redesigned. The consistency boundary of `subscribe` is now *the course's events plus the student's events*: a subscription by anyone to

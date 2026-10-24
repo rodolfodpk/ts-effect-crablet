@@ -2,7 +2,8 @@
 // (docs/guides/build/aggregate-events.md), the EIP Aggregator with the event log as its store.
 import * as Schema from "effect/Schema";
 import { byModel, defineCommand, defineEvent, defineModel, emit, noop } from "@crablet/commands/Domain";
-import { CourseDefined, StudentSubscribed } from "./Enrolment.ts";
+import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "./Enrolment.ts";
+import { CoursePriced, SubscriptionPaid } from "./Payments.ts";
 
 // #region events
 // Facts that arrive in any order, from different commands, about one course: the `course_id` tag correlates them. The third kind is
@@ -35,8 +36,9 @@ export const CourseReadiness = defineModel({
   .on(TeacherAssigned, (s, d) => ({ ...s, teacherId: d.teacherId }))
   .on(RoomBooked, (s, d) => ({ ...s, room: d.room }))
   .on(StudentSubscribed, (s) => ({ ...s, students: s.students + 1 }))
+  .on(SubscriptionReleased, (s) => ({ ...s, students: s.students - 1 }))
   .on(CourseConfirmed, (s) => ({ ...s, confirmed: true }))
-  .ignores(CourseDefined);
+  .ignores(CourseDefined, CoursePriced, SubscriptionPaid);
 // #endregion model
 
 // #region command
