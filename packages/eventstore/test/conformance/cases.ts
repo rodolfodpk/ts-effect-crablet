@@ -7,7 +7,7 @@
 // Framework-neutral on purpose: a case is a plain async function using node:assert. Cases share one
 // store, so each isolates itself with unique tag values / event types (`unique()`).
 import assert from "node:assert/strict";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Clock, Effect, Exit } from "effect";
 import { EventStore, type StoredEvent } from "../../src/EventStore.ts";
 import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
@@ -37,6 +37,22 @@ export const cases: ReadonlyArray<ConformanceCase> = [
 
       const second = await h.run(Effect.flatMap(EventStore, (es) => es.append([ev("ConfPos", [["k", id]])])));
       assert.ok(second.lastPosition > first.lastPosition);
+    }
+  },
+  {
+    name: "an event's occurredAt is the Effect Clock's time at the append, so a test clock fixes it",
+    run: async (h) => {
+      const id = uid();
+      const at = Date.parse("2031-02-03T04:05:06.789Z");
+      const fixed = (base: Clock.Clock): Clock.Clock =>
+        Object.assign(Object.create(base), { currentTimeMillisUnsafe: () => at, currentTimeMillis: Effect.succeed(at) });
+      await h.run(
+        Effect.flatMap(Clock.Clock, (base) =>
+          Effect.provideService(Effect.flatMap(EventStore, (es) => es.append([ev("ConfClock", [["k", id]])])), Clock.Clock, fixed(base))
+        )
+      );
+      const { state } = await read(h, Query.forEventAndTag("ConfClock", "k", id));
+      assert.equal(state[0]!.occurredAt.getTime(), at);
     }
   },
   {
