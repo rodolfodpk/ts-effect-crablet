@@ -38,6 +38,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0039: A topic takes its publishers, and the feed takes views](0039-a-topic-takes-its-publishers.md) - **accepted**: `defineTopic(name, { publishers: [publisher] })`; no second list matched by name
 - [ADR-0040: A result carries one marker, and a domain file has one import](0040-one-marker-and-one-domain-import.md) - **accepted**: `ExecutionResult.marker`; `@crablet/commands/Domain`
 - [ADR-0042: An API is served in one layer, and its groups are typed against it](0042-serve-an-api-in-one-layer.md) - **accepted**: `serveApi`; read groups without `as any`; `problemOf`
+- [ADR-0043: A deadline is an event in the log, and a processor runs its command when it is due](0043-a-deadline-is-an-event-in-the-log.md) - **proposed**: an Aggregator's expiry; firing recorded as an event; Effect's workflow and cluster weighed and not used for the state
 
 ## Reading, delivery and the pollers
 
