@@ -7,9 +7,52 @@ each design, follow the links to the [decision records](../adr/README.md); for t
 
 The two example applications also have [C4 models](./c4-examples.md) (context, containers, components).
 
-Contents: [the whole system](#the-whole-system) · [a command, from request to append](#a-command-from-request-to-append) · [two commands that conflict](#two-commands-that-conflict) ·
+Contents: [the mental model](#the-mental-model) · [the whole system](#the-whole-system) · [a command, from request to append](#a-command-from-request-to-append) · [two commands that conflict](#two-commands-that-conflict) ·
 [from event to view](#from-event-to-view) · [a read that includes your write](#a-read-that-includes-your-write) · [one lock per module, one leader per lock](#one-lock-per-module-one-leader-per-lock) ·
 [changing an event](#changing-an-event) · [what is in the database](#what-is-in-the-database)
+
+## The mental model
+
+```mermaid
+flowchart TB
+  subgraph you["What you declare: pure, in a domain file"]
+    direction LR
+    ev["<b>Event</b><br/>defineEvent(name, { schema, tags })<br/>a fact, found by its tags"]
+    mo["<b>Model</b><br/>defineModel({ by, initial }).on(Event, fold)<br/>what the events mean for one entity"]
+    co["<b>Command</b><br/>defineCommand({ input, model, decide })<br/>a rule over the model's state"]
+    ev -- "folded by .on" --> mo
+    mo -- "model: (input) => Model.of({ id })" --> co
+  end
+
+  subgraph fw["What the framework does: CommandExecutor.run, one transaction"]
+    direction LR
+    load["1. load<br/>query the events with the model's tags,<br/>fold them into state"]
+    dec["2. decide(state, input)<br/>emit · fail · noop"]
+    app["3. append, only if nothing new<br/>arrived in the boundary;<br/>otherwise re-run on fresh state"]
+    load --> dec --> app
+  end
+
+  log[("<b>Event log</b><br/>one table: events and their tags<br/>no streams, no aggregates")]
+
+  subgraph react["What reacts: background processors, each reading the log"]
+    direction LR
+    vw["<b>Views</b> · defineView<br/>tables you read, with read-your-writes"]
+    au["<b>Automations</b><br/>an event in, a command out"]
+    ob["<b>Outbox</b> · defineTopic<br/>publish to brokers and webhooks"]
+  end
+
+  co --> load
+  log -. "the boundary" .-> load
+  app -- "conditional append" --> log
+  log -.-> vw
+  log -.-> au
+  log -.-> ob
+  au -- "runs a command" --> co
+```
+
+You write three pure declarations. The **model** is the key one: the same `.on(...)` handlers give `decide` its state and give the command its
+**consistency boundary**, the events whose arrival would change the answer. The executor loads that boundary, calls `decide`, and appends only if
+nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log.
 
 ## The whole system
 
