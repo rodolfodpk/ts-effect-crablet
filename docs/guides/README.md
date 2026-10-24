@@ -31,4 +31,5 @@ tutorial.
 | Watch it on a Grafana dashboard, with alerts | [See it on a dashboard](operate/dashboard.md) |
 | Run the wallet on a local Kubernetes cluster and break it on purpose | [Run the kind lab](operate/run-the-kind-lab.md) |
 
-The examples are the course-enrolment app (views, HTTP) and the wallet app (automation, background processors, tests).
+The examples are the course-enrolment app (views, HTTP, payments with a time window, automations that react to several events or to one) and the wallet app
+(automation, periods, background processors, tests).
