@@ -21,5 +21,40 @@
       "course_id=c-1"
     ],
     "note": "first release"
+  },
+  {
+    "type": "TeacherAssigned",
+    "payload": {
+      "courseId": "c-1",
+      "teacherId": "t-1"
+    },
+    "tags": [
+      "course_id=c-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "RoomBooked",
+    "payload": {
+      "courseId": "c-1",
+      "room": "r-101"
+    },
+    "tags": [
+      "course_id=c-1"
+    ],
+    "note": "first release"
+  },
+  {
+    "type": "CourseConfirmed",
+    "payload": {
+      "courseId": "c-1",
+      "teacherId": "t-1",
+      "room": "r-101",
+      "students": 3
+    },
+    "tags": [
+      "course_id=c-1"
+    ],
+    "note": "first release"
   }
 ]

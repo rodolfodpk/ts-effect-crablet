@@ -13,6 +13,7 @@
     "bench:reads": "node scripts/bench-reads.ts"
   },
   "dependencies": {
+    "@crablet/automations": "workspace:*",
     "@crablet/commands": "workspace:*",
     "@crablet/commands-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",

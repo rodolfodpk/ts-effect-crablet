@@ -38,6 +38,8 @@ export const walletOpenedAutomation = defineAutomation("wallet-opened-welcome-no
 }));
 ```
 
+To act only once several events have all happened (a teacher, a room and enough students), wake the automation with each of them and let the command decide when the group is complete: [Aggregate events](aggregate-events.md).
+
 The name keys the automation's progress (its cursor): keep it when you change the automation, or it starts again from the beginning of the log.
 
 ## 3. Register it

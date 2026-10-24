@@ -3,11 +3,12 @@ import { describe, test } from "bun:test";
 import path from "node:path";
 import { assertEventFixtures, loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
 import { CourseDefined, StudentSubscribed } from "../src/domain/Enrolment.ts";
+import { CourseConfirmed, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
 
 describe("the course events", () => {
   test("every stored shape still decodes, derives the tags it was stored with, and every event type has a fixture", () => {
     assertEventFixtures({
-      definitions: [CourseDefined, StudentSubscribed],
+      definitions: [CourseDefined, StudentSubscribed, TeacherAssigned, RoomBooked, CourseConfirmed],
       fixtures: loadEventFixtures(path.join(import.meta.dir, "fixtures/events")),
       requireCoverage: true
     });
