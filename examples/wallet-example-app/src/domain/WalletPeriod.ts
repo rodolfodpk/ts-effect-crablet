@@ -17,7 +17,7 @@ export const minutesPeriod = (minutes: number): WalletPeriodSpec => {
   return Period.custom<WalletPeriodFields>({
     fieldsAt: (now) => {
       const bucket = Math.floor(DateTime.toEpochMillis(now) / (minutes * MINUTE_MS));
-      return { year: new Date(bucket * minutes * MINUTE_MS).getUTCFullYear(), bucket };
+      return { year: DateTime.getPartUtc(DateTime.makeUnsafe(bucket * minutes * MINUTE_MS), "year"), bucket };
     },
     fieldsOf: (data) => {
       const d = data as { readonly year?: unknown; readonly bucket?: unknown } | null | undefined;

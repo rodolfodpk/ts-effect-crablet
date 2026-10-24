@@ -1,4 +1,4 @@
-import { Clock, Effect, Metric, DateTime } from "effect";
+import { Clock, DateTime, Effect, Metric } from "effect";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import type { SqlError } from "effect/sql/SqlError";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
@@ -289,7 +289,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       const now = new Date(yield* Clock.currentTimeMillis);
       const at = DateTime.fromDateUnsafe(now);
       const context = (fields: F): PeriodContext<F> => ({ id, key: spec.key(fields), fields, at });
-      const target = spec.fieldsAt(DateTime.fromDateUnsafe(now));
+      const target = spec.fieldsAt(at);
       const withPeriod = (s: S, fields: F) => ({ ...(s as object), period: info(fields) }) as S & { readonly period: PeriodInfo<F> };
       const stamp = { now } as const;
       // A fold in the period decided in, which keeps the state's `period` (a handler need not carry it).
