@@ -21,6 +21,49 @@ commands conflict only when one changes something the other relied on. This is a
 > and work in it. Not a fit if you are not on PostgreSQL or need a stable library now. What would make it ready, and what is still open: the
 > [roadmap](./ROADMAP.md#before-a-10). (The policy for changing the API is [ADR-0013](./docs/adr/0013-api-evolution-additive-vs-breaking.md), an *architecture decision record*.)
 
+## The mental model
+
+```mermaid
+flowchart TB
+  subgraph you["What you declare: pure, in a domain file"]
+    direction LR
+    ev["<b>Event</b><br/>defineEvent(name, { schema, tags })<br/>a fact, found by its tags"]
+    mo["<b>Model</b><br/>defineModel({ by, initial }).on(Event, fold)<br/>what the events mean for one entity"]
+    co["<b>Command</b><br/>defineCommand({ input, model, decide })<br/>a rule over the model's state"]
+    ev -- "folded by .on" --> mo
+    mo -- "model: (input) => Model.of({ id })" --> co
+  end
+
+  subgraph fw["What the framework does: CommandExecutor.run, one transaction"]
+    direction LR
+    load["1. load<br/>query the events with the model's tags,<br/>fold them into state"]
+    dec["2. decide(state, input)<br/>emit · fail · noop"]
+    app["3. append, only if nothing new<br/>arrived in the boundary;<br/>otherwise re-run on fresh state"]
+    load --> dec --> app
+  end
+
+  log[("<b>Event log</b><br/>one table: events and their tags<br/>no streams, no aggregates")]
+
+  subgraph react["What reacts: background processors, each reading the log"]
+    direction LR
+    vw["<b>Views</b> · defineView<br/>tables you read, with read-your-writes"]
+    au["<b>Automations</b><br/>an event in, a command out"]
+    ob["<b>Outbox</b> · defineTopic<br/>publish to brokers and webhooks"]
+  end
+
+  co --> load
+  log -. "the boundary" .-> load
+  app -- "conditional append" --> log
+  log -.-> vw
+  log -.-> au
+  log -.-> ob
+  au -- "runs a command" --> co
+```
+
+You write three pure declarations. The **model** is the key one: the same `.on(...)` handlers give `decide` its state and give the command its
+**consistency boundary**, the events whose arrival would change the answer. The executor loads that boundary, calls `decide`, and appends only if
+nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log. More diagrams: [architecture](./docs/concepts/architecture.md).
+
 ## Both rules, one command
 
 <!-- file: examples/quickstart/src/quickstart.ts#readme -->
