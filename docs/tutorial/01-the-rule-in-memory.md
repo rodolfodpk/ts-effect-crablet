@@ -98,7 +98,7 @@ interleaves in memory. That is [step 2](02-postgres-and-the-second-rule.md).
 
 The tutorial uses readable ids (`ann`, `math-101`) so the examples are easy to follow. In a real system, put **opaque ids** in events and
 tags (`student_7f3a...`), and keep names, emails and other personal data out of tags altogether: tags are stored as plain, indexed text and cannot be erased or
-redacted. Mark such fields once with `personal(...)` (from `@crablet/commands/Personal`) wherever they appear in an event or a command input, and the framework
+redacted. Mark such fields once with `personal(...)` (from `@crablet/commands/Domain`, or `/Personal` in a contract a browser imports) wherever they appear in an event or a command input, and the framework
 redacts them in the command audit and flags them in the API description; building an event whose tag repeats a personal value fails.
 
 ---

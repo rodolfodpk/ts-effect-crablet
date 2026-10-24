@@ -47,7 +47,7 @@ Each column can add `.nullable()` and `.default(value)`.
 
 A view runs as a processor. Its settings are the shared polling settings, all optional, with defaults: see [Polling settings](./configuration.md#polling-settings). A single
 view's polling interval, batch size and backoff are given to the processor by the view's name, not in its definition:
-`makeViewsProcessor({ views, overrides: { "my-view": { pollingIntervalMs: 250 } } })`. A name the processor does not run is refused.
+`startViewsProcessor({ views, overrides: { "my-view": { pollingIntervalMs: 250 } } })`. A name the processor does not run is refused.
 
 ## Reads over views
 
