@@ -1,5 +1,5 @@
 import { EventDecodingFailure, decodingErrorOf } from "../EventDecoding.ts";
-import { Effect, Exit, Layer, Semaphore } from "effect";
+import { Clock, Effect, Exit, Layer, Semaphore } from "effect";
 import { EventStore, type EventStoreService, type StoredEvent } from "../EventStore.ts";
 import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendResult } from "../AppendResult.ts";
@@ -46,7 +46,15 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   let transactionCounter = 0;
   const lock = Semaphore.makeUnsafe(1);
 
-  const store = (events: ReadonlyArray<AppendEvent>, correlationId: string | null, causationId: bigint | null, fingerprint: string | null = null): AppendResult => {
+  // `occurredAt` is the append's instant from the Effect Clock, as in Postgres (a test clock fixes both); `seed`, which runs outside any effect, takes
+  // the system's.
+  const store = (
+    events: ReadonlyArray<AppendEvent>,
+    correlationId: string | null,
+    causationId: bigint | null,
+    fingerprint: string | null = null,
+    occurredAt: Date = new Date()
+  ): AppendResult => {
     const transactionId = String(++transactionCounter);
     events.forEach((_, i) => {
       if (causationId !== null && fingerprint !== null) emitKeys.set(`${causationId}/${fingerprint}/${i + 1}`, BigInt(log.length + 1 + i));
@@ -61,7 +69,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         data: JSON.parse(JSON.stringify(e.eventData)),
         transactionId,
         position: BigInt(log.length + 1),
-        occurredAt: new Date(),
+        occurredAt,
         correlationId,
         causationId
       });
@@ -103,6 +111,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
       const correlationId = yield* CorrelationContext.correlationId;
       const causationId = yield* CorrelationContext.causationId;
       const fingerprint = yield* CorrelationContext.requestFingerprint;
+      const occurredAt = new Date(yield* Clock.currentTimeMillis);
       // The same trigger appending the same request again: refused like Postgres's unique emit key (ADR-0035).
       const repeated = causationId !== null && fingerprint !== null ? emitKeys.get(`${causationId}/${fingerprint}/1`) : undefined;
       if (repeated !== undefined) {
@@ -116,7 +125,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
       }
       // Nothing above suspends, so the check and the insert are one atomic step.
       appended.push({ events, condition: condition ?? null });
-      return store(events, correlationId, causationId, fingerprint);
+      return store(events, correlationId, causationId, fingerprint, occurredAt);
     })) as EventStoreService["append"];
 
   const project: EventStoreService["project"] = (query, after, projectors) =>

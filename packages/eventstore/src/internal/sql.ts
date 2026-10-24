@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { Tag } from "../Tag.ts";
@@ -117,6 +117,8 @@ export const appendEventsIf = (
     const causationId = yield* CorrelationContext.causationId;
     const requireFresh = yield* CorrelationContext.requiresFreshTransaction;
     const fingerprint = yield* CorrelationContext.requestFingerprint;
+    // The events' occurred_at: the Effect Clock, the one a command's `now` comes from, so a test clock fixes both.
+    const occurredAt = new Date(yield* Clock.currentTimeMillis);
 
     const rows = yield* sql.unsafe<{ result: AppendResultJson }>(APPEND_EVENTS_IF_SQL, [
       types,
@@ -125,7 +127,7 @@ export const appendEventsIf = (
       concurrencyItems,
       concurrencyItems === null ? null : condition.afterPosition.position.toString(),
       idempotencyItems,
-      new Date().toISOString(),
+      occurredAt.toISOString(),
       correlationId,
       causationId === null ? null : causationId.toString(),
       // p_notify_channel and p_notify_payload: the function can notify from inside the append, but nothing asks it to any more (the event store sends one wake-up after the

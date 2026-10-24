@@ -1,4 +1,4 @@
-import { Context, Duration, Effect } from "effect";
+import { Clock, Context, Duration, Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
@@ -52,7 +52,7 @@ export const recordCommand = (command: Command<any, any>, input: unknown): Effec
       type: command.name,
       dataJson: toJson(data),
       metadataJson: toJson({ correlationId, actor }),
-      occurredAt: new Date()
+      occurredAt: new Date(yield* Clock.currentTimeMillis)
     });
   });
 
