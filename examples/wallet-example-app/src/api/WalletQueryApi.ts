@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
+import { Instant } from "@crablet/commands/Instant";
 import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadQuery";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 import { defaultPageSize, maxPageSize } from "./TransactionPaging.ts";
@@ -13,7 +14,7 @@ export const WalletResponse = Schema.Struct({
   walletId: Schema.String,
   owner: Schema.String,
   balance: Schema.Finite,
-  lastUpdatedAt: Schema.String
+  lastUpdatedAt: Instant
 });
 
 // One page of wallets, ordered by walletId. `next` is the cursor of the following page, or null on the last one; pass it back as `after`.
@@ -28,7 +29,7 @@ export const TransactionResponse = Schema.Struct({
   eventType: Schema.String,
   amount: Schema.Finite,
   description: Schema.String,
-  occurredAt: Schema.String
+  occurredAt: Instant
 });
 
 // One page of a wallet's transactions, newest first. `next` is the cursor of the following page, or null on the last one; pass it back as `after`.
@@ -44,7 +45,7 @@ export const WalletSummaryResponse = Schema.Struct({
   totalTransfersIn: Schema.Finite,
   totalTransfersOut: Schema.Finite,
   currentBalance: Schema.Finite,
-  lastTransactionAt: Schema.NullOr(Schema.String)
+  lastTransactionAt: Schema.NullOr(Instant)
 });
 
 // Query-string params for the transactions list. Plain strings on purpose: the handler validates them (so a bad value answers with the same
