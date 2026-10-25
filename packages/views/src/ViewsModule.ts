@@ -2,7 +2,7 @@ import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
-import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
@@ -33,6 +33,9 @@ export interface ViewsDeps {
   // Per-view polling, batch and backoff, by view name: deployment settings, kept out of the view's definition.
   readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>>;
   readonly instanceId?: string;
+  // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
+  // defaults of `LeaderOptions`.
+  readonly leader?: LeaderOptions;
 }
 
 // Views-module-specific wiring only. The generic scheduling/leader-election/backoff engine itself lives in
@@ -79,7 +82,7 @@ export const makeViewsProcessor = (
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),
       // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY)),
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY, deps.leader)),
       // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
       atomically: (effect) => sql.withTransaction(effect),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)

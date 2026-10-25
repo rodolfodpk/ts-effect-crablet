@@ -2,7 +2,7 @@ import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
-import { DEADLINES_LOCK_KEY, tryAcquireGlobalLeader } from "@crablet/eventstore/Leader";
+import { DEADLINES_LOCK_KEY, tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { holdSessionOnce, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
 import * as EventSelection from "@crablet/event-poller/EventSelection";
@@ -38,6 +38,9 @@ export interface DeadlinesDeps {
   readonly commands: ReadonlyArray<Command<any, any>>;
   readonly config?: DeadlinesConfig;
   readonly instanceId?: string;
+  // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
+  // defaults of `LeaderOptions`.
+  readonly leader?: LeaderOptions;
 }
 
 // Builds the deadlines processor without starting it (a handle for status and the admin API, or a test that drives `start` and `stop` itself).
@@ -83,7 +86,7 @@ export const makeDeadlinesProcessor = (
       selectionOf: () => selection,
       instanceId: deps.instanceId ?? defaultInstanceId(),
       // The first attempt at the lock marks that the module has started: it keeps one session for good, its lock (no LISTEN).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, DEADLINES_LOCK_KEY)),
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, DEADLINES_LOCK_KEY, deps.leader)),
       wakeupStream: Stream.never
     });
   });
