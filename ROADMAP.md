@@ -18,7 +18,6 @@ not on npm ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
 |---|---|---|
 | Mutation testing of the core packages | proposed; a pilot ran outside the repository | [plan](docs/history/plans/mutation-testing.md) |
 | `Period.hour` | needs a "latest matching event" primitive in the event store first, because the turnover read grows with the number of periods | [period follow-ups](docs/history/plans/period-follow-ups.md) (B1, B2) |
-| Runtime roles as a whole | proposed; built and run in the wallet and the kind lab, the migration job and the workers' health endpoint not yet decided together | [ADR-0022](docs/adr/0022-runtime-roles.md) |
 | A leader lease with a deadline in Postgres | a named follow-up, so a silent partition does not depend on TCP keepalives (388 s with the RDS defaults) | [kind lab](docs/history/plans/kind-lab.md) |
 
 ## Deliberately not decided

@@ -1,15 +1,16 @@
 // Runs under Node (Testcontainers). ADR-0022, arrangement B: several instances of the wallet in ONE test process, each with its own connection pool and its own role,
 // against one database. They share nothing but Postgres, so what works here works as separate deployments. Checks the main flows across roles and, from
-// pg_locks and pg_stat_activity, what each role holds.
+// pg_locks and pg_stat_activity, what each role holds. Two instances of a worker role (views, outbox): exactly one leads, and the other takes over.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
-import { EventStoreLive } from "@crablet/eventstore";
+import { EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
-import { AUTOMATIONS_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
+import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
+import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
@@ -20,6 +21,14 @@ const TOKEN = "admin-token-for-tests";
 let db: TestDb;
 interface Instance { readonly name: string; readonly runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>; readonly app: RunningWalletApp }
 const instances = new Map<string, Instance>();
+
+// What the outbox published, and from which instance. Every instance gets a publisher of the same name, so the outbox's progress is the same processor
+// whichever instance leads, and the api instance's admin API names it as the outbox instances run it.
+const published: Array<{ readonly instance: string; readonly event: StoredEvent }> = [];
+const capturing = (instance: string): OutboxPublisher<never> => ({
+  name: "CapturingTestPublisher",
+  publishBatch: (events) => Effect.sync(() => { published.push(...events.map((event) => ({ instance, event }))); })
+});
 
 // One instance: its own pool (named in pg_stat_activity), its own role.
 const startInstance = async (name: string, roles: string): Promise<Instance> => {
@@ -33,7 +42,7 @@ const startInstance = async (name: string, roles: string): Promise<Instance> => 
   });
   const coreLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive);
   const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer) as unknown as Layer.Layer<CoreServices, never>);
-  const app = await startWalletAppForTest(runtime, undefined, TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
+  const app = await startWalletAppForTest(runtime, [capturing(name)], TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
   const instance = { name, runtime, app };
   instances.set(name, instance);
   return instance;
@@ -46,6 +55,8 @@ before(async () => {
   await startInstance("views-a", "views");
   await startInstance("views-b", "views");
   await startInstance("automations", "automations");
+  await startInstance("outbox-a", "outbox");
+  await startInstance("outbox-b", "outbox");
 }, { timeout: 120_000 });
 
 after(async () => {
@@ -81,6 +92,8 @@ const locksHeld = async () =>
     `SELECT a.application_name AS app, ((l.classid::bigint << 32) | l.objid::bigint)::text AS key
        FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE l.locktype = 'advisory' AND l.granted AND a.application_name LIKE 'wallet-%'`
   );
+// The outbox instance that holds the outbox lock, by its name in `instances`.
+const outboxLeader = async () => (await locksHeld()).find((r) => r.key === OUTBOX_LOCK_KEY.toString())?.app.replace("wallet-", "");
 const listeners = async (app: string) =>
   (await query<{ q: string }>("SELECT query AS q FROM pg_stat_activity WHERE application_name = $1 AND query ILIKE 'LISTEN%'", [`wallet-${app}`])).map((r) => r.q);
 
@@ -118,11 +131,18 @@ describe("roles across instances (ADR-0022, arrangement B)", () => {
     assert.ok(viewsLocks[0]!.app === "wallet-views-a" || viewsLocks[0]!.app === "wallet-views-b");
     assert.deepStrictEqual(held.filter((r) => r.app === "wallet-automations").map((r) => r.key), [AUTOMATIONS_LOCK_KEY.toString()], "the automations instance holds the automations lock and no other");
     assert.ok(!held.some((r) => r.app.startsWith("wallet-views") && r.key === AUTOMATIONS_LOCK_KEY.toString()), "a views instance holds no automations lock");
+    const outboxLocks = await until(locksHeld, (rows) => rows.some((r) => r.key === OUTBOX_LOCK_KEY.toString()), "the outbox leader to take its lock");
+    assert.deepStrictEqual(outboxLocks.filter((r) => r.key === OUTBOX_LOCK_KEY.toString()).map((r) => r.app).filter((app) => !app.startsWith("wallet-outbox-")), [], "only an outbox instance holds the outbox lock");
+    assert.strictEqual(outboxLocks.filter((r) => r.key === OUTBOX_LOCK_KEY.toString()).length, 1, "exactly one of the two outbox instances leads");
+    for (const app of ["wallet-outbox-a", "wallet-outbox-b"]) {
+      assert.ok(outboxLocks.filter((r) => r.app === app).every((r) => r.key === OUTBOX_LOCK_KEY.toString()), `${app} holds the outbox lock and no other`);
+    }
 
     const eventsListen = (qs: ReadonlyArray<string>) => qs.filter((q) => /crablet_events/.test(q));
     assert.deepStrictEqual(eventsListen(await listeners("api")), [], "the api instance does not LISTEN for event wake-ups");
     assert.ok(eventsListen(await listeners("views-a")).length >= 1 && eventsListen(await listeners("views-b")).length >= 1, "a views instance LISTENs for wake-ups, on the follower too");
     assert.ok(eventsListen(await listeners("automations")).length >= 1);
+    assert.ok(eventsListen(await listeners("outbox-a")).length >= 1 && eventsListen(await listeners("outbox-b")).length >= 1, "an outbox instance LISTENs, on the follower too");
   });
 
   it("the admin API on the api instance lists every module although it runs none, with the status read from the database", { timeout: 60_000 }, async () => {
@@ -159,5 +179,29 @@ describe("roles across instances (ADR-0022, arrangement B)", () => {
     await post("open_wallet", { walletId, owner: "Ed", initialBalance: 3 });
     const read = await fetch(`${api()}/api/wallets/${walletId}`);
     assert.strictEqual(read.status, 200, "views keep being built after the failover");
+  });
+
+  it("an event appended through the api instance is published by the leading outbox instance, and by it alone", { timeout: 60_000 }, async () => {
+    const leader = await until(outboxLeader, (app) => app !== undefined, "an outbox instance to lead");
+    const walletId = newWallet();
+    await post("open_wallet", { walletId, owner: "Fe", initialBalance: 4 });
+    const forWallet = () => Promise.resolve(published.filter((p) => p.event.tags.some((t) => t.value === walletId)));
+    const got = await until(forWallet, (ps) => ps.some((p) => p.event.type === "WalletOpened") && ps.some((p) => p.event.type === "WelcomeNotificationSent"), "the wallet's events to be published");
+    assert.deepStrictEqual([...new Set(got.map((p) => p.instance))], [leader], "the follower published nothing");
+  });
+
+  it("when the leading outbox instance stops, the other takes over and publishes what comes next", { timeout: 90_000 }, async () => {
+    const leader = (await until(outboxLeader, (app) => app !== undefined, "an outbox instance to lead"))!;
+    await instances.get(leader)!.app.stop();
+    const next = await until(outboxLeader, (app) => app !== undefined && app !== leader, "the other outbox instance to take the lock");
+
+    const walletId = newWallet();
+    await post("open_wallet", { walletId, owner: "Gil", initialBalance: 5 });
+    const opened = await until(
+      () => Promise.resolve(published.filter((p) => p.event.type === "WalletOpened" && p.event.tags.some((t) => t.value === walletId))),
+      (ps) => ps.length >= 1,
+      "the new leader to publish the wallet's opening"
+    );
+    assert.ok(opened.every((p) => p.instance === next), "published by the instance that took over");
   });
 });

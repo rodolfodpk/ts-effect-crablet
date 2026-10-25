@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** (2026-10-08). Nothing is built. The facts below come from reading the code and from the measurements and AWS documentation cited in the context; no role split has been run. The decision is to be accepted when the tests in "Before accepting" exist and pass.
+**Accepted** (2026-10-25). Built in the wallet. Proposed on 2026-10-08; every check in "Before accepting" exists and passes, the `outbox` role last (see "Progress"). The context below was written before anything was built, from the code, the measurements and the AWS documentation it cites. What stays unverified is what only AWS can show (RDS Multi-AZ failover, RDS Proxy, the node loss with the RDS keepalives); it is listed under "Not verified".
 
 ## Context
 
@@ -32,7 +32,7 @@ What the code and the measurements say about that shape:
 5. **Workers get a health endpoint, not an API.** A minimal HTTP server with `/healthz` (the process is alive and its event loop answers) for the Kubernetes liveness probe. It does not report leadership: a standby is healthy.
 6. **Migrations are not the roles' job.** In `all` the start-up keeps `migrateIfFresh` (development, tests). In the separate roles the schema is applied by a pre-deploy job (the example's `migrateIfFresh` is not safe when several instances start at once: they can all see an empty database).
 7. **Kubernetes keeps the desired state; Postgres keeps the exclusion.** One Deployment per role. Replicas of a worker role give a warm standby, because the module lock stays the mutual exclusion (and what is meant to make a rolling update gap-free: the new pod waits as a follower, the old one releases the lock on SIGTERM; a graceful exit and the release were observed, the handover time was not measured and is a scenario of arrangement C). Delegating mutual exclusion to Kubernetes alone (replicas of 1, or a StatefulSet) was considered and rejected: it gives liveness, not exclusion, and loses the fence where the work happens.
-8. **Out of the process model, deliberately.** The UI is a static bundle deployed on its own, not a role. Splitting the write API from the read API into two roles is **deferred** until write and read scale apart or read replicas are used. The outbox role is defined but not exercised until the outbox is brought in.
+8. **Out of the process model, deliberately.** The UI is a static bundle deployed on its own, not a role. Splitting the write API from the read API into two roles is **deferred** until write and read scale apart or read replicas are used. The outbox role is defined like the others, and exercised in arrangement B since 2026-10-25.
 
 ## Alternatives considered
 
@@ -57,15 +57,20 @@ What the code and the measurements say about that shape:
 - The decision 4 verification (handles built without being started), and a test that the admin API in the `api` role lists and acts on every module.
 - A health endpoint test (alive while standby) and a test that an invalid `WALLET_ROLES` stops the start.
 
-## Progress (2026-10-08)
+## Progress (2026-10-08, completed 2026-10-25)
 
-Still **Proposed**. Built and passing: `WALLET_ROLES` in the wallet (decisions 1, 5 and the `api`-role part of 4), the default role `all` unchanged (arrangement A: the whole existing suite passes), and arrangement B (`test/integration/roles-e2e.test.ts`: four instances in one process, each with its own pool, named in `pg_stat_activity`).
+Built and passing: `WALLET_ROLES` in the wallet (decisions 1, 5 and the `api`-role part of 4), the default role `all` unchanged (arrangement A: the whole existing suite passes), and arrangement B (`test/integration/roles-e2e.test.ts`: six instances in one process since the outbox was added (`api`, two `views`, `automations`, two `outbox`), each with its own pool, named in `pg_stat_activity`).
 
 - **Decision 4, verified:** the handles are built without being started. Building one creates a `Ref`, a `PubSub` and a queue and opens no connection; `stop` on one that never started is a no-op. The `api` instance serves the admin API for all six processors, with status read from the database, and a pause or resume through it acts on the loop running in another instance.
 - **Boundaries, measured from `pg_locks` and `pg_stat_activity`:** the `api` instance holds no leader lock and no events `LISTEN`; of two `views` instances exactly one holds the views lock and both `LISTEN`; the `automations` instance holds only its own lock. Stopping the leading `views` instance moves the lock to the other and views keep being built.
 - **Across instances:** a command through `api` is projected by `views` and read back from `api` with its marker, and without one; the automation fires on its own instance.
 - **Arrangement C, run once (2026-10-08):** see [the kind lab](../history/plans/kind-lab.md). A pod killed or a node stopped hands the views over in under a second, a rolling update of the workers leaves no gap, and no acknowledged command was lost in any scenario that completed. A silent network partition frees the lock only when Postgres gives up on the connection: about 28 s with keepalives 10/5/3 (18 s in three of four runs with `tcp_user_timeout` added) and 388 s with the settings RDS ships. The start-up migration is a race with five pods (4 ok and 1 failed, 0 and 5, 3 and 2); a pre-deploy Job running Flyway did not fail in three runs of five pods. Decision 6 now has a measured basis: the migration is a Job (`WALLET_MIGRATE=off` in the pods, `node src/migrate.ts` or Flyway in the Job), and Flyway is the recommended runner.
-- **Not done:** the `outbox` role is not exercised in B; the lab did not measure RDS Multi-AZ, RDS Proxy or the node loss with RDS keepalives.
+- **The `outbox` role (2026-10-25):** arrangement B now runs two `outbox` instances beside the others. Exactly one holds the outbox lock, and it holds no other; the api, views and automations instances hold none of it; both outbox instances `LISTEN`. An event appended through `api` (and the one the automation appends on its own instance) is published by the leading outbox instance and by no other. Stopping the leader moves the lock to the follower, which publishes what is appended next. The admin API on `api` already listed the outbox processor and read its status from the database.
+- **Health:** `test/health.test.ts`: `/healthz` answers without touching the database (alive while standby); the workers also serve `/readyz` and a `/status` that names what the process runs and leads. An invalid `WALLET_ROLES` stops the start (`test/roles.test.ts`).
+
+## Not verified
+
+What a local lab cannot reproduce, as arrangement C says: RDS Multi-AZ failover, RDS Proxy, cross-AZ latency, and the node loss with the keepalives RDS ships. The lab did not measure the recovery of the outbox and the automations under kind either, only the views'; arrangement B covers their handover in one process. These are for a run on AWS, not conditions of this decision.
 
 ## Follow-ups (not decided here)
 
