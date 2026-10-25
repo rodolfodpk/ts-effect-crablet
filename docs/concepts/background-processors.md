@@ -47,8 +47,8 @@ but holds no lock. The [reliability report](../history/plans/reliability-and-sca
 
 The same application image can run everything in one process, or be split into deployments by role: `api` (commands, reads, the live feed),
 `views`, `automations` and `outbox`. Roles talk to each other only through Postgres, so splitting changes nothing in the code. A worker role with more
-than one replica gives a warm standby, because the module lock still decides who works ([ADR-0022](../adr/0022-runtime-roles.md), proposed; the wallet
-and the kind lab run it).
+than one replica gives a warm standby, because the module lock still decides who works ([ADR-0022](../adr/0022-runtime-roles.md), accepted; the wallet
+runs it, and the kind lab ran its failure scenarios).
 
 ## Behind a connection pooler
 

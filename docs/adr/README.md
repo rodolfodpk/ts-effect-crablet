@@ -62,7 +62,7 @@ These records are for the history of each decision: its context, the options wei
 
 - [ADR-0025: A model declares its period, and the framework turns it in the command's own append](0025-the-framework-turns-the-period.md) - accepted
 - [ADR-0026: A view is declared as the operations each event stands for; the migration stays the truth for the tables](0026-views-declared-as-operations.md) - **accepted**: built in `@crablet/views`; the wallet and course views use it
-- [ADR-0022: One image, several runtime roles: the same code runs as one process or as separate deployments](0022-runtime-roles.md) - **proposed**: partly built and run (`WALLET_ROLES` in the wallet, a suite with several instances, the kind lab); the migration job and the health endpoint of the workers are in the lab, not yet decided as a whole
+- [ADR-0022: One image, several runtime roles: the same code runs as one process or as separate deployments](0022-runtime-roles.md) - **accepted**: built in the wallet (`WALLET_ROLES`, a health endpoint for the workers, the migration as a pre-deploy job); a suite runs every role, the outbox included, as separate instances, and the kind lab ran the failure scenarios
 - [ADR-0020: The processors admin API is a description plus handlers, closed until the application says who may call it](0020-processors-admin-api.md) - accepted
 - [ADR-0019: Storage is visible, and the tag table is heavier than its reads need](0019-storage-visibility-and-the-tag-table.md) - accepted
 - [ADR-0018: A model's state can be snapshotted at a settled cursor; a snapshot is a cache, never a fact](0018-model-snapshots.md) - **superseded: the feature was dropped; its decision 8 (the read horizon of `all`) stays**
