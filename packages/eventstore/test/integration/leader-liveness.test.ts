@@ -79,7 +79,7 @@ describe("a leader knows whether it still holds the lock", () => {
 
   it("verify answers false at once on a dead session, without waiting for the heartbeat", { timeout: 20_000 }, async () => {
     const key = newKey();
-    const leader = (await acquire(key, { heartbeat: "1 hour", verifyTimeout: "1 second", failuresBeforeLost: 2 }))!; // the heartbeat will not run in this test
+    const leader = (await acquire(key, { heartbeat: "1 hour", verifyTimeout: "1 second", failuresBeforeLost: 2, serverIdleTimeout: "off" }))!; // the heartbeat will not run in this test
     const pid = await holderPid(key);
     await kill(pid!);
     await sleep(200);

@@ -2,9 +2,9 @@
 
 ## Status
 
-**Proposed** (2026-10-25). Nothing built. It answers the follow-up ADR-0022 and the kind lab named: after a silent network partition the leader lock
-is freed only when Postgres's TCP keepalives give up (388 s with the settings RDS ships). The mechanism was tried by hand against Postgres 18.6
-(below); the decision is to be accepted when the tests in "Before accepting" exist and pass.
+**Proposed** (2026-10-25). Built in `Leader.ts` and tested against Postgres 18.6 (see "Progress"); still Proposed until the kind lab, a replica and AWS
+have been run (the rest of "Before accepting"). It answers the follow-up ADR-0022 and the kind lab named: after a silent network partition the leader
+lock is freed only when Postgres's TCP keepalives give up (388 s with the settings RDS ships).
 
 ## Context
 
@@ -59,8 +59,31 @@ by the heartbeat and enforced by the server: no table, no expiry column, no cloc
    old leader started before the cut can still be running, and that is the case every processor is already built for: a view's batch commits only if
    its cursor did not move (ADR-0023, ADR-0032), an automation's command is idempotent and backstopped (ADR-0034, ADR-0035), an outbox publisher gets a
    stable message id (ADR-0036), a deadline is recorded once (ADR-0043). Nothing here changes those.
-6. **Keepalives stay a complement.** The guide keeps recommending shorter server keepalives (and `tcp_user_timeout`) where they can be set: they also
+6. **A leader leads only on a primary.** Advisory locks are not replicated: after a failover (RDS Multi-AZ, Aurora) every session drops and the
+   election starts again on the new writer. But a client that reconnects through a cached DNS name can land on the old writer, now a replica, where an
+   advisory lock can still be taken (to be confirmed by a test): it would "lead" where every write fails, while another instance leads on the writer.
+   So taking the lock asks `pg_is_in_recovery()` first and takes nothing on a replica (`CASE WHEN pg_is_in_recovery() THEN false ELSE
+   pg_try_advisory_lock(...) END`), and the heartbeat's check requires it too: a session that finds itself on a replica is a lost leader. This holds
+   for any way of electing a leader, the lease of the alternatives included.
+7. **A check that does not answer in time has failed, without waiting for the driver.** Found while building this: on a half-open connection,
+   interrupting a statement makes `@effect/sql-pg` send a cancel request on a side connection and wait for the statement to drain, up to 5 seconds
+   more, and `Effect.timeout` waits for that interruption. The heartbeat's check that should fail after `verifyTimeout` failed about 5 seconds later, so
+   the leader knew after 5.9 s instead of 1.4 s with the test's settings (about 9 s instead of 6 with the defaults). The check, the unlock and the reset
+   now wait at most their timeout and leave the interruption to run in the background, so decision 3's bound is the real one.
+8. **Keepalives stay a complement.** The guide keeps recommending shorter server keepalives (and `tcp_user_timeout`) where they can be set: they also
    free the backend slot of a dead client. They are no longer what bounds the takeover.
+
+## Progress (2026-10-25)
+
+- **Built** in `Leader.ts`: `serverIdleTimeout` (default 15 s, `off`), refused when not longer than `lossDetectionBound` (a unit test); the `SET` once
+  the lock is held and the `RESET` on release; the primary check when taking (`CASE WHEN pg_is_in_recovery() ...`) and checking the lock; the bounded
+  wait of decision 7. Unit tests (`leader-session.test.ts`) check the statements' order against a stand-in connection.
+- **Measured** in `packages/eventstore/test/integration/leader-partition.test.ts` (Postgres 18.6, an in-process proxy that cuts silently, the test's
+  settings: heartbeat 200 ms, check 500 ms, 2 failures, so a bound of 1.4 s, and a server timeout of 3 s): the leader knew after **1.42 s**, the
+  follower led after **3.04 s**, after the leader had stopped. With `off` the follower never led within 6 s. A leader that keeps its heartbeat kept
+  its lock through 8 s with a 2 s timeout. A connection given back to the pool shows `idle_session_timeout` 0. Without the `SET` (a mutation) no
+  follower led, and the test fails.
+- **Not done:** the replica test, the kind lab rerun, a long run under the wallet's load, and AWS.
 
 ## Alternatives considered
 
@@ -90,7 +113,7 @@ by the heartbeat and enforced by the server: no table, no expiry column, no cloc
 
 ## Before accepting
 
-- **Built in `Leader.ts`:** the `SET` after acquiring, the `RESET` on release, `serverIdleTimeout` with its default and the construction
+- **Built in `Leader.ts`:** the `SET` after acquiring, the `RESET` on release, the primary check when taking and checking the lock, `serverIdleTimeout` with its default and the construction
   check (a unit test of the rule).
 - **An integration test of the partition** (Testcontainers, no kind): an in-process TCP proxy on each instance's lock connection that can cut silently,
   as in the experiment above. Two instances lead and follow; cutting the leader's proxy makes the follower lead within `serverIdleTimeout +` the retry
@@ -99,3 +122,21 @@ by the heartbeat and enforced by the server: no table, no expiry column, no cloc
 - **A live leader keeps its lock** under the wallet's load for several minutes with a short timeout (the heartbeat renews it).
 - **A released connection does not carry the setting** (`SHOW idle_session_timeout` on the next use of a pooled connection).
 - **The kind lab's `partition-rds` scenario rerun**, expecting the takeover near 20 s instead of 388 s.
+- **A replica takes no lock and keeps none:** against a hot standby (a streaming replica in Docker), taking the lock answers "not acquired", and a
+  leader whose session finds itself on a replica is lost.
+
+## Then, on AWS
+
+What no local test reproduces, run with the kind lab's scenarios and checks (nothing acknowledged lost, one leader per module) before relying on it in
+production:
+
+- **RDS PostgreSQL**: the silent partition with the RDS keepalives (the `partition-rds` scenario), expecting about 20 s; and that the application's
+  role can `SET idle_session_timeout`.
+- **RDS Multi-AZ failover** (a reboot with failover): every module leads again on the new writer, and no instance leads on the old one.
+- **Aurora PostgreSQL failover**: the same, with the cluster endpoint; and a client that keeps resolving the old writer is refused leadership there
+  (decision 6).
+- **RDS Proxy**, if it is in the path: the lock session's `SET` pins it (it is pinned already), and a partition between the application and the proxy
+  frees the lock after the timeout.
+
+If one of these fails in a way the session cannot handle, or the lock session has to go through a pooler in transaction mode, the lease table of the
+alternatives is the next step, behind the same `LeaderHandle` (`acquireLeader` is injected into every processor), in a record of its own.

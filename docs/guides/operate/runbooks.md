@@ -50,8 +50,8 @@ the alert waits until its last report is older than 120 seconds.
      alert recovers on its own. If it does not, the instances cannot reach Postgres or have no free connection: check the next two points.
    - **A row, and no instance says it leads:** a session holds the lock that no process owns any more (a partition that Postgres has not yet given up on, or a stuck connection).
      `application_name` tells you which instance it was, if your application sets it (the wallet sets `wallet-<pod>`).
-3. **Can the instances reach Postgres?** A silent partition holds the lock until the server's keepalives give up: 13 to 29 seconds with keepalives 10/5/3, 388 seconds with the ones
-   RDS ships ([failure modes](failure-modes.md#a-leader-loses-the-network)). Waiting is correct in that case.
+3. **Can the instances reach Postgres?** After a silent partition the server ends the silent leader's lock session after its `serverIdleTimeout` (15 seconds by default), and a follower
+   takes the lock at its next try ([failure modes](failure-modes.md#a-leader-loses-the-network)). Waiting is correct in that case.
 4. **Are the connections exhausted?** A process with no free connection cannot take the lock ([size the pool](run-in-production.md#size-the-pool)).
 
 **Do:**
@@ -59,7 +59,7 @@ the alert waits until its last report is older than 120 seconds.
 - If a session you identified in step 2 holds the lock and its process is gone or unreachable, end it: `SELECT pg_terminate_backend(<pid>)`. The lock is freed at once and a follower takes
   it at its next try. Do not terminate the session of a process that says it is leading.
 - **How long recovery takes:** after a graceful stop or a killed pod, under a second in the kind lab; after a crash, within the retry interval (5 seconds by default); after a silent
-  partition, as long as the keepalives take. The alert clears once a leader has reported again.
+  partition, about the server idle timeout plus the retry interval (about 20 seconds by default). The alert clears once a leader has reported again.
 
 ## A consumer is behind
 

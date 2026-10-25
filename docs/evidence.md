@@ -37,7 +37,8 @@ magnitude; they are not capacity. The last column says how many runs each rests 
 | Takeover after a leader **crashes** | 0.2 to 4.2 s with the 5 s retry default: it is the retry interval minus the phase | six trials, one per phase of the retry cycle | reliability report, D1b |
 | Takeover after a **graceful stop** | **0.04 to 0.10 s** (mean 0.07 s) | trials listed in the report | reliability report, D1c |
 | Takeover when a leader **pod is killed** in Kubernetes | **0.4 s**; 0 of 52 acknowledged commands missing afterwards | one run | kind lab, `kill` |
-| Takeover after a **silent network partition** | **13 to 29 s** with Postgres keepalives 10/5/3; **388 s** with the keepalives RDS ships | four runs (keepalives 10/5/3); one run (RDS keepalives) | kind lab, `partition-*` |
+| Takeover after a **silent network partition**, before the lock session's idle timeout | **13 to 29 s** with Postgres keepalives 10/5/3; **388 s** with the keepalives RDS ships | four runs (keepalives 10/5/3); one run (RDS keepalives) | kind lab, `partition-*` |
+| Takeover after a silent partition, with the lock session's idle timeout (ADR-0045) | **3.04 s** with a 3 s timeout (the old leader stopped at 1.42 s); no takeover in 6 s without it | one run each, Postgres in a container, a proxy that cuts silently | `leader-partition.test.ts` |
 | A stale leader's handler calls after losing its session | **0** (723 before the fix) | one run, 40 s | reliability report, D1 |
 | Acknowledged commands missing from the views | **0**: of 50 (rolling update), 52 (pod killed), 214 (long transaction), 283 (node lost); and in each partition run | one run each, except the partitions | kind lab |
 
@@ -49,7 +50,7 @@ The full records, with every experiment, what was wrong before each fix and how 
 - **One PostgreSQL database.** There is no sharding or partitioning of the log.
 - **No retention.** Events are never deleted, and erasing personal data from the log is not built ([events over time](./concepts/events-over-time.md)).
 - **A long write transaction delays every view** until it ends, because no event is delivered while an older transaction is still open. Monitor idle-in-transaction sessions.
-- **A silent network partition is the slow failover case.** The lock is freed only when Postgres gives up on the connection, so the keepalive settings decide the delay. A lease with a deadline is a named follow-up.
+- **A silent network partition is the slow failover case.** In the kind lab the lock was freed only when Postgres gave up on the connection, so the keepalive settings decided the delay. The lock session now ends itself on the server after the leader has been silent for 15 s ([ADR-0045](./adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)); measured in an integration test, the lab not rerun yet.
 - **Running out of connections is quiet.** In the kind lab a fifth of the commands failed and nothing in the pods said why. Keep pool size times replicas under `max_connections` ([size the pool](./guides/operate/run-in-production.md#size-the-pool)).
 - **The start-up migration of the examples is not safe with several instances at once.** Use a migration job; Flyway passed the same race three times out of three (kind lab, `flyway-race`).
 - **Not verified on a managed cloud database.** RDS Proxy and RDS-specific behaviour were not tested.
