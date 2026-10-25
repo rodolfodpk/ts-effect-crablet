@@ -13,6 +13,7 @@ tutorial.
 | Change the schema and keep the queries checked | [The database workflow](build/database-workflow.md) |
 | React to an event by issuing a command | [Add an automation](build/add-an-automation.md) |
 | Act once several events have happened, in any order (the EIP Aggregator) | [Aggregate events](build/aggregate-events.md) |
+| Run a command once a time has passed (a hold that expires, an unpaid subscription released) | [Set a deadline](build/set-a-deadline.md) |
 | Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](build/expose-a-command-over-http.md) |
 | Test a command's decisions without a database | [Test a command](build/test-a-command.md) |
 | Decide on something the input does not name (a card number names a member) | [Look something up before deciding](build/look-something-up-first.md) |

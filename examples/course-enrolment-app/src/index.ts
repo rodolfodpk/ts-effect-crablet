@@ -4,7 +4,7 @@ import { HttpRouter } from "effect/http";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
 import { dbConnInfoFromEnv, poolSizeFromEnv } from "./db.ts";
-import { makeCourseApiLayer, startCourseViews } from "./CourseApp.ts";
+import { makeCourseApiLayer, startCourseDeadlines, startCourseViews } from "./CourseApp.ts";
 
 // Serves the API on :8080 (PORT). The database must exist and be migrated (docker compose up -d; node src/migrate.ts).
 // COURSES_DOCS=scalar|swagger also mounts a documentation page at /docs.
@@ -42,11 +42,12 @@ const server = HttpRouter.serve(
 // #region launch
 const program = Effect.gen(function* () {
   yield* startCourseViews(undefined, { viewDelayMs });
+  yield* startCourseDeadlines(); // releases the seats left unpaid when their payment window closes
   yield* Effect.log(`course-enrolment-app listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
   yield* Layer.launch(server);
 });
 
-// The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the view processor stops and releases its leader lock (another instance
+// The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the processors stop and release their leader locks (another instance
 // takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
 NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer));
 // #endregion launch

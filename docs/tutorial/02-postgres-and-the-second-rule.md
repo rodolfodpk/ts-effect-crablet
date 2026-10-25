@@ -100,12 +100,20 @@ export const Subscribe = defineCommand({
           ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
           : student.courses.length >= MAX_COURSES_PER_STUDENT
             ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
-            : emit(StudentSubscribed({ ...c, subscribedAt: now }))
+            : emit(
+                StudentSubscribed({ ...c, subscribedAt: now }),
+                // When the payment window closes, the deadlines processor asks for the seat back; a paid subscription answers that it is paid.
+                deadline(ReleaseUnpaidSubscription, { courseId: c.courseId, studentId: c.studentId }, { at: DateTime.add(now, { days: PAYMENT_WINDOW_DAYS }) })
+              )
 });
 ```
 
 `decide` also receives `now`, the instant of this attempt from the clock, and the subscription records it (`subscribedAt`): a rule about time reads
 that business time later, and a test fixes the clock with `at(now)`.
+
+The decision also sets a **deadline**: when the payment window closes, three days on, `ReleaseUnpaidSubscription` (in `src/domain/Payments.ts`) runs
+and gives back a seat that was not paid for; for a paid one it answers that it is paid. It is appended with the subscription, so it exists exactly when
+the subscription does. You do not need it to follow this tutorial: [Set a deadline](../guides/build/set-a-deadline.md) explains it.
 
 Adding the second rule was: a second model, `all({ course, student })` instead of one model, and one more branch in `decide`. Nothing was
 redesigned. The consistency boundary of `subscribe` is now *the course's events plus the student's events*: a subscription by anyone to

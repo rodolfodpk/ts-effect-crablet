@@ -120,7 +120,11 @@ describe("the page, driven against the real course app", () => {
     model = await subscribe(model, student, course);
     const done = model.subscribe.result;
     assert.ok(AsyncData.isSuccess(done));
-    assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason, done.data.outcome.marker], ["IDEMPOTENT", "ALREADY_SUBSCRIBED", first.data.outcome.marker]);
+    assert.deepStrictEqual([done.data.outcome.status, done.data.outcome.reason], ["IDEMPOTENT", "ALREADY_SUBSCRIBED"]);
+    // The first subscription's transaction: its marker is the subscription the repeat's decide read; the first write ended at the payment deadline
+    // appended with it, in the same transaction, so reading back with either sees the whole write.
+    const txOf = (marker: unknown) => String(marker).split(":")[0];
+    assert.strictEqual(txOf(done.data.outcome.marker), txOf(first.data.outcome.marker));
     assert.strictEqual(done.data.readBack, "with_marker");
   });
 

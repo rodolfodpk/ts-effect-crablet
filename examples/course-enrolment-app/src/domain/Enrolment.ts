@@ -3,9 +3,11 @@
 //   - a course holds at most `capacity` students,
 //   - a student takes at most 3 courses.
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
-import { all, byModel, defineCommand, defineModel, emit, fail, noop } from "@crablet/commands/Domain";
+import { DateTime } from "effect";
+import { all, byModel, deadline, defineCommand, defineModel, emit, fail, noop } from "@crablet/commands/Domain";
 import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
 import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
+import { PAYMENT_WINDOW_DAYS, ReleaseUnpaidSubscription } from "./Payments.ts";
 
 // The events are in enrolment.events.ts, so the payments (src/domain/Payments.ts) can read them without importing these rules, and these rules can
 // name a payment command (a deadline, ADR-0043) without an import cycle. Re-exported for the rest of the app.
@@ -62,6 +64,10 @@ export const Subscribe = defineCommand({
           ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
           : student.courses.length >= MAX_COURSES_PER_STUDENT
             ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
-            : emit(StudentSubscribed({ ...c, subscribedAt: now }))
+            : emit(
+                StudentSubscribed({ ...c, subscribedAt: now }),
+                // When the payment window closes, the deadlines processor asks for the seat back; a paid subscription answers that it is paid.
+                deadline(ReleaseUnpaidSubscription, { courseId: c.courseId, studentId: c.studentId }, { at: DateTime.add(now, { days: PAYMENT_WINDOW_DAYS }) })
+              )
 });
 // #endregion subscribe

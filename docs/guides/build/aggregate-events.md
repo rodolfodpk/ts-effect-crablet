@@ -12,14 +12,14 @@ missing. The example is the course app's course start.
 
 ## The Aggregator, part by part
 
-EIP describes an Aggregator by four things. Three map onto what a command already is; the fourth is [not there yet](#what-is-missing-a-timeout).
+EIP describes an Aggregator by four things. Three map onto what a command already is; the fourth is [a deadline](#stop-waiting-a-deadline).
 
 | Aggregator | Here | In the example |
 |---|---|---|
 | **Correlation**: which messages belong together | a tag every event carries, the model's `by` | `course_id` |
 | **Completeness condition**: when the group is complete | `decide` | a teacher, a room, and at least 3 students |
 | **Aggregation**: what to publish once it is | the event `decide` emits | `CourseConfirmed`, with the teacher, the room and the count |
-| **Expiry**: when to stop waiting | none: a deadline needs a timer | |
+| **Expiry**: when to stop waiting | a deadline the first decision sets, whose command decides what an incomplete group becomes | the course app's payment window ([Set a deadline](set-a-deadline.md)) |
 
 What the log does in place of the Aggregator's store:
 
@@ -195,12 +195,13 @@ read each other have no order worth waiting for: which came first is timing, not
 decide: (s, c) => (!s.teacherAssigned ? fail(new NoTeacherYet({ courseId: c.courseId })) : emit(RoomBooked(c)))
 ```
 
-## What is missing: a timeout
+## Stop waiting: a deadline
 
-An EIP Aggregator also says when to stop waiting ("confirm with what is there after a week", "cancel if no room is booked by Friday"). The framework has
-no timer that runs a command at a time. Until it does, the time has to come from outside: a scheduled job that runs a command such as `CloseEnrolment` for
-the courses whose deadline passed, and whose `decide` reads the same model. Deadlines kept as events in the log are proposed in
-[ADR-0043](../../adr/0043-a-deadline-is-an-event-in-the-log.md).
+An EIP Aggregator also says when to stop waiting ("confirm with what is there after a week", "cancel if no room is booked by Friday"). Here that is a
+**deadline**: the command that starts the wait sets one with its decision, `deadline(CloseEnrolment, { courseId }, { at })`, and when it is due the
+deadlines processor runs that command, whose `decide` reads the same model and decides what to do with a group that is not complete (or answers `noop`
+for one that completed in time). The course app does this for its payment window; [Set a deadline](set-a-deadline.md) shows it, and
+[ADR-0043](../../adr/0043-a-deadline-is-an-event-in-the-log.md) records the design.
 
 ## The rest of EIP, mapped
 
@@ -214,6 +215,7 @@ The patterns from the catalogue that the framework implements, and the two it le
 | Message Filter, Content-Based Router | What a view or automation selects: its event types and tags |
 | Splitter | An automation handler that returns several inputs |
 | Process Manager | Automations whose commands read the process's state from a model, as the course start does |
+| Aggregator's timeout, Scheduler | A deadline: an event in the log, fired by the deadlines processor when it is due ([Set a deadline](set-a-deadline.md)) |
 | Idempotent Receiver | `idempotentBy`, and the backstop that stops the same trigger from appending the same request twice ([ADR-0035](../../adr/0035-the-same-trigger-cannot-append-the-same-request-twice.md)) |
 | Transactional Client | A view's batch commits with its cursor ([ADR-0023](../../adr/0023-view-batch-and-cursor-in-one-transaction.md)); a command reads and appends in one transaction |
 | Guaranteed Delivery, Channel Adapter | The outbox and its publishers |

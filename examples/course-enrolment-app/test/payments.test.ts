@@ -131,13 +131,36 @@ describe("the payment window: three days from the subscription", () => {
   test("the window starts from the decision's now, recorded on the event", async () => {
     const s = given(...math()).at(t0);
     const result = await s.when(Subscribe, { studentId: "ann", courseId: "math" });
-    expect(result.events.map((e) => e.data)).toEqual([{ studentId: "ann", courseId: "math", subscribedAt: DateTime.formatIso(t0) }]);
+    expect(result.events[0]!.data).toEqual({ studentId: "ann", courseId: "math", subscribedAt: DateTime.formatIso(t0) });
   });
 
   test("a subscription stored before subscribedAt existed has no window: it can be paid, and released, at any time", async () => {
     const s = given(...math(), StudentSubscribed({ studentId: "ann", courseId: "math" })).at(at(30 * PAYMENT_WINDOW_MS));
     expect((await s.when(PaySubscription, pay("ann", "p-1"))).outcome).toBe("created");
   });
+});
+
+describe("the payment deadline: the seat is asked back when the window closes", () => {
+  const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");
+  const at = (ms: number) => DateTime.add(t0, { milliseconds: ms });
+
+  // #region deadline-test
+  test("subscribing sets the deadline; at the window's end an unpaid seat is released, and a paid one is left alone", async () => {
+    const s = given(...math()).at(t0);
+    const subscribed = await s.when(Subscribe, { studentId: "ann", courseId: "math" });
+    expect(subscribed.events.map((e) => e.type)).toEqual(["StudentSubscribed", "crablet.DeadlineScheduled"]);
+    await s.when(Subscribe, { studentId: "bob", courseId: "math" });
+    await s.at(at(60_000)).when(PaySubscription, pay("bob", "p-1"));
+
+    expect(await s.at(at(PAYMENT_WINDOW_MS - 1)).fireDue(ReleaseUnpaidSubscription)).toEqual([]); // not due yet
+    const fired = await s.at(at(PAYMENT_WINDOW_MS)).fireDue(ReleaseUnpaidSubscription);
+    expect(fired.map((f) => [f.outcome, f.reason, f.events.map((e) => e.type)])).toEqual([
+      ["appended", null, ["SubscriptionReleased"]], // ann did not pay
+      ["noop", "PAID", []] // bob did
+    ]);
+    expect(await s.at(at(2 * PAYMENT_WINDOW_MS)).fireDue(ReleaseUnpaidSubscription)).toEqual([]); // each fires once
+  });
+  // #endregion deadline-test
 });
 
 describe("the receipt", () => {

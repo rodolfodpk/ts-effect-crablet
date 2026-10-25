@@ -3,14 +3,16 @@ import { describe, test } from "bun:test";
 import path from "node:path";
 import { assertEventFixtures, loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
 import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
-import { CoursePriced, ReceiptSent, SubscriptionPaid } from "../src/domain/Payments.ts";
+import { CoursePriced, ReceiptSent, ReleaseUnpaidSubscription, SubscriptionPaid } from "../src/domain/Payments.ts";
 import { CourseConfirmed, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
 
 describe("the course events", () => {
-  test("every stored shape still decodes, derives the tags it was stored with, and every event type has a fixture", () => {
+  test("every stored shape still decodes, derives the tags it was stored with, and every event type and deadline command has a fixture", () => {
     assertEventFixtures({
       definitions: [CourseDefined, StudentSubscribed, SubscriptionReleased, TeacherAssigned, RoomBooked, CourseConfirmed, CoursePriced, SubscriptionPaid, ReceiptSent],
       fixtures: loadEventFixtures(path.join(import.meta.dir, "fixtures/events")),
+      // The payment deadline Subscribe sets stores this command's input: it must stay readable too.
+      deadlineCommands: [ReleaseUnpaidSubscription],
       requireCoverage: true
     });
   });

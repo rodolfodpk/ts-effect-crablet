@@ -42,6 +42,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | Change the schema and keep the queries checked | [The database workflow](./guides/build/database-workflow.md) |
 | React to an event by issuing a command | [Add an automation](./guides/build/add-an-automation.md) |
 | Act once several events have happened, in any order (the EIP Aggregator) | [Aggregate events](./guides/build/aggregate-events.md) |
+| Run a command once a time has passed (a hold that expires, an unpaid subscription released) | [Set a deadline](./guides/build/set-a-deadline.md) |
 | Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](./guides/build/expose-a-command-over-http.md) |
 | Test a command's decisions without a database | [Test a command](./guides/build/test-a-command.md) |
 | Decide on something the input does not name (a card number names a member) | [Look something up before deciding](./guides/build/look-something-up-first.md) |

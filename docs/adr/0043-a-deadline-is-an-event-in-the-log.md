@@ -2,10 +2,11 @@
 
 ## Status
 
-**Proposed** (2026-10-24; revised the same day to fire deadlines on the event-poller engine). Nothing built, and nothing needs it yet: it is to be built
-when an application does. It answers the gap the
-[Aggregate events](../guides/build/aggregate-events.md) guide names, an Aggregator's expiry, and records why the state stays in the log rather than in
-Effect's workflow engine.
+**Accepted** (2026-10-25). Built: `deadline(...)` and the two framework events (`@crablet/commands/Deadline`), migration
+`V19__crablet_deadlines.sql`, the deadlines processor (`@crablet/automations/Deadlines`), `Scenario.fireDue`, and the course app's payment window as
+the first use ([Set a deadline](../guides/build/set-a-deadline.md)). Proposed on 2026-10-24 (revised the same day to fire deadlines on the event-poller
+engine). It answers the gap the [Aggregate events](../guides/build/aggregate-events.md) guide named, an Aggregator's expiry, and records why the state
+stays in the log rather than in Effect's workflow engine. Where the implementation differs from the text below, "Result of the implementation" says so.
 
 ## Context
 
@@ -22,7 +23,7 @@ idempotency and its leadership, and the time something was due is not in the log
 Effect 4 has durable timers (`effect/workflow`: `DurableClock.sleep`, `DurableDeferred`; `effect/cluster`: `DeliverAt`, `ClusterCron`), all marked
 unstable. The question is whether to use them or to keep deadlines in the log.
 
-## Decision (proposed)
+## Decision
 
 **A deadline is an event, appended by `decide` in the same append as the decision that sets it. Firing it is an event too. The append that stores a
 deadline also writes it into a table of pending deadlines, and a processor of the event-poller engine, whose fetcher reads that table by time, runs
@@ -123,8 +124,9 @@ each due deadline's command through the executor, with the deadline as its cause
 
 ## Consequences
 
-- The Aggregator gets its expiry, and the guide's "what is missing" section becomes a step: `DefineCourse` sets a deadline, and `CloseEnrolment`
-  decides from the course's readiness model what to do with a course that is not complete.
+- The Aggregator gets its expiry, and the guide's "what is missing" section became "Stop waiting: a deadline". The first use is the course app's
+  payment window (`Subscribe` sets a deadline that runs `ReleaseUnpaidSubscription`); an enrolment that closes (`CloseEnrolment`, deciding from the
+  course's readiness model) is the same shape and was not built.
 - Why a command ran is in the log: its causation is a `DeadlineScheduled`, which says which decision set it and for when, and a `DeadlineFired` says
   how it ended.
 - Framework events in the application's log, the first: `crablet.DeadlineScheduled` and `crablet.DeadlineFired`. The `crablet.` prefix, which no event
@@ -140,8 +142,7 @@ each due deadline's command through the executor, with the deadline as its cause
   fired by the old name before it goes.
 - Little new machinery. Leadership, polling, error counting, `FAILED`, pause and resume come from the event-poller engine. What is new is a fetcher
   that reads by time, the handler, a progress tracker whose cursor is inert, and the admin description.
-- Testing without a database would need a scenario helper that fires what is due at a given instant. `Scenario.at(now)` exists (a fixed clock, a `DateTime.Utc`); a
-  `fireDue()` beside it would be added with this.
+- Testing without a database: `Scenario.fireDue(...commands)`, beside `Scenario.at(now)`, fires what is due at the scenario's clock.
 
 ## Alternatives considered
 
@@ -181,8 +182,46 @@ each due deadline's command through the executor, with the deadline as its cause
 - **Firing is a processor of the event-poller engine** (decision 6), with a fetcher that reads by time, and **the append writes the table** (decision 5):
   one processor, on the infrastructure that already keeps one pod doing the work.
 
-## Open questions
+## Result of the implementation (2026-10-25)
 
-- How many due deadlines one batch runs, and whether one slow command holds back the rest (the outbox's per-publisher timeout, ADR-0036, is the
-  precedent).
-- Whether `DeadlineFired` should record the command's result marker, so a reader can go from the deadline to what it wrote.
+What was built follows the decisions above, with these differences and additions:
+
+- **The row is deleted first, as the guard** (decision 6). Recording a firing is one transaction: `DELETE … RETURNING` the deadline's row, and only if
+  it was there, append `DeadlineFired`. A zombie leader and its successor that fire the same deadline therefore record it once; the command's effect is
+  already protected by its `idempotentBy` and the backstop (ADR-0035). Tested by handling the same fetched deadline twice: one release, one
+  `DeadlineFired`; without the guard there are two.
+- **`deadline(...)` refuses a command at once** (decision 9 said the processor's construction does). A command without `idempotentBy`, or with a
+  `personal(...)` field in its input, throws where the deadline is built, so the first test of the decision that sets it fails. `checkDeadlineCommands`
+  is the same check for the processor and `Scenario.fireDue`, which also refuse a name given twice.
+- **In memory there is no table.** `Scenario.fireDue(...commands)` derives what is pending from the log, by the rule the table is rebuilt by (scheduled,
+  and no `DeadlineFired` caused by it), fires what is due at the scenario's clock in due order, and returns how each ended (`FiredDeadline`). The
+  in-memory store is unchanged.
+- **The polling interval defaults to 5 seconds** for this module (1 second for the others): it bounds how late a deadline fires, deadlines are business
+  time, and an idle poll is the status read, the registration upsert and one index lookup, on the leader only. The backoff settings are not taken
+  (`DeadlinesConfig`), because no wake-up would end a wait.
+- **The backlog is the due deadlines.** `makeDeadlinesManagementService` answers the admin API's and the gauges' backlog with how many deadlines are due
+  and how long ago the oldest fell due (read from `crablet_deadlines`), and no lag in positions, since the cursor never moves. A counter,
+  `crablet.deadlines.fired`, counts firings by outcome.
+- **Event fixtures cover deadlines.** `assertEventFixtures({ …, deadlineCommands })` checks each `crablet.DeadlineScheduled` fixture's input against
+  its command's schema and, with `requireCoverage`, asks for one per command: the consequence "a deadline's input is stored data" now has a check.
+- **The migration** creates `crablet_deadlines` and its index, `crablet_deadline_progress` (the progress table's columns; its cursor columns never
+  move), and replaces `append_events_batch` with one more statement that inserts the deadlines among the inserted events. An append with no deadline
+  pays a filter over the rows it just inserted.
+- **One more held connection** per process that runs the module: its lock, and no `LISTEN`.
+- **A repeat's marker is one event earlier than the first write's.** A command that sets a deadline ends its append at the deadline, and a repeat answered
+  by `byModel()` points at the newest event its model read (ADR-0034), which is not the deadline, since no model reads one. Both are in the same
+  transaction, so a read that waits on either sees the whole write; the course app's two tests that compared the markers now compare the transaction.
+
+The two open questions, answered for now:
+
+- **A batch is fired one deadline at a time, and one slow command holds back the rest**, as in an automation's batch; a full batch waits for the next
+  interval, so a backlog (many deadlines due at once) drains at about `batchSize` per interval. A per-deadline timeout, on the outbox's precedent
+  (ADR-0036), is a follow-up if a slow command is ever seen.
+- **`DeadlineFired` does not record the command's marker.** It can be added later as an optional field without breaking stored events.
+
+Measured in `packages/automations/test/integration/deadlines.test.ts` (Postgres): the row is written with the append and not by one rolled back; a
+deadline does not fire before its time and fires after it, caused by it; `appended`, `noop` and `failed` outcomes, the processor going on after a
+domain error; a deadline due while no processor ran fires once; two instances hold one lock and the follower takes over; the rebuild query reproduces
+the table; a deadline for a command not given makes the processor `FAILED` after `maxErrors`, and a reset brings it back. End to end in the course app
+(`course-deadlines.test.ts`): a subscription over HTTP sets the deadline three days on, and the processor, with a clock past the window, releases the
+unpaid seat and the seats view frees it.

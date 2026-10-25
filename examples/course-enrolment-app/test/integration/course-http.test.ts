@@ -161,8 +161,10 @@ describe("tutorial step 3: the HTTP API", () => {
     assert.strictEqual(repeat.status, 200);
     const body = await json(repeat);
     assert.strictEqual(body["status"], "IDEMPOTENT");
-    // decide answered the repeat from what it read, and the newest event it read is the first subscription (ADR-0034)
-    assert.strictEqual(body["marker"], firstMarker);
+    // decide answered the repeat from what it read, and the newest event it read is the first subscription (ADR-0034). The first write ended one event
+    // later, at the payment deadline appended with it (which no model reads): the same transaction, so a read waiting on either sees the whole write.
+    const [firstTx, firstPos] = String(firstMarker).split(":");
+    assert.deepStrictEqual(String(body["marker"]).split(":"), [firstTx, String(Number(firstPos) - 1)]);
     assert.strictEqual((await json(await getCourse(courseId)))["subscribers"], 1);
   });
 

@@ -6,7 +6,7 @@ What `defineEvent`, `defineModel` and `defineCommand` accept, and what a command
 [consistency boundaries](../concepts/dcb-guide.md); the decision is [ADR-0010](../adr/0010-declarative-command-api.md).
 
 A domain file imports all of it from one place, `@crablet/commands/Domain`: `defineEvent`, `Instant`, `defineModel`, `all`, `Period`, `defineCommand`, `emit`, `noop`,
-`fail`, `byModel`, `strict`, `concurrent`, `defineContract`, `DomainError`, `personal` and `Tag`. The narrower entry points named below stay, and a
+`fail`, `deadline`, `byModel`, `strict`, `concurrent`, `defineContract`, `DomainError`, `personal` and `Tag`. The narrower entry points named below stay, and a
 module a browser imports (a contract, its errors) uses them: `/Domain` reaches the command pipeline.
 
 ## `defineCommand` options
@@ -50,6 +50,10 @@ rather than by `idempotentBy` ([ADR-0035](../adr/0035-the-same-trigger-cannot-ap
 `run` returns an `ExecutionResult`: `wasIdempotent`, `reason` and `marker`, where the write ended (a `Marker` from `@crablet/eventstore/Marker`, the pair
 `{ transactionId, position }`). Pass it to `waitUntilProcessed`, or give it to a client as one string with `formatMarker`; the HTTP response carries both
 forms (`lastPosition`, `lastTransactionId` and `marker`).
+
+`emit` also takes a **deadline**, `deadline(Command, input, { at })` (`@crablet/commands/Domain`): a command to run once `at` has passed, appended with the
+decision and fired by the deadlines processor ([Set a deadline](../guides/build/set-a-deadline.md)). Its command must declare `idempotentBy` and have no
+`personal(...)` input field; `deadline` throws otherwise.
 
 An idempotent result carries a marker too: where the earlier write is (the latest event the
 key matched, or the newest event the decision read). A client whose first answer was lost reads its own write with it. It is null only when there is
