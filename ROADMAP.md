@@ -18,7 +18,7 @@ not on npm ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
 |---|---|---|
 | Mutation testing of the core packages | proposed; a pilot ran outside the repository | [plan](docs/history/plans/mutation-testing.md) |
 | `Period.hour` | needs a "latest matching event" primitive in the event store first, because the turnover read grows with the number of periods | [period follow-ups](docs/history/plans/period-follow-ups.md) (B1, B2) |
-| A leader lease with a deadline in Postgres | a named follow-up, so a silent partition does not depend on TCP keepalives (388 s with the RDS defaults) | [kind lab](docs/history/plans/kind-lab.md) |
+| A leader lease with a deadline in Postgres | proposed: `idle_session_timeout` on the lock session, so a silent partition's takeover is about 20 s, not the keepalives' 388 s on RDS | [ADR-0045](docs/adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md), [kind lab](docs/history/plans/kind-lab.md) |
 
 ## Deliberately not decided
 
