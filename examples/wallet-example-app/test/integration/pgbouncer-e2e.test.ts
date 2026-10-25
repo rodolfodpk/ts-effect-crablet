@@ -6,6 +6,9 @@
 // wallet's boundary) on just 3 wallets, 16 at once, which conflicts for real: the test requires that the database ran transactions side by side, that the conflicts were retried, and that the ones that
 // ran out of retries answered 409 and nothing else went wrong. In the middle of more load the session connection of every leader is killed, and then one instance is stopped gracefully.
 //
+// A request in flight to A when it stops may lose its connection (a reset, not an answer); the client sends it again to B, as one behind a load balancer would, and
+// the ids make it a repeat. Only then: a reset at any other time fails the test.
+//
 // At the end: one leader per role each time, always on a session connection and never on a pooled one; the other instance takes over; no 5xx; and the data is consistent: the same checks the kind lab's
 // chaos page runs (tools/chaos-ui/server/checks.ts: the views equal the sum of the log, no duplicate deposits, one welcome notification per wallet, every transaction of events audited).
 //
@@ -110,6 +113,8 @@ describe("the wallet behind PgBouncer in transaction mode, two instances, leader
     const b = await startInstance("B");
     let live = [a, b]; // the instances still running; A is stopped part-way
     let aStopped = false;
+    // Requests whose connection to A was reset while A was stopping (in flight, or on a keep-alive socket A was closing): the answer was lost, not refused.
+    let resetWhileStopping = 0;
     try {
       // 1. one leader per role, each on a SESSION connection
       const first = await until(holders, (h) => h.size === 3, "the three leader locks to be taken");
@@ -121,7 +126,14 @@ describe("the wallet behind PgBouncer in transaction mode, two instances, leader
       const call = async (i: number, command: string, body: unknown) => {
         inflight++; maxInflight = Math.max(maxInflight, inflight);
         const target = live[i % live.length]!;
-        const res = await fetch(`${target.app.baseUrl}/api/commands/${command}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const send = (to: Instance) => fetch(`${to.app.baseUrl}/api/commands/${command}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        // A client whose answer was lost because the instance stopped sends the same request again, to one that runs, as a load balancer would: the ids make it
+        // a repeat, and the data checks below would catch one applied twice. A reset at any other time, or from B, is still a failure.
+        const res = await send(target).catch((error: unknown) => {
+          if (!(aStopped && target === a)) throw error;
+          resetWhileStopping++;
+          return send(b);
+        });
         statuses.set(res.status, (statuses.get(res.status) ?? 0) + 1);
         await res.text();
         inflight--;
@@ -241,7 +253,7 @@ describe("the wallet behind PgBouncer in transaction mode, two instances, leader
       await a.runtime.dispose();
       await stopping;
       const takenOver = await until(holders, (h) => h.size === 3 && [...h.values()].every((x) => x.application_name === "session-B"), "instance B to hold all three leader locks", 60_000);
-      console.log(`DIAG pgbouncer e2e: after stopping A, ${JSON.stringify([...takenOver].map(([r, h]) => `${r}@${h.application_name}`))}`);
+      console.log(`DIAG pgbouncer e2e: after stopping A, ${JSON.stringify([...takenOver].map(([r, h]) => `${r}@${h.application_name}`))}; ${resetWhileStopping} requests to A were reset while it stopped and were sent again to B`);
       await burst(60); // only B now
       assert.ok((statuses.get(201) ?? 0) > 300, `the load carried on through B (${JSON.stringify([...statuses])})`);
 
