@@ -70,14 +70,14 @@ A refusal, a no-op or an idempotent repeat writes nothing of the turn.
 
 ## Test it with a clock
 
-`given(...).at(date)` is the same scenario with the clock fixed at `date`; the log is shared, so a test walks through time.
+`given(...).at(now)` is the same scenario with the clock fixed at `now`, a `DateTime.Utc` (`DateTime.makeUnsafe(...)` builds one); the log is shared, so a test walks through time.
 
 <!-- file: examples/wallet-example-app/test/wallet-commands.test.ts#period-scenarios -->
 ```ts
 test("the first deposit of the next month closes this month's statement and opens the next, carrying the balance", async () => {
   const s = given(opened("w1", 100));
-  await s.at(new Date(Date.UTC(2026, 9, 31, 23, 59))).when(Deposit, dep("w1", "d1", 25));
-  const r = await s.at(new Date(Date.UTC(2026, 10, 1, 0, 1))).when(Deposit, dep("w1", "d2", 5));
+  await s.at(DateTime.makeUnsafe(Date.UTC(2026, 9, 31, 23, 59))).when(Deposit, dep("w1", "d1", 25));
+  const r = await s.at(DateTime.makeUnsafe(Date.UTC(2026, 10, 1, 0, 1))).when(Deposit, dep("w1", "d2", 5));
   expect(r.events.map((e) => e.type)).toEqual(["WalletStatementClosed", "WalletStatementOpened", "DepositMade"]);
   const [closed, opened2, deposit] = r.events;
   expect(closed!.data).toMatchObject({ month: 10, openingBalance: 100, closingBalance: 125 }); // the October statement opened with 100
@@ -87,8 +87,8 @@ test("the first deposit of the next month closes this month's statement and open
 
 test("a pod whose clock is still in October never turns the month back", async () => {
   const s = given(opened("w1", 0));
-  await s.at(new Date(Date.UTC(2026, 10, 1, 0, 1))).when(Deposit, dep("w1", "d1", 5));
-  const r = await s.at(new Date(Date.UTC(2026, 9, 31, 23, 59))).when(Deposit, dep("w1", "d2", 7));
+  await s.at(DateTime.makeUnsafe(Date.UTC(2026, 10, 1, 0, 1))).when(Deposit, dep("w1", "d1", 5));
+  const r = await s.at(DateTime.makeUnsafe(Date.UTC(2026, 9, 31, 23, 59))).when(Deposit, dep("w1", "d2", 7));
   expect(r.events.map((e) => e.type)).toEqual(["DepositMade"]);
   expect(tags(r.events[0]!)).toMatchObject({ month: "11" });
 });

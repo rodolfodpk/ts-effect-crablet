@@ -3,29 +3,13 @@
 //   - a course holds at most `capacity` students,
 //   - a student takes at most 3 courses.
 // No aggregate owns "subscribe": one event, `StudentSubscribed`, is tagged with BOTH the student and the course.
-import * as Schema from "effect/Schema";
-import { all, byModel, defineCommand, defineEvent, defineModel, emit, fail, Instant, noop } from "@crablet/commands/Domain";
+import { all, byModel, defineCommand, defineModel, emit, fail, noop } from "@crablet/commands/Domain";
 import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
+import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
 
-// #region events
-export const CourseDefined = defineEvent("CourseDefined", {
-  schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
-  tags: (d) => ({ course_id: d.courseId })
-});
-
-// One fact, tagged with BOTH the student and the course it concerns. `subscribedAt` is the decision's `now`, so a rule about time reads the
-// business time, not when the row was stored. Optional, because subscriptions stored before it have none.
-export const StudentSubscribed = defineEvent("StudentSubscribed", {
-  schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String, subscribedAt: Schema.optionalKey(Instant) }),
-  tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
-});
-
-// A subscription given back (one left unpaid: src/domain/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
-export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
-  schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
-  tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
-});
-// #endregion events
+// The events are in enrolment.events.ts, so the payments (src/domain/Payments.ts) can read them without importing these rules, and these rules can
+// name a payment command (a deadline, ADR-0043) without an import cycle. Re-exported for the rest of the app.
+export { CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
 
 export const MAX_COURSES_PER_STUDENT = 3;
 

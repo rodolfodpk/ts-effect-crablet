@@ -3,7 +3,9 @@
 import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emit, fail, Instant, noop } from "@crablet/commands/Domain";
-import { CourseDefined, CourseNotFound, StudentSubscribed, SubscriptionReleased } from "./Enrolment.ts";
+// The enrolment's events and errors, not its rules (Enrolment.ts): Enrolment.ts may import this module.
+import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
+import { CourseNotFound } from "./enrolment.contract.ts";
 
 // #region events
 // A price in cents. A separate event, not a field added to CourseDefined: stored CourseDefined events stay as they are.

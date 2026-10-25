@@ -140,7 +140,7 @@ each due deadline's command through the executor, with the deadline as its cause
   fired by the old name before it goes.
 - Little new machinery. Leadership, polling, error counting, `FAILED`, pause and resume come from the event-poller engine. What is new is a fetcher
   that reads by time, the handler, a progress tracker whose cursor is inert, and the admin description.
-- Testing without a database would need a scenario helper that fires what is due at a given instant. `Scenario.at(date)` exists (a fixed clock); a
+- Testing without a database would need a scenario helper that fires what is due at a given instant. `Scenario.at(now)` exists (a fixed clock, a `DateTime.Utc`); a
   `fireDue()` beside it would be added with this.
 
 ## Alternatives considered
@@ -173,7 +173,7 @@ each due deadline's command through the executor, with the deadline as its cause
 
 ## Decided while proposing (2026-10-24)
 
-- **The clock: the application's** (decision 8), for writing and firing, as the period turn does, so a scenario test fixes it with `at(date)`. Not the
+- **The clock: the application's** (decision 8), for writing and firing, as the period turn does, so a scenario test fixes it with `at(now)`. Not the
   database's (`dueAt` as a duration the append adds to `now()`): one clock for all pods, but an absolute time ("Friday 17:00") would still come from the
   application, and a test could not fix it.
 - **Framework events are prefixed `crablet.`** Not plain names, which an application's own event could take.
