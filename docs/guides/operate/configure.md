@@ -35,9 +35,12 @@ tens of milliseconds whatever the polling settings; they only matter when a wake
 
 ## 5. Leader takeover
 
-`leaderElectionRetryIntervalMs` (5 s by default) bounds the takeover after a crash. A silent network partition is slower: the lock is freed only when
-Postgres gives up on the connection, so set the server's TCP keepalives (`tcp_keepalives_idle`, `_interval`, `_count`). With 10/5/3 the kind lab saw
-takeovers of 13 to 29 s; with the 300/30/2 that RDS ships, 388 s ([failure modes](failure-modes.md#a-leader-loses-the-network)).
+`leaderElectionRetryIntervalMs` (5 s by default) bounds the takeover after a crash. A silent network partition takes the leader's `serverIdleTimeout`
+more (15 s by default, a `LeaderOptions` setting): the leader's lock session sets `idle_session_timeout` for itself, so the server ends it once the
+leader has gone silent and frees the lock, whatever the TCP keepalives say ([ADR-0045](../../adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)).
+It must be longer than the leader's own loss detection (6 s with the defaults), which is checked. Setting the server's TCP keepalives
+(`tcp_keepalives_idle`, `_interval`, `_count`) shorter is still worth it, for the backend slots of clients that are gone
+([failure modes](failure-modes.md#a-leader-loses-the-network)).
 
 ## 6. Reads
 

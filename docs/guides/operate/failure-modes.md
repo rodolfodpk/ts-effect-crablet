@@ -17,17 +17,22 @@ With only one instance, nothing takes over: the module's work waits until the in
 
 ## A leader loses the network
 
-If the leader cannot reach Postgres and no reset arrives (a silent partition), Postgres frees the lock only when it gives up on the connection. Until
-then the module does not move: views fall behind by the takeover time, and strict reads answer `503`.
+If the leader cannot reach Postgres and no reset arrives (a silent partition), the leader notices within seconds (its heartbeat), and the lock session
+it holds ends itself on the server once it has been silent for the leader's `serverIdleTimeout` (15 s by default): the lock is freed and a follower
+takes it at its next try, about 20 s after the cut ([ADR-0045](../../adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)). Until then
+the module does not move: views fall behind by the takeover time, and strict reads answer `503`.
 
-| Postgres TCP keepalives | Takeover in the lab |
+Measured in an integration test (a proxy that cuts silently; a 3 s server timeout): the follower led 3.04 s after the cut, after the old leader had
+stopped. Before that, the lock waited for Postgres's TCP keepalives, as the kind lab measured (not rerun yet with the timeout):
+
+| Postgres TCP keepalives, without the session timeout | Takeover in the lab |
 |---|---|
 | 10 / 5 / 3 | 13 to 29 s |
 | the same, plus `tcp_user_timeout=15000` on the client | 18 to 38 s |
 | 300 / 30 / 2 (what RDS ships) | 388 s |
 
-The stale leader cannot do harm meanwhile: it checks that its own session still holds the lock before each batch and each cursor move. Set the
-keepalives on the server ([configure it](configure.md#5-leader-takeover)).
+The stale leader cannot do harm meanwhile: it checks that its own session still holds the lock before each batch and each cursor move. Shorter
+keepalives on the server still help: they free the backend slot of a client that is gone ([configure it](configure.md#5-leader-takeover)).
 
 ## A long transaction stays open
 

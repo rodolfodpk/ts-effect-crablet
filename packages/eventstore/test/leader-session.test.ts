@@ -5,7 +5,8 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
-import { afterCheck, afterRelease, leading, tryAcquireGlobalLeader } from "../src/Leader.ts";
+import { afterCheck, afterRelease, leading, lossDetectionBound, serverIdleTimeoutOf, tryAcquireGlobalLeader } from "../src/Leader.ts";
+import { Duration } from "effect";
 
 const standIn = (answer: (query: string) => ReadonlyArray<unknown>) => {
   const queries: Array<string> = [];
@@ -44,7 +45,7 @@ describe("leader: does THIS session still hold the lock", () => {
   test("leadership is given up only after the configured number of failed checks in a row", async () => {
     let healthy = true;
     const { sql } = standIn((q) => (q.includes("pg_try_advisory_lock") ? [{ acquired: true }] : q.includes("pg_locks") ? (healthy ? [{ "?column?": 1 }] : []) : [{}]));
-    const leader = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, { heartbeat: "1 hour", verifyTimeout: "500 millis", failuresBeforeLost: 2 })))!;
+    const leader = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, { heartbeat: "1 hour", verifyTimeout: "500 millis", failuresBeforeLost: 2, serverIdleTimeout: "off" })))!;
     healthy = false;
     expect(await Effect.runPromise(leader.verify)).toBe(false);
     expect(leader.isLeader()).toBe(true); // one failed check is not yet "lost"
@@ -69,6 +70,46 @@ describe("leader: does THIS session still hold the lock", () => {
     await Effect.runPromise(leader.release());
     expect(leader.isLeader()).toBe(false);
     expect(queries.filter((q) => q.includes("pg_advisory_unlock") && q.includes("pg_notify"))).toHaveLength(1);
+  });
+});
+
+describe("leader: the lease is the session (ADR-0045)", () => {
+  test("taking the lock asks for a primary first, and the heartbeat's check requires one", async () => {
+    const { sql, queries } = standIn(holdsLock);
+    const leader = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, fast)))!;
+    await Effect.runPromise(leader.verify);
+    expect(queries[0]).toMatch(/CASE WHEN pg_is_in_recovery\(\) THEN false ELSE pg_try_advisory_lock/);
+    expect(queries.find((q) => q.includes("pg_locks"))).toMatch(/NOT pg_is_in_recovery\(\)/);
+    await Effect.runPromise(leader.release());
+  });
+
+  test("the lock session sets idle_session_timeout once it holds the lock, and resets it when it gives the lock back", async () => {
+    const { sql, queries } = standIn(holdsLock);
+    const leader = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, fast)))!;
+    expect(queries[1]).toBe("SET idle_session_timeout = '15000ms'");
+    await Effect.runPromise(leader.release());
+    const unlock = queries.findIndex((q) => q.includes("pg_advisory_unlock"));
+    expect(queries[unlock + 1]).toBe("RESET idle_session_timeout");
+  });
+
+  test("an attempt that does not get the lock sets nothing; \"off\" sets nothing either", async () => {
+    const refused = standIn(() => [{ acquired: false }]);
+    await Effect.runPromise(tryAcquireGlobalLeader(refused.sql, 42n, fast));
+    expect(refused.queries.some((q) => q.includes("idle_session_timeout"))).toBe(false);
+    const off = standIn(holdsLock);
+    const leader = (await Effect.runPromise(tryAcquireGlobalLeader(off.sql, 42n, { ...fast, serverIdleTimeout: "off" })))!;
+    await Effect.runPromise(leader.release());
+    expect(off.queries.some((q) => q.includes("idle_session_timeout"))).toBe(false);
+  });
+
+  test("the timeout must be longer than the leader's own loss detection: a shorter one is refused, naming both", async () => {
+    expect(Duration.toMillis(lossDetectionBound({}))).toBe(6_000); // 2 x (1 s + 2 s)
+    expect(Duration.toMillis(serverIdleTimeoutOf({})!)).toBe(15_000);
+    expect(() => serverIdleTimeoutOf({ serverIdleTimeout: "6 seconds" })).toThrow(/6000 ms.*6000 ms/);
+    expect(() => serverIdleTimeoutOf({ heartbeat: "5 seconds", verifyTimeout: "5 seconds" })).toThrow(/must be longer/);
+    expect(serverIdleTimeoutOf({ heartbeat: "1 hour", serverIdleTimeout: "off" })).toBeNull();
+    const { sql } = standIn(holdsLock);
+    await expect(Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, { heartbeat: "1 hour" }))).rejects.toThrow(/serverIdleTimeout/);
   });
 });
 

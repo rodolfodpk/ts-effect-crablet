@@ -1,4 +1,4 @@
-import { Duration, Effect, Exit, Fiber, Scope } from "effect";
+import { Duration, Effect, Exit, Fiber, Option, Scope } from "effect";
 import { EVENTS_CHANNEL } from "./EventStore.ts";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
@@ -18,6 +18,12 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError";
 //     the leader LOST: `isLeader()` turns false and the connection is released.
 //   - `verify`: the same check on demand, used by the processor right before it does work that must not be done by a non-leader (it fails closed: a
 //     failed check answers false at once, even before the heartbeat would call the leader lost).
+//
+// The other side has to find out too (ADR-0045). After a silent partition (no FIN, no RST) the leader knows within seconds, but Postgres keeps the
+// session, and the lock, until its TCP keepalives give up: 388 s with the settings RDS ships. So the lock session sets `idle_session_timeout` for
+// itself: the heartbeat's check renews it every second, and once the leader goes silent the server ends the session and the lock is free. The lease is
+// the session. And a leader leads only on a primary: after a failover a cached DNS name can lead to the old writer, now a replica, where an advisory lock
+// can still be taken but no write succeeds, so taking the lock and checking it both require `pg_is_in_recovery()` to be false.
 //
 // Uses SqlClient's public `reserve: Effect<Connection, SqlError, Scope>` primitive (verified in
 // effect/sql/SqlConnection) rather than a raw pg.Client, since
@@ -40,7 +46,43 @@ export interface LeaderOptions {
   readonly reserveTimeout?: Duration.Input;
   // Consecutive failed checks before the leader is lost (default 2): one slow answer does not end leadership.
   readonly failuresBeforeLost?: number;
+  // How long the server keeps a lock session its leader stopped talking on (`idle_session_timeout` on that session; default 15 seconds; "off" leaves it to
+  // the TCP keepalives). It must be longer than the leader's own loss detection, `failuresBeforeLost x (heartbeat + verifyTimeout)`, so the old leader has
+  // stopped before the lock is free; a shorter one is refused. The takeover after a silent partition is about this plus the followers' retry interval.
+  readonly serverIdleTimeout?: Duration.Input | "off";
 }
+
+// When the leader has surely stopped after its connection went silent: `failuresBeforeLost` checks of `heartbeat` and `verifyTimeout` each.
+export const lossDetectionBound = (options: Pick<LeaderOptions, "heartbeat" | "verifyTimeout" | "failuresBeforeLost">): Duration.Duration =>
+  Duration.times(
+    Duration.sum(Duration.fromInputUnsafe(options.heartbeat ?? "1 second"), Duration.fromInputUnsafe(options.verifyTimeout ?? "2 seconds")),
+    Math.max(1, options.failuresBeforeLost ?? 2)
+  );
+
+// Waits for `effect` at most `limit`, without waiting for it to be interrupted. On a half-open connection (a silent partition) the driver's interruption
+// of a statement sends a cancel request on a side connection and waits for the statement to drain, up to 5 seconds more (@effect/sql-pg 4.0.2): a
+// plain `Effect.timeout` waits for that, and with it a leader whose loss detection is 1.4 s knew after 5.9 s (leader-partition.test.ts's settings). A late
+// answer is no answer: the result is None at the limit, and the statement is interrupted in the background.
+const within = <A, E>(limit: Duration.Duration, effect: Effect.Effect<A, E>): Effect.Effect<Option.Option<A>, E> =>
+  Effect.gen(function* () {
+    const fiber = yield* Effect.forkDetach(effect);
+    const result = yield* Effect.timeoutOption(Fiber.join(fiber), limit);
+    if (Option.isNone(result)) yield* Effect.forkDetach(Fiber.interrupt(fiber));
+    return result;
+  });
+
+// The server idle timeout the options ask for, or null for "off". Throws when it is not longer than the leader's loss detection (ADR-0045, decision 3).
+export const serverIdleTimeoutOf = (options: LeaderOptions): Duration.Duration | null => {
+  if (options.serverIdleTimeout === "off") return null;
+  const timeout = Duration.fromInputUnsafe(options.serverIdleTimeout ?? "15 seconds");
+  const bound = lossDetectionBound(options);
+  if (!Duration.isGreaterThan(timeout, bound)) {
+    throw new Error(
+      `leader serverIdleTimeout (${Duration.toMillis(timeout)} ms) must be longer than the leader's own loss detection, failuresBeforeLost x (heartbeat + verifyTimeout) = ${Duration.toMillis(bound)} ms: otherwise the server could free the lock while the old leader still works`
+    );
+  }
+  return timeout;
+};
 
 export interface LeaderHandle {
   readonly lockKey: bigint;
@@ -96,9 +138,11 @@ export const tryAcquireGlobalLeader = (
   options: LeaderOptions = {}
 ): Effect.Effect<LeaderHandle | null, SqlError> =>
   Effect.gen(function* () {
+    // A configuration that breaks the safety rule is a defect, found on the first attempt.
+    const idleTimeout = yield* Effect.try({ try: () => serverIdleTimeoutOf(options), catch: (error) => error }).pipe(Effect.orDie);
     const scope = yield* Scope.make();
     const reserveTimeout = Duration.fromInputUnsafe(options.reserveTimeout ?? "10 seconds");
-    return yield* attempt(sql, lockKey, options, scope, reserveTimeout).pipe(
+    return yield* attempt(sql, lockKey, options, scope, reserveTimeout, idleTimeout).pipe(
       // Whatever the attempt ends as, other than a leader that keeps the scope (and so its connection), the connection goes back to the pool: before this a failure of the first
       // statement, or an interruption while waiting, left the pool one connection short for good.
       Effect.onExit((exit) => (Exit.isSuccess(exit) && exit.value !== null ? Effect.void : Scope.close(scope, Exit.void)))
@@ -110,7 +154,8 @@ const attempt = (
   lockKey: bigint,
   options: LeaderOptions,
   scope: Scope.Closeable,
-  reserveTimeout: Duration.Duration
+  reserveTimeout: Duration.Duration,
+  idleTimeout: Duration.Duration | null
 ): Effect.Effect<LeaderHandle | null, SqlError> =>
   Effect.gen(function* () {
     const connection: Connection = yield* Scope.provide(sql.reserve, scope).pipe(
@@ -127,14 +172,23 @@ const attempt = (
       )
     );
 
+    // On a replica nothing is taken: the CASE evaluates the lock only on a primary.
     const rows = yield* connection.execute(
-      "SELECT pg_try_advisory_lock($1) AS acquired",
+      "SELECT CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock($1) END AS acquired",
       [lockKey.toString()],
       undefined
     );
     const acquired = Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired);
 
     if (!acquired) return null;
+
+    // The lease: from now on the server ends this session if it stays idle longer than this, and the heartbeat keeps it from being idle. If the setting
+    // cannot be made the lock is given back, and the attempt fails and is retried.
+    if (idleTimeout !== null) {
+      yield* connection.execute(`SET idle_session_timeout = '${Duration.toMillis(idleTimeout)}ms'`, [], undefined).pipe(
+        Effect.tapError(() => connection.execute("SELECT pg_advisory_unlock($1)", [lockKey.toString()], undefined).pipe(Effect.ignore))
+      );
+    }
 
     const heartbeat = Duration.fromInputUnsafe(options.heartbeat ?? "1 second");
     const verifyTimeout = Duration.fromInputUnsafe(options.verifyTimeout ?? "2 seconds");
@@ -153,10 +207,11 @@ const attempt = (
         // on it finds the lock free. It is a wildcard on `crablet_events`, the channel every poller already listens to, so followers try for
         // the lock now instead of when their retry timer fires. A session that died cannot announce: its followers wait for their timer.
         // On a dead connection the unlock fails (or, on a half-open one, would hang): bound it, and ignore it. The lock is gone with the session.
-        yield* connection.execute("SELECT pg_advisory_unlock($1), pg_notify($2, '*')", [lockKey.toString(), EVENTS_CHANNEL], undefined).pipe(
-          Effect.timeout(verifyTimeout),
-          Effect.catch(() => Effect.void)
-        );
+        yield* within(verifyTimeout, connection.execute("SELECT pg_advisory_unlock($1), pg_notify($2, '*')", [lockKey.toString(), EVENTS_CHANNEL], undefined)).pipe(Effect.ignore);
+        // The connection goes back to the pool, so without its lease: an idle pooled connection would otherwise be ended under the pool.
+        if (idleTimeout !== null) {
+          yield* within(verifyTimeout, connection.execute("RESET idle_session_timeout", [], undefined)).pipe(Effect.ignore);
+        }
         yield* Scope.close(scope, Exit.void);
         if (monitor !== null) yield* Fiber.interrupt(monitor);
       });
@@ -164,18 +219,18 @@ const attempt = (
     // Not `SELECT 1`: after the session is killed the pooled connection can come back on a NEW session that answers queries but
     // does not hold the lock (measured: the heartbeat failed once, then succeeded). Leadership is true only while THIS session
     // still holds the advisory lock, so ask Postgres exactly that.
-    const alive: Effect.Effect<boolean> = connection
-      .execute(
+    const alive: Effect.Effect<boolean> = within(
+      verifyTimeout,
+      connection.execute(
         `SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()
-         AND ((classid::bigint << 32) | objid::bigint) = $1::bigint`,
+         AND ((classid::bigint << 32) | objid::bigint) = $1::bigint AND NOT pg_is_in_recovery()`,
         [lockKey.toString()],
         undefined
       )
-      .pipe(
-        Effect.timeout(verifyTimeout),
-        Effect.map((rows) => rows.length > 0),
-        Effect.catch(() => Effect.succeed(false))
-      );
+    ).pipe(
+      Effect.map((rows) => Option.isSome(rows) && rows.value.length > 0),
+      Effect.catch(() => Effect.succeed(false))
+    );
 
     const verify: Effect.Effect<boolean> = Effect.gen(function* () {
       if (state.status !== "leading") return false;

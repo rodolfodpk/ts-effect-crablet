@@ -57,7 +57,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0033: Delivery order is causal order, and a command's append is its transaction's first write](0033-delivery-order-is-causal-order.md) - **accepted**: what "in order" means, enforced
 - [ADR-0036: Outbox delivery: a stable event id, a publish timeout, and partial progress](0036-outbox-delivery-event-id-timeout-and-partial-progress.md) - **accepted**: `event_id` is the message id; no index
 - [ADR-0024: The leader lock and LISTEN can use a connection of their own, so the rest can go through a pooler](0024-session-connections-for-leader-and-listen.md) - **accepted**: built; tested on PgBouncer in Docker, not on RDS Proxy
-- [ADR-0045: The leader's lease is its session: Postgres ends a lock session the leader stopped talking on](0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md) - **proposed**: `idle_session_timeout` on the lock session; a silent partition's takeover bounded near 20 s instead of the keepalives' 388 s on RDS; tried by hand, not built
+- [ADR-0045: The leader's lease is its session: Postgres ends a lock session the leader stopped talking on](0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md) - **proposed**: built and tested on Postgres; `idle_session_timeout` on the lock session and a primary check; a silent partition's takeover bounded near 20 s instead of the keepalives' 388 s on RDS; the kind lab, a replica and AWS still to run
 
 ## Storage and operation
 
