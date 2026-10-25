@@ -54,12 +54,8 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   readonly where: (filter?: { readonly [K in TagKeys]?: TagValue }) => Query.Query;
 }
 
-// An instant in an event's payload: stored as ISO-8601 text in UTC, read as an Effect `DateTime.Utc`. Text that is not an instant fails to decode,
-// loudly, and the type checker refuses a plain string where an `Instant` is declared.
-//
-//     schema: Schema.Struct({ courseId: Schema.String, subscribedAt: Instant })
-//     DateTime.add(data.subscribedAt, { days: 3 })
-export const Instant = Schema.DateTimeUtcFromString;
+// `Instant`, the type of an instant in a payload, is in its own module (it imports only Effect, so a browser can import it); re-exported here.
+export { Instant } from "./Instant.ts";
 
 export const defineEvent = <
   Type extends string,

@@ -701,7 +701,8 @@
                             "type": "number"
                           },
                           "lastUpdatedAt": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "date-time"
                           }
                         },
                         "required": [
@@ -838,7 +839,8 @@
                       "type": "number"
                     },
                     "lastUpdatedAt": {
-                      "type": "string"
+                      "type": "string",
+                      "format": "date-time"
                     }
                   },
                   "required": [
@@ -996,7 +998,8 @@
                             "type": "string"
                           },
                           "occurredAt": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "date-time"
                           }
                         },
                         "required": [
@@ -1156,7 +1159,8 @@
                     "lastTransactionAt": {
                       "anyOf": [
                         {
-                          "type": "string"
+                          "type": "string",
+                          "format": "date-time"
                         },
                         {
                           "type": "null"

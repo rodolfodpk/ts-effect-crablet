@@ -130,6 +130,8 @@ declares), and names the payload's type: `type Deposit = typeof DepositMade.Type
 
 The payload is stored **encoded** by its schema and read back decoded, so a field may transform: `Instant` (an instant, stored as ISO-8601 text in
 UTC, read as an Effect `DateTime.Utc`) is built with a `DateTime` and read as one, and a plain string where an `Instant` is declared does not compile.
+It is also `@crablet/commands/Instant`, which imports only Effect (for a contract or an API declaration a browser imports), and an OpenAPI description
+declares it as `{ "type": "string", "format": "date-time" }`.
 A payload that does not fit its schema fails where the event is built, with a message that names the paths, not the values.
 
 ## Running a command

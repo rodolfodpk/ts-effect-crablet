@@ -41,6 +41,11 @@ describe("an event's payload is stored encoded and read decoded", () => {
     expect((await s.when(Open, { accountId: "a1" })).reason).toBe("ALREADY_OPEN");
   });
 
+  test("an Instant is described to OpenAPI as a string with format date-time, so generated clients get a date type", () => {
+    const doc = Schema.toJsonSchemaDocument(Schema.Struct({ at: Instant }));
+    expect(doc.schema).toMatchObject({ properties: { at: { type: "string", format: "date-time" } } });
+  });
+
   test("text that is not an instant fails to decode, loudly", () => {
     expect(() => Opened.decode({ accountId: "a1", openedAt: "not a date" })).toThrow(EventDecodingFailure);
   });

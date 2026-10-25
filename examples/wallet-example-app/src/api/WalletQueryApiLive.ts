@@ -18,7 +18,7 @@ const BalanceRow = Schema.Struct({
   wallet_id: Schema.String,
   owner: Schema.String,
   balance: Schema.FiniteFromString,
-  last_updated_at: Schema.Date
+  last_updated_at: Schema.DateTimeUtcFromDate
 });
 
 // One page of the list, by keyset on wallet_id; `after` null is the first page.
@@ -48,7 +48,7 @@ const TransactionRow = Schema.Struct({
   event_type: Schema.String,
   amount: Schema.FiniteFromString,
   description: Schema.String,
-  occurred_at: Schema.Date,
+  occurred_at: Schema.DateTimeUtcFromDate,
   occurred_at_text: Schema.String,
   event_position_text: Schema.String
 });
@@ -85,7 +85,7 @@ const SummaryRow = Schema.Struct({
   total_transfers_in: Schema.FiniteFromString,
   total_transfers_out: Schema.FiniteFromString,
   current_balance: Schema.FiniteFromString,
-  last_transaction_at: Schema.NullOr(Schema.Date)
+  last_transaction_at: Schema.NullOr(Schema.DateTimeUtcFromDate)
 });
 
 const findSummary = (sql: SqlClient.SqlClient) =>
@@ -130,7 +130,7 @@ export const makeWalletQueryApiLive = (api: WalletApi) =>
                 const page = rows.slice(0, limit);
                 const last = page[page.length - 1];
                 return {
-                  wallets: page.map((row) => ({ walletId: row.wallet_id, owner: row.owner, balance: row.balance, lastUpdatedAt: row.last_updated_at.toISOString() })),
+                  wallets: page.map((row) => ({ walletId: row.wallet_id, owner: row.owner, balance: row.balance, lastUpdatedAt: row.last_updated_at })),
                   next: rows.length > limit && last !== undefined ? encodeWalletCursor(last.wallet_id) : null
                 };
               })
@@ -150,7 +150,7 @@ export const makeWalletQueryApiLive = (api: WalletApi) =>
                   walletId: row.wallet_id,
                   owner: row.owner,
                   balance: row.balance,
-                  lastUpdatedAt: row.last_updated_at.toISOString()
+                  lastUpdatedAt: row.last_updated_at
                 };
               })
           )
@@ -187,7 +187,7 @@ export const makeWalletQueryApiLive = (api: WalletApi) =>
                     eventType: row.event_type,
                     amount: row.amount,
                     description: row.description,
-                    occurredAt: row.occurred_at.toISOString()
+                    occurredAt: row.occurred_at
                   })),
                   next:
                     rows.length > limit && last !== undefined
@@ -214,7 +214,7 @@ export const makeWalletQueryApiLive = (api: WalletApi) =>
                   totalTransfersIn: row.total_transfers_in,
                   totalTransfersOut: row.total_transfers_out,
                   currentBalance: row.current_balance,
-                  lastTransactionAt: row.last_transaction_at?.toISOString() ?? null
+                  lastTransactionAt: row.last_transaction_at
                 };
               })
           )

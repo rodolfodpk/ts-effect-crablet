@@ -7,6 +7,7 @@
     ".": "./src/CommandExecutor.ts",
     "./ExecutionResult": "./src/ExecutionResult.ts",
     "./Event": "./src/Event.ts",
+    "./Instant": "./src/Instant.ts",
     "./Personal": "./src/Personal.ts",
     "./CommandAudit": "./src/CommandAudit.ts",
     "./Model": "./src/Model.ts",

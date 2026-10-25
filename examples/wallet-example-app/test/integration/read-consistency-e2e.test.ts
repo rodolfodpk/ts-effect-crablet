@@ -80,6 +80,11 @@ describe("the wallet's reads are consistent by default", () => {
     assert.strictEqual(balance.body["balance"], 40);
     assert.strictEqual(transactions.body["transactions"].length, 1);
     assert.strictEqual(summary.body["totalDeposits"], 40);
+    // The instants are DateTimes in the handlers and ISO-8601 text in UTC on the wire, encoded by the response schemas.
+    const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+    for (const value of [balance.body["lastUpdatedAt"], transactions.body["transactions"][0]["occurredAt"], summary.body["lastTransactionAt"]]) {
+      assert.match(value, iso);
+    }
   });
 
   it("a command's marker can be sent with the read: it waits for exactly that write", { timeout: 30_000 }, async () => {
