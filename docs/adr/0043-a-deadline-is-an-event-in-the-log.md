@@ -124,9 +124,9 @@ each due deadline's command through the executor, with the deadline as its cause
 
 ## Consequences
 
-- The Aggregator gets its expiry, and the guide's "what is missing" section became "Stop waiting: a deadline". The first use is the course app's
-  payment window (`Subscribe` sets a deadline that runs `ReleaseUnpaidSubscription`); an enrolment that closes (`CloseEnrolment`, deciding from the
-  course's readiness model) is the same shape and was not built.
+- The Aggregator gets its expiry, and the guide's "what is missing" section became "Stop waiting: a deadline". The course app has both shapes: its
+  payment window (`Subscribe` sets a deadline that runs `ReleaseUnpaidSubscription`) and its readiness period (`DefineCourse` sets one that runs
+  `CancelUnreadyCourse`, which decides from the readiness model; the cancellation is tagged with every student it frees).
 - Why a command ran is in the log: its causation is a `DeadlineScheduled`, which says which decision set it and for when, and a `DeadlineFired` says
   how it ended.
 - Framework events in the application's log, the first: `crablet.DeadlineScheduled` and `crablet.DeadlineFired`. The `crablet.` prefix, which no event
@@ -208,6 +208,11 @@ What was built follows the decisions above, with these differences and additions
   move), and replaces `append_events_batch` with one more statement that inserts the deadlines among the inserted events. An append with no deadline
   pays a filter over the rows it just inserted.
 - **One more held connection** per process that runs the module: its lock, and no `LISTEN`.
+- **A write that ends with a deadline costs a read-your-writes wait one look at the table.** The write's marker is its last event, the deadline, which
+  no view reads, so a view's progress ping never reaches it; `waitUntilProcessed` then asks whether anything the view selects is pending up to the
+  marker (`hasPendingSelectedEvents`) and answers correctly, but the fast path where a ping alone ends the wait does not apply. A test that compared a
+  view's ping with the marker (the course feed) now compares it with the view's part of the write. Ending the wait on a ping of the same transaction
+  is a possible improvement, not made: a batch can end in the middle of a transaction.
 - **A repeat's marker is one event earlier than the first write's.** A command that sets a deadline ends its append at the deadline, and a repeat answered
   by `byModel()` points at the newest event its model read (ADR-0034), which is not the deadline, since no model reads one. Both are in the same
   transaction, so a read that waits on either sees the whole write; the course app's two tests that compared the markers now compare the transaction.

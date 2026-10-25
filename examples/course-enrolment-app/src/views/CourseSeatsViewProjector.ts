@@ -1,6 +1,6 @@
 import { defineView } from "@crablet/views/ProjectedView";
 import { integer, text, viewTable } from "@crablet/views/ViewTable";
-import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
+import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
 import { COURSE_SEATS_VIEW } from "../CourseApi.ts";
 
 // The name is defined next to the API (CourseApi.ts), which must not import this server-side file.
@@ -20,5 +20,7 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
   .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }))
-  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }));
+  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }))
+  // A cancelled course gives every seat back (each subscription ended with it).
+  .on(CourseCancelled, (d) => courseSeatsTable.update({ course_id: d.courseId }, { set: { subscribers: 0 } }));
 // #endregion projector

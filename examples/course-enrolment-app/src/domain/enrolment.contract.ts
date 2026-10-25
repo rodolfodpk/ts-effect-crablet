@@ -24,6 +24,11 @@ export class CourseAlreadyDefined extends DomainError("CourseAlreadyDefined", {
   fields: { courseId: Schema.String, capacity: Schema.Int },
   kind: "conflict"
 }) {}
+// The course was cancelled (it was not ready in time): it takes no subscription.
+export class CourseWasCancelled extends DomainError("CourseWasCancelled", {
+  fields: { courseId: Schema.String },
+  kind: "conflict"
+}) {}
 // #endregion errors
 
 // #region contracts
@@ -36,6 +41,6 @@ export const DefineCourseContract = defineContract({
 export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
-  errors: [CourseNotFound, CourseFull, StudentAtLimit]
+  errors: [CourseNotFound, CourseFull, StudentAtLimit, CourseWasCancelled]
 });
 // #endregion contracts

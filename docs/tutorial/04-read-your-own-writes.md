@@ -22,7 +22,9 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
   .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }))
-  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }));
+  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }))
+  // A cancelled course gives every seat back (each subscription ended with it).
+  .on(CourseCancelled, (d) => courseSeatsTable.update({ course_id: d.courseId }, { set: { subscribers: 0 } }));
 ```
 
 and a read endpoint over it. Reads are written by hand (their response schema is declared here; it is not derived from the domain):

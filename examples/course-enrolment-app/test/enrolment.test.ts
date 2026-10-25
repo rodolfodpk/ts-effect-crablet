@@ -12,7 +12,7 @@ describe("define_course", () => {
     const s = given();
     const first = await s.when(DefineCourse, define("math", 30));
     expect(first.outcome).toBe("created");
-    expect(first.events.map((e) => e.type)).toEqual(["CourseDefined"]);
+    expect(first.events.map((e) => e.type)).toEqual(["CourseDefined", "crablet.DeadlineScheduled"]); // and the readiness deadline
     const again = await s.when(DefineCourse, define("math", 30));
     expect(again.outcome).toBe("idempotent");
     expect(again.reason).toBe("ALREADY_DEFINED");

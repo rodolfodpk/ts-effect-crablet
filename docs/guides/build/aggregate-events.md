@@ -19,7 +19,7 @@ EIP describes an Aggregator by four things. Three map onto what a command alread
 | **Correlation**: which messages belong together | a tag every event carries, the model's `by` | `course_id` |
 | **Completeness condition**: when the group is complete | `decide` | a teacher, a room, and at least 3 students |
 | **Aggregation**: what to publish once it is | the event `decide` emits | `CourseConfirmed`, with the teacher, the room and the count |
-| **Expiry**: when to stop waiting | a deadline the first decision sets, whose command decides what an incomplete group becomes | the course app's payment window ([Set a deadline](set-a-deadline.md)) |
+| **Expiry**: when to stop waiting | a deadline the first decision sets, whose command decides what an incomplete group becomes | `CancelUnreadyCourse`, 14 days after `DefineCourse` ([below](#stop-waiting-a-deadline)) |
 
 What the log does in place of the Aggregator's store:
 
@@ -70,14 +70,27 @@ definition carries the tag but does not matter to its start.
 // partial groups to keep, clean up or migrate, and the order they arrive in does not matter.
 export const CourseReadiness = defineModel({
   by: "course_id",
-  initial: () => ({ teacherId: null as string | null, room: null as string | null, students: 0, confirmed: false })
+  initial: () => ({
+    teacherId: null as string | null,
+    room: null as string | null,
+    studentIds: [] as ReadonlyArray<string>,
+    status: "waiting" as "waiting" | "confirmed" | "cancelled"
+  })
 })
   .on(TeacherAssigned, (s, d) => ({ ...s, teacherId: d.teacherId }))
   .on(RoomBooked, (s, d) => ({ ...s, room: d.room }))
-  .on(StudentSubscribed, (s) => ({ ...s, students: s.students + 1 }))
-  .on(SubscriptionReleased, (s) => ({ ...s, students: s.students - 1 }))
-  .on(CourseConfirmed, (s) => ({ ...s, confirmed: true }))
+  .on(StudentSubscribed, (s, d) => ({ ...s, studentIds: [...s.studentIds, d.studentId] }))
+  .on(SubscriptionReleased, (s, d) => ({ ...s, studentIds: s.studentIds.filter((id) => id !== d.studentId) }))
+  .on(CourseConfirmed, (s) => ({ ...s, status: "confirmed" as const }))
+  .on(CourseCancelled, (s) => ({ ...s, status: "cancelled" as const }))
   .ignores(CourseDefined, CoursePriced, SubscriptionPaid);
+
+// What the group still lacks: what a cancellation publishes.
+const missingOf = (s: { readonly teacherId: string | null; readonly room: string | null; readonly studentIds: ReadonlyArray<string> }) => [
+  ...(s.teacherId === null ? ["teacher" as const] : []),
+  ...(s.room === null ? ["room" as const] : []),
+  ...(s.studentIds.length < MIN_STUDENTS_TO_START ? ["students" as const] : [])
+];
 ```
 
 ## 3. The command decides when it is complete
@@ -95,11 +108,13 @@ export const ConfirmCourse = defineCommand({
   model: (c) => CourseReadiness.of({ id: c.courseId }),
   idempotentBy: byModel(), // the model shows whether it was done; decide answers a repeat
   decide: (s, c) =>
-    s.confirmed
+    s.status === "confirmed"
       ? noop("ALREADY_CONFIRMED")
-      : s.teacherId === null || s.room === null || s.students < MIN_STUDENTS_TO_START
-        ? noop("WAITING")
-        : emit(CourseConfirmed({ courseId: c.courseId, teacherId: s.teacherId, room: s.room, students: s.students }))
+      : s.status === "cancelled"
+        ? noop("CANCELLED")
+        : s.teacherId === null || s.room === null || s.studentIds.length < MIN_STUDENTS_TO_START
+          ? noop("WAITING")
+          : emit(CourseConfirmed({ courseId: c.courseId, teacherId: s.teacherId, room: s.room, students: s.studentIds.length }))
 });
 ```
 
@@ -142,7 +157,8 @@ export const CourseReadinessView = defineView(COURSE_READINESS_VIEW, { tables: [
   .on(RoomBooked, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { room: d.room } }))
   .on(StudentSubscribed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { add: { students: 1 } }))
   .on(SubscriptionReleased, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { add: { students: -1 } }))
-  .on(CourseConfirmed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "confirmed" } }));
+  .on(CourseConfirmed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "confirmed" } }))
+  .on(CourseCancelled, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "cancelled" } }));
 ```
 
 The view is for reading. Never decide from it: it lags the log, so the decision stays in the command.
@@ -198,10 +214,67 @@ decide: (s, c) => (!s.teacherAssigned ? fail(new NoTeacherYet({ courseId: c.cour
 ## Stop waiting: a deadline
 
 An EIP Aggregator also says when to stop waiting ("confirm with what is there after a week", "cancel if no room is booked by Friday"). Here that is a
-**deadline**: the command that starts the wait sets one with its decision, `deadline(CloseEnrolment, { courseId }, { at })`, and when it is due the
-deadlines processor runs that command, whose `decide` reads the same model and decides what to do with a group that is not complete (or answers `noop`
-for one that completed in time). The course app does this for its payment window; [Set a deadline](set-a-deadline.md) shows it, and
-[ADR-0043](../../adr/0043-a-deadline-is-an-event-in-the-log.md) records the design.
+**deadline**: the command that starts the wait sets one with its decision, and when it is due the deadlines processor runs the command it names, whose
+`decide` reads the same model and decides what to do with a group that is not complete, or answers `noop` for one that completed in time. In the course
+app, `DefineCourse` sets `deadline(CancelUnreadyCourse, { courseId }, { at: now + 14 days })`, and:
+
+<!-- file: examples/course-enrolment-app/src/domain/CourseStart.ts#expiry -->
+```ts
+// The Aggregator's expiry: what the deadline DefineCourse set asks once READINESS_DAYS have passed. A course confirmed in time answers CONFIRMED and
+// nothing happens; one still waiting is cancelled, with what it lacked and the students it had, so every one of them gets the slot back in the same
+// append (CourseCancelled is tagged with each). Its boundary is the readiness events, the same as ConfirmCourse's: a confirmation and a cancellation that
+// race cannot both happen, and a student who subscribes meanwhile makes the cancellation re-run with that student in it.
+export const CancelUnreadyCourse = defineCommand({
+  name: "cancel_unready_course",
+  input: Schema.Struct({ courseId: Schema.String }),
+  model: (c) => CourseReadiness.of({ id: c.courseId }),
+  idempotentBy: byModel(),
+  decide: (s, c) =>
+    s.status === "confirmed"
+      ? noop("CONFIRMED")
+      : s.status === "cancelled"
+        ? noop("ALREADY_CANCELLED")
+        : emit(CourseCancelled({ courseId: c.courseId, missing: missingOf(s), studentIds: s.studentIds }))
+});
+```
+
+`CourseCancelled` is the Aggregator's partial result: what was `missing`, and the students it had. It is tagged with the course **and every one of those
+students**, so each student's model gives the slot back in the same append, with no command per student; the seats and enrolments views follow it, and
+`Subscribe` refuses a cancelled course (`CourseWasCancelled`). Its boundary is `ConfirmCourse`'s, so the two cannot both win:
+
+<!-- file: examples/course-enrolment-app/test/course-start.test.ts#expiry-test -->
+```ts
+test("at the deadline a course still waiting is cancelled with what it lacked; its students get their slot back and it takes no more", async () => {
+  const s = given(CoursePriced({ courseId: "math", price: 100 }), TeacherAssigned({ courseId: "math", teacherId: "t-1" })).at(t0);
+  await s.when(DefineCourse, { courseId: "math", capacity: 30 });
+  for (const studentId of ["ann", "bob"]) {
+    await s.when(Subscribe, { studentId, courseId: "math" });
+    await s.when(PaySubscription, { courseId: "math", studentId, paymentId: `p-${studentId}`, amount: 100 });
+  }
+
+  // Day 14: the payment deadlines (day 3) answer that the seats are paid; the readiness deadline cancels the course, still without a room.
+  const fired = await s.at(daysLater(READINESS_DAYS)).fireDue(CancelUnreadyCourse, ReleaseUnpaidSubscription);
+  expect(fired.map((f) => [f.command, f.outcome, f.reason])).toEqual([
+    ["release_unpaid_subscription", "noop", "PAID"],
+    ["release_unpaid_subscription", "noop", "PAID"],
+    ["cancel_unready_course", "appended", null]
+  ]);
+  const cancelled = fired[2]!.events[0]!;
+  expect(cancelled.data).toEqual({ courseId: "math", missing: ["room", "students"], studentIds: ["ann", "bob"] });
+  expect(cancelled.tags.map((t) => `${t.key}=${t.value}`)).toEqual(["course_id=math", "student_id=ann", "student_id=bob"]);
+
+  const after = s.at(daysLater(READINESS_DAYS + 1));
+  expect((await after.when(Subscribe, { studentId: "cy", courseId: "math" })).error).toBeInstanceOf(CourseWasCancelled);
+  expect((await after.when(ConfirmCourse, { courseId: "math" })).reason).toBe("CANCELLED");
+  // ann's slot in the three-course limit is free again: three other courses are allowed.
+  for (const courseId of ["a", "b", "c"]) {
+    await after.when(DefineCourse, { courseId, capacity: 5 });
+    expect((await after.when(Subscribe, { studentId: "ann", courseId })).outcome).toBe("created");
+  }
+});
+```
+
+[Set a deadline](set-a-deadline.md) explains deadlines; [ADR-0043](../../adr/0043-a-deadline-is-an-event-in-the-log.md) records the design.
 
 ## The rest of EIP, mapped
 

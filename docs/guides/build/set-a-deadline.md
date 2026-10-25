@@ -24,17 +24,19 @@ export const Subscribe = defineCommand({
   decide: ({ course, student }, c, { now }) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))
-      : student.courses.includes(c.courseId)
-        ? noop("ALREADY_SUBSCRIBED")
-        : course.subscribers >= course.capacity
-          ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
-          : student.courses.length >= MAX_COURSES_PER_STUDENT
-            ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
-            : emit(
-                StudentSubscribed({ ...c, subscribedAt: now }),
-                // When the payment window closes, the deadlines processor asks for the seat back; a paid subscription answers that it is paid.
-                deadline(ReleaseUnpaidSubscription, { courseId: c.courseId, studentId: c.studentId }, { at: DateTime.add(now, { days: PAYMENT_WINDOW_DAYS }) })
-              )
+      : course.cancelled
+        ? fail(new CourseWasCancelled({ courseId: c.courseId }))
+        : student.courses.includes(c.courseId)
+          ? noop("ALREADY_SUBSCRIBED")
+          : course.subscribers >= course.capacity
+            ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
+            : student.courses.length >= MAX_COURSES_PER_STUDENT
+              ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
+              : emit(
+                  StudentSubscribed({ ...c, subscribedAt: now }),
+                  // When the payment window closes, the deadlines processor asks for the seat back; a paid subscription answers that it is paid.
+                  deadline(ReleaseUnpaidSubscription, { courseId: c.courseId, studentId: c.studentId }, { at: DateTime.add(now, { days: PAYMENT_WINDOW_DAYS }) })
+                )
 });
 ```
 
@@ -78,12 +80,12 @@ Start it with the commands deadlines may name, owned by a Scope like the other p
 
 <!-- file: examples/course-enrolment-app/src/CourseApp.ts#deadlines -->
 ```ts
-// Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes, it runs the release that
-// Subscribe set as a deadline. One instance fires, the others wait on its lock.
+// Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes it runs the release
+// Subscribe set, and when a course's readiness period ends the cancellation DefineCourse set. One instance fires, the others wait on its lock.
 export const startCourseDeadlines = (
   instanceId: string = defaultInstanceId()
 ): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
-  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription], instanceId });
+  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse], instanceId });
 ```
 
 `startDeadlinesProcessor` (`@crablet/automations/Deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in

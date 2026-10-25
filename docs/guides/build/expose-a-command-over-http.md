@@ -25,7 +25,7 @@ export const DefineCourseContract = defineContract({
 export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
-  errors: [CourseNotFound, CourseFull, StudentAtLimit]
+  errors: [CourseNotFound, CourseFull, StudentAtLimit, CourseWasCancelled]
 });
 ```
 

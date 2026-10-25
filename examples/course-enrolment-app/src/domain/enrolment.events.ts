@@ -22,3 +22,17 @@ export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
 // #endregion events
+
+// #region course-cancelled
+// A course that was not ready in time (src/domain/CourseStart.ts, CancelUnreadyCourse). ONE fact about the course AND every student subscribed to it:
+// tagged with each of them, so each student's model folds it and gives the slot back in the same append, with no command per student. What was
+// missing is the part of the group that never arrived (the Aggregator's partial result).
+export const CourseCancelled = defineEvent("CourseCancelled", {
+  schema: Schema.Struct({
+    courseId: Schema.String,
+    missing: Schema.Array(Schema.Literals(["teacher", "room", "students"])),
+    studentIds: Schema.Array(Schema.String)
+  }),
+  tags: (d) => ({ course_id: d.courseId, student_id: d.studentIds })
+});
+// #endregion course-cancelled

@@ -7,7 +7,7 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/commands/Crablet";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { StudentSubscribed, SubscriptionReleased } from "../../src/domain/Enrolment.ts";
+import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../../src/domain/Enrolment.ts";
 import { CourseEnrolmentsView } from "../../src/views/CourseEnrolmentsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -34,6 +34,10 @@ const released = (studentId: string, courseId: string): StoredEvent => ({
   eventId: crypto.randomUUID(),
   type: SubscriptionReleased.type, tags: [], data: { studentId, courseId }, transactionId: "1", position: position++, occurredAt: new Date(), correlationId: null, causationId: null
 });
+const cancelled = (courseId: string, studentIds: ReadonlyArray<string>): StoredEvent => ({
+  eventId: crypto.randomUUID(),
+  type: CourseCancelled.type, tags: [], data: { courseId, missing: ["room"], studentIds }, transactionId: "1", position: position++, occurredAt: new Date(), correlationId: null, causationId: null
+});
 const seats = (courseId: string) =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -58,6 +62,14 @@ describe("course enrolments view (its own SQL, through raw)", () => {
     assert.deepStrictEqual(await seats(c), [{ student_id: "bob", seat_number: 2 }, { student_id: "cy", seat_number: 3 }]);
   });
 
+  it("a cancelled course removes every row it names, and only that course's", async () => {
+    const c = `c-${crypto.randomUUID().slice(0, 8)}`;
+    const other = `c-${crypto.randomUUID().slice(0, 8)}`;
+    await handle([subscribed("ann", c), subscribed("bob", c), subscribed("ann", other), cancelled(c, ["ann", "bob"])]);
+    assert.deepStrictEqual(await seats(c), []);
+    assert.deepStrictEqual(await seats(other), [{ student_id: "ann", seat_number: 1 }]);
+  });
+
   it("an unreadable event fails the batch with a typed EventDecodingError, and nothing of the batch is written", async () => {
     const c = `c-${crypto.randomUUID().slice(0, 8)}`;
     const exit = await handle([subscribed("ann", c), subscribed("bob", c, { studentId: 42 })]);
@@ -67,6 +79,6 @@ describe("course enrolments view (its own SQL, through raw)", () => {
   });
 
   it("its subscription is the event type it handles", () => {
-    assert.deepStrictEqual([...CourseEnrolmentsView.subscription().eventTypes], [StudentSubscribed.type, SubscriptionReleased.type]);
+    assert.deepStrictEqual([...CourseEnrolmentsView.subscription().eventTypes], [StudentSubscribed.type, SubscriptionReleased.type, CourseCancelled.type]);
   });
 });

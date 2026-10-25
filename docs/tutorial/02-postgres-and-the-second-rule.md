@@ -48,15 +48,18 @@ export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
 // Two models over the SAME events, looked at from two sides.
 export const CourseModel = defineModel({
   by: "course_id",
-  initial: () => ({ exists: false, capacity: 0, subscribers: 0 })
+  initial: () => ({ exists: false, cancelled: false, capacity: 0, subscribers: 0 })
 })
   .on(CourseDefined, (c, d) => ({ ...c, exists: true, capacity: d.capacity }))
   .on(StudentSubscribed, (c) => ({ ...c, subscribers: c.subscribers + 1 }))
-  .on(SubscriptionReleased, (c) => ({ ...c, subscribers: c.subscribers - 1 }));
+  .on(SubscriptionReleased, (c) => ({ ...c, subscribers: c.subscribers - 1 }))
+  .on(CourseCancelled, (c) => ({ ...c, cancelled: true, subscribers: 0 }));
 
 export const StudentModel = defineModel({ by: "student_id", initial: () => ({ courses: [] as ReadonlyArray<string> }) })
   .on(StudentSubscribed, (s, d) => ({ courses: [...s.courses, d.courseId] }))
-  .on(SubscriptionReleased, (s, d) => ({ courses: s.courses.filter((c) => c !== d.courseId) }));
+  .on(SubscriptionReleased, (s, d) => ({ courses: s.courses.filter((c) => c !== d.courseId) }))
+  // A cancelled course gives every student it was tagged with the slot back.
+  .on(CourseCancelled, (s, d) => ({ courses: s.courses.filter((c) => c !== d.courseId) }));
 ```
 
 A subscription can also be given back: `SubscriptionReleased`, appended when one is left unpaid (the course app's payments,
@@ -76,7 +79,7 @@ export const DefineCourseContract = defineContract({
 export const SubscribeContract = defineContract({
   name: "subscribe",
   input: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
-  errors: [CourseNotFound, CourseFull, StudentAtLimit]
+  errors: [CourseNotFound, CourseFull, StudentAtLimit, CourseWasCancelled]
 });
 ```
 
@@ -94,22 +97,27 @@ export const Subscribe = defineCommand({
   decide: ({ course, student }, c, { now }) =>
     !course.exists
       ? fail(new CourseNotFound({ courseId: c.courseId }))
-      : student.courses.includes(c.courseId)
-        ? noop("ALREADY_SUBSCRIBED")
-        : course.subscribers >= course.capacity
-          ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
-          : student.courses.length >= MAX_COURSES_PER_STUDENT
-            ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
-            : emit(
-                StudentSubscribed({ ...c, subscribedAt: now }),
-                // When the payment window closes, the deadlines processor asks for the seat back; a paid subscription answers that it is paid.
-                deadline(ReleaseUnpaidSubscription, { courseId: c.courseId, studentId: c.studentId }, { at: DateTime.add(now, { days: PAYMENT_WINDOW_DAYS }) })
-              )
+      : course.cancelled
+        ? fail(new CourseWasCancelled({ courseId: c.courseId }))
+        : student.courses.includes(c.courseId)
+          ? noop("ALREADY_SUBSCRIBED")
+          : course.subscribers >= course.capacity
+            ? fail(new CourseFull({ courseId: c.courseId, capacity: course.capacity }))
+            : student.courses.length >= MAX_COURSES_PER_STUDENT
+              ? fail(new StudentAtLimit({ studentId: c.studentId, limit: MAX_COURSES_PER_STUDENT }))
+              : emit(
+                  StudentSubscribed({ ...c, subscribedAt: now }),
+                  // When the payment window closes, the deadlines processor asks for the seat back; a paid subscription answers that it is paid.
+                  deadline(ReleaseUnpaidSubscription, { courseId: c.courseId, studentId: c.studentId }, { at: DateTime.add(now, { days: PAYMENT_WINDOW_DAYS }) })
+                )
 });
 ```
 
 `decide` also receives `now`, the instant of this attempt from the clock, and the subscription records it (`subscribedAt`): a rule about time reads
 that business time later, and a test fixes the clock with `at(now)`.
+
+Both models also undo `CourseCancelled`, a course that was not ready in time (`src/domain/CourseStart.ts`): one event tagged with the course and every
+student it had, so each of them gets the seat and the slot back in the same append. `Subscribe` refuses a cancelled course.
 
 The decision also sets a **deadline**: when the payment window closes, three days on, `ReleaseUnpaidSubscription` (in `src/domain/Payments.ts`) runs
 and gives back a seat that was not paid for; for a paid one it answers that it is paid. It is appended with the subscription, so it exists exactly when

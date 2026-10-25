@@ -41,7 +41,9 @@ export const courseSeatsTable = viewTable("course_seats_view", {
 export const CourseSeatsView = defineView(COURSE_SEATS_VIEW, { tables: [courseSeatsTable] })
   .on(CourseDefined, (d) => courseSeatsTable.insert({ course_id: d.courseId, capacity: d.capacity }, { onConflict: "ignore" }))
   .on(StudentSubscribed, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: 1 } }))
-  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }));
+  .on(SubscriptionReleased, (d) => courseSeatsTable.update({ course_id: d.courseId }, { add: { subscribers: -1 } }))
+  // A cancelled course gives every seat back (each subscription ended with it).
+  .on(CourseCancelled, (d) => courseSeatsTable.update({ course_id: d.courseId }, { set: { subscribers: 0 } }));
 ```
 
 A test compares the declared table with the migrated database ([`course-seats-table.test.ts`](../../../examples/course-enrolment-app/test/integration/course-seats-table.test.ts), `checkViewTables`): a column a migration renames or retypes fails there,
@@ -81,7 +83,9 @@ export const CourseEnrolmentsView = defineView(COURSE_ENROLMENTS_VIEW, { tables:
       )
     )
   )
-  .on(SubscriptionReleased, (d) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: d.studentId }));
+  .on(SubscriptionReleased, (d) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: d.studentId }))
+  // One row per student the cancellation was tagged with: a handler may return several operations.
+  .on(CourseCancelled, (d) => d.studentIds.map((studentId) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: studentId })));
 ```
 
 The choice: **events that become adds, sets and removes: the table operations; anything else: `raw` SQL.** Either way it is one `defineView`. A query builder (Kysely, Drizzle) is optional and not used here: it would only replace the SQL string.

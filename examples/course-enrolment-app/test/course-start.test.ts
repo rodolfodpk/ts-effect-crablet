@@ -1,13 +1,15 @@
 // The course-start aggregator (src/domain/CourseStart.ts, the "aggregate events" guide): in memory, no Docker.
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
 import { applyInMemory, rowsOf } from "@crablet/views/ViewMemory";
-import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
-import { ConfirmCourse, CourseConfirmed, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
+import { CourseCancelled, CourseDefined, CourseWasCancelled, DefineCourse, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/domain/Enrolment.ts";
+import { CoursePriced, NotSubscribed, PaySubscription, ReleaseUnpaidSubscription } from "../src/domain/Payments.ts";
+import { CourseSeatsView, courseSeatsTable } from "../src/views/CourseSeatsViewProjector.ts";
+import { CancelUnreadyCourse, ConfirmCourse, CourseConfirmed, READINESS_DAYS, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
 import { confirmCourseWhenReady } from "../src/automations/ConfirmCourseAutomation.ts";
 import { CourseReadinessView, courseReadinessTable } from "../src/views/CourseReadinessViewProjector.ts";
 
@@ -94,5 +96,75 @@ describe("the readiness view", () => {
   test("a course with something missing shows what it is", async () => {
     const db = await Effect.runPromise(applyInMemory(CourseReadinessView, parts("math").slice(1).map(stored)));
     expect(rowsOf(db, courseReadinessTable)).toEqual([{ course_id: "math", teacher_id: null, room: "r-101", students: 3, status: "waiting" }]);
+  });
+});
+
+describe("the expiry: a course not ready in time is cancelled (a deadline DefineCourse sets)", () => {
+  const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");
+  const daysLater = (days: number) => DateTime.add(t0, { days });
+
+  // #region expiry-test
+  test("at the deadline a course still waiting is cancelled with what it lacked; its students get their slot back and it takes no more", async () => {
+    const s = given(CoursePriced({ courseId: "math", price: 100 }), TeacherAssigned({ courseId: "math", teacherId: "t-1" })).at(t0);
+    await s.when(DefineCourse, { courseId: "math", capacity: 30 });
+    for (const studentId of ["ann", "bob"]) {
+      await s.when(Subscribe, { studentId, courseId: "math" });
+      await s.when(PaySubscription, { courseId: "math", studentId, paymentId: `p-${studentId}`, amount: 100 });
+    }
+
+    // Day 14: the payment deadlines (day 3) answer that the seats are paid; the readiness deadline cancels the course, still without a room.
+    const fired = await s.at(daysLater(READINESS_DAYS)).fireDue(CancelUnreadyCourse, ReleaseUnpaidSubscription);
+    expect(fired.map((f) => [f.command, f.outcome, f.reason])).toEqual([
+      ["release_unpaid_subscription", "noop", "PAID"],
+      ["release_unpaid_subscription", "noop", "PAID"],
+      ["cancel_unready_course", "appended", null]
+    ]);
+    const cancelled = fired[2]!.events[0]!;
+    expect(cancelled.data).toEqual({ courseId: "math", missing: ["room", "students"], studentIds: ["ann", "bob"] });
+    expect(cancelled.tags.map((t) => `${t.key}=${t.value}`)).toEqual(["course_id=math", "student_id=ann", "student_id=bob"]);
+
+    const after = s.at(daysLater(READINESS_DAYS + 1));
+    expect((await after.when(Subscribe, { studentId: "cy", courseId: "math" })).error).toBeInstanceOf(CourseWasCancelled);
+    expect((await after.when(ConfirmCourse, { courseId: "math" })).reason).toBe("CANCELLED");
+    // ann's slot in the three-course limit is free again: three other courses are allowed.
+    for (const courseId of ["a", "b", "c"]) {
+      await after.when(DefineCourse, { courseId, capacity: 5 });
+      expect((await after.when(Subscribe, { studentId: "ann", courseId })).outcome).toBe("created");
+    }
+  });
+  // #endregion expiry-test
+
+  test("a course confirmed in time answers CONFIRMED at its deadline, and nothing is cancelled", async () => {
+    const s = given(...parts("math")).at(t0);
+    await s.when(DefineCourse, { courseId: "math", capacity: 30 });
+    await s.when(ConfirmCourse, { courseId: "math" });
+    const fired = await s.at(daysLater(READINESS_DAYS)).fireDue(CancelUnreadyCourse);
+    expect(fired.map((f) => [f.outcome, f.reason])).toEqual([["noop", "CONFIRMED"]]);
+  });
+
+  test("a payment for a cancelled course is refused: the subscription ended with it", async () => {
+    const s = given(CoursePriced({ courseId: "math", price: 100 })).at(t0);
+    await s.when(DefineCourse, { courseId: "math", capacity: 30 });
+    await s.when(Subscribe, { studentId: "ann", courseId: "math" });
+    await s.at(daysLater(1)).when(CancelUnreadyCourse, { courseId: "math" }); // as the deadline would, early
+    const pay = await s.at(daysLater(2)).when(PaySubscription, { courseId: "math", studentId: "ann", paymentId: "p-1", amount: 100 });
+    expect(pay.error).toBeInstanceOf(NotSubscribed);
+  });
+
+  test("the views follow the cancellation: no seat taken, status cancelled (the enrolments view, raw SQL: course-enrolments-view.test.ts)", async () => {
+    let position = 0n;
+    const stored = (e: AppendEvent): StoredEvent => ({
+      eventId: crypto.randomUUID(), type: e.type, tags: e.tags, data: e.eventData, transactionId: "1", position: ++position, occurredAt: new Date(), correlationId: null, causationId: null
+    });
+    const events = [
+      CourseDefined({ courseId: "math", capacity: 30 }),
+      StudentSubscribed({ studentId: "ann", courseId: "math" }),
+      StudentSubscribed({ studentId: "bob", courseId: "math" }),
+      CourseCancelled({ courseId: "math", missing: ["teacher", "room", "students"], studentIds: ["ann", "bob"] })
+    ].map(stored);
+    const readiness = await Effect.runPromise(applyInMemory(CourseReadinessView, events));
+    expect(rowsOf(readiness, courseReadinessTable)).toMatchObject([{ course_id: "math", status: "cancelled" }]);
+    const seats = await Effect.runPromise(applyInMemory(CourseSeatsView, events));
+    expect(rowsOf(seats, courseSeatsTable)).toEqual([{ course_id: "math", capacity: 30, subscribers: 0 }]);
   });
 });
