@@ -27,6 +27,8 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError";
 export const OUTBOX_LOCK_KEY = 4856221667890123456n;
 export const VIEWS_LOCK_KEY = 4856221667890123457n;
 export const AUTOMATIONS_LOCK_KEY = 4856221667890123458n;
+// The deadlines processor (ADR-0043): a lock of its own, so it fails over independently of the automations although it runs in the same role.
+export const DEADLINES_LOCK_KEY = 4856221667890123459n;
 
 export interface LeaderOptions {
   // How often the leader checks its own connection (default 1 second).

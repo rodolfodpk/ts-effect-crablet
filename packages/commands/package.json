@@ -8,6 +8,7 @@
     "./ExecutionResult": "./src/ExecutionResult.ts",
     "./Event": "./src/Event.ts",
     "./Instant": "./src/Instant.ts",
+    "./Deadline": "./src/Deadline.ts",
     "./Personal": "./src/Personal.ts",
     "./CommandAudit": "./src/CommandAudit.ts",
     "./Model": "./src/Model.ts",

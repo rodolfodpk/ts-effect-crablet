@@ -7,7 +7,9 @@ import type { ProgressCursor } from "./ProgressCursor.ts";
 import { buildEventSelectionQuery, buildPendingSelectionQuery, parseStoredEventRow, type SelectionQueryOptions, type StoredEventRow } from "./internal/sql.ts";
 
 export { buildReadCheckQuery } from "./internal/sql.ts";
-export type { SelectionQueryOptions } from "./internal/sql.ts";
+// The columns a fetcher selects, and their parse: for a fetcher that reads events another way (the deadlines processor reads them by due time).
+export { parseStoredEventRow, STORED_EVENT_COLUMNS } from "./internal/sql.ts";
+export type { SelectionQueryOptions, StoredEventRow } from "./internal/sql.ts";
 
 // The EventFetcher against crablet_events/crablet_event_tag_keys - the query logic (event types /
 // required-tags / any-of-tags / exact-tags) is the same across every consumer module, and the

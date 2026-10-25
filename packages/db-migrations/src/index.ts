@@ -24,7 +24,8 @@ export const migrationFiles = [
   "V15__crablet_append_requires_fresh_transaction.sql",
   "V16__crablet_request_fingerprint.sql",
   "V17__crablet_automation_emit_key.sql",
-  "V18__crablet_event_id.sql"
+  "V18__crablet_event_id.sql",
+  "V19__crablet_deadlines.sql"
 ] as const;
 
 export function migrationFilePaths(): ReadonlyArray<string> {

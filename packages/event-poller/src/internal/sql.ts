@@ -67,6 +67,10 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
   }
 };
 
+// What a fetch selects from `crablet_events e`, in the shape `parseStoredEventRow` reads.
+export const STORED_EVENT_COLUMNS =
+  "e.event_id::text AS event_id, e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id";
+
 export const buildEventSelectionQuery = (
   selection: EventSelection,
   cursor: ProgressCursor,
@@ -91,7 +95,7 @@ export const buildEventSelectionQuery = (
 
   const sqlText =
     // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
-    "SELECT e.event_id::text AS event_id, e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id " +
+    `SELECT ${STORED_EVENT_COLUMNS} ` +
     `FROM crablet_events e WHERE ${clauses.join(" AND ")} ORDER BY e.transaction_id ASC, e.position ASC LIMIT $${limitParamIndex}`;
 
   return { sql: sqlText, params };
