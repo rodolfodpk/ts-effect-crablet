@@ -18,6 +18,7 @@ import { makeAutomationManagementService } from "@crablet/automations/Automation
 import { makeOutboxProcessor, startOutboxProcessor } from "@crablet/outbox";
 import { makeOutboxManagementService } from "@crablet/outbox/OutboxManagementService";
 import { defineTopic } from "@crablet/outbox/TopicConfig";
+import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { processorsGroup } from "@crablet/processors-http";
@@ -63,6 +64,8 @@ export interface BackgroundProcessorsOptions {
   readonly roles?: Roles;
   // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
   readonly polling?: Polling;
+  // The leaders' settings, for every module: the heartbeat and the server's idle timeout of a silent leader's session (ADR-0045). Default: the defaults.
+  readonly leader?: LeaderOptions;
 }
 
 // Builds the three background processors (views, automations, outbox) and starts those of the roles, owned by the Scope: closing it stops them
@@ -75,15 +78,15 @@ export const startBackgroundProcessors = (
   SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const { instanceId = defaultInstanceId(), outboxPublishers = [makeLogPublisher()], roles = allRoles, polling = defaultPolling } = options;
+    const { instanceId = defaultInstanceId(), outboxPublishers = [makeLogPublisher()], roles = allRoles, polling = defaultPolling, leader } = options;
     // A role that is not started still has its handle: building one opens no connection and runs no loop.
     // #region views-processor
-    const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId };
+    const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };
     const viewsHandle = yield* (roles.has("views") ? startViewsProcessor(views) : makeViewsProcessor(views));
     // #endregion views-processor
 
     // #region automations-processor
-    const automations = { config: polling, automations: [walletOpenedAutomation], instanceId };
+    const automations = { config: polling, automations: [walletOpenedAutomation], instanceId, leader };
     const automationsHandle = yield* (roles.has("automations") ? startAutomationsProcessor(automations) : makeAutomationsProcessor(automations));
     // #endregion automations-processor
 
@@ -95,7 +98,8 @@ export const startBackgroundProcessors = (
           publishers: outboxPublishers
         })
       ],
-      instanceId
+      instanceId,
+      leader
     };
     const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor(outbox) : makeOutboxProcessor(outbox));
 

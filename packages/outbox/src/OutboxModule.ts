@@ -2,7 +2,7 @@ import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
-import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
@@ -22,6 +22,9 @@ export interface OutboxDeps {
   // The topics, each built with `defineTopic(...)`. The publishers are theirs: the processor runs the publishers its topics name.
   readonly topics: ReadonlyArray<TopicConfig>;
   readonly instanceId?: string;
+  // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
+  // defaults of `LeaderOptions`.
+  readonly leader?: LeaderOptions;
 }
 
 // Outbox-module-specific wiring only. Leadership is a single module-wide lock (OUTBOX_LOCK_KEY)
@@ -62,7 +65,7 @@ export const makeOutboxProcessor = (
       selectionOf: (config) => topicByName.get(TopicPublisherPair.fromKey(config.processorId).topic)!,
       instanceId,
       // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY)),
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY, deps.leader)),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

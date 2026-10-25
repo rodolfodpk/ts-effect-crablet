@@ -9,6 +9,7 @@ import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { Polling } from "../../src/polling.ts";
+import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { allRoles, type Roles } from "../../src/roles.ts";
 import { startBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
 
@@ -34,7 +35,7 @@ export const startWalletAppForTest = async (
   // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
   adminToken?: string,
   // The roles this instance runs (ADR-0022); default all, one process. Without `api` no HTTP server starts (baseUrl is ""), and the admin API is only mounted with `api`, as in the entry point.
-  options: { readonly roles?: Roles; readonly instanceId?: string; readonly polling?: Polling } = {}
+  options: { readonly roles?: Roles; readonly instanceId?: string; readonly polling?: Polling; readonly leader?: LeaderOptions } = {}
 ): Promise<RunningWalletApp> => {
   const roles = options.roles ?? allRoles;
   const scope = await runtime.runPromise(Scope.make());
@@ -43,7 +44,7 @@ export const startWalletAppForTest = async (
     Effect.gen(function* () {
       // In the test's scope, ahead of the server: the scope closes in reverse, so the server stops first, then the processors, both before the pool.
       const processors = yield* Scope.provide(
-        startBackgroundProcessors({ instanceId: options.instanceId, outboxPublishers, roles, polling: options.polling }),
+        startBackgroundProcessors({ instanceId: options.instanceId, outboxPublishers, roles, polling: options.polling, leader: options.leader }),
         scope
       );
       if (!roles.has("api")) return { context: Context.empty(), processors };

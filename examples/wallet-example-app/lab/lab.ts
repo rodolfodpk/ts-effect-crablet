@@ -72,7 +72,11 @@ const KEEPALIVE_TUNED = ["tcp_keepalives_idle=10", "tcp_keepalives_interval=5", 
 const KEEPALIVE_TUNED_UTO = [...KEEPALIVE_TUNED, "tcp_user_timeout=15000"];
 type NetProfile = "tuned" | "uto" | "rds";
 const settingsOf = (p: NetProfile) => (p === "rds" ? KEEPALIVE_RDS : p === "uto" ? KEEPALIVE_TUNED_UTO : KEEPALIVE_TUNED);
-const expectedSeconds = (p: NetProfile) => (p === "rds" ? 360 : p === "uto" ? 15 : 25);
+const keepaliveSeconds = (p: NetProfile) => (p === "rds" ? 360 : p === "uto" ? 15 : 25);
+// Since ADR-0045 the leader's lock session ends itself on the server after the leader has been silent for 15 s (the default serverIdleTimeout), and a
+// follower takes the lock at its next try (the wallet retries every 5 s): whichever comes first, that or the keepalives.
+const SESSION_IDLE_S = 15, LEADER_RETRY_S = 5;
+const expectedSeconds = (p: NetProfile) => Math.min(keepaliveSeconds(p), SESSION_IDLE_S + LEADER_RETRY_S);
 const profileText = (p: NetProfile) => (p === "rds" ? "as RDS sets them (300/30/2)" : p === "uto" ? "tuned (10/5/3) plus tcp_user_timeout=15 s" : "tuned (10/5/3)");
 const standard: Deployment = { pgSettings: [], pool: 10, apiReplicas: 2, workerReplicas: 2, migrate: true };
 
@@ -344,7 +348,7 @@ const scenarios: Scenario[] = [
         const expected = expectedSeconds(profile);
         const took = await takeoverMs("views", leader, t0, Math.max(expected + 90, 420) * 1000);
         await sleep(5000);
-        await finish(`partition-${profile}`, load, lag, t0, `another pod led the views after ${took === null ? "never" : `${(took / 1000).toFixed(0)} s`} (keepalives allow about ${expected} s)`, { ok: took !== null && took <= (expected + 30) * 1000, text: `takeover within the keepalive time plus 30 s` });
+        await finish(`partition-${profile}`, load, lag, t0, `another pod led the views after ${took === null ? "never" : `${(took / 1000).toFixed(0)} s`} (expected about ${expected} s: the session's idle timeout or the keepalives, the sooner; the keepalives alone allow ${keepaliveSeconds(profile)} s)`, { ok: took !== null && took <= (expected + 15) * 1000, text: `takeover within ${expected + 15} s` });
       });
     }
   })),

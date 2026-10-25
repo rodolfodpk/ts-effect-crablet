@@ -4,7 +4,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
-import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
@@ -29,6 +29,9 @@ export interface AutomationsDeps {
   // Per-automation polling, batch and backoff, by automation name: deployment settings, kept out of the automation's definition.
   readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>>;
   readonly instanceId?: string;
+  // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
+  // defaults of `LeaderOptions`.
+  readonly leader?: LeaderOptions;
 }
 
 // Automations-module-specific wiring only. Reuses @crablet/event-poller's generic engine as-is,
@@ -94,7 +97,7 @@ export const makeAutomationsProcessor = (
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,
       // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY)),
+      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY, deps.leader)),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });
