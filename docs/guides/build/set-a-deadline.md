@@ -124,6 +124,13 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
   default), plus the deadlines due before it. It is for business time, not timers in seconds. One due while no instance ran fires once when one starts.
 - **Moving one.** Set a new deadline and let the command tell which one is current: put the time it is for in its input and answer `noop` when the model
   says another is current.
+- **Recurring work** (a plan charged every month) is a chain: each run's decision sets the next deadline, and the chain lasts while the model says it should
+  (a cancelled plan answers `noop`, and nothing more is set). Compute period *n*'s due time from an anchor (`DateTime.add(anchor, { months: n })`), never
+  from the previous due time: Effect moves January 31 + 1 month to February 28, and a chain of "+1 month" stays on the 28th; and a late firing would push
+  every later one. Put the period number (and a version, if the schedule can change) in the input, so a repeat or a superseded deadline answers `noop`.
+  A command that sets its own next deadline names itself, so annotate its type from its input schema (`const Charge: Command<typeof input.Type, never,
+  typeof input> = defineCommand(...)`): TypeScript cannot infer it from its own initializer. The whole case, with cancelling, a change of price and the
+  catch-up after missed periods: `packages/commands/test/deadline-recurring.test.ts`.
 - **A fault stops it.** A command that fails with something other than a domain error (the database, a conflict that ran out of retries), a command the
   processor was not given, or an input that no longer decodes: the batch is retried and, after `maxErrors`, the processor is `FAILED`, and the deadlines
   after it wait. Deadlines fire in due order, as a view's events are applied in order.
