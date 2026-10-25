@@ -2,8 +2,8 @@
 
 ## Status
 
-**Proposed** (2026-10-25). Built in `Leader.ts` and tested against Postgres 18.6 (see "Progress"); still Proposed until the kind lab, a replica and AWS
-have been run (the rest of "Before accepting"). It answers the follow-up ADR-0022 and the kind lab named: after a silent network partition the leader
+**Proposed** (2026-10-25). Built in `Leader.ts`, tested against Postgres 18.6, a replica and the kind lab (see "Progress"); still Proposed until AWS
+has been run, and until the takeover's spread in the lab (19 to 34 s) is understood. It answers the follow-up ADR-0022 and the kind lab named: after a silent network partition the leader
 lock is freed only when Postgres's TCP keepalives give up (388 s with the settings RDS ships).
 
 ## Context
@@ -83,7 +83,24 @@ by the heartbeat and enforced by the server: no table, no expiry column, no cloc
   follower led after **3.04 s**, after the leader had stopped. With `off` the follower never led within 6 s. A leader that keeps its heartbeat kept
   its lock through 8 s with a 2 s timeout. A connection given back to the pool shows `idle_session_timeout` 0. Without the `SET` (a mutation) no
   follower led, and the test fails.
-- **Not done:** the replica test, the kind lab rerun, a long run under the wallet's load, and AWS.
+- **A replica** (`leader-replica.test.ts`, a primary and a streaming replica in one container): on a hot standby `pg_try_advisory_lock` **does**
+  succeed, so decision 6 is needed and not only a precaution; the leader's attempt takes nothing there and leads on the primary; the heartbeat's
+  query says a session holding the lock on a replica does not lead. Without the `CASE` (a mutation) the test fails.
+- **Configurable by an application:** every module takes `leader?: LeaderOptions` and passes it to its lock (before, the modules called
+  `tryAcquireGlobalLeader` with no options, so `serverIdleTimeout` could not be set).
+- **A busy leader keeps a tight lease** (`leader-lease-under-load.test.ts`): the whole wallet with a 7 s timeout, just over the 6 s loss detection,
+  and 60 s of deposits (5813 accepted): no module changed its leader session.
+- **The kind lab** (2026-10-25; the views' leader cut off with iptables drops, takeover read from `pg_locks`; nothing acknowledged lost in any run):
+
+  | Scenario | Before (keepalives only) | With the session's timeout |
+  |---|---|---|
+  | `partition-tuned` (keepalives 10/5/3) | 13, 28, 29, 28 s | **19 s** (one run) |
+  | `partition-rds` (keepalives 300/30/2) | **388 s** | **34, 33, 33, 19 s** (four runs) |
+
+  The server frees the lock at about 15 s, as in the integration test; the takeover then took either about 4 s more (one retry interval) or about
+  18 s more. Where the extra 14 s goes is not established: it is on the followers' side, and one candidate is an attempt waiting for a session
+  connection (`reserveTimeout`, 10 s). The first `partition-rds` run (34 s) also included pulling the debug image, after the clock started.
+- **Not done:** the cause of the 33 s runs, and AWS.
 
 ## Alternatives considered
 

@@ -23,7 +23,8 @@ takes it at its next try, about 20 s after the cut ([ADR-0045](../../adr/0045-a-
 the module does not move: views fall behind by the takeover time, and strict reads answer `503`.
 
 Measured in an integration test (a proxy that cuts silently; a 3 s server timeout): the follower led 3.04 s after the cut, after the old leader had
-stopped. Before that, the lock waited for Postgres's TCP keepalives, as the kind lab measured (not rerun yet with the timeout):
+stopped. In the kind lab with the RDS keepalives the takeover took 19 to 34 s (four runs; [ADR-0045](../../adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)
+says why it varies, as far as known). Before the session timeout, the lock waited for Postgres's TCP keepalives:
 
 | Postgres TCP keepalives, without the session timeout | Takeover in the lab |
 |---|---|
