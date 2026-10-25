@@ -20,7 +20,8 @@ const standIn = (answer: (query: string) => ReadonlyArray<unknown>) => {
   return { sql, queries };
 };
 
-const holdsLock = (query: string) => (query.includes("pg_try_advisory_lock") ? [{ acquired: true }] : query.includes("pg_locks") ? [{ "?column?": 1 }] : [{}]);
+// The heartbeat's query lists the keys this session holds.
+const holdsLock = (query: string) => (query.includes("pg_try_advisory_lock") ? [{ acquired: true }] : query.includes("pg_locks") ? [{ key: "42" }] : [{}]);
 const answersButHoldsNothing = (query: string) => (query.includes("pg_try_advisory_lock") ? [{ acquired: true }] : query.includes("pg_locks") ? [] : [{}]);
 const fast = { heartbeat: "10 millis", verifyTimeout: "500 millis", failuresBeforeLost: 1 } as const;
 
@@ -44,7 +45,7 @@ describe("leader: does THIS session still hold the lock", () => {
 
   test("leadership is given up only after the configured number of failed checks in a row", async () => {
     let healthy = true;
-    const { sql } = standIn((q) => (q.includes("pg_try_advisory_lock") ? [{ acquired: true }] : q.includes("pg_locks") ? (healthy ? [{ "?column?": 1 }] : []) : [{}]));
+    const { sql } = standIn((q) => (q.includes("pg_try_advisory_lock") ? [{ acquired: true }] : q.includes("pg_locks") ? (healthy ? [{ key: "42" }] : []) : [{}]));
     const leader = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, { heartbeat: "1 hour", verifyTimeout: "500 millis", failuresBeforeLost: 2, serverIdleTimeout: "off" })))!;
     healthy = false;
     expect(await Effect.runPromise(leader.verify)).toBe(false);
@@ -110,6 +111,66 @@ describe("leader: the lease is the session (ADR-0045)", () => {
     expect(serverIdleTimeoutOf({ heartbeat: "1 hour", serverIdleTimeout: "off" })).toBeNull();
     const { sql } = standIn(holdsLock);
     await expect(Effect.runPromise(tryAcquireGlobalLeader(sql, 42n, { heartbeat: "1 hour" }))).rejects.toThrow(/serverIdleTimeout/);
+  });
+});
+
+describe("leader: one lock session per process (ADR-0046)", () => {
+  // A stand-in that counts the connections reserved and returned, and answers the heartbeat with the keys the session took and still holds.
+  const sharing = () => {
+    const held = new Set<string>();
+    const queries: Array<string> = [];
+    let reserved = 0;
+    let returned = 0;
+    const connection = {
+      execute: (query: string, params: ReadonlyArray<string>) =>
+        Effect.sync(() => {
+          queries.push(query);
+          if (query.includes("pg_try_advisory_lock")) { held.add(params[0]!); return [{ acquired: true }]; }
+          if (query.includes("pg_advisory_unlock")) { held.delete(params[0]!); return [{}]; }
+          if (query.includes("pg_locks")) return [...held].map((key) => ({ key }));
+          return [{}];
+        })
+    } as unknown as Connection;
+    const sql = {
+      reserve: Effect.acquireRelease(Effect.sync(() => { reserved++; return connection; }), () => Effect.sync(() => { returned++; }))
+    } as unknown as SqlClient.SqlClient;
+    return { sql, queries, counts: () => ({ reserved, returned }) };
+  };
+
+  test("two modules' leaders share one connection and one heartbeat; the connection goes back with the last lock", async () => {
+    const { sql, queries, counts } = sharing();
+    const views = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 1n, fast)))!;
+    const outbox = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 2n, fast)))!;
+    expect(counts()).toEqual({ reserved: 1, returned: 0 });
+    expect(queries.filter((q) => q.includes("idle_session_timeout") && q.startsWith("SET"))).toHaveLength(1); // the lease, once
+    await new Promise((r) => setTimeout(r, 60));
+    expect(views.isLeader() && outbox.isLeader()).toBe(true);
+    await Effect.runPromise(views.release());
+    expect(counts().returned).toBe(0); // the outbox still leads on it
+    expect(outbox.isLeader()).toBe(true);
+    expect(await Effect.runPromise(outbox.verify)).toBe(true);
+    await Effect.runPromise(outbox.release());
+    expect(counts()).toEqual({ reserved: 1, returned: 1 });
+    expect(queries.filter((q) => q === "RESET idle_session_timeout")).toHaveLength(1);
+  });
+
+  test("a key the session already holds is refused: locks are re-entrant, and one module must not lead twice", async () => {
+    const { sql } = sharing();
+    const first = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 7n, fast)))!;
+    expect(await Effect.runPromise(tryAcquireGlobalLeader(sql, 7n, fast))).toBeNull();
+    await Effect.runPromise(first.release());
+    const again = await Effect.runPromise(tryAcquireGlobalLeader(sql, 7n, fast));
+    expect(again).not.toBeNull();
+    await Effect.runPromise(again!.release());
+  });
+
+  test("leaders with different options do not share: each gets a session of its own", async () => {
+    const { sql, counts } = sharing();
+    const a = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 1n, fast)))!;
+    const b = (await Effect.runPromise(tryAcquireGlobalLeader(sql, 2n, { ...fast, serverIdleTimeout: "off" })))!;
+    expect(counts().reserved).toBe(2);
+    await Effect.runPromise(a.release());
+    await Effect.runPromise(b.release());
   });
 });
 

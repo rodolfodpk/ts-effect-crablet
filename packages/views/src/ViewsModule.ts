@@ -69,7 +69,7 @@ export const makeViewsProcessor = (
     const subscriptionByViewName = new Map(subscriptions.map((s) => [s.viewName, s] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
-    const countSession = yield* holdSessionOnce("the views module", wakeups === "off" ? 1 : 2);
+    const countSession = yield* holdSessionOnce("the views module", wakeups === "off" ? 0 : 1);
 
     return yield* makeEventProcessor({
       configs,
@@ -81,7 +81,7 @@ export const makeViewsProcessor = (
       // this gets called with is guaranteed to be a key in subscriptionByViewName.
       selectionOf: (config) => subscriptionByViewName.get(config.processorId)!,
       instanceId: deps.instanceId ?? defaultInstanceId(),
-      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
+      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its LISTEN when wake-ups are on; the process's one lock session is counted by the first module).
       acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY, deps.leader)),
       // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
       atomically: (effect) => sql.withTransaction(effect),

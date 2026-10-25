@@ -75,6 +75,6 @@ What a local lab cannot reproduce, as arrangement C says: RDS Multi-AZ failover,
 ## Follow-ups (not decided here)
 
 - A lease with a deadline in Postgres, or a documented keepalive setting, so failover does not depend on the TCP stack (measured above). Proposed in [ADR-0045](0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md): the lock session's `idle_session_timeout`.
-- Fewer held connections per process: one `LISTEN` connection and one lock session per process instead of one per module.
+- Fewer held connections per process: one `LISTEN` connection and one lock session per process instead of one per module. The lock session is built ([ADR-0046](0046-one-lock-session-per-process.md)); the `LISTEN` is not.
 - Separating the held connections from the work pool in the connection configuration, so the web role can use a pooler.
 - Splitting the write API from the read API; a lock per processor.

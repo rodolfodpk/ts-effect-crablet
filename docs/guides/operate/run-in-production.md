@@ -54,14 +54,14 @@ The pool is shared by everything the process does with the database, and part of
 |---|---|
 | a command | one connection for its whole transaction (load the model, decide, append), so a pool of *n* runs at most *n* commands at once |
 | a read, a view projection, a cursor update, the metric samplers | for the length of the statement or transaction |
-| the leader lock of a module | one connection, held while this process leads that module |
+| the leader locks of the modules | **one** connection for all of them, held while this process leads any module ([ADR-0046](../../adr/0046-one-lock-session-per-process.md)) |
 | `LISTEN` for event wake-ups | one connection per module, held for good, on followers too (not the deadlines module: time makes a deadline due, so it does not `LISTEN`) |
 | `LISTEN` for view progress (the live feed and reads that wait) | one connection per process, held for good |
 
-Measured on the wallet example (three modules, one idle instance against Postgres 18.6): the **leader held 7 connections for good** (3 locks, 3 `LISTEN` for events, 1 for view progress) and a **follower held 4**
-(the `LISTEN`s); with the default pool of 10 that leaves 3 for work on a leader. The total stayed at the pool size under load (10 with the default, 16 and 12 when set to those values). Those counts are today's
-implementation, and they may shrink; check them with `select count(*) from pg_stat_activity` on your own deployment. A process that also runs the deadlines processor ([Set a deadline](../build/set-a-deadline.md)) holds one more on the instance that leads it: its lock, and
-no `LISTEN`.
+Measured on the wallet example (three modules, one idle instance against Postgres 18.6) while each lock had a connection of its own: the **leader held 7 connections for good** (3 locks, 3 `LISTEN` for events,
+1 for view progress) and a **follower held 4** (the `LISTEN`s). The locks now share one session per process (ADR-0046), so the same leader holds **5** (1 lock session, 3 `LISTEN`, 1 for view progress), and the
+deadlines processor adds none; a follower still holds 4. With the default pool of 10 that leaves 5 for work on a leader. The total stayed at the pool size under load (10 with the default, 16 and 12 when set to
+those values). Check the counts with `select count(*) from pg_stat_activity` on your own deployment.
 
 So size it as **what is held for good plus the concurrency of work you want**, and count the whole fleet against the server: *instances x pool* must stay under `max_connections` (100 on a stock Postgres; on RDS it depends on the
 instance class) with room for migrations, `psql` and monitoring. A pool at or below the held count leaves nothing for work, and the process stalls rather than failing. A process that only runs processors needs a small

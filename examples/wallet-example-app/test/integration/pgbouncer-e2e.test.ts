@@ -1,6 +1,6 @@
 // Runs under Node (Testcontainers + the docker CLI, and the image edoburu/pgbouncer) - see docs/history/NOTES.md. The whole wallet behind PgBouncer in TRANSACTION mode, the way a deployment with a pooler runs it
 // (docs/guides/operate/run-in-production.md, "Behind a pooler"; ADR-0024): TWO instances, each with the application's connection going through the pooler (a server pool of 8) and the leader locks and LISTEN
-// on a direct session connection (a pool of 10: it holds 3 leader locks and 4 LISTEN for good).
+// on a direct session connection (a pool of 10: it holds one lock session for the three leaders, ADR-0046, and 4 LISTEN for good).
 //
 // The load, through both instances: opens, deposits, withdrawals, transfers and a deposit id sent twice at once; then a CONTENTION phase, 240 debits (withdrawals and transfers, which are strict over a
 // wallet's boundary) on just 3 wallets, 16 at once, which conflicts for real: the test requires that the database ran transactions side by side, that the conflicts were retried, and that the ones that

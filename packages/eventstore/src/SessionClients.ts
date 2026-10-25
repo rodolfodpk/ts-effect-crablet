@@ -21,6 +21,8 @@ export interface SessionClients {
   readonly maxConnections: number | undefined;
   readonly held: Ref.Ref<number>;
   readonly warned: Ref.Ref<boolean>;
+  // Whether the process's one lock session (ADR-0046) has been counted.
+  readonly lockSessionCounted: Ref.Ref<boolean>;
 }
 
 export const SessionClients = Context.Reference<SessionClients | null>("crablet/SessionClients", { defaultValue: () => null });
@@ -37,10 +39,10 @@ export const sessionPg: Effect.Effect<PgClient.PgClient, never, PgClient.PgClien
   return session !== null ? session.pg : yield* PgClient.PgClient;
 });
 
-// What a process keeps in the session pool for good: one reserved connection per module that leads (3 locks at most), and one per LISTEN, which with @effect/sql-pg takes a pooled
-// connection for as long as it lasts (one for each module's wake-ups, and one for the views' progress hub where the api runs). It depends on what the process starts, so the framework
-// counts it as things start (`holdSession`): each module when it first tries for its lock, and the hub when its LISTEN starts. Measured, idle: a process with views + automations + outbox + api keeps 7; the three workers without api, 6; views
-// alone, 2; api alone, 1. A pool smaller than that does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after `reserveTimeout` and says so;
+// What a process keeps in the session pool for good: ONE reserved connection for the locks of every module that leads there (ADR-0046), and one per LISTEN, which with @effect/sql-pg
+// takes a pooled connection for as long as it lasts (one for each module's wake-ups, and one for the views' progress hub where the api runs). It depends on what the process starts, so
+// the framework counts it as things start (`holdSession`): the lock session once, when the first module tries for its lock, each module's LISTEN then, and the hub's when it starts.
+// By that count a process with views + automations + outbox + api keeps 5 (it was 7 with a connection per lock); the three workers without api, 4; views alone, 2; api alone, 1. A pool smaller than that does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after `reserveTimeout` and says so;
 // a LISTEN that does not fit just waits, and its process falls back to polling).
 export const sessionPoolWarning = (maxConnections: number | undefined, holds: number | undefined): string | null =>
   maxConnections === undefined || holds === undefined || maxConnections >= holds
@@ -58,9 +60,20 @@ export const holdSession = (what: string, n: number): Effect.Effect<void> =>
     if (warning !== null && !(yield* Ref.getAndSet(session.warned, true))) yield* Effect.logWarning(`${warning} (last to start: ${what})`);
   });
 
-// `holdSession`, once: for a module whose first attempt at its lock marks that it has started (later attempts are retries, not new connections).
-export const holdSessionOnce = (what: string, n: number): Effect.Effect<Effect.Effect<void>> =>
-  Effect.map(Ref.make(false), (done) => Effect.flatMap(Ref.getAndSet(done, true), (was) => (was ? Effect.void : holdSession(what, n))));
+// `holdSession`, once: for a module whose first attempt at its lock marks that it has started (later attempts are retries, not new connections). `listens`
+// is what the module keeps for its own LISTEN (1, or 0 with wake-ups off); the process's lock session is counted once, by the first module that starts.
+export const holdSessionOnce = (what: string, listens: number): Effect.Effect<Effect.Effect<void>> =>
+  Effect.map(Ref.make(false), (done) =>
+    Effect.flatMap(Ref.getAndSet(done, true), (was) =>
+      was
+        ? Effect.void
+        : Effect.gen(function* () {
+            const session = yield* Effect.service(SessionClients);
+            const lockSession = session === null ? 0 : (yield* Ref.getAndSet(session.lockSessionCounted, true)) ? 0 : 1;
+            yield* holdSession(what, listens + lockSession);
+          })
+    )
+  );
 
 // A second client, for the session connections, over `config` (the same shape as the application's: host, port, database, username, password, maxConnections).
 //
@@ -77,7 +90,8 @@ export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0]
         sql: Context.get(context, SqlClient.SqlClient),
         maxConnections: config.maxConnections,
         held: yield* Ref.make(0),
-        warned: yield* Ref.make(false)
+        warned: yield* Ref.make(false),
+        lockSessionCounted: yield* Ref.make(false)
       };
     })
   );

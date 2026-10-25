@@ -75,7 +75,7 @@ export const makeDeadlinesProcessor = (
       backoffEnabled: false
     });
     const selection = EventSelection.of({ eventTypes: new Set([DeadlineScheduled.type]) });
-    const countSession = yield* holdSessionOnce("the deadlines module", 1);
+    const countSession = yield* holdSessionOnce("the deadlines module", 0);
 
     return yield* makeEventProcessor({
       configs: [config],
@@ -85,7 +85,7 @@ export const makeDeadlinesProcessor = (
       progressTracker: yield* makeDeadlineProgressTracker(),
       selectionOf: () => selection,
       instanceId: deps.instanceId ?? defaultInstanceId(),
-      // The first attempt at the lock marks that the module has started: it keeps one session for good, its lock (no LISTEN).
+      // The first attempt at the lock marks that the module has started: it keeps nothing of its own for good (no LISTEN; its lock is on the process's lock session).
       acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, DEADLINES_LOCK_KEY, deps.leader)),
       wakeupStream: Stream.never
     });
