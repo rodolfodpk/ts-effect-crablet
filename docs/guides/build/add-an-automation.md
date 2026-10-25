@@ -46,7 +46,7 @@ The name keys the automation's progress (its cursor): keep it when you change th
 
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#automations-processor -->
 ```ts
-const automations = { config: polling, automations: [walletOpenedAutomation], instanceId };
+const automations = { config: polling, automations: [walletOpenedAutomation], instanceId, leader };
 const automationsHandle = yield* (roles.has("automations") ? startAutomationsProcessor(automations) : makeAutomationsProcessor(automations));
 ```
 

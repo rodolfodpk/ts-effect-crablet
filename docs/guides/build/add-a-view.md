@@ -104,7 +104,7 @@ stops it before the connection pool closes; a process that does not run the view
 
 <!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
 ```ts
-const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId };
+const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };
 const viewsHandle = yield* (roles.has("views") ? startViewsProcessor(views) : makeViewsProcessor(views));
 ```
 
