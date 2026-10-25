@@ -37,7 +37,7 @@ A payment window written that way needed a helper schema, three conversions, and
 ## Consequences
 
 - The wallet's commands stamped their text fields with `DateTime.formatIso(now)` at first, and its welcome notification now uses `now` instead of `new Date()`.
-- The tests that fix the clock (`Scenario.at(date)`) are unchanged: `at` still takes a `Date`, and the scenario's clock turns it into `now`.
+- The tests that fix the clock take a `DateTime.Utc` too: `Scenario.at(now)` (it took a `Date` until 2026-10-25, the last `Date` in the API a domain test touches).
 - Followed up (2026-10-24): a period's `fieldsAt(now)` and the turn's `at` are `DateTime.Utc`; a view's `timestamptz` column takes and gives a
   `DateTime.Utc`; and the wallet's events declare their instants as `Instant`, stamped with `now` and written to the views as they are, with no
   formatting anywhere. The wallet's read API reads its `timestamptz` columns as `DateTime.Utc` (`Schema.DateTimeUtcFromDate`) and its responses

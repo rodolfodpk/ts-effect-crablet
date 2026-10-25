@@ -87,7 +87,7 @@ describe("release_unpaid_subscription", () => {
     const s = given(...["a", "b", "c", "d"].map((courseId) => CourseDefined({ courseId, capacity: 10 })));
     for (const courseId of ["a", "b", "c"]) await s.when(Subscribe, { studentId: "ann", courseId });
     expect((await s.when(Subscribe, { studentId: "ann", courseId: "d" })).error).toBeInstanceOf(StudentAtLimit);
-    const later = s.at(new Date(Date.now() + PAYMENT_WINDOW_MS + 60_000)); // the subscriptions were made with the real clock; past their window
+    const later = s.at(DateTime.makeUnsafe(Date.now() + PAYMENT_WINDOW_MS + 60_000)); // the subscriptions were made with the real clock; past their window
     await later.when(ReleaseUnpaidSubscription, { courseId: "a", studentId: "ann" });
     expect((await later.when(Subscribe, { studentId: "ann", courseId: "d" })).outcome).toBe("created");
     expect((await later.when(Subscribe, { studentId: "ann", courseId: "a" })).error).toBeInstanceOf(StudentAtLimit);
@@ -105,8 +105,8 @@ describe("release_unpaid_subscription", () => {
 });
 
 describe("the payment window: three days from the subscription", () => {
-  const t0 = new Date("2026-11-02T09:00:00.000Z");
-  const at = (ms: number) => new Date(t0.getTime() + ms);
+  const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");
+  const at = (ms: number) => DateTime.add(t0, { milliseconds: ms });
 
   // #region payment-window-test
   test("a payment inside the window is taken; one after it is refused, whether or not the seat was released yet", async () => {
@@ -117,7 +117,7 @@ describe("the payment window: three days from the subscription", () => {
     expect((await s.at(at(PAYMENT_WINDOW_MS - 1)).when(PaySubscription, pay("ann", "p-1"))).outcome).toBe("created");
     const late = await s.at(at(PAYMENT_WINDOW_MS)).when(PaySubscription, pay("bob", "p-2"));
     expect(late.error).toBeInstanceOf(PaymentWindowClosed);
-    expect(DateTime.toEpochMillis((late.error as PaymentWindowClosed).closedAt)).toBe(at(PAYMENT_WINDOW_MS).getTime());
+    expect(DateTime.formatIso((late.error as PaymentWindowClosed).closedAt)).toBe(DateTime.formatIso(at(PAYMENT_WINDOW_MS)));
   });
   // #endregion payment-window-test
 
@@ -131,7 +131,7 @@ describe("the payment window: three days from the subscription", () => {
   test("the window starts from the decision's now, recorded on the event", async () => {
     const s = given(...math()).at(t0);
     const result = await s.when(Subscribe, { studentId: "ann", courseId: "math" });
-    expect(result.events.map((e) => e.data)).toEqual([{ studentId: "ann", courseId: "math", subscribedAt: t0.toISOString() }]);
+    expect(result.events.map((e) => e.data)).toEqual([{ studentId: "ann", courseId: "math", subscribedAt: DateTime.formatIso(t0) }]);
   });
 
   test("a subscription stored before subscribedAt existed has no window: it can be paid, and released, at any time", async () => {
@@ -152,9 +152,9 @@ describe("the receipt", () => {
   // #endregion receipt-test
 
   test("the receipt carries the payment and the time it was sent", async () => {
-    const t0 = new Date("2026-11-02T09:00:00.000Z");
+    const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");
     const result = await given().at(t0).when(SendReceipt, { paymentId: "p-1", courseId: "math", studentId: "ann", amount: 12000 });
-    expect(result.events.map((e) => e.data)).toEqual([{ paymentId: "p-1", courseId: "math", studentId: "ann", amount: 12000, sentAt: t0.toISOString() }]);
+    expect(result.events.map((e) => e.data)).toEqual([{ paymentId: "p-1", courseId: "math", studentId: "ann", amount: 12000, sentAt: DateTime.formatIso(t0) }]);
   });
 });
 

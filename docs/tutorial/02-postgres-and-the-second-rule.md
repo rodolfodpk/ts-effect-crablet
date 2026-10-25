@@ -19,9 +19,10 @@ Migrations applied.
 If `docker compose up -d` fails because port 5432 is taken, start the database on another port with `COURSES_DB_PORT=5433 docker compose up -d` and put the same `COURSES_DB_PORT=5433` in front of every command in this step and the next ones ([if something fails](README.md#if-something-fails)).
 
 The domain in `src/domain/Enrolment.ts` is the **final** one: step 1's rule plus the student limit. This is the DCB moment - compare
-with step 1. The events and models now look at each other from two sides:
+with step 1. The events and models now look at each other from two sides. The events are in a module of their own, `src/domain/enrolment.events.ts`,
+because the payments read them too:
 
-<!-- file: examples/course-enrolment-app/src/domain/Enrolment.ts#events -->
+<!-- file: examples/course-enrolment-app/src/domain/enrolment.events.ts#events -->
 ```ts
 export const CourseDefined = defineEvent("CourseDefined", {
   schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
@@ -104,7 +105,7 @@ export const Subscribe = defineCommand({
 ```
 
 `decide` also receives `now`, the instant of this attempt from the clock, and the subscription records it (`subscribedAt`): a rule about time reads
-that business time later, and a test fixes the clock with `at(date)`.
+that business time later, and a test fixes the clock with `at(now)`.
 
 Adding the second rule was: a second model, `all({ course, student })` instead of one model, and one more branch in `decide`. Nothing was
 redesigned. The consistency boundary of `subscribe` is now *the course's events plus the student's events*: a subscription by anyone to

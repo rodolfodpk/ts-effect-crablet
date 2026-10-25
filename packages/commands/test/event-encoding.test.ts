@@ -22,15 +22,15 @@ const Open = defineCommand({
   decide: (s, c, { now }) => (s.openedAt !== null ? noop("ALREADY_OPEN") : emit(Opened({ accountId: c.accountId, openedAt: now })))
 });
 
-const at = new Date("2026-11-02T09:00:00.000Z");
+const at = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");
 
 describe("an event's payload is stored encoded and read decoded", () => {
   test("an Instant is built with a DateTime, stored as ISO text, and read back as a DateTime", () => {
-    const built = Opened({ accountId: "a1", openedAt: DateTime.fromDateUnsafe(at) });
+    const built = Opened({ accountId: "a1", openedAt: at });
     expect(built.eventData).toEqual({ accountId: "a1", openedAt: "2026-11-02T09:00:00.000Z" });
     const read = Opened.decode(JSON.parse(JSON.stringify(built.eventData)));
     expect(DateTime.isDateTime(read.openedAt)).toBe(true);
-    expect(DateTime.toEpochMillis(read.openedAt)).toBe(at.getTime());
+    expect(DateTime.toEpochMillis(read.openedAt)).toBe(DateTime.toEpochMillis(at));
   });
 
   test("a command whose model folds a transforming field passes the byModel() check, and its repeat is recognised", async () => {

@@ -63,9 +63,9 @@ const Report = defineCommand({
 });
 const noopCmd = defineCommand({ name: "px_noop", input, model: (c) => Monthly.of({ id: c.id }), decide: () => noop("nothing") });
 
-const oct = new Date(Date.UTC(2026, 9, 9, 12));
-const nov = new Date(Date.UTC(2026, 10, 2, 12));
-const dec = new Date(Date.UTC(2026, 11, 5, 12));
+const oct = DateTime.makeUnsafe(Date.UTC(2026, 9, 9, 12));
+const nov = DateTime.makeUnsafe(Date.UTC(2026, 10, 2, 12));
+const dec = DateTime.makeUnsafe(Date.UTC(2026, 11, 5, 12));
 const c = (amount: number, opId: string) => ({ id: "a1", amount, opId });
 const types = (r: { events: ReadonlyArray<{ type: string }> }) => r.events.map((e) => e.type);
 
@@ -134,8 +134,8 @@ describe("a model with a period", () => {
 
   test("the same model on a daily period turns every day, with the day in the tags", async () => {
     const s = given(Opened({ id: "a1" }));
-    const d1 = new Date(Date.UTC(2026, 9, 9, 23, 59));
-    const d2 = new Date(Date.UTC(2026, 9, 10, 0, 1));
+    const d1 = DateTime.makeUnsafe(Date.UTC(2026, 9, 9, 23, 59));
+    const d2 = DateTime.makeUnsafe(Date.UTC(2026, 9, 10, 0, 1));
     await s.at(d1).when(CreditDaily, c(10, "o1"));
     const r = await s.at(d2).when(CreditDaily, c(5, "o2"));
     expect(types(r)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened", "PX_Credited"]);
@@ -196,13 +196,13 @@ describe("a model with a period", () => {
       decide: (a, cc) => (a.exists ? emit(FyCredited({ id: cc.id, amount: cc.amount }, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id })))
     });
     const s = given(Opened({ id: "a1" }));
-    const march = new Date(Date.UTC(2027, 2, 31, 12));
-    const april = new Date(Date.UTC(2027, 3, 1, 12));
+    const march = DateTime.makeUnsafe(Date.UTC(2027, 2, 31, 12));
+    const april = DateTime.makeUnsafe(Date.UTC(2027, 3, 1, 12));
     const first = await s.at(march).when(Add, c(10, "o1"));
     expect(types(first)).toEqual(["PX_FyOpened", "PX_FyCredited"]);
     expect(first.events[0]!.data).toMatchObject({ fy: 2026, opening: 0 });
     // 1 January is the same fiscal year: nothing turns
-    expect(types(await s.at(new Date(Date.UTC(2027, 0, 1, 12))).when(Add, c(1, "o2")))).toEqual(["PX_FyCredited"]);
+    expect(types(await s.at(DateTime.makeUnsafe(Date.UTC(2027, 0, 1, 12))).when(Add, c(1, "o2")))).toEqual(["PX_FyCredited"]);
     // 1 April is the next one
     const turned = await s.at(april).when(Add, c(5, "o3"));
     expect(types(turned)).toEqual(["PX_FyClosed", "PX_FyOpened", "PX_FyCredited"]);
@@ -223,14 +223,14 @@ describe("a model with a period", () => {
     });
     const r = await given(Opened({ id: "a1" })).at(nov).when(Stamp, c(1, "o1"));
     expect(types(r)).toEqual(["PX_PeriodOpened", "PX_Stamped"]);
-    expect(r.events[1]!.data).toMatchObject({ at: nov.toISOString() });
+    expect(r.events[1]!.data).toMatchObject({ at: DateTime.formatIso(nov) });
   });
 
   test("a command without a period model gets the clock as `now` too", async () => {
     const Plain = defineEvent("PX_Plain", { schema: Schema.Struct({ at: Schema.String }), tags: () => ({ acct: "x" }) });
     const Cmd = defineCommand({ name: "px_plain", input, decide: (_s, _c, { now }) => emit(Plain({ at: DateTime.formatIso(now) })) });
     const r = await given().at(dec).when(Cmd, c(1, "o1"));
-    expect(r.events[0]!.data).toMatchObject({ at: dec.toISOString() });
+    expect(r.events[0]!.data).toMatchObject({ at: DateTime.formatIso(dec) });
   });
 
   test("a clock behind the open period is counted: crablet.period.clock_behind", async () => {
@@ -252,9 +252,9 @@ describe("a model with a period", () => {
     });
     const Z = credit(zoned as never);
     const s = given(Opened({ id: "a1" }));
-    await s.at(new Date("2026-10-10T02:30:00Z")).when(Z, c(10, "o1")); // 23:30 on 9 October in Sao Paulo
-    expect(types(await s.at(new Date("2026-10-10T02:59:00Z")).when(Z, c(1, "o2")))).toEqual(["PX_Credited"]); // still the 9th
-    const turned = await s.at(new Date("2026-10-10T03:00:00Z")).when(Z, c(1, "o3")); // midnight there
+    await s.at(DateTime.makeUnsafe("2026-10-10T02:30:00Z")).when(Z, c(10, "o1")); // 23:30 on 9 October in Sao Paulo
+    expect(types(await s.at(DateTime.makeUnsafe("2026-10-10T02:59:00Z")).when(Z, c(1, "o2")))).toEqual(["PX_Credited"]); // still the 9th
+    const turned = await s.at(DateTime.makeUnsafe("2026-10-10T03:00:00Z")).when(Z, c(1, "o3")); // midnight there
     expect(types(turned)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened", "PX_Credited"]);
     expect(turned.events[1]!.data).toMatchObject({ month: 10, day: 10 });
   });

@@ -14,7 +14,7 @@ const at = DateTime.nowUnsafe();
 const opened = (walletId: string, initialBalance: number) => WalletOpened({ walletId, owner: "Ann", initialBalance, openedAt: at });
 const dep = (walletId: string, depositId: string, amount = 10) => ({ depositId, walletId, amount, description: "" });
 const tags = (e: { tags: ReadonlyArray<{ key: string; value: string }> }) => Object.fromEntries(e.tags.map((x) => [x.key, x.value]));
-const clock = (minute: number, second = 0) => new Date(Date.UTC(2026, 9, 11, 12, minute, second));
+const clock = (minute: number, second = 0) => DateTime.makeUnsafe(Date.UTC(2026, 9, 11, 12, minute, second));
 
 describe("a statement period of 5 minutes", () => {
   t("the first command opens a statement tagged with the year and the slot, and no month", async () => {
@@ -68,6 +68,6 @@ describe("a statement period of 5 minutes", () => {
     await s.at(clock(5)).when(Deposit, dep("w1", "d1", 5));
     const r = await s.at(clock(4, 59)).when(Deposit, dep("w1", "d2", 7));
     expect(r.events.map((e) => e.type)).toEqual(["DepositMade"]);
-    expect(tags(r.events[0]!)["bucket"]).toBe(String(Math.floor(clock(5).getTime() / 300_000)));
+    expect(tags(r.events[0]!)["bucket"]).toBe(String(Math.floor(DateTime.toEpochMillis(clock(5)) / 300_000)));
   });
 });

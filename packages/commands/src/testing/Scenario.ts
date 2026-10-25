@@ -1,4 +1,4 @@
-import { Cause, Clock, Effect, Exit } from "effect";
+import { Cause, Clock, DateTime, Effect, Exit } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import type { Conflict } from "@crablet/eventstore/AppendErrors";
@@ -57,8 +57,9 @@ export interface Scenario {
   readonly log: ReadonlyArray<StoredEvent>;
   // Run a command with its input before decoding, like a request arriving: typed from the command's schema, and validated as `run` does.
   readonly when: <In, Err, I extends Schema.Constraint>(command: Command<In, Err, I>, input: RawInput<I>) => Promise<ScenarioResult<Err>>;
-  // The same scenario (same store, same log) with the clock fixed at `date`: what a model with a period reads as "now" (`.period`, Period.ts). Without it the real clock is used.
-  readonly at: (date: Date) => Scenario;
+  // The same scenario (same store, same log) with the clock fixed at `now`: what `decide` gets as `now`, and what a model with a period reads (`.period`, Period.ts).
+  // Without it the real clock is used.
+  readonly at: (now: DateTime.Utc) => Scenario;
 }
 
 // A clock that reads `ms` as the time and is otherwise the real one (sleeping, scheduling).
@@ -102,7 +103,7 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
     return { outcome: "failed", events: [], error: failure.error as never, reason: null };
   };
 
-  return { store, get log() { return store.log; }, when, at: (date) => scenarioOver(store, date.getTime()) };
+  return { store, get log() { return store.log; }, when, at: (now) => scenarioOver(store, DateTime.toEpochMillis(now)) };
 };
 
 export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {
