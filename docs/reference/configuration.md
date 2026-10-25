@@ -17,7 +17,7 @@ From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `
 | `eventStore.wakeupMode` | `"coalesced"` | How appends wake the pollers. `coalesced`: one notification per window, after the commit. `off`: none; the pollers see new events on their interval, and the views, automations and outbox modules do not `LISTEN` ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md), [ADR-0028](../adr/0028-settings-the-framework-decides.md)). |
 | `eventStore.wakeupWindowMs` | `50` | The coalescing window. `0` sends after each commit without waiting. |
 | `audit.payload` | `"redacted"` | What the command audit stores of each input: `redacted` (fields marked `personal(...)` replaced), `full`, `none` (no payload), or `off` (no audit). |
-| `session` | none | A direct connection, same shape as `pg`, for what cannot go through a pooler in transaction mode: the leader locks and `LISTEN`. Omitted, they use `pg` ([ADR-0024](../adr/0024-session-connections-for-leader-and-listen.md)). Its `maxConnections` must cover what the process keeps for good (7 for the three modules and the api, 1 for the api alone); the framework counts it as the modules start and warns once if the pool is smaller. |
+| `session` | none | A direct connection, same shape as `pg`, for what cannot go through a pooler in transaction mode: the leader locks and `LISTEN`. Omitted, they use `pg` ([ADR-0024](../adr/0024-session-connections-for-leader-and-listen.md)). Its `maxConnections` must cover what the process keeps for good (7 for the three modules and the api, 1 for the api alone, and 1 more with the deadlines processor); the framework counts it as the modules start and warns once if the pool is smaller. |
 
 Processor settings (polling, backoff, `maxErrors`, the leader retry) are in [Views](./views.md#processor-settings). Read-consistency settings are in
 [HTTP](./http.md#read-consistency).
@@ -49,6 +49,11 @@ The outbox module's `OutboxConfig` adds one setting of its own:
 | Setting | Default | What it does |
 |---|---|---|
 | `publishTimeoutMs` | `30000` | How long one call to a publisher's `publishBatch` may take before it counts as a failure (and toward `maxErrors`). Without it a destination that hangs would hold its topic back for good. A timed-out publish may have reached the destination, so the events are published again ([ADR-0036](../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)). |
+
+The deadlines module's `DeadlinesConfig` (`@crablet/automations/Deadlines`) takes the same settings except the four backoff ones: it does not back off,
+because no wake-up ends a wait (a new event makes nothing due; time does). Its interval defaults to **5000** instead: it is how late a deadline can fire
+after it is due, and deadlines are business time; an idle poll is one index lookup, on the leader only. Its batch is fired one deadline at a time, so a
+backlog (many deadlines due at the same instant) drains at about `batchSize` per interval ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)).
 
 A single view, automation or topic publisher can override `pollingIntervalMs`, `batchSize` and the four backoff settings of its own; `maxErrors` and the leader retry
 belong to the module (the leader retry is not part of a processor's config at all: there is one leader lock per module). A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some

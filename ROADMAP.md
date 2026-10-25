@@ -8,7 +8,7 @@ Where the project is, what is open, and what is deliberately not decided. It is 
 ## Where it is
 
 **Pre-release.** The framework is complete enough to build and run an application: commands with dynamic consistency boundaries, views, automations,
-an outbox, an HTTP layer with OpenAPI, consistent reads, leadership with failover, event evolution checks, metrics, a dashboard and a chaos lab
+deadlines, an outbox, an HTTP layer with OpenAPI, consistent reads, leadership with failover, event evolution checks, metrics, a dashboard and a chaos lab
 ([what is guaranteed and measured](docs/evidence.md)). The API is not stable: a breaking change is made whenever it is worth it, and the packages are
 not on npm ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
 

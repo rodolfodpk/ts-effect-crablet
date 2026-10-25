@@ -45,6 +45,8 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 - **Strict read** - the default: the answer is right or a `503`, never stale.
 - **Outbox** - events published to something outside the database, per topic, from the same log and with the same delivery guarantees. [Reference](./README.md#packages)
 - **Automation** - a reaction: when an event appears, issue a follow-up command, declared with `defineAutomation(name, command).on(Event, (data) => input)`. [Add an automation](../guides/build/add-an-automation.md)
+- **Deadline** - a command to run once a time has passed, set by `decide` with `deadline(Command, input, { at })` and appended with the decision as a `crablet.DeadlineScheduled` event; the deadlines processor runs it when it is due and records `crablet.DeadlineFired`. It always fires: its command answers `noop` when it no longer matters. [Set a deadline](../guides/build/set-a-deadline.md)
+- **`crablet.` events** - the framework's own events in the application's log (`crablet.DeadlineScheduled`, `crablet.DeadlineFired`): no tags, so no model of the application accounts for them, and a view or automation does not see them unless it selects them.
 - **Ping** - the small server-sent event that tells a client "something changed, read again". [ADR-0014](../adr/0014-live-updates-by-ping.md)
 
 ## The project

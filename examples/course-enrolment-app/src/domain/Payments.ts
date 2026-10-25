@@ -1,5 +1,5 @@
-// A course has a price, and a subscription is paid for; one left unpaid can be released, which frees its seat. Today a release is asked for
-// (a person, a test); with deadlines (docs/adr/0043-a-deadline-is-an-event-in-the-log.md) `Subscribe` would set one that asks for it after a few days.
+// A course has a price, and a subscription is paid for; one left unpaid is released when its payment window closes, which frees its seat: `Subscribe`
+// sets a deadline that runs the release then (docs/adr/0043-a-deadline-is-an-event-in-the-log.md).
 import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emit, fail, Instant, noop } from "@crablet/commands/Domain";
@@ -99,8 +99,8 @@ export const PaySubscription = defineCommand({
 
 // #region release
 // Gives back a subscription that was not paid once its window has closed. Its boundary is the subscription's events, so a payment and a release that
-// race cannot both happen: the second conflicts, re-runs, and sees the first. Asked for by a person or a job today; a deadline set by Subscribe would
-// ask at the window's end (ADR-0043).
+// race cannot both happen: the second conflicts, re-runs, and sees the first. The deadline `Subscribe` sets runs it at the window's end; for a paid
+// subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel).
 export const ReleaseUnpaidSubscription = defineCommand({
   name: "release_unpaid_subscription",
   input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),

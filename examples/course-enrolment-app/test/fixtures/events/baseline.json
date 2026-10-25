@@ -121,5 +121,18 @@
       "payment_id=p-1"
     ],
     "note": "first release"
+  },
+  {
+    "type": "crablet.DeadlineScheduled",
+    "payload": {
+      "command": "release_unpaid_subscription",
+      "input": {
+        "courseId": "c-1",
+        "studentId": "s-1"
+      },
+      "dueAt": "2026-11-05T09:00:00.000Z"
+    },
+    "tags": [],
+    "note": "the payment deadline Subscribe sets (ADR-0043)"
   }
 ]

@@ -6,10 +6,15 @@ import { serveApi } from "@crablet/commands-http/ServeApi";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import { startViewsProcessor, type RunnableView } from "@crablet/views";
+import { startDeadlinesProcessor } from "@crablet/automations/Deadlines";
+import type { CommandExecutor } from "@crablet/commands";
+import type { EventStore } from "@crablet/eventstore";
+import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
+import { ReleaseUnpaidSubscription } from "./domain/Payments.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
 import { CourseSeatsView } from "./views/CourseSeatsViewProjector.ts";
@@ -78,3 +83,12 @@ export const startCourseViews = (
   // Two views off the same events: the seats left (table operations) and who took which seat (its own SQL, through `raw`).
   return startViewsProcessor({ views: [delayed(CourseSeatsView), delayed(CourseEnrolmentsView)], instanceId });
 };
+
+// #region deadlines
+// Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes, it runs the release that
+// Subscribe set as a deadline. One instance fires, the others wait on its lock.
+export const startCourseDeadlines = (
+  instanceId: string = defaultInstanceId()
+): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
+  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription], instanceId });
+// #endregion deadlines
