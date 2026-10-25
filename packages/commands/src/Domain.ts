@@ -2,7 +2,7 @@
 //
 //     import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emit, fail, noop } from "@crablet/commands/Domain";
 //
-// It re-exports the narrower entry points (`/Event`, `/Model`, `/Period`, `/Command`, `/Contract`, `/Errors`, `/Personal`, and `Tag` from
+// It re-exports the narrower entry points (`/Event`, `/Model`, `/Period`, `/Command`, `/Contract`, `/Errors`, `/Personal`, `deadline` from `/Deadline`, and `Tag` from
 // `@crablet/eventstore/Tag`), which stay. It reaches the command pipeline, so a module a browser imports (a contract, the errors) keeps
 // importing `/Contract` and `/Errors` instead. Running, testing and wiring are elsewhere: `CommandExecutor` (`@crablet/commands`),
 // `Crablet.layer` (`/Crablet`), `given` (`/testing/Scenario`).
@@ -26,5 +26,6 @@ export {
 } from "./Command.ts";
 export { defineContract, type CommandContract } from "./Contract.ts";
 export { DomainError, type ErrorKind } from "./Errors.ts";
+export { deadline } from "./Deadline.ts";
 export { personal } from "./Personal.ts";
 export * as Tag from "@crablet/eventstore/Tag";

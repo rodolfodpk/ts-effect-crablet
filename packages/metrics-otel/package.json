@@ -12,6 +12,7 @@
     "./ViewMetrics": "./src/ViewMetrics.ts",
     "./OutboxMetrics": "./src/OutboxMetrics.ts",
     "./AutomationMetrics": "./src/AutomationMetrics.ts",
+    "./DeadlineMetrics": "./src/DeadlineMetrics.ts",
     "./ReadConsistencyMetrics": "./src/ReadConsistencyMetrics.ts",
     "./StorageMetrics": "./src/StorageMetrics.ts"
   },

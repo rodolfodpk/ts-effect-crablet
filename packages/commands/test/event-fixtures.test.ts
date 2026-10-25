@@ -5,6 +5,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineEvent } from "../src/Event.ts";
+import { defineCommand, emit } from "../src/Command.ts";
 import { assertEventFixtures, checkEventFixtures, fixtureOf, formatFixtureReport, loadEventFixtures, type EventFixture } from "../src/testing/EventFixtures.ts";
 
 // "Deposit" as it was first written, and the fixture of that shape: the payload and the tags that were stored
@@ -109,5 +110,29 @@ describe("capturing and loading fixtures", () => {
     writeFileSync(path.join(dir, "a.json"), JSON.stringify({ ...first, note: "a" }));
     writeFileSync(path.join(dir, "readme.md"), "not a fixture");
     expect(loadEventFixtures(dir).map((f) => f.note)).toEqual(["a", "b1", "b2"]);
+  });
+});
+
+describe("checkEventFixtures with deadline commands: a deadline's input is stored data too (ADR-0043)", () => {
+  const Freed = defineEvent("FxFreed", { schema: Schema.Struct({ seatId: Schema.String }), tags: (d) => ({ seat_id: d.seatId }) });
+  const Free = defineCommand({ name: "fx_free_seat", input: Schema.Struct({ seatId: Schema.String }), idempotentBy: (c) => Freed.where({ seat_id: c.seatId }), decide: (_s, c) => emit(Freed(c)) });
+  const scheduled = (command: string, input: unknown): EventFixture => ({
+    type: "crablet.DeadlineScheduled",
+    payload: { command, input, dueAt: "2026-11-02T09:00:00.000Z" },
+    tags: []
+  });
+
+  test("a deadline whose input still decodes by its command passes, and covers that command", () => {
+    const report = checkEventFixtures({ definitions: [Freed], fixtures: [fixtureOf({ type: "FxFreed", data: { seatId: "a" }, tags: [{ key: "seat_id", value: "a" }] }), scheduled("fx_free_seat", { seatId: "a" })], deadlineCommands: [Free] });
+    expect(report.problems).toEqual([]);
+    expect(report.uncovered).toEqual([]);
+  });
+
+  test("an input the command can no longer read, and a deadline for a command not given, are reported; a command with no deadline fixture is uncovered", () => {
+    const report = checkEventFixtures({ definitions: [], fixtures: [scheduled("fx_free_seat", { seat: "a" }), scheduled("fx_gone", {})], deadlineCommands: [Free] });
+    expect(report.problems.map((p) => p.kind)).toEqual(["undecodable", "no_definition"]);
+    expect(report.problems[0]!.detail).toMatch(/fx_free_seat/);
+    const none = checkEventFixtures({ definitions: [], fixtures: [], deadlineCommands: [Free] });
+    expect(none.uncovered).toEqual(["crablet.DeadlineScheduled", "crablet.DeadlineScheduled (fx_free_seat)"]);
   });
 });

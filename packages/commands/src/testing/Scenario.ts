@@ -1,11 +1,13 @@
 import { Cause, Clock, DateTime, Effect, Exit } from "effect";
-import type { StoredEvent } from "@crablet/eventstore";
+import { EventStore, type StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import type { Conflict } from "@crablet/eventstore/AppendErrors";
+import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import type * as Schema from "effect/Schema";
 import type { Command, RawInput } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
+import { checkDeadlineCommands, DeadlineFired, DeadlineScheduled, outcomeOfFailure, type FiredDeadline } from "../Deadline.ts";
 import type { IdempotencyMismatch, InvalidInput } from "../Errors.ts";
 import type { ExecutionResult } from "../ExecutionResult.ts";
 
@@ -60,6 +62,11 @@ export interface Scenario {
   // The same scenario (same store, same log) with the clock fixed at `now`: what `decide` gets as `now`, and what a model with a period reads (`.period`, Period.ts).
   // Without it the real clock is used.
   readonly at: (now: DateTime.Utc) => Scenario;
+  // Fire the deadlines due at the scenario's clock (`at`), as the deadlines processor does (ADR-0043): each set by an earlier `when` (or given) and not
+  // fired yet, oldest due first, runs its command under the deadline as its cause, and its firing is recorded (`crablet.DeadlineFired`). `commands` are
+  // the ones the processor would be given, checked as it checks them. A deadline whose command is not among them, or whose command fails with
+  // something other than a domain error, throws.
+  readonly fireDue: (...commands: ReadonlyArray<Command<any, any>>) => Promise<ReadonlyArray<FiredDeadline>>;
 }
 
 // A clock that reads `ms` as the time and is otherwise the real one (sleeping, scheduling).
@@ -72,10 +79,15 @@ const fixedClock = (base: Clock.Clock, ms: number): Clock.Clock =>
   });
 
 const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario => {
-  const when: Scenario["when"] = async (command, rawInput) => {
+  // Under the scenario's clock, when it has one.
+  const atClock = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    atMs === null ? effect : Effect.flatMap(Clock.Clock, (base) => Effect.provideService(effect, Clock.Clock, fixedClock(base, atMs)));
+
+  // One command run, as `when` does it; under `cause` (a deadline's position) when one is given, as an automation or the deadlines processor runs it.
+  const run = async <In, Err>(command: Command<In, Err, any>, decodeInput: Effect.Effect<In, InvalidInput>, cause: bigint | null): Promise<ScenarioResult<Err>> => {
     const before = store.log.length;
     const attempt = Effect.gen(function* () {
-      const input = yield* command.decodeInput(rawInput);
+      const input = yield* decodeInput;
       // One attempt = one transaction (exclusive, rolled back on failure); retried on Conflict like the
       // real executor, though in-memory a Conflict cannot occur.
       // An idempotent result rolls the attempt back, exactly like the real executor (CommandExecutor.ts); the result is carried out of the transaction.
@@ -86,7 +98,7 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
         Effect.catch((error) => (error instanceof RolledBackIdempotent ? Effect.succeed(error.result) : Effect.fail(error)))
       );
     }).pipe(Effect.provide(store.layer));
-    const program = atMs === null ? attempt : Effect.flatMap(Clock.Clock, (base) => Effect.provideService(attempt, Clock.Clock, fixedClock(base, atMs)));
+    const program = atClock(cause === null ? attempt : CorrelationContext.withCausationId(cause)(attempt));
 
     const exit = await Effect.runPromiseExit(program);
     if (Exit.isSuccess(exit)) {
@@ -103,7 +115,41 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
     return { outcome: "failed", events: [], error: failure.error as never, reason: null };
   };
 
-  return { store, get log() { return store.log; }, when, at: (now) => scenarioOver(store, DateTime.toEpochMillis(now)) };
+  const when: Scenario["when"] = (command, rawInput) => run(command, command.decodeInput(rawInput), null);
+
+  const fireDue: Scenario["fireDue"] = async (...commands) => {
+    const byName = checkDeadlineCommands(commands);
+    const now = atMs ?? Date.now();
+    // Pending: scheduled and not fired, the rule the processor's table is rebuilt by (a firing is caused by its deadline).
+    const fired = new Set(store.log.filter((e) => e.type === DeadlineFired.type).map((e) => e.causationId));
+    const due = store.log
+      .filter((e) => e.type === DeadlineScheduled.type && !fired.has(e.position))
+      .map((event) => ({ event, scheduled: DeadlineScheduled.decode(event.data) }))
+      .filter(({ scheduled }) => DateTime.toEpochMillis(scheduled.dueAt) <= now)
+      .sort((a, b) => DateTime.toEpochMillis(a.scheduled.dueAt) - DateTime.toEpochMillis(b.scheduled.dueAt) || Number(a.event.position - b.event.position));
+
+    const results: Array<FiredDeadline> = [];
+    for (const { event, scheduled } of due) {
+      const command = byName.get(scheduled.command);
+      if (command === undefined) throw new Error(`deadline at position ${event.position}: command "${scheduled.command}" is not among the commands given to fireDue`);
+      const result = await run(command, command.decodeInput(scheduled.input), event.position);
+      const outcome =
+        result.outcome === "created"
+          ? { outcome: "appended" as const, reason: null }
+          : result.outcome === "idempotent"
+            ? { outcome: "noop" as const, reason: result.reason }
+            : outcomeOfFailure(result.error);
+      if (outcome === undefined) throw new Error(`deadline at position ${event.position}: command "${command.name}" failed with a fault, not a decision: ${String(result.error)}`);
+      const record = Effect.flatMap(EventStore, (eventStore) =>
+        eventStore.append([DeadlineFired({ deadlinePosition: event.position.toString(), outcome: outcome.outcome, reason: outcome.reason })])
+      );
+      await Effect.runPromise(atClock(CorrelationContext.withCausationId(event.position)(record).pipe(Effect.provide(store.layer))));
+      results.push({ deadlinePosition: event.position, command: command.name, outcome: outcome.outcome, reason: outcome.reason, events: result.events });
+    }
+    return results;
+  };
+
+  return { store, get log() { return store.log; }, when, at: (now) => scenarioOver(store, DateTime.toEpochMillis(now)), fireDue };
 };
 
 export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {

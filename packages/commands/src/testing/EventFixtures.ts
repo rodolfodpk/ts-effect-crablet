@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import { Effect, Exit } from "effect";
 import { EventDecodingFailure, describeIssues } from "@crablet/eventstore/EventDecoding";
+import type { Command } from "../Command.ts";
+import { DeadlineScheduled } from "../Deadline.ts";
 
 // Fixtures for event evolution (ADR-0017, decision 4). The log holds every shape an event has ever been written in, so each event type keeps, as test data,
 // the payloads it was once written with AND the tags that were stored with them, and a test asserts that the CURRENT definition still
@@ -14,6 +17,10 @@ import { EventDecodingFailure, describeIssues } from "@crablet/eventstore/EventD
 //
 // Before changing an event's shape, capture a payload of the OLD shape (`fixtureOf(storedEvent)`, or copy one from the database) and add it to the fixtures: it is
 // what proves the change is compatible. `verify-events` (ADR-0017 step 4) runs the same check over what is really stored.
+//
+// A deadline (ADR-0043) stores its command's input inside `crablet.DeadlineScheduled`, so the input is stored data too: give `deadlineCommands` (the
+// commands the deadlines processor is given) and each `crablet.DeadlineScheduled` fixture's input must still decode by its command, and, with
+// `requireCoverage`, each of those commands needs a fixture.
 
 export interface EventFixture {
   readonly type: string;
@@ -48,8 +55,19 @@ export interface FixtureReport {
 
 const tagStrings = (event: AppendEvent): ReadonlyArray<string> => event.tags.map((t) => `${t.key}=${t.value}`);
 
-export const checkEventFixtures = (options: { readonly definitions: ReadonlyArray<unknown>; readonly fixtures: ReadonlyArray<EventFixture> }): FixtureReport => {
-  const defs = new Map((options.definitions as ReadonlyArray<FixtureDefinition>).map((d) => [d.type, d] as const));
+export interface FixtureOptions {
+  readonly definitions: ReadonlyArray<unknown>;
+  readonly fixtures: ReadonlyArray<EventFixture>;
+  readonly deadlineCommands?: ReadonlyArray<Command<any, any>>;
+}
+
+// The name a deadline's coverage is reported by: one per command.
+const deadlineCoverage = (command: string): string => `${DeadlineScheduled.type} (${command})`;
+
+export const checkEventFixtures = (options: FixtureOptions): FixtureReport => {
+  const deadlineCommands = new Map((options.deadlineCommands ?? []).map((c) => [c.name, c] as const));
+  const definitions = deadlineCommands.size > 0 ? [...options.definitions, DeadlineScheduled] : options.definitions;
+  const defs = new Map((definitions as ReadonlyArray<FixtureDefinition>).map((d) => [d.type, d] as const));
   const problems: Array<FixtureProblem> = [];
   const covered = new Set<string>();
   for (const fixture of options.fixtures) {
@@ -82,8 +100,20 @@ export const checkEventFixtures = (options: { readonly definitions: ReadonlyArra
     for (const tag of stored) {
       if (!derived.includes(tag) && !scope.has(tag.slice(0, tag.indexOf("=")))) problems.push({ ...base, kind: "lost_tag", detail: `the stored tag ${tag} is no longer derived from the payload` });
     }
+    if (fixture.type === DeadlineScheduled.type && deadlineCommands.size > 0) {
+      const scheduled = decoded as typeof DeadlineScheduled.Type;
+      const command = deadlineCommands.get(scheduled.command);
+      if (command === undefined) {
+        problems.push({ ...base, kind: "no_definition", detail: `a deadline for "${scheduled.command}", which is not among the deadline commands: the processor could not fire it` });
+        continue;
+      }
+      covered.add(deadlineCoverage(command.name));
+      const input = Effect.runSyncExit(command.decodeInput(scheduled.input));
+      if (Exit.isFailure(input)) problems.push({ ...base, kind: "undecodable", detail: `a deadline's input written before cannot be read by "${command.name}" any more: ${String(input.cause)}` });
+    }
   }
-  const uncovered = [...defs.keys()].filter((t) => !covered.has(t)).sort();
+  const expected = [...defs.keys(), ...[...deadlineCommands.keys()].map(deadlineCoverage)];
+  const uncovered = expected.filter((t) => !covered.has(t)).sort();
   return { checked: options.fixtures.length, problems, uncovered };
 };
 
@@ -94,7 +124,7 @@ export const formatFixtureReport = (report: FixtureReport): string =>
   ].join("\n");
 
 // Throws, listing every problem, when a fixture is no longer readable or its tags drifted; with `requireCoverage` also when an event type has no fixture.
-export const assertEventFixtures = (options: { readonly definitions: ReadonlyArray<unknown>; readonly fixtures: ReadonlyArray<EventFixture>; readonly requireCoverage?: boolean }): void => {
+export const assertEventFixtures = (options: FixtureOptions & { readonly requireCoverage?: boolean }): void => {
   const report = checkEventFixtures(options);
   const uncovered = options.requireCoverage === true ? report.uncovered : [];
   if (report.problems.length > 0 || uncovered.length > 0) throw new Error(`event fixtures:\n${formatFixtureReport({ ...report, uncovered })}`);
