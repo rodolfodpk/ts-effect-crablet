@@ -66,6 +66,11 @@ async function define(base: string, courseId: string) {
   return (await res.json()) as { lastTransactionId: string; lastPosition: string };
 }
 
+// The part of a define_course write the seats view applies. The write appends CourseDefined and then the course's readiness deadline
+// (crablet.DeadlineScheduled, ADR-0043), which no view reads: a view's cursor lands only on events it handles, so it stops at the CourseDefined, one
+// position before the write's end, in the same transaction. (A read that waits for the write checks the rest of the range: waitUntilProcessed.)
+const seatsViewPartOf = (write: { lastTransactionId: string; lastPosition: string }) => ProgressCursor.of(write.lastTransactionId, BigInt(write.lastPosition) - 1n);
+
 // Waits until the seats view has applied the write (polling a read that asks for no waiting).
 async function waitUntilSeatsViewMoved(write: { lastTransactionId: string; lastPosition: string }) {
   const res = await fetch(`${app.baseUrl}/api/courses/feed-seed?consistency=eventual`);
@@ -93,7 +98,7 @@ describe("GET /api/views/changes", () => {
       assert.strictEqual(feed.res.status, 200);
       assert.match(feed.res.headers.get("content-type") ?? "", /text\/event-stream/);
       const write = await define(app.baseUrl, `feed-${crypto.randomUUID().slice(0, 8)}`);
-      const writeCursor = ProgressCursor.of(write.lastTransactionId, BigInt(write.lastPosition));
+      const writeCursor = seatsViewPartOf(write);
       await waitFor(() => feed.frames.some((f) => ProgressCursor.compare(ProgressCursor.of(f.transactionId, BigInt(f.position)), writeCursor) >= 0));
       const covering = feed.frames.find((f) => ProgressCursor.compare(ProgressCursor.of(f.transactionId, BigInt(f.position)), writeCursor) >= 0);
       assert.ok(covering, "a ping covering the write arrived");
@@ -151,7 +156,7 @@ describe("GET /api/views/changes", () => {
       assert.ok(sessions <= 12, `${sessions} database sessions with 200 feeds open (the pool is 10, plus the pollers' listeners)`);
 
       const write = await define(app.baseUrl, `feed-many-${crypto.randomUUID().slice(0, 8)}`);
-      const writeCursor = ProgressCursor.of(write.lastTransactionId, BigInt(write.lastPosition));
+      const writeCursor = seatsViewPartOf(write);
       const covers = (f: Advanced) => ProgressCursor.compare(ProgressCursor.of(f.transactionId, BigInt(f.position)), writeCursor) >= 0;
       await waitFor(() => feeds.every((f) => f.frames.some(covers)), 30_000);
       assert.strictEqual(feeds.filter((f) => f.frames.some(covers)).length, 200, "every feed got a ping covering the write");
@@ -179,7 +184,7 @@ describe("GET /api/views/changes", () => {
 
       // and pings flow again through the new connection
       const write = await define(app.baseUrl, `feed-after-${crypto.randomUUID().slice(0, 8)}`);
-      const writeCursor = ProgressCursor.of(write.lastTransactionId, BigInt(write.lastPosition));
+      const writeCursor = seatsViewPartOf(write);
       await waitFor(() => feeds.every((f) => f.frames.some((x) => ProgressCursor.compare(ProgressCursor.of(x.transactionId, BigInt(x.position)), writeCursor) >= 0)), 20_000);
       assert.ok(feeds.every((f) => f.frames.some((x) => ProgressCursor.compare(ProgressCursor.of(x.transactionId, BigInt(x.position)), writeCursor) >= 0)));
     } finally {

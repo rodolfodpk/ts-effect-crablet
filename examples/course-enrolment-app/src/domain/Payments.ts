@@ -4,7 +4,7 @@ import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emit, fail, Instant, noop } from "@crablet/commands/Domain";
 // The enrolment's events and errors, not its rules (Enrolment.ts): Enrolment.ts may import this module.
-import { CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
+import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
 import { CourseNotFound } from "./enrolment.contract.ts";
 
 // #region events
@@ -41,7 +41,7 @@ export class PaymentWindowClosed extends DomainError("PaymentWindowClosed", { fi
 export const CoursePricing = defineModel({ by: "course_id", initial: () => ({ exists: false, price: null as number | null }) })
   .on(CourseDefined, (p) => ({ ...p, exists: true }))
   .on(CoursePriced, (p, d) => ({ ...p, price: d.price }))
-  .ignores(StudentSubscribed, SubscriptionReleased, SubscriptionPaid);
+  .ignores(StudentSubscribed, SubscriptionReleased, SubscriptionPaid, CourseCancelled);
 
 // One student's subscription to one course: the student's events, narrowed by `scope` to that course's. `windowClosesAt` is when the payment window
 // closes, from the time the subscription recorded; null for a subscription stored before it recorded one, which has no window.
@@ -55,7 +55,10 @@ export const SubscriptionModel = defineModel({
     windowClosesAt: d.subscribedAt === undefined ? null : DateTime.add(d.subscribedAt, { days: PAYMENT_WINDOW_DAYS })
   }))
   .on(SubscriptionPaid, (s) => ({ ...s, status: "paid" as const }))
-  .on(SubscriptionReleased, (s) => ({ ...s, status: "released" as const }));
+  .on(SubscriptionReleased, (s) => ({ ...s, status: "released" as const }))
+  // A cancelled course ends its subscriptions: none can be paid any more, and the payment deadline finds nothing to release. A paid one is owed a
+  // refund, which this app does not model.
+  .on(CourseCancelled, (s) => ({ ...s, status: "released" as const }));
 
 const windowClosed = (s: { readonly windowClosesAt: DateTime.Utc | null }, now: DateTime.Utc): boolean =>
   s.windowClosesAt !== null && DateTime.isGreaterThanOrEqualTo(now, s.windowClosesAt);

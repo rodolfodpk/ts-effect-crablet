@@ -5,14 +5,14 @@ import { describe, test } from "bun:test";
 import path from "node:path";
 import { loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
 import { assertModelImpact, eventFactsFromFixtures, modelFactsOf } from "@crablet/commands/ModelImpact";
-import { CourseDefined, CourseModel, StudentModel, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
+import { CourseCancelled, CourseDefined, CourseModel, StudentModel, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
 import { CoursePriced, CoursePricing, ReceiptSent, SubscriptionModel, SubscriptionPaid } from "../src/domain/Payments.ts";
 import { CourseConfirmed, CourseReadiness, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
 
 describe("the course decision models", () => {
   test("every event type that carries a model's binding tag is accounted for", () => {
     assertModelImpact({
-      events: eventFactsFromFixtures([CourseDefined, StudentSubscribed, SubscriptionReleased, TeacherAssigned, RoomBooked, CourseConfirmed, CoursePriced, SubscriptionPaid, ReceiptSent], loadEventFixtures(path.join(import.meta.dir, "fixtures/events"))),
+      events: eventFactsFromFixtures([CourseDefined, StudentSubscribed, SubscriptionReleased, CourseCancelled, TeacherAssigned, RoomBooked, CourseConfirmed, CoursePriced, SubscriptionPaid, ReceiptSent], loadEventFixtures(path.join(import.meta.dir, "fixtures/events"))),
       models: [modelFactsOf("CourseModel", CourseModel.of({ id: "c" })), modelFactsOf("StudentModel", StudentModel.of({ id: "s" })), modelFactsOf("CourseReadiness", CourseReadiness.of({ id: "c" })),
         modelFactsOf("CoursePricing", CoursePricing.of({ id: "c" })),
         modelFactsOf("SubscriptionModel", SubscriptionModel.of({ id: "s", courseId: "c" }))],

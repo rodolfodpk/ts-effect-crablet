@@ -145,6 +145,7 @@ export const Problem = Schema.Union([
   Schema.TaggedStruct("CourseFull", { courseId: Schema.String, capacity: Schema.Int }),
   Schema.TaggedStruct("StudentAtLimit", { studentId: Schema.String, limit: Schema.Int }),
   Schema.TaggedStruct("CourseAlreadyDefined", { courseId: Schema.String, capacity: Schema.Int }),
+  Schema.TaggedStruct("CourseWasCancelled", { courseId: Schema.String }),
   // The framework's own refusals: a 400 (the input did not parse) and a 409 (the decision was made on state that changed, and the retries ran out).
   Schema.TaggedStruct("Rejected", { title: Schema.String, detail: Schema.String }),
   // The derived client checks a request against the API's own Schema BEFORE sending it, and checks the answer against the
@@ -179,6 +180,8 @@ export const problemFromError = (error: CallError): Problem => {
         return { _tag: "StudentAtLimit", studentId: error.fields.studentId, limit: error.fields.limit };
       case "CourseAlreadyDefined":
         return { _tag: "CourseAlreadyDefined", courseId: error.fields.courseId, capacity: error.fields.capacity };
+      case "CourseWasCancelled":
+        return { _tag: "CourseWasCancelled", courseId: error.fields.courseId };
       default: {
         // a new declared error with no case above does not compile: `error` would not be `never`
         const unhandled: never = error;

@@ -1,6 +1,6 @@
 import { defineView } from "@crablet/views/ProjectedView";
 import { integer, text, viewTable } from "@crablet/views/ViewTable";
-import { StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
+import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
 import { CourseConfirmed, RoomBooked, TeacherAssigned } from "../domain/CourseStart.ts";
 
 export const COURSE_READINESS_VIEW = "course-readiness-view";
@@ -19,5 +19,6 @@ export const CourseReadinessView = defineView(COURSE_READINESS_VIEW, { tables: [
   .on(RoomBooked, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { room: d.room } }))
   .on(StudentSubscribed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { add: { students: 1 } }))
   .on(SubscriptionReleased, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { add: { students: -1 } }))
-  .on(CourseConfirmed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "confirmed" } }));
+  .on(CourseConfirmed, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "confirmed" } }))
+  .on(CourseCancelled, (d) => courseReadinessTable.upsert({ course_id: d.courseId }, { set: { status: "cancelled" } }));
 // #endregion view

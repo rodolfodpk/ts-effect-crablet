@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { checkImplementations } from "@crablet/commands-http";
 import { courseContracts } from "../src/CourseApi.ts";
 import { DefineCourse, Subscribe } from "../src/domain/Enrolment.ts";
-import { CourseAlreadyDefined, CourseFull, CourseNotFound, DefineCourseContract, StudentAtLimit, SubscribeContract } from "../src/domain/enrolment.contract.ts";
+import { CourseAlreadyDefined, CourseFull, CourseNotFound, CourseWasCancelled, DefineCourseContract, StudentAtLimit, SubscribeContract } from "../src/domain/enrolment.contract.ts";
 
 describe("course contracts", () => {
   test("every contract has its command, built from it", () => {
@@ -16,8 +16,8 @@ describe("course contracts", () => {
     expect(courseContracts.map((c) => c.name)).toEqual(["define_course", "subscribe"]);
   });
 
-  test("subscribe declares the three domain errors it can fail with; define_course declares one", () => {
-    expect(SubscribeContract.errors).toEqual([CourseNotFound, CourseFull, StudentAtLimit]);
+  test("subscribe declares the four domain errors it can fail with; define_course declares one", () => {
+    expect(SubscribeContract.errors).toEqual([CourseNotFound, CourseFull, StudentAtLimit, CourseWasCancelled]);
     expect(DefineCourseContract.errors).toEqual([CourseAlreadyDefined]);
   });
 

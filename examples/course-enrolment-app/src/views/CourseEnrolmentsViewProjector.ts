@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { defineView } from "@crablet/views/ProjectedView";
 import { integer, raw, text, viewTable } from "@crablet/views/ViewTable";
-import { StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
+import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
 
 export const COURSE_ENROLMENTS_VIEW = "course-enrolments-view";
 
@@ -30,5 +30,7 @@ export const CourseEnrolmentsView = defineView(COURSE_ENROLMENTS_VIEW, { tables:
       )
     )
   )
-  .on(SubscriptionReleased, (d) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: d.studentId }));
+  .on(SubscriptionReleased, (d) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: d.studentId }))
+  // One row per student the cancellation was tagged with: a handler may return several operations.
+  .on(CourseCancelled, (d) => d.studentIds.map((studentId) => courseEnrolmentsTable.remove({ course_id: d.courseId, student_id: studentId })));
 // #endregion hand-written

@@ -134,5 +134,37 @@
     },
     "tags": [],
     "note": "the payment deadline Subscribe sets (ADR-0043)"
+  },
+  {
+    "type": "CourseCancelled",
+    "payload": {
+      "courseId": "c-1",
+      "missing": [
+        "room",
+        "students"
+      ],
+      "studentIds": [
+        "s-1",
+        "s-2"
+      ]
+    },
+    "tags": [
+      "course_id=c-1",
+      "student_id=s-1",
+      "student_id=s-2"
+    ],
+    "note": "a course not ready in time (CancelUnreadyCourse)"
+  },
+  {
+    "type": "crablet.DeadlineScheduled",
+    "payload": {
+      "command": "cancel_unready_course",
+      "input": {
+        "courseId": "c-1"
+      },
+      "dueAt": "2026-11-16T09:00:00.000Z"
+    },
+    "tags": [],
+    "note": "the readiness deadline DefineCourse sets (ADR-0043)"
   }
 ]
