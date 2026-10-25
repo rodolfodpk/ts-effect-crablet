@@ -1,10 +1,10 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md. A leader reserves a connection from the client's pool and holds it. When the pool has none to give (its connections are all held: by other
 // leaders, by the LISTENs, which with @effect/sql-pg take one each), `reserve` used to wait for ever, silently: the module never led, and nothing said why. Found behind PgBouncer, with a
-// session pool of 5 against the 7 connections a process holds for good (3 leader locks, 4 LISTEN). Now the wait has a limit and fails with a message that names the pool, and it gives back
+// session pool of 5 against the 7 connections a process then held for good (3 leader locks, 4 LISTEN; one lock session since ADR-0046). Now the wait has a limit and fails with a message that names the pool, and it gives back
 // whatever it had taken, so a later attempt, once a connection is free, works.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
@@ -24,10 +24,15 @@ describe("a leader whose pool has no connection to give", () => {
   it("fails within the limit, saying the pool is the reason, and a later attempt works once a connection is free", { timeout: 30_000 }, async () => {
     const rt = runtimeWithPool(2);
     try {
-      // two other leaders hold both connections of the pool for good
-      const holdA = await rt.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => tryAcquireGlobalLeader(sql, newKey())));
-      const holdB = await rt.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => tryAcquireGlobalLeader(sql, newKey())));
-      assert.ok(holdA !== null && holdB !== null);
+      // both connections of the pool are held for good (as LISTENs hold theirs): the leaders of one process share one session (ADR-0046), so the
+      // pool is filled by reserving its connections directly
+      const hold = async () => {
+        const scope = await rt.runPromise(Scope.make());
+        await rt.runPromise(Scope.provide(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.reserve), scope));
+        return { release: () => rt.runPromise(Scope.close(scope, Exit.void)) };
+      };
+      const holdA = await hold();
+      const holdB = await hold();
 
       const started = Date.now();
       const exit = await rt.runPromiseExit(Effect.flatMap(SqlClient.SqlClient, (sql) => tryAcquireGlobalLeader(sql, newKey(), { reserveTimeout: "400 millis" })));
@@ -37,11 +42,11 @@ describe("a leader whose pool has no connection to give", () => {
       assert.match(JSON.stringify(exit), /no connection|pool|maxConnections/i, "and the message names the pool");
 
       // nothing was left taken by the attempt that gave up: free one connection and the next attempt gets it at once
-      await rt.runPromise(holdA!.release());
+      await holdA.release();
       const later = await rt.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => tryAcquireGlobalLeader(sql, newKey(), { reserveTimeout: "2 seconds" })));
       assert.ok(later !== null, "a leader can be taken once a connection is free");
       await rt.runPromise(later!.release());
-      await rt.runPromise(holdB!.release());
+      await holdB.release();
     } finally {
       await rt.dispose();
     }

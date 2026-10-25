@@ -52,7 +52,7 @@ export const makeOutboxProcessor = (
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
-    const countSession = yield* holdSessionOnce("the outbox module", wakeups === "off" ? 1 : 2);
+    const countSession = yield* holdSessionOnce("the outbox module", wakeups === "off" ? 0 : 1);
 
     return yield* makeEventProcessor({
       configs,
@@ -64,7 +64,7 @@ export const makeOutboxProcessor = (
       // config.processorId decodes to a topic that's guaranteed to be a key in topicByName.
       selectionOf: (config) => topicByName.get(TopicPublisherPair.fromKey(config.processorId).topic)!,
       instanceId,
-      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its lock, and its LISTEN when wake-ups are on).
+      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its LISTEN when wake-ups are on; the process's one lock session is counted by the first module).
       acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY, deps.leader)),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });

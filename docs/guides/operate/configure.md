@@ -16,8 +16,8 @@ Either way, run at least two instances, so a follower is ready to take over each
 
 ## 2. The pool
 
-Start from **what is held for good, plus the commands you want at once**. A process that leads all three modules holds 7 connections for good; a
-follower holds 4; an API-only process holds 1. Then check the fleet: *instances × pool* must stay under the server's `max_connections`, with room for
+Start from **what is held for good, plus the commands you want at once**. A process that leads all three modules holds 5 connections for good (one
+session for every lock, three `LISTEN`s, the views' progress hub); a follower holds 4; an API-only process holds 1. Then check the fleet: *instances × pool* must stay under the server's `max_connections`, with room for
 migrations and monitoring. Running out is quiet: commands fail and nothing in the logs says why ([size the pool](run-in-production.md#size-the-pool)).
 
 ## 3. A pooler, or not

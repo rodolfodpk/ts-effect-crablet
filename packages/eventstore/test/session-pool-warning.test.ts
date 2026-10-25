@@ -25,11 +25,12 @@ describe("sessionPoolWarning", () => {
   });
 });
 
-// The framework counts what starts (`holdSession`): each module 2 (its leader lock and its LISTEN; 1 with wake-ups off), the views' progress hub 1.
+// The framework counts what starts (`holdSession`): the process's lock session once (ADR-0046), each module's LISTEN (none with wake-ups off), the views'
+// progress hub 1.
 describe("holdSession", () => {
   const sessionWith = (maxConnections: number | undefined) =>
     Effect.gen(function* () {
-      return { sql: null as never, pg: null as never, maxConnections, held: yield* Ref.make(0), warned: yield* Ref.make(false) };
+      return { sql: null as never, pg: null as never, maxConnections, held: yield* Ref.make(0), warned: yield* Ref.make(false), lockSessionCounted: yield* Ref.make(false) };
     });
   const start = (session: SessionClients, ...holds: ReadonlyArray<number>) =>
     Effect.runPromise(Effect.provideService(Effect.forEach(holds, (n, i) => holdSession(`part ${i}`, n), { discard: true }), SessionClients, session));
@@ -52,9 +53,16 @@ describe("holdSession", () => {
 
   test("a module counts once, however many times it tries for its lock", async () => {
     const session = await Effect.runPromise(sessionWith(10));
-    const once = await Effect.runPromise(holdSessionOnce("a module", 2));
+    const once = await Effect.runPromise(holdSessionOnce("a module", 1));
     await Effect.runPromise(Effect.provideService(Effect.all([once, once, once], { discard: true }), SessionClients, session));
-    expect(await Effect.runPromise(Ref.get(session.held))).toBe(2);
+    expect(await Effect.runPromise(Ref.get(session.held))).toBe(2); // the process's lock session, and the module's LISTEN
+  });
+
+  test("the lock session counts once for the process, however many modules lead (ADR-0046): three modules and the hub are 5", async () => {
+    const session = await Effect.runPromise(sessionWith(10));
+    const modules = await Effect.runPromise(Effect.all([holdSessionOnce("views", 1), holdSessionOnce("automations", 1), holdSessionOnce("outbox", 1)]));
+    await Effect.runPromise(Effect.provideService(Effect.all([...modules, holdSession("hub", 1)], { discard: true }), SessionClients, session));
+    expect(await Effect.runPromise(Ref.get(session.held))).toBe(5);
   });
 
   test("without session clients there is nothing to count", async () => {
