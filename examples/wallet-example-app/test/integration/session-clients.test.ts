@@ -42,14 +42,14 @@ const pgConfig = (applicationName: string) => ({
 // Which application_name holds each leader lock, and which hold a LISTEN.
 const whoHolds = async () => {
   const keys = [OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY, AUTOMATIONS_LOCK_KEY];
-  const locks = await probe.query<{ key: string; application_name: string }>(
-    `SELECT (((l.classid::bigint << 32) | l.objid::bigint))::text AS key, a.application_name
+  const locks = await probe.query<{ key: string; application_name: string; pid: number }>(
+    `SELECT (((l.classid::bigint << 32) | l.objid::bigint))::text AS key, a.application_name, a.pid
        FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
       WHERE l.locktype = 'advisory' AND l.granted AND (((l.classid::bigint << 32) | l.objid::bigint)) = ANY($1::bigint[])`,
     [keys.map(String)]
   );
   const listens = await probe.query<{ application_name: string }>(`SELECT application_name FROM pg_stat_activity WHERE query ILIKE 'LISTEN%' AND state = 'idle'`);
-  return { lockHolders: locks.rows.map((r) => r.application_name), listeners: listens.rows.map((r) => r.application_name) };
+  return { lockHolders: locks.rows.map((r) => r.application_name), lockSessions: new Set(locks.rows.map((r) => r.pid)).size, listeners: listens.rows.map((r) => r.application_name) };
 };
 
 const withApp = async (session: boolean, body: (app: RunningWalletApp) => Promise<void>) => {
@@ -60,7 +60,7 @@ const withApp = async (session: boolean, body: (app: RunningWalletApp) => Promis
     // the three roles have taken their locks, and the LISTEN connections are up
     for (let i = 0; i < 100; i++) {
       const w = await whoHolds();
-      if (w.lockHolders.length === 3 && w.listeners.length >= 4) break;
+      if (w.lockHolders.length === 3 && w.listeners.length >= 1) break;
       await sleep(100);
     }
     await body(app);
@@ -75,8 +75,10 @@ describe("the leader locks and LISTEN on a session connection of their own (opti
     await withApp(true, async (app) => {
       const w = await whoHolds();
       assert.deepStrictEqual(w.lockHolders, ["crablet-session", "crablet-session", "crablet-session"], "views, automations and outbox lead from the session client");
-      // 3 modules' wake-ups and the views' progress hub: with @effect/sql-pg each LISTEN holds a pooled connection, so with the 3 leader locks the session client keeps 7 for good
-      assert.strictEqual(w.listeners.length, 4, "four LISTENs: the three modules' wake-ups and the views' progress hub");
+      // The 3 locks on one session (ADR-0046), and the 3 modules' wake-ups and the views' progress hub on one LISTEN connection (`sharedListen`): the
+      // session client keeps 2 for good (it was 7 with a connection per lock and per LISTEN).
+      assert.strictEqual(w.lockSessions, 1, "one session holds the three locks");
+      assert.strictEqual(w.listeners.length, 1, "one LISTEN connection for the three modules' wake-ups and the views' progress hub");
       assert.deepStrictEqual([...new Set(w.listeners)], ["crablet-session"], "every LISTEN, the pollers' wake-ups and the views' progress hub, is on the session client");
 
       // and the application still works on its own client: a command, then a consistent read of the view it feeds
@@ -92,7 +94,8 @@ describe("the leader locks and LISTEN on a session connection of their own (opti
     await withApp(false, async () => {
       const w = await whoHolds();
       assert.deepStrictEqual(w.lockHolders, ["crablet-main", "crablet-main", "crablet-main"]);
-      assert.strictEqual(w.listeners.length, 4);
+      assert.strictEqual(w.lockSessions, 1);
+      assert.strictEqual(w.listeners.length, 1);
       assert.deepStrictEqual([...new Set(w.listeners)], ["crablet-main"]);
     });
   });

@@ -150,10 +150,11 @@ describe("GET /api/views/changes", () => {
 
       const sessions = Number((await admin.query("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()")).rows[0].n);
       const listeners = Number(
-        (await admin.query("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%crablet_view_progress%' AND pid <> pg_backend_pid()")).rows[0].n
+        (await admin.query("SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%' AND pid <> pg_backend_pid()")).rows[0].n
       );
-      assert.strictEqual(listeners, 1, "one LISTEN on the progress channel for the whole process");
-      assert.ok(sessions <= 12, `${sessions} database sessions with 200 feeds open (the pool is 10, plus the pollers' listeners)`);
+      // The hub's LISTEN shares the process's one LISTEN connection with the pollers' wake-ups (ADR-0046), so the session shows whichever LISTEN came last.
+      assert.strictEqual(listeners, 1, "one LISTEN connection for the whole process: the progress hub's and the pollers' wake-ups");
+      assert.ok(sessions <= 12, `${sessions} database sessions with 200 feeds open (the pool is 10, plus the LISTEN connection)`);
 
       const write = await define(app.baseUrl, `feed-many-${crypto.randomUUID().slice(0, 8)}`);
       const writeCursor = seatsViewPartOf(write);
@@ -176,9 +177,9 @@ describe("GET /api/views/changes", () => {
       await new Promise((r) => setTimeout(r, 300));
       const before = feeds.map((f) => f.frames.length);
       const killed = await admin.query(
-        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%crablet_view_progress%' AND pid <> pg_backend_pid()"
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%' AND pid <> pg_backend_pid()"
       );
-      assert.strictEqual(killed.rowCount, 1, "exactly the hub's session was terminated");
+      assert.strictEqual(killed.rowCount, 1, "exactly the process's LISTEN connection, the hub's among them, was terminated");
       await waitFor(() => feeds.every((f, i) => f.frames.length > before[i]!), 20_000);
       assert.ok(feeds.every((f, i) => f.frames.length > before[i]!), "each feed said where the view is again after the reconnect");
 

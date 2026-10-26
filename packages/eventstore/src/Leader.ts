@@ -41,8 +41,8 @@ export interface LeaderOptions {
   readonly heartbeat?: Duration.Input;
   // How long a check may take before it counts as failed (default 2 seconds): a connection that answers nothing is as lost as one that errors.
   readonly verifyTimeout?: Duration.Input;
-  // How long to wait for the client's pool to give the connection the lock is taken on (default 10 seconds). A pool whose connections are all held (by other leaders, by LISTENs: with
-  // @effect/sql-pg each takes one for as long as it lasts) gives none, and a wait with no limit made the module never lead, silently. On the limit the attempt fails saying so.
+  // How long to wait for the client's pool to give the connection the lock is taken on (default 10 seconds). A pool whose connections are all busy (commands, view batches) gives none,
+  // and a wait with no limit made the module never lead, silently. On the limit the attempt fails saying so.
   readonly reserveTimeout?: Duration.Input;
   // Consecutive failed checks before the leader is lost (default 2): one slow answer does not end leadership.
   readonly failuresBeforeLost?: number;
@@ -148,6 +148,8 @@ interface Session {
   monitor: Fiber.Fiber<void> | null;
   // Whether `idle_session_timeout` was set on it (ADR-0045), so giving it back resets it.
   leased: boolean;
+  // A statement on it did not answer in time: it is being given back once that statement is interrupted, and nothing else may close it.
+  abandoned: boolean;
 }
 
 // The leaders of one client with one set of options: at most one session at a time, changed only under the permit.
@@ -222,10 +224,44 @@ export const tryAcquireGlobalLeader = (
           // finds the lock free. It is a wildcard on `crablet_events`, the channel every poller already listens to, so followers try for the lock now
           // instead of when their retry timer fires. A session that died cannot announce: its followers wait for their timer. On a dead connection the
           // unlock fails (or, on a half-open one, would hang): bound it, and ignore it. The lock is gone with the session.
+          // An abandoned session is given back by `abandon`, after its late statement: nothing to unlock on it, and it is not closed here.
+          if (session.abandoned) return;
           yield* within(verifyTimeout, session.connection.execute("SELECT pg_advisory_unlock($1), pg_notify($2, '*')", [member.key.toString(), EVENTS_CHANNEL], undefined)).pipe(Effect.ignore);
           if (session.members.size === 0) yield* closeSession(session);
         })
       );
+
+    // A statement on the session that did not answer within `verifyTimeout`: the connection cannot be trusted (on a healthy one an attempt at a lock
+    // answers at once), and the statement may still take effect, so every leader on it is lost and the session is given back only once the statement
+    // has been interrupted: the driver then retires the connection, and a lock the late statement may have taken goes with it. Runs under the permit.
+    const abandon = (session: Session, late: Fiber.Fiber<unknown, unknown>): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        session.abandoned = true;
+        if (sessions.current === session) sessions.current = null;
+        for (const member of session.members.values()) {
+          if (member.state.status !== "leading") continue;
+          member.state = { status: "lost", failures: member.state.failures };
+          yield* Effect.forkDetach(release(session, member));
+        }
+        yield* Effect.forkDetach(Effect.andThen(Fiber.interrupt(late), closeSession(session)));
+      });
+
+    // A statement of an attempt, bounded: no answer within `verifyTimeout` abandons the session and fails the attempt (it is retried).
+    const attempt = <A>(session: Session, statement: Effect.Effect<A, SqlError>, what: string): Effect.Effect<A, SqlError> =>
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkDetach(statement);
+        const answer = yield* Effect.timeoutOption(Fiber.join(fiber), verifyTimeout);
+        if (Option.isSome(answer)) return answer.value;
+        yield* abandon(session, fiber);
+        return yield* Effect.fail(
+          new SqlError({
+            reason: new ConnectionError({
+              cause: new Error("no answer"),
+              message: `the leader session did not answer ${what} for the lock ${lockKey} within ${Duration.toMillis(verifyTimeout)} ms: its leaders are lost, and the next attempt takes a new session`
+            })
+          })
+        );
+      });
 
     // One check of the session, applied to the given leaders: a key missing from the answer, or no answer, is a failed check for its leader.
     const check = (session: Session, members: ReadonlyArray<Member>): Effect.Effect<ReadonlyMap<Member, boolean>> =>
@@ -251,7 +287,7 @@ export const tryAcquireGlobalLeader = (
             new SqlError({
               reason: new ConnectionError({
                 cause: new Error("reserve timed out"),
-                message: `no connection from the pool in ${Duration.toMillis(reserveTimeout)} ms for the leader lock ${lockKey}: the pool's connections are all held (the process's lock session and each LISTEN hold one for as long as they last). Raise maxConnections.`
+                message: `no connection from the pool in ${Duration.toMillis(reserveTimeout)} ms for the leader lock ${lockKey}: the pool's connections are all busy. Raise maxConnections.`
               })
             })
           )
@@ -269,18 +305,21 @@ export const tryAcquireGlobalLeader = (
         if (session === null) {
           const scope = yield* Scope.make();
           const connection = yield* reserve(scope).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
-          session = { scope, connection, members: new Map(), monitor: null, leased: false };
+          session = { scope, connection, members: new Map(), monitor: null, leased: false, abandoned: false };
         }
         const fresh = session.members.size === 0;
         const live = session;
 
-        // On a replica nothing is taken: the CASE evaluates the lock only on a primary.
-        const acquired = yield* live.connection
-          .execute("SELECT CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock($1) END AS acquired", [key], undefined)
-          .pipe(
-            Effect.map((rows) => Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired)),
-            Effect.onError(() => (fresh ? closeSession(live) : Effect.void))
-          );
+        // On a replica nothing is taken: the CASE evaluates the lock only on a primary. Bounded: on a shared session a statement that hangs (a silent
+        // partition) would otherwise hold the permit, and with it every leader of the process, until the TCP keepalives give up.
+        const acquired = yield* attempt(
+          live,
+          live.connection.execute("SELECT CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock($1) END AS acquired", [key], undefined),
+          "the attempt"
+        ).pipe(
+          Effect.map((rows) => Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired)),
+          Effect.onError(() => (fresh && !live.abandoned ? closeSession(live) : Effect.void))
+        );
         if (!acquired) {
           if (fresh) yield* closeSession(live);
           return null;
@@ -289,9 +328,9 @@ export const tryAcquireGlobalLeader = (
         // The lease, set with the session's first lock: from now on the server ends this session if it stays idle longer than this, and the heartbeat
         // keeps it from being idle. If the setting cannot be made the lock is given back, and the attempt fails and is retried.
         if (fresh && idleTimeout !== null) {
-          yield* live.connection.execute(`SET idle_session_timeout = '${Duration.toMillis(idleTimeout)}ms'`, [], undefined).pipe(
-            Effect.tapError(() => live.connection.execute("SELECT pg_advisory_unlock($1)", [key], undefined).pipe(Effect.ignore)),
-            Effect.onError(() => closeSession(live))
+          yield* attempt(live, live.connection.execute(`SET idle_session_timeout = '${Duration.toMillis(idleTimeout)}ms'`, [], undefined), "the lease").pipe(
+            Effect.tapError(() => (live.abandoned ? Effect.void : within(verifyTimeout, live.connection.execute("SELECT pg_advisory_unlock($1)", [key], undefined)).pipe(Effect.ignore))),
+            Effect.onError(() => (live.abandoned ? Effect.void : closeSession(live)))
           );
           live.leased = true;
         }

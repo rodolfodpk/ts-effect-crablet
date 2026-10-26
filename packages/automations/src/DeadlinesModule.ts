@@ -75,7 +75,7 @@ export const makeDeadlinesProcessor = (
       backoffEnabled: false
     });
     const selection = EventSelection.of({ eventTypes: new Set([DeadlineScheduled.type]) });
-    const countSession = yield* holdSessionOnce("the deadlines module", 0);
+    const countSession = yield* holdSessionOnce("the deadlines module");
 
     return yield* makeEventProcessor({
       configs: [config],

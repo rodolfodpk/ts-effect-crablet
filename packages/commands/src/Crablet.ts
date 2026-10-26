@@ -37,8 +37,8 @@ export interface CrabletOptions {
   readonly audit?: Partial<AuditConfig>;
   // A direct connection to the database for what cannot go through a pooler in transaction mode (PgBouncer): a module's leader (a session-level advisory lock) and LISTEN.
   // Give it the database's own endpoint (same shape as `pg`) while `pg` points at the pooler. Omitted, they use `pg`, as before. Its `maxConnections` must cover what the process
-  // keeps for good (5 for the three modules and the api: one lock session, a LISTEN each and the hub's; 1 for the api alone); the framework counts that as the modules start and warns once if the pool is smaller
-  // (`holdSession`, SessionClients.ts). See docs/guides/operate/run-in-production.md.
+  // keeps for good in it, the one lock session of every module it leads (ADR-0046), plus the attempts of the modules that do not lead; its LISTENs share one connection beside the pool. The
+  // framework counts the lock session as the first module starts and warns once if the pool is smaller (`holdSession`, SessionClients.ts). See docs/guides/operate/run-in-production.md.
   readonly session?: PgConfig;
 }
 

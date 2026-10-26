@@ -135,4 +135,26 @@ describe("a silent partition between the leader and Postgres (ADR-0045)", () => 
       await one.dispose();
     }
   });
+
+  it("on a shared session cut silently, an attempt at another module's lock fails within verifyTimeout instead of holding every leader of the process (ADR-0046)", { timeout: 30_000 }, async () => {
+    const proxy = await partitionableProxy();
+    const rtA = runtimeTo("127.0.0.1", proxy.port);
+    const options = { ...fast, serverIdleTimeout: "off" } as const; // the heartbeat alone; the server keeps the session
+    try {
+      const leader = (await acquire(rtA, newKey(), options))!;
+      assert.ok(leader.isLeader());
+      proxy.cut();
+      const started = Date.now();
+      // Another module of the same process tries for its lock on the same (now silent) session, as soon as the cut happens.
+      const tried = await rtA.runPromise(Effect.exit(Effect.flatMap(SqlClient.SqlClient, (sql) => tryAcquireGlobalLeader(sql, newKey(), options))));
+      const took = Date.now() - started;
+      assert.ok(tried._tag === "Failure", "the attempt fails: the session did not answer");
+      assert.ok(took < 500 + 1_000, `within verifyTimeout (${took} ms)`);
+      await sleep(200);
+      assert.strictEqual(leader.isLeader(), false, "the leader on that session is lost with it");
+    } finally {
+      proxy.close();
+      void rtA.dispose().catch(() => {});
+    }
+  });
 });
