@@ -17,6 +17,7 @@ import { DeadlineFired } from "@crablet/commands/Deadline";
 import { DEADLINES_PROCESSOR_ID, makeDeadlinesProcessor, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
 import { makeDeadlinesManagementService } from "../../src/DeadlinesManagementService.ts";
 import { makeDeadlineEventHandler } from "../../src/internal/DeadlineEventHandler.ts";
+import type { HandledPrefix } from "@crablet/event-poller/EventHandler";
 import { makeDeadlineFetcher, makeRecordFiring } from "../../src/internal/DeadlineStore.ts";
 
 type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
@@ -90,7 +91,10 @@ const seat = () => `seat-${crypto.randomUUID()}`;
 
 interface EventRow { readonly position: string; readonly type: string; readonly data: Record<string, unknown>; readonly causation_id: string | null }
 const eventsOf = (seatId: string) =>
-  query<EventRow>("SELECT position::text AS position, type, data, causation_id::text AS causation_id FROM crablet_events WHERE tags @> ARRAY[$1::text] ORDER BY transaction_id, position", [`seat_id=${seatId}`]);
+  query<EventRow & { readonly marker: string }>(
+    "SELECT position::text AS position, type, data, causation_id::text AS causation_id, transaction_id::text || ':' || position::text AS marker FROM crablet_events WHERE tags @> ARRAY[$1::text] ORDER BY transaction_id, position",
+    [`seat_id=${seatId}`]
+  );
 // The deadline set by holding this seat (it has no tags: found by its input).
 const deadlineOf = async (seatId: string) =>
   (await query<EventRow>("SELECT position::text AS position, type, data, causation_id::text AS causation_id FROM crablet_events WHERE type = 'crablet.DeadlineScheduled' AND data -> 'input' ->> 'seatId' = $1", [seatId]))[0];
@@ -132,9 +136,10 @@ describe("deadlines against Postgres (ADR-0043)", () => {
       assert.deepStrictEqual((await eventsOf(id)).map((e) => e.type), ["DlpHeld"], "not fired before its due time");
 
       const events = await until(() => eventsOf(id), (es) => es.some((e) => e.type === "DlpReleased"), "the seat to be released");
-      assert.strictEqual(events.find((e) => e.type === "DlpReleased")!.causation_id, scheduled.position, "the release is caused by the deadline");
+      const released = events.find((e) => e.type === "DlpReleased")!;
+      assert.strictEqual(released.causation_id, scheduled.position, "the release is caused by the deadline");
       const fired = await until(() => firedFor(scheduled.position), (f) => f.length === 1, "the firing to be recorded");
-      assert.deepStrictEqual(fired[0]!.data, { deadlinePosition: scheduled.position, outcome: "appended", reason: null });
+      assert.deepStrictEqual(fired[0]!.data, { deadlinePosition: scheduled.position, outcome: "appended", reason: null, marker: released.marker }, "the marker is where the release ended");
       assert.deepStrictEqual(await rowFor(scheduled.position), [], "the row is gone");
     });
   });
@@ -150,9 +155,10 @@ describe("deadlines against Postgres (ADR-0043)", () => {
       const ghostDeadline = (await deadlineOf(ghost))!;
       const a = await until(() => firedFor(boughtDeadline.position), (f) => f.length === 1, "the bought seat's deadline");
       const b = await until(() => firedFor(ghostDeadline.position), (f) => f.length === 1, "the ghost seat's deadline");
-      assert.deepStrictEqual([a[0]!.data["outcome"], a[0]!.data["reason"]], ["noop", "BOUGHT"]);
-      assert.deepStrictEqual([b[0]!.data["outcome"], b[0]!.data["reason"]], ["failed", "DlpNeverHeld"]);
-      assert.deepStrictEqual((await eventsOf(bought)).map((e) => e.type), ["DlpHeld", "DlpBought"], "nothing released");
+      const boughtEvents = await eventsOf(bought);
+      assert.deepStrictEqual([a[0]!.data["outcome"], a[0]!.data["reason"], a[0]!.data["marker"]], ["noop", "BOUGHT", boughtEvents.at(-1)!.marker], "a noop points at the write its model read last");
+      assert.deepStrictEqual([b[0]!.data["outcome"], b[0]!.data["reason"], b[0]!.data["marker"]], ["failed", "DlpNeverHeld", null]);
+      assert.deepStrictEqual(boughtEvents.map((e) => e.type), ["DlpHeld", "DlpBought"], "nothing released");
       const [status] = await query<{ status: string }>("SELECT status FROM crablet_deadline_progress WHERE processor_name = $1", [DEADLINES_PROCESSOR_ID]);
       assert.strictEqual(status!.status, "ACTIVE");
     });
@@ -170,7 +176,7 @@ describe("deadlines against Postgres (ADR-0043)", () => {
       const audit = yield* CommandAuditStore;
       const execute = (command: never, input: never) =>
         executor.runDecoded(command, input).pipe(Effect.provideService(EventStore, store), Effect.provideService(CommandAuditStore, audit), Effect.provideService(SqlClient.SqlClient, sql));
-      const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute as never, makeRecordFiring(sql, store));
+      const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute as never, makeRecordFiring(sql, store), 30_000);
       const fetched = (yield* (yield* makeDeadlineFetcher()).fetchEvents(undefined as never, undefined as never, 100)).filter((e: StoredEvent) => e.position.toString() === scheduled.position);
       assert.strictEqual(fetched.length, 1);
       yield* handler.handle(DEADLINES_PROCESSOR_ID, fetched);
@@ -179,6 +185,50 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     await run(handleTwice);
     assert.deepStrictEqual((await eventsOf(id)).map((e) => e.type), ["DlpHeld", "DlpReleased"], "released once");
     assert.strictEqual((await firedFor(scheduled.position)).length, 1, "one DeadlineFired");
+  });
+
+  it("a command that takes longer than fireTimeoutMs is a fault: the batch stops there, nothing is recorded, and the deadline stays due", { timeout: 30_000 }, async () => {
+    const id = seat();
+    await exec(Hold, { seatId: id, forMs: 0 });
+    const scheduled = (await deadlineOf(id))!;
+    const fetchIt = Effect.map(Effect.flatMap(makeDeadlineFetcher(), (f) => f.fetchEvents(undefined as never, undefined as never, 100)), (es) =>
+      es.filter((e: StoredEvent) => e.position.toString() === scheduled.position)
+    );
+    const handlerWith = (execute: unknown, fireTimeoutMs: number) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const store = yield* EventStore;
+        return makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute as never, makeRecordFiring(sql, store), fireTimeoutMs);
+      });
+    // A command that never ends (a lock it waits on, a remote call that hangs).
+    const stuck = Effect.gen(function* () {
+      const handler = yield* handlerWith(() => Effect.never, 200);
+      return yield* Effect.flip(handler.handle(DEADLINES_PROCESSOR_ID, yield* fetchIt));
+    });
+    const started = Date.now();
+    const prefix = (await run(stuck)) as HandledPrefix;
+    assert.ok(Date.now() - started < 5_000, "the handler gave up at the timeout");
+    assert.strictEqual(prefix.handled, 0);
+    assert.strictEqual((prefix.cause as { _tag: string })._tag, "DeadlineFireTimedOut");
+    assert.deepStrictEqual(await firedFor(scheduled.position), [], "no firing recorded");
+    assert.strictEqual((await rowFor(scheduled.position)).length, 1, "still due: the next tick retries it");
+    assert.deepStrictEqual((await eventsOf(id)).map((e) => e.type), ["DlpHeld"]);
+
+    // The retry, with a command that answers: fired once.
+    await run(
+      Effect.gen(function* () {
+        const executor = yield* CommandExecutor;
+        const store = yield* EventStore;
+        const audit = yield* CommandAuditStore;
+        const sql = yield* SqlClient.SqlClient;
+        const execute = (command: never, input: never) =>
+          executor.runDecoded(command, input).pipe(Effect.provideService(EventStore, store), Effect.provideService(CommandAuditStore, audit), Effect.provideService(SqlClient.SqlClient, sql));
+        const handler = yield* handlerWith(execute, 30_000);
+        yield* handler.handle(DEADLINES_PROCESSOR_ID, yield* fetchIt);
+      })
+    );
+    assert.deepStrictEqual((await eventsOf(id)).map((e) => e.type), ["DlpHeld", "DlpReleased"]);
+    assert.strictEqual((await firedFor(scheduled.position)).length, 1);
   });
 
   it("the table can be rebuilt from the log: the deadlines scheduled and not fired", { timeout: 30_000 }, async () => {

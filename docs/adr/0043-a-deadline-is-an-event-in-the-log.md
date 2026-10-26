@@ -217,12 +217,17 @@ What was built follows the decisions above, with these differences and additions
   by `byModel()` points at the newest event its model read (ADR-0034), which is not the deadline, since no model reads one. Both are in the same
   transaction, so a read that waits on either sees the whole write; the course app's two tests that compared the markers now compare the transaction.
 
-The two open questions, answered for now:
+The two open questions, answered:
 
 - **A batch is fired one deadline at a time, and one slow command holds back the rest**, as in an automation's batch; a full batch waits for the next
-  interval, so a backlog (many deadlines due at once) drains at about `batchSize` per interval. A per-deadline timeout, on the outbox's precedent
-  (ADR-0036), is a follow-up if a slow command is ever seen.
-- **`DeadlineFired` does not record the command's marker.** It can be added later as an optional field without breaking stored events.
+  interval, so a backlog (many deadlines due at once) drains at about `batchSize` per interval. **A hung command is bounded** (2026-10-25, the outbox's
+  precedent, ADR-0036): `DeadlinesConfig.fireTimeoutMs` (30 s by default) caps one deadline's command, its conflict retries included. A timeout is a
+  fault, not the outcome `failed`: whether the command's transaction committed is not known, so nothing is recorded, the row stays, and the next tick
+  fires it again, its command's `idempotentBy` answering a repeat; `maxErrors` timeouts in a row make the processor `FAILED`, as any fault does.
+- **`DeadlineFired` records the command's marker** (2026-10-25): `marker`, the formatted read-your-writes marker of the command's result (where its
+  write ended, or for a `noop` the earlier write it pointed at, ADR-0034), and `null` for a failure. It is an optional key, so a firing stored before
+  it decodes; `Scenario.fireDue` records it the same way and returns it on each `FiredDeadline`. With it, something that sees a firing (an operator, a
+  test, a later process) can wait until a view shows the deadline's effect with `waitUntilProcessed`.
 
 Measured in `packages/automations/test/integration/deadlines.test.ts` (Postgres): the row is written with the append and not by one rolled back; a
 deadline does not fire before its time and fires after it, caused by it; `appended`, `noop` and `failed` outcomes, the processor going on after a

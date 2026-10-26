@@ -30,8 +30,13 @@ export const DEADLINES_PROCESSOR_ID = "deadlines";
 
 // Polling and batch, and how many errors in a row make it FAILED; the backoff settings do not apply (it does not back off). The interval is how late a
 // deadline can fire after it is due, and an idle poll is one index lookup on the leader: 5 seconds by default, for deadlines in business time.
-export type DeadlinesConfig = Partial<Omit<PollingConfig, "backoffEnabled" | "backoffThreshold" | "backoffMultiplier" | "backoffMaxSeconds">>;
+// `fireTimeoutMs`: how long one deadline's command may take (its retries included) before the firing counts as a fault and is retried, so that a hung
+// command does not hold back the deadlines after it for good (ADR-0036's precedent for the outbox's publish).
+export type DeadlinesConfig = Partial<Omit<PollingConfig, "backoffEnabled" | "backoffThreshold" | "backoffMultiplier" | "backoffMaxSeconds">> & {
+  readonly fireTimeoutMs?: number;
+};
 export const defaultDeadlinesPollingIntervalMs = 5_000;
+export const defaultDeadlineFireTimeoutMs = 30_000;
 
 export interface DeadlinesDeps {
   // The commands deadlines may name. Each must declare `idempotentBy` (a deadline can fire twice) and have no `personal(...)` field in its input.
@@ -69,9 +74,10 @@ export const makeDeadlinesProcessor = (
 
     const recordFiring = makeRecordFiring(sql, eventStore);
 
+    const { fireTimeoutMs, ...pollingConfig } = deps.config ?? {};
     const config = processorConfigOf(DEADLINES_PROCESSOR_ID, {
       pollingIntervalMs: defaultDeadlinesPollingIntervalMs,
-      ...deps.config,
+      ...pollingConfig,
       backoffEnabled: false
     });
     const selection = EventSelection.of({ eventTypes: new Set([DeadlineScheduled.type]) });
@@ -79,9 +85,9 @@ export const makeDeadlinesProcessor = (
 
     return yield* makeEventProcessor({
       configs: [config],
-      leaderRetryIntervalMs: resolvePollingConfig(deps.config).leaderElectionRetryIntervalMs,
+      leaderRetryIntervalMs: resolvePollingConfig(pollingConfig).leaderElectionRetryIntervalMs,
       fetcher: yield* makeDeadlineFetcher(),
-      handler: makeDeadlineEventHandler(commands, executeDecision, recordFiring),
+      handler: makeDeadlineEventHandler(commands, executeDecision, recordFiring, fireTimeoutMs ?? defaultDeadlineFireTimeoutMs),
       progressTracker: yield* makeDeadlineProgressTracker(),
       selectionOf: () => selection,
       instanceId: deps.instanceId ?? defaultInstanceId(),

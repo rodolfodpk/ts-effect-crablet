@@ -4,6 +4,7 @@ import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { byModel, deadline, defineCommand, defineEvent, defineModel, DomainError, emit, fail, Instant, noop, personal } from "../src/Domain.ts";
 import { checkDeadlineCommands, DeadlineFired, DeadlineScheduled } from "../src/Deadline.ts";
+import { formatMarker } from "@crablet/eventstore/Marker";
 import { given } from "../src/testing/Scenario.ts";
 
 const Held = defineEvent("DlHeld", { schema: Schema.Struct({ seatId: Schema.String, heldAt: Instant }), tags: (d) => ({ seat_id: d.seatId }) });
@@ -85,11 +86,14 @@ describe("Scenario.fireDue: what the deadlines processor does, at the scenario's
 
     const [fired] = await s.at(later(HOLD_MINUTES)).fireDue(ReleaseSeat);
     const deadlinePosition = s.log.find((e) => e.type === "crablet.DeadlineScheduled")!.position;
-    expect(fired).toMatchObject({ deadlinePosition, command: "dl_release_seat", outcome: "appended", reason: null });
+    const released = fired!.events.at(-1)!;
+    const marker = formatMarker({ transactionId: released.transactionId, position: released.position });
+    expect(fired).toMatchObject({ deadlinePosition, command: "dl_release_seat", outcome: "appended", reason: null, marker });
     expect(fired!.events.map((e) => [e.type, e.causationId])).toEqual([["DlReleased", deadlinePosition]]);
     const record = s.log.at(-1)!;
     expect([record.type, record.causationId, record.tags]).toEqual([DeadlineFired.type, deadlinePosition, []]);
-    expect(record.data).toEqual({ deadlinePosition: deadlinePosition.toString(), outcome: "appended", reason: null });
+    // The marker: where the command's write ended, to wait on a view that shows it.
+    expect(record.data).toEqual({ deadlinePosition: deadlinePosition.toString(), outcome: "appended", reason: null, marker });
   });
 
   test("a deadline fires once: a second fireDue finds nothing", async () => {
@@ -104,10 +108,13 @@ describe("Scenario.fireDue: what the deadlines processor does, at the scenario's
     await s.at(t0).when(Hold, { seatId: "bought" });
     await s.at(later(1)).when(Buy, { seatId: "bought" });
     expect(await s.at(later(2)).fireDue(ReleaseSeat)).toEqual([]); // nothing due yet
-    expect((await s.at(later(HOLD_MINUTES)).fireDue(ReleaseSeat)).map((f) => [f.outcome, f.reason])).toEqual([["noop", "BOUGHT"]]);
+    const bought = s.log.at(-1)!;
+    expect((await s.at(later(HOLD_MINUTES)).fireDue(ReleaseSeat)).map((f) => [f.outcome, f.reason, f.marker])).toEqual([
+      ["noop", "BOUGHT", formatMarker({ transactionId: bought.transactionId, position: bought.position })]
+    ]);
     // A deadline whose command answers with a domain error (the seat was never held): that is its outcome, and it is done.
     const ghost = given(deadline(ReleaseSeat, { seatId: "ghost", heldUntil: t0 }, { at: t0 }));
-    expect((await ghost.at(later(1)).fireDue(ReleaseSeat)).map((f) => [f.outcome, f.reason])).toEqual([["failed", "DlNeverHeld"]]);
+    expect((await ghost.at(later(1)).fireDue(ReleaseSeat)).map((f) => [f.outcome, f.reason, f.marker])).toEqual([["failed", "DlNeverHeld", null]]);
     expect(await ghost.at(later(2)).fireDue(ReleaseSeat)).toEqual([]);
   });
 

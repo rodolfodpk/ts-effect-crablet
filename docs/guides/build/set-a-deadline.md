@@ -120,8 +120,10 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
 ## What to know
 
 - **What is in the log.** `crablet.DeadlineScheduled { command, input, dueAt }` with the decision, and `crablet.DeadlineFired { deadlinePosition,
-  outcome, reason }` caused by it, where `outcome` is `appended`, `noop` or `failed` (a domain error, with its tag). The command's events are caused by
+  outcome, reason, marker }` caused by it, where `outcome` is `appended`, `noop` or `failed` (a domain error, with its tag). The command's events are caused by
   the deadline too, so a reader can see why the seat was released and for when it was set. Neither carries tags: no model of yours has to account for them.
+- **Waiting for its effect.** The firing's `marker` is where the command's write ended (for a `noop`, the earlier write it pointed at; `null` for a
+  failure): `waitUntilProcessed(view, parseMarker(marker))` waits until a view shows what the deadline did, as a client waits on a command's marker.
 - **Precision.** A deadline fires at or after its time, by the clock of the instance that fires it: late by up to one polling interval (5 seconds by
   default), plus the deadlines due before it. It is for business time, not timers in seconds. One due while no instance ran fires once when one starts.
 - **Moving one.** Set a new deadline and let the command tell which one is current: put the time it is for in its input and answer `noop` when the model
@@ -133,8 +135,8 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
   A command that sets its own next deadline names itself, so annotate its type from its input schema (`const Charge: Command<typeof input.Type, never,
   typeof input> = defineCommand(...)`): TypeScript cannot infer it from its own initializer. The whole case, with cancelling, a change of price and the
   catch-up after missed periods: `packages/commands/test/deadline-recurring.test.ts`.
-- **A fault stops it.** A command that fails with something other than a domain error (the database, a conflict that ran out of retries), a command the
-  processor was not given, or an input that no longer decodes: the batch is retried and, after `maxErrors`, the processor is `FAILED`, and the deadlines
+- **A fault stops it.** A command that fails with something other than a domain error (the database, a conflict that ran out of retries), a command
+  that takes longer than `fireTimeoutMs` (30 seconds by default), a command the processor was not given, or an input that no longer decodes: the batch is retried and, after `maxErrors`, the processor is `FAILED`, and the deadlines
   after it wait. Deadlines fire in due order, as a view's events are applied in order.
 - **Stored data.** A deadline names its command, and its input is the command's input as it was. Renaming a command or changing its input schema must keep
   the deadlines already set readable: give `assertEventFixtures` the `deadlineCommands`, with a `crablet.DeadlineScheduled` fixture for each.
