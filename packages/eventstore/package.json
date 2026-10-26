@@ -19,13 +19,14 @@
     "./CorrelationContext": "./src/CorrelationContext.ts",
     "./Listen": "./src/Listen.ts",
     "./SessionClients": "./src/SessionClients.ts",
+    "./ServerSettings": "./src/ServerSettings.ts",
     "./Leader": "./src/Leader.ts",
     "./NotifyPayload": "./src/NotifyPayload.ts",
     "./spec/Spec": "./src/spec/Spec.ts",
     "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "crablet": {
-    "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload"]
+    "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ServerSettings"]
   },
   "dependencies": {
     "effect": "4.0.2",
