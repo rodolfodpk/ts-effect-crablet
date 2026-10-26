@@ -234,15 +234,21 @@ export const tryAcquireGlobalLeader = (
     // A statement on the session that did not answer within `verifyTimeout`: the connection cannot be trusted (on a healthy one an attempt at a lock
     // answers at once), and the statement may still take effect, so every leader on it is lost and the session is given back only once the statement
     // has been interrupted: the driver then retires the connection, and a lock the late statement may have taken goes with it. Runs under the permit.
-    const abandon = (session: Session, late: Fiber.Fiber<unknown, unknown>): Effect.Effect<void> =>
+    // Every leader on the session is lost, released from another fiber (the last release gives the session back), and no attempt uses it again.
+    const loseAll = (session: Session): Effect.Effect<void> =>
       Effect.gen(function* () {
-        session.abandoned = true;
         if (sessions.current === session) sessions.current = null;
         for (const member of session.members.values()) {
           if (member.state.status !== "leading") continue;
           member.state = { status: "lost", failures: member.state.failures };
           yield* Effect.forkDetach(release(session, member));
         }
+      });
+
+    const abandon = (session: Session, late: Fiber.Fiber<unknown, unknown>): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        session.abandoned = true;
+        yield* loseAll(session);
         yield* Effect.forkDetach(Effect.andThen(Fiber.interrupt(late), closeSession(session)));
       });
 
@@ -301,6 +307,8 @@ export const tryAcquireGlobalLeader = (
         // process would both lead (ADR-0046, decision 2).
         if (sessions.current?.members.has(key)) return null;
 
+        // A session whose leaders are all lost is on its way back to the pool (their releases close it): an attempt takes a new one.
+        if (sessions.current !== null && ![...sessions.current.members.values()].some((m) => m.state.status === "leading")) sessions.current = null;
         let session = sessions.current;
         if (session === null) {
           const scope = yield* Scope.make();
@@ -318,7 +326,8 @@ export const tryAcquireGlobalLeader = (
           "the attempt"
         ).pipe(
           Effect.map((rows) => Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired)),
-          Effect.onError(() => (fresh && !live.abandoned ? closeSession(live) : Effect.void))
+          // A failed statement on a session that holds locks means its connection failed: its leaders are lost with it.
+          Effect.onError(() => (live.abandoned ? Effect.void : fresh ? closeSession(live) : loseAll(live)))
         );
         if (!acquired) {
           if (fresh) yield* closeSession(live);

@@ -81,6 +81,10 @@ lead alone, to know within seconds that it no longer does, and to give the lock 
   replacement waited on it. Before this ADR each attempt had a connection of its own. `leader-partition.test.ts` now cuts a shared session and tries
   for another key: the attempt fails within `verifyTimeout` (0.7 s with its settings) and the leader on the session is lost; without the bound (a
   mutation) the attempt hangs and the test times out.
+- **Found by CI** (2026-10-25): after a session was terminated, an attempt could run on it in the moment between its leaders being lost and their
+  release giving it back, and fail with the server's error instead of leading on a new session (`leader-shared-session.test.ts`, on CI only). An
+  attempt now takes a new session when every leader on the current one is lost, and a statement that fails on a session holding locks loses its
+  leaders, as one that does not answer does. The race did not reproduce locally, so the fix is shown by CI, not by a local mutation.
 
 ## Alternatives considered
 
