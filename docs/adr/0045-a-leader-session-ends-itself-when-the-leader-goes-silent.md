@@ -2,8 +2,8 @@
 
 ## Status
 
-**Proposed** (2026-10-25). Built in `Leader.ts`, tested against Postgres 18.6, a replica and the kind lab (see "Progress"); still Proposed until AWS
-has been run, and until the takeover's spread in the lab (19 to 34 s) is understood. It answers the follow-up ADR-0022 and the kind lab named: after a silent network partition the leader
+**Accepted** (2026-10-25), for what was verified: Postgres 18.6, a replica and the kind lab (see "Progress"). Not run on AWS ("Then, on AWS" lists
+what that would check; it was left out of this round on purpose); the takeover's spread in the first lab runs is explained (a busy host). It answers the follow-up ADR-0022 and the kind lab named: after a silent network partition the leader
 lock is freed only when Postgres's TCP keepalives give up (388 s with the settings RDS ships).
 
 ## Context
@@ -94,13 +94,22 @@ by the heartbeat and enforced by the server: no table, no expiry column, no cloc
 
   | Scenario | Before (keepalives only) | With the session's timeout |
   |---|---|---|
-  | `partition-tuned` (keepalives 10/5/3) | 13, 28, 29, 28 s | **19 s** (one run) |
-  | `partition-rds` (keepalives 300/30/2) | **388 s** | **34, 33, 33, 19 s** (four runs) |
+  | `partition-tuned` (keepalives 10/5/3) | 13, 28, 29, 28 s | **19, 19 s** |
+  | `partition-rds` (keepalives 300/30/2) | **388 s** | first round: 34, 33, 33, 19 s; **rerun on a quiet host: 18, 19, 18, 18, 19, 18 s** |
 
-  The server frees the lock at about 15 s, as in the integration test; the takeover then took either about 4 s more (one retry interval) or about
-  18 s more. Where the extra 14 s goes is not established: it is on the followers' side, and one candidate is an attempt waiting for a session
-  connection (`reserveTimeout`, 10 s). The first `partition-rds` run (34 s) also included pulling the debug image, after the clock started.
-- **Not done:** the cause of the 33 s runs, and AWS.
+  The server frees the lock at about 15 s (sampled from `pg_stat_activity`: the lock session's last statement was 14 s old when it went), and a
+  follower takes it at its next attempt, so about 15 s plus up to one retry interval. The slow runs were not the mechanism: they ran while the same
+  Docker host ran Testcontainers suites, and a second round on a busy host gave 48 and 45 s; on a quiet host, six runs in a row took 18 or 19 s (the last three with ADR-0046's shared `LISTEN`).
+  `kill` (0.4 s) and `rolling` (no lag) pass with the same build.
+- **Found by the lab: a pod that vanishes in a transaction stalls every view** (2026-10-25). One busy-host run had a follower lead at 16 s and the
+  views stay behind for about 90 s more. The cause, proved in `zombie-transaction.test.ts` (a proxy that cuts silently): a client cut off in the
+  middle of a transaction leaves its session idle in transaction, and no event committed after it began is delivered until the server ends that
+  session, so the lease does not help; `idle_in_transaction_session_timeout` on the server ends it (2 s in the test: the views went on about 2 s after
+  the cut, and the vanished append was rolled back). It is not set by the framework (a pooler refuses unknown startup parameters): it is a server
+  setting, now in the configuration guide, and the lab's partition and node-loss scenarios run with 15 s. That stalled run's database was not
+  sampled, so it is the likely cause there, not a measured one.
+- **Found by the lab: an attempt on a silent shared session held the process's leaders** (ADR-0046, decision 8). Fixed and tested.
+- **Not done:** AWS.
 
 ## Alternatives considered
 
@@ -138,7 +147,7 @@ by the heartbeat and enforced by the server: no table, no expiry column, no cloc
   of the bound.
 - **A live leader keeps its lock** under the wallet's load for several minutes with a short timeout (the heartbeat renews it).
 - **A released connection does not carry the setting** (`SHOW idle_session_timeout` on the next use of a pooled connection).
-- **The kind lab's `partition-rds` scenario rerun**, expecting the takeover near 20 s instead of 388 s.
+- **The kind lab's `partition-rds` scenario rerun**, expecting the takeover near 20 s instead of 388 s: done, 18 to 19 s.
 - **A replica takes no lock and keeps none:** against a hot standby (a streaming replica in Docker), taking the lock answers "not acquired", and a
   leader whose session finds itself on a replica is lost.
 

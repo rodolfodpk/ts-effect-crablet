@@ -23,8 +23,8 @@ takes it at its next try, about 20 s after the cut ([ADR-0045](../../adr/0045-a-
 the module does not move: views fall behind by the takeover time, and strict reads answer `503`.
 
 Measured in an integration test (a proxy that cuts silently; a 3 s server timeout): the follower led 3.04 s after the cut, after the old leader had
-stopped. In the kind lab with the RDS keepalives the takeover took 19 to 34 s (four runs; [ADR-0045](../../adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)
-says why it varies, as far as known). Before the session timeout, the lock waited for Postgres's TCP keepalives:
+stopped. In the kind lab with the RDS keepalives the takeover took 18 to 19 s (six runs on a quiet host; slower while the same host ran test suites,
+[ADR-0045](../../adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)). Before the session timeout, the lock waited for Postgres's TCP keepalives:
 
 | Postgres TCP keepalives, without the session timeout | Takeover in the lab |
 |---|---|
@@ -34,6 +34,22 @@ says why it varies, as far as known). Before the session timeout, the lock waite
 
 The stale leader cannot do harm meanwhile: it checks that its own session still holds the lock before each batch and each cursor move. Shorter
 keepalives on the server still help: they free the backend slot of a client that is gone ([configure it](configure.md#5-leader-takeover)).
+
+## A pod vanishes in the middle of a transaction
+
+A pod cut off without a reset (a silent partition, a node gone) while it has a transaction open leaves that transaction open on the server: its
+session is idle in transaction, holding its locks and its place in the log. No event committed after it began is delivered until the server ends it
+(see the next section), so every view, automation and publisher stalls, and a successor leader of the views waits on the progress row the old one
+was updating. The leader lease (ADR-0045) does not cover it: only the lock session ends itself. The server ends the session when its TCP keepalives
+give up, or after `idle_in_transaction_session_timeout` if it is set, and rolls the transaction back (the pod never got an answer, so nothing it
+reported is lost).
+
+Measured in an integration test (a proxy that cuts silently, `zombie-transaction.test.ts`): without the setting, a view saw nothing committed after
+the cut for as long as the test watched; with 2 s, it went on about 2 s after the cut, and the vanished pod's append was rolled back. In the kind lab,
+one `partition-rds` run without it stalled the views for about 90 s after a follower had already taken the lock; that run's database was not
+sampled, so this is the likely cause, not a measured one.
+
+**Set** `idle_in_transaction_session_timeout` on the server ([configure it](configure.md#6-a-pod-that-vanishes-in-a-transaction)).
 
 ## A long transaction stays open
 
