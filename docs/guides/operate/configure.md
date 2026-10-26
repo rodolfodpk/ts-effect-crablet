@@ -16,8 +16,8 @@ Either way, run at least two instances, so a follower is ready to take over each
 
 ## 2. The pool
 
-Start from **what is held for good, plus the commands you want at once**. A process that leads all three modules holds 5 connections for good (one
-session for every lock, three `LISTEN`s, the views' progress hub); a follower holds 4; an API-only process holds 1. Then check the fleet: *instances × pool* must stay under the server's `max_connections`, with room for
+Start from **what is held for good, plus the commands you want at once**. A process that leads all three modules holds 2 connections for good (one
+session for every lock, from the pool, and one connection for every `LISTEN`, beside it); a follower or an API-only process holds 1, the `LISTEN` connection. Then check the fleet: *instances × (pool + 1)* must stay under the server's `max_connections`, with room for
 migrations and monitoring. Running out is quiet: commands fail and nothing in the logs says why ([size the pool](run-in-production.md#size-the-pool)).
 
 ## 3. A pooler, or not
@@ -42,17 +42,27 @@ It must be longer than the leader's own loss detection (6 s with the defaults), 
 (`tcp_keepalives_idle`, `_interval`, `_count`) shorter is still worth it, for the backend slots of clients that are gone
 ([failure modes](failure-modes.md#a-leader-loses-the-network)).
 
-## 6. Reads
+## 6. A pod that vanishes in a transaction
+
+Set **`idle_in_transaction_session_timeout`** on the server, 15 s to start from (in the RDS or Aurora parameter group, where it is 0, off, by default; or
+`ALTER ROLE <app> SET idle_in_transaction_session_timeout = '15s'`). A pod cut off in the middle of a transaction (a command's, a view batch's) leaves
+its server session idle in transaction, and no view, automation or publisher gets past an open transaction: they all wait until the server ends that
+session, which without this setting is when its TCP keepalives give up (minutes with RDS's). The leader's own session ends itself (section 5); this
+is every other session. The framework's transactions never wait on anything outside the database, so they are never idle that long; a transaction of
+your own that does would be ended too. Set it on the server, not in the connection's startup parameters: a pooler such as PgBouncer refuses startup
+parameters it does not know ([failure modes](failure-modes.md#a-pod-vanishes-in-the-middle-of-a-transaction)).
+
+## 7. Reads
 
 The default is strict: a read waits up to 5 s for the views and answers `503` if they are behind. Keep it unless a page would rather show stale data
 than an error; then make that endpoint `bounded` ([read consistency](../../reference/http.md#read-consistency)).
 
-## 7. Migrations
+## 8. Migrations
 
 With more than one instance, apply migrations in a pre-deploy job, not at start-up: five pods applying at once failed in the kind lab, and Flyway with
 its lock passed three times out of three ([apply the migrations](run-in-production.md#1-apply-the-migrations)).
 
-## 8. Observability
+## 9. Observability
 
 Export the metrics (`OTEL_EXPORTER_OTLP_ENDPOINT` in the wallet), load the dashboard and its alerts, and keep the [runbooks](runbooks.md) next to
 them ([See it on a dashboard](dashboard.md)).

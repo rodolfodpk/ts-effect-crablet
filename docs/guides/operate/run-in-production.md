@@ -55,17 +55,16 @@ The pool is shared by everything the process does with the database, and part of
 | a command | one connection for its whole transaction (load the model, decide, append), so a pool of *n* runs at most *n* commands at once |
 | a read, a view projection, a cursor update, the metric samplers | for the length of the statement or transaction |
 | the leader locks of the modules | **one** connection for all of them, held while this process leads any module ([ADR-0046](../../adr/0046-one-lock-session-per-process.md)) |
-| `LISTEN` for event wake-ups | one connection per module, held for good, on followers too (not the deadlines module: time makes a deadline due, so it does not `LISTEN`) |
-| `LISTEN` for view progress (the live feed and reads that wait) | one connection per process, held for good |
+| every `LISTEN` (the modules' event wake-ups, and view progress for the live feed and reads that wait) | **one** connection for all of them, held for good, on followers too, and **not from the pool**: it is opened with the pool's settings, beside it ([ADR-0046](../../adr/0046-one-lock-session-per-process.md)) |
 
-Measured on the wallet example (three modules, one idle instance against Postgres 18.6) while each lock had a connection of its own: the **leader held 7 connections for good** (3 locks, 3 `LISTEN` for events,
-1 for view progress) and a **follower held 4** (the `LISTEN`s). The locks now share one session per process (ADR-0046), so the same leader holds **5** (1 lock session, 3 `LISTEN`, 1 for view progress), and the
-deadlines processor adds none; a follower still holds 4. With the default pool of 10 that leaves 5 for work on a leader. The total stayed at the pool size under load (10 with the default, 16 and 12 when set to
-those values). Check the counts with `select count(*) from pg_stat_activity` on your own deployment.
+Measured on the wallet example (three modules, one idle instance against Postgres 18.6) while each lock and each `LISTEN` had a connection of its own: the **leader held 7 connections for good** (3 locks, 3 `LISTEN`
+for events, 1 for view progress) and a **follower held 4** (the `LISTEN`s). With one lock session and one `LISTEN` connection per process (ADR-0046), the same leader holds **2** (1 lock session from the pool, 1
+`LISTEN` connection beside it), and the deadlines processor adds none; a follower holds 1, the `LISTEN` connection. With the default pool of 10 that leaves 9 for work on a leader, and the server sees one connection
+more than the pool. The total stayed at the pool size under load (10 with the default, 16 and 12 when set to those values). Check the counts with `select count(*) from pg_stat_activity` on your own deployment.
 
-So size it as **what is held for good plus the concurrency of work you want**, and count the whole fleet against the server: *instances x pool* must stay under `max_connections` (100 on a stock Postgres; on RDS it depends on the
+So size it as **what is held for good plus the concurrency of work you want**, and count the whole fleet against the server: *instances x (pool + 1)* must stay under `max_connections` (100 on a stock Postgres; on RDS it depends on the
 instance class) with room for migrations, `psql` and monitoring. A pool at or below the held count leaves nothing for work, and the process stalls rather than failing. A process that only runs processors needs a small
-pool. A process that only serves commands and reads would, by the code, hold one connection for good (the view-progress `LISTEN`) and need a pool sized to its request concurrency; the examples always start the
+pool. A process that only serves commands and reads holds one connection for good (the view-progress `LISTEN`, beside the pool) and needs a pool sized to its request concurrency; the examples always start the
 processors, so this shape is allowed by the framework but neither shown nor measured.
 
 **Connection poolers.** The held connections use session features: `LISTEN` and the session-level advisory lock that elects a leader. A pooler that multiplexes transactions (PgBouncer in transaction mode, RDS Proxy) cannot carry those without pinning the session to one backend connection; RDS Proxy pins on `LISTEN` and on session-level advisory locks ([AWS documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-pinning.html)), and does not pin on the transaction-level advisory locks the append uses. This was read from that documentation; it was not tested against a proxy.
@@ -149,11 +148,11 @@ Crablet.layer(
 );
 ```
 
-`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. Its pool holds what the process keeps for good, which depends on the
-roles it runs (measured idle): **all three workers and the api, 7** (3 leader locks, 3 `LISTEN` for event wake-ups, 1 for view progress); **the three workers, 6**; **one worker, 2** (its lock and its
-`LISTEN`); **the api alone, 1**. The default of 10 leaves room for the attempts of the modules that do not lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a
-leader (a leader gives up after 10 s and logs why; a `LISTEN` that does not fit just waits and the process falls back to polling). The framework counts what each module and the view-progress hub keep as they start, and warns once when the pool is
-smaller. The wallet reads the connection from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`, `_PASSWORD`, `_POOL`, each defaulting to the main one).
+`session` takes the same shape as the first argument. Omitted, the leader and LISTEN use the first connection, exactly as before. What the process keeps for good on it (measured idle, ADR-0046): **one
+lock session** from its pool while it leads any module, and **one `LISTEN` connection** beside the pool for every `LISTEN` of the process (the modules' wake-ups and view progress); so **2** for a leader, **1**
+for a follower or the api alone. (It was 7 for all three workers and the api when each lock and each `LISTEN` had a connection.) The default pool of 10 leaves room for the attempts of the modules that do not
+lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after 10 s and logs why). The framework counts the lock session when the first module
+starts, and warns once when the pool is smaller. The wallet reads the connection from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`, `_PASSWORD`, `_POOL`, each defaulting to the main one).
 The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
 Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it.
 

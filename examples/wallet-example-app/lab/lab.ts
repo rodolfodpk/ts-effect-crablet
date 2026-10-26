@@ -70,8 +70,12 @@ const KEEPALIVE_RDS = ["tcp_keepalives_idle=300", "tcp_keepalives_interval=30", 
 const KEEPALIVE_TUNED = ["tcp_keepalives_idle=10", "tcp_keepalives_interval=5", "tcp_keepalives_count=3"];
 // Keepalives only run on an idle connection; one with data the peer never acknowledges is governed by the retransmission timeout instead. tcp_user_timeout caps exactly that.
 const KEEPALIVE_TUNED_UTO = [...KEEPALIVE_TUNED, "tcp_user_timeout=15000"];
+// A pod cut off in the middle of a transaction (a command's, a view batch's) leaves its server session idle in transaction, and the views deliver nothing
+// committed after it began until the server ends it: the keepalives' time, unless this ends it sooner (packages/views/test/integration/zombie-transaction.test.ts).
+// What an operator sets on the server (configure.md), and the partition and node-loss scenarios run with it.
+const IDLE_IN_TRANSACTION = "idle_in_transaction_session_timeout=15000";
 type NetProfile = "tuned" | "uto" | "rds";
-const settingsOf = (p: NetProfile) => (p === "rds" ? KEEPALIVE_RDS : p === "uto" ? KEEPALIVE_TUNED_UTO : KEEPALIVE_TUNED);
+const settingsOf = (p: NetProfile) => [...(p === "rds" ? KEEPALIVE_RDS : p === "uto" ? KEEPALIVE_TUNED_UTO : KEEPALIVE_TUNED), IDLE_IN_TRANSACTION];
 const keepaliveSeconds = (p: NetProfile) => (p === "rds" ? 360 : p === "uto" ? 15 : 25);
 // Since ADR-0045 the leader's lock session ends itself on the server after the leader has been silent for 15 s (the default serverIdleTimeout), and a
 // follower takes the lock at its next try (the wallet retries every 5 s): whichever comes first, that or the keepalives.

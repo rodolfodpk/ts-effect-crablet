@@ -3,7 +3,7 @@ import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
 
-// The connections that live as long as a process holds a role: a module's LEADER (a session-level advisory lock on a reserved connection) and every LISTEN.
+// The connections that live as long as a process holds a role: the modules' LEADERS (session-level advisory locks on one reserved connection) and the LISTENs (one connection of their own).
 //
 // Behind a connection pooler in transaction mode (PgBouncer, or RDS Proxy, which pins instead) neither survives: the pooler hands the server connection to another client
 // between transactions, so the lock is lost (or another instance gets it too) and a LISTEN hears nothing, without an error. Measured behind PgBouncer 1.26, transaction
@@ -39,15 +39,14 @@ export const sessionPg: Effect.Effect<PgClient.PgClient, never, PgClient.PgClien
   return session !== null ? session.pg : yield* PgClient.PgClient;
 });
 
-// What a process keeps in the session pool for good: ONE reserved connection for the locks of every module that leads there (ADR-0046), and one per LISTEN, which with @effect/sql-pg
-// takes a pooled connection for as long as it lasts (one for each module's wake-ups, and one for the views' progress hub where the api runs). It depends on what the process starts, so
-// the framework counts it as things start (`holdSession`): the lock session once, when the first module tries for its lock, each module's LISTEN then, and the hub's when it starts.
-// By that count a process with views + automations + outbox + api keeps 5 (it was 7 with a connection per lock); the three workers without api, 4; views alone, 2; api alone, 1. A pool smaller than that does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after `reserveTimeout` and says so;
-// a LISTEN that does not fit just waits, and its process falls back to polling).
+// What a process keeps in the session pool for good: ONE reserved connection for the locks of every module that leads there (ADR-0046), counted once, when the first module tries for its
+// lock (`holdSessionOnce`). Its LISTENs are not in the pool: they share one connection of their own, opened with the client's settings (`sharedListen`, ADR-0046's second half), so a
+// process with views + automations + outbox + api keeps 1 pooled connection and 1 LISTEN connection (it was 5 pooled, and 7 with a connection per lock); api alone, the LISTEN connection
+// only. A pool smaller than what is kept does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after `reserveTimeout` and says so).
 export const sessionPoolWarning = (maxConnections: number | undefined, holds: number | undefined): string | null =>
   maxConnections === undefined || holds === undefined || maxConnections >= holds
     ? null
-    : `session connections: maxConnections is ${maxConnections}, but this process keeps ${holds} of them for good (leader locks and LISTENs); the rest wait. Use ${holds} or more (the library's default is 10).`;
+    : `session connections: maxConnections is ${maxConnections}, but this process keeps ${holds} of them for good (the leader locks' session); the rest wait. Use ${holds} or more (the library's default is 10).`;
 
 // Count `n` more session connections kept for good by something that has just started (`what`), and warn once if the session pool is smaller than the total.
 // Without session clients there is nothing to count: the leader and the LISTEN share the application's pool, which `Crablet.layer`'s caller sizes.
@@ -60,9 +59,9 @@ export const holdSession = (what: string, n: number): Effect.Effect<void> =>
     if (warning !== null && !(yield* Ref.getAndSet(session.warned, true))) yield* Effect.logWarning(`${warning} (last to start: ${what})`);
   });
 
-// `holdSession`, once: for a module whose first attempt at its lock marks that it has started (later attempts are retries, not new connections). `listens`
-// is what the module keeps for its own LISTEN (1, or 0 with wake-ups off); the process's lock session is counted once, by the first module that starts.
-export const holdSessionOnce = (what: string, listens: number): Effect.Effect<Effect.Effect<void>> =>
+// `holdSession`, once: for a module whose first attempt at its lock marks that it has started (later attempts are retries, not new connections). The
+// process's lock session is counted once, by the first module that starts; a module's LISTEN is not in the pool (`sharedListen`).
+export const holdSessionOnce = (what: string): Effect.Effect<Effect.Effect<void>> =>
   Effect.map(Ref.make(false), (done) =>
     Effect.flatMap(Ref.getAndSet(done, true), (was) =>
       was
@@ -70,7 +69,7 @@ export const holdSessionOnce = (what: string, listens: number): Effect.Effect<Ef
         : Effect.gen(function* () {
             const session = yield* Effect.service(SessionClients);
             const lockSession = session === null ? 0 : (yield* Ref.getAndSet(session.lockSessionCounted, true)) ? 0 : 1;
-            yield* holdSession(what, listens + lockSession);
+            yield* holdSession(what, lockSession);
           })
     )
   );

@@ -25,8 +25,8 @@ describe("sessionPoolWarning", () => {
   });
 });
 
-// The framework counts what starts (`holdSession`): the process's lock session once (ADR-0046), each module's LISTEN (none with wake-ups off), the views'
-// progress hub 1.
+// The framework counts what starts (`holdSession`): the process's lock session once (ADR-0046). The LISTENs are not in the pool: they share a
+// connection of their own (`sharedListen`).
 describe("holdSession", () => {
   const sessionWith = (maxConnections: number | undefined) =>
     Effect.gen(function* () {
@@ -35,7 +35,7 @@ describe("holdSession", () => {
   const start = (session: SessionClients, ...holds: ReadonlyArray<number>) =>
     Effect.runPromise(Effect.provideService(Effect.forEach(holds, (n, i) => holdSession(`part ${i}`, n), { discard: true }), SessionClients, session));
 
-  test("adds up what the process keeps: three modules and the hub are 7, as measured", async () => {
+  test("adds up what the process keeps", async () => {
     const session = await Effect.runPromise(sessionWith(10));
     await start(session, 2, 2, 2, 1);
     expect(await Effect.runPromise(Ref.get(session.held))).toBe(7);
@@ -53,16 +53,16 @@ describe("holdSession", () => {
 
   test("a module counts once, however many times it tries for its lock", async () => {
     const session = await Effect.runPromise(sessionWith(10));
-    const once = await Effect.runPromise(holdSessionOnce("a module", 1));
+    const once = await Effect.runPromise(holdSessionOnce("a module"));
     await Effect.runPromise(Effect.provideService(Effect.all([once, once, once], { discard: true }), SessionClients, session));
-    expect(await Effect.runPromise(Ref.get(session.held))).toBe(2); // the process's lock session, and the module's LISTEN
+    expect(await Effect.runPromise(Ref.get(session.held))).toBe(1); // the process's lock session
   });
 
-  test("the lock session counts once for the process, however many modules lead (ADR-0046): three modules and the hub are 5", async () => {
+  test("the lock session counts once for the process, however many modules lead (ADR-0046): four modules keep 1", async () => {
     const session = await Effect.runPromise(sessionWith(10));
-    const modules = await Effect.runPromise(Effect.all([holdSessionOnce("views", 1), holdSessionOnce("automations", 1), holdSessionOnce("outbox", 1)]));
-    await Effect.runPromise(Effect.provideService(Effect.all([...modules, holdSession("hub", 1)], { discard: true }), SessionClients, session));
-    expect(await Effect.runPromise(Ref.get(session.held))).toBe(5);
+    const modules = await Effect.runPromise(Effect.all([holdSessionOnce("views"), holdSessionOnce("automations"), holdSessionOnce("outbox"), holdSessionOnce("deadlines")]));
+    await Effect.runPromise(Effect.provideService(Effect.all(modules, { discard: true }), SessionClients, session));
+    expect(await Effect.runPromise(Ref.get(session.held))).toBe(1);
   });
 
   test("without session clients there is nothing to count", async () => {

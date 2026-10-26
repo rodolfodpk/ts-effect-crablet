@@ -2,13 +2,15 @@ import { Duration, Effect, Queue, Ref, type Scope, Stream } from "effect";
 import type { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
 import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
+import { sharedListen } from "./SharedListen.ts";
+
+export { makeSharedListener, sharedListen, type Listener, type SharedListener } from "./SharedListen.ts";
 
 // LISTEN + 20ms debounce/coalesce: turns the raw NOTIFY payloads into batched wakeups.
 //
-// `PgClient.listen(channel)` already implements the "dedicated non-pooled connection" pattern: it
-// holds a connection separate from the query pool for as long as the returned scope lives, and yields
-// a queue of notifications once Postgres confirms LISTEN. No raw pg client / EventEmitter bridging is
-// needed. To publish, use `PgClient.notify(channel, payload)` (it accepts a dynamic payload).
+// The LISTEN runs on the process's one LISTEN connection (`sharedListen`, SharedListen.ts): every wake-up stream and the views' progress hub of a
+// process share it, and it yields a queue of notifications once Postgres confirms LISTEN. To publish, use `PgClient.notify(channel, payload)` (it
+// accepts a dynamic payload).
 //
 // The stream reconnects by itself (see `wakeupStreamFrom`); the pollers' periodic polling stays the safety net while it is away.
 
@@ -95,7 +97,7 @@ export const wakeupStream = (
   pg: PgClient.PgClient,
   channel: string,
   options: WakeupOptions = {}
-): Stream.Stream<WakeupBatch, SqlError> => wakeupStreamFrom(pg.listen(channel), options);
+): Stream.Stream<WakeupBatch, SqlError> => wakeupStreamFrom(sharedListen(pg, channel), options);
 
 function mergeBatch(payloads: ReadonlyArray<DecodedPayload>): WakeupBatch {
   if (payloads.some((p) => p.wildcard)) {

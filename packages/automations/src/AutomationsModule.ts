@@ -84,7 +84,7 @@ export const makeAutomationsProcessor = (
     const handlerByName = new Map(automations.map((h) => [h.automationName, h] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
-    const countSession = yield* holdSessionOnce("the automations module", wakeups === "off" ? 0 : 1);
+    const countSession = yield* holdSessionOnce("the automations module");
 
     return yield* makeEventProcessor({
       configs,
@@ -96,7 +96,7 @@ export const makeAutomationsProcessor = (
       // gets called with is guaranteed to be a key in handlerByName.
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,
-      // The first attempt at the lock marks that the module has started: count what it keeps in the session pool for good (its LISTEN when wake-ups are on; the process's one lock session is counted by the first module).
+      // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool).
       acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY, deps.leader)),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });

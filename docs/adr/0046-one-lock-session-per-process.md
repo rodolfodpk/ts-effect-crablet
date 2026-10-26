@@ -1,9 +1,8 @@
-# ADR-0046: One lock session per process, shared by the modules' leaders
+# ADR-0046: One lock session and one LISTEN connection per process
 
 ## Status
 
-**Proposed** (2026-10-25). Built in `Leader.ts` and tested (see "Result"); to be accepted once it has run in the kind lab. The `LISTEN` half of the
-follow-up is not built (decision 6).
+**Accepted** (2026-10-25). Built in `Leader.ts` and `SharedListen.ts`, tested against Postgres and run in the kind lab (see "Result").
 
 ## Context
 
@@ -16,7 +15,7 @@ lock session per process instead of one per module".
 A session holds any number of advisory locks, so nothing requires a connection per lock. What a module needs from its lock is the same as before: to
 lead alone, to know within seconds that it no longer does, and to give the lock back on its own.
 
-## Decision (proposed)
+## Decision
 
 1. **One session per process holds the locks of every module that leads there.** `tryAcquireGlobalLeader(sql, key, options)` takes the lock on a
    connection shared by every leader of the same `SqlClient` and the same `LeaderOptions`; the connection is reserved when the first lock is taken and
@@ -32,19 +31,30 @@ lead alone, to know within seconds that it no longer does, and to give the lock 
    (ADR-0045). The rule that it outlasts the loss detection holds as before, since all its leaders share the options.
 5. **Releasing one lock leaves the others.** A module that stops unlocks its key and announces it (`pg_notify`, as before); the session keeps the others.
    `verify` (the processor's fence) asks about its own key.
-6. **`LISTEN` stays one connection per module, for now.** `@effect/sql-pg` fans one channel out to many listeners on one connection, but `listen` on a
-   pool reserves a new connection each time. Sharing it needs a client over one connection for the process's listens, or a fan-out of our own, which is
-   a change of its own (the wake-ups' reconnect and resync behavior, ADR-0021) and is left for one.
-7. **Counting.** A process counts one held session connection for its locks however many modules lead there (`holdSession`), and one per `LISTEN`.
+6. **One `LISTEN` connection per process.** `@effect/sql-pg` fans one channel out to every listener of it on one connection, but `listen` on a pool
+   reserves a new connection each time. So every `LISTEN` of a process on one `PgClient` (the modules' wake-ups and the views' progress hub) runs on
+   one connection of its own, opened with the client's settings (`PgConnection.make(pg.config)`, outside the pool), pinned once, opened by the first
+   listen and closed with the last (`sharedListen`). When it is lost, every queue on it fails, as each `LISTEN`'s did on its own connection: each
+   stream reconnects and announces a wildcard (ADR-0021), and the first to listen again finds the connection gone and replaces it once; the others
+   listen on the new one. (Added 2026-10-25; the first version of this ADR left it for later.)
+7. **Counting.** A process counts one held session connection for its locks however many modules lead there (`holdSessionOnce`). Its `LISTEN`
+   connection is not in the pool, so the pool warning does not count it; the server sees it beside the pool.
+8. **An attempt's statements are bounded.** An attempt at a lock (and the lease set with the first one) runs on the shared session under its permit, so
+   a statement that does not answer (a silent partition) would hold every leader of the process with it. It gets `verifyTimeout`; with no answer, the
+   session is abandoned: every leader on it is lost, the attempt fails, and the connection is given back only after the late statement has been
+   interrupted, which retires it, so a lock it may have taken goes with it. (Added 2026-10-25, found in the kind lab: see "Result".)
 
 ## Consequences
 
-- A process that leads four modules holds one connection for their locks instead of four: the wallet's leader of three modules holds 5 for good instead
-  of 7 (one lock session, three `LISTEN`s, the hub's), and adding the deadlines adds none. The pool-sizing guidance changes accordingly.
+- A process that leads four modules holds one connection for their locks instead of four, and one for its `LISTEN`s instead of one per module and one
+  for the hub: the wallet's leader of three modules holds 2 for good instead of 7, a follower 1 instead of 4, and adding the deadlines adds none. The
+  server sends each notification of `crablet_events` once per process instead of once per module. The pool-sizing guidance changes accordingly: one
+  connection beside the pool.
 - Statements of the modules' leaders take turns on one connection: a heartbeat and a few attempts per interval, all short.
 - One stall loses every module's leadership in the process at once, where separate connections could in principle have lost one; in a partition they
   were lost together anyway.
 - Options must match to share: a module given different `LeaderOptions` gets a session of its own.
+- A lost `LISTEN` connection costs every stream of the process a reconnect and a wildcard together, where separate connections could have lost one.
 
 ## Result (2026-10-25)
 
@@ -57,6 +67,24 @@ lead alone, to know within seconds that it no longer does, and to give the lock 
   lease set and reset once, different options not shared.
 - **What changed in other tests:** `leader-pool-exhausted.test.ts` filled a pool of two with two leaders; they now share one connection, so it fills the
   pool with plain reservations instead. The whole integration suite passes.
+- **The shared `LISTEN`** (decision 6): unit tests of `makeSharedListener` with fake connections (listens on two channels share one connection, closed
+  with the last; a lost connection is replaced once, by the first listen after it, and the others use the new one; a connection that cannot be opened
+  fails that listen and the next one tries again; two mutations, no replacement and no closing, each fail a test). Against Postgres
+  (`listen-notify.test.ts`): three wake-up streams on `crablet_events` and one on another channel hold one `LISTEN` backend, each hears its own, and
+  after that backend is terminated all four announce a wildcard and hear again on one new backend. The wallet's `session-clients.test.ts` now finds
+  one lock session and one `LISTEN` connection for the three modules and the hub (it found 4 `LISTEN`s); the course feed's tests find the hub's
+  `LISTEN` on the process's one connection (its session shows whichever `LISTEN` came last).
+- **The kind lab** (2026-10-25, this build, a quiet host): `partition-rds` 18, 19 and 18 s, `partition-tuned` 19 s, `kill` 0.4 s, `rolling` with no
+  lag; nothing acknowledged lost (ADR-0045's "Progress" has the earlier rounds).
+- **Found by the lab** (decision 8): in a pod cut off from Postgres, an attempt at another module's lock had no bound on the shared session and logged
+  `Query cancellation timed out` long after the cut; meanwhile it held the session's permit, so the lost leaders' release and the session's
+  replacement waited on it. Before this ADR each attempt had a connection of its own. `leader-partition.test.ts` now cuts a shared session and tries
+  for another key: the attempt fails within `verifyTimeout` (0.7 s with its settings) and the leader on the session is lost; without the bound (a
+  mutation) the attempt hangs and the test times out.
+- **Found by CI** (2026-10-25): after a session was terminated, an attempt could run on it in the moment between its leaders being lost and their
+  release giving it back, and fail with the server's error instead of leading on a new session (`leader-shared-session.test.ts`, on CI only). An
+  attempt now takes a new session when every leader on the current one is lost, and a statement that fails on a session holding locks loses its
+  leaders, as one that does not answer does. The race did not reproduce locally, so the fix is shown by CI, not by a local mutation.
 
 ## Alternatives considered
 
