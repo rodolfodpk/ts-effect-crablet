@@ -7,6 +7,7 @@ import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
+import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
@@ -84,7 +85,7 @@ export const makeAutomationsProcessor = (
     const handlerByName = new Map(automations.map((h) => [h.automationName, h] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
-    const countSession = yield* holdSessionOnce("the automations module");
+    const started = Effect.andThen(yield* holdSessionOnce("the automations module"), checkIdleInTransactionOnce(sql));
 
     return yield* makeEventProcessor({
       configs,
@@ -96,8 +97,8 @@ export const makeAutomationsProcessor = (
       // gets called with is guaranteed to be a key in handlerByName.
       selectionOf: (config) => handlerByName.get(config.processorId)!,
       instanceId,
-      // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY, deps.leader)),
+      // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
+      acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY, deps.leader)),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

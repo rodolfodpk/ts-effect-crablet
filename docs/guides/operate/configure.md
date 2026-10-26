@@ -50,7 +50,9 @@ its server session idle in transaction, and no view, automation or publisher get
 session, which without this setting is when its TCP keepalives give up (minutes with RDS's). The leader's own session ends itself (section 5); this
 is every other session. The framework's transactions never wait on anything outside the database, so they are never idle that long; a transaction of
 your own that does would be ended too. Set it on the server, not in the connection's startup parameters: a pooler such as PgBouncer refuses startup
-parameters it does not know ([failure modes](failure-modes.md#a-pod-vanishes-in-the-middle-of-a-transaction)).
+parameters it does not know ([failure modes](failure-modes.md#a-pod-vanishes-in-the-middle-of-a-transaction)). The
+framework does not set it, but it reads it: when it is 0, the first module to start logs a warning (`idle_in_transaction_session_timeout is 0 (off)`),
+once per process.
 
 ## 7. Reads
 

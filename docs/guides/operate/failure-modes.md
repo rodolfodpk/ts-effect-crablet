@@ -49,7 +49,8 @@ the cut for as long as the test watched; with 2 s, it went on about 2 s after th
 one `partition-rds` run without it stalled the views for about 90 s after a follower had already taken the lock; that run's database was not
 sampled, so this is the likely cause, not a measured one.
 
-**Set** `idle_in_transaction_session_timeout` on the server ([configure it](configure.md#6-a-pod-that-vanishes-in-a-transaction)).
+**Set** `idle_in_transaction_session_timeout` on the server ([configure it](configure.md#6-a-pod-that-vanishes-in-a-transaction)). When it is 0, the first
+module to start (views, automations, outbox or deadlines) logs a warning that says so, once per process.
 
 ## A long transaction stays open
 

@@ -5,6 +5,7 @@ import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
+import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
 import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -52,7 +53,7 @@ export const makeOutboxProcessor = (
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));
 
     const wakeups = yield* Effect.service(Wakeups);
-    const countSession = yield* holdSessionOnce("the outbox module");
+    const started = Effect.andThen(yield* holdSessionOnce("the outbox module"), checkIdleInTransactionOnce(sql));
 
     return yield* makeEventProcessor({
       configs,
@@ -64,8 +65,8 @@ export const makeOutboxProcessor = (
       // config.processorId decodes to a topic that's guaranteed to be a key in topicByName.
       selectionOf: (config) => topicByName.get(TopicPublisherPair.fromKey(config.processorId).topic)!,
       instanceId,
-      // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY, deps.leader)),
+      // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
+      acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY, deps.leader)),
       wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
     });
   });

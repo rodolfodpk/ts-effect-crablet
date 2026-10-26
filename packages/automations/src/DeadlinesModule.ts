@@ -4,6 +4,7 @@ import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { DEADLINES_LOCK_KEY, tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { holdSessionOnce, sessionSql } from "@crablet/eventstore/SessionClients";
+import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
 import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
 import * as EventSelection from "@crablet/event-poller/EventSelection";
 import { processorConfigOf, resolvePollingConfig, type PollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
@@ -81,7 +82,7 @@ export const makeDeadlinesProcessor = (
       backoffEnabled: false
     });
     const selection = EventSelection.of({ eventTypes: new Set([DeadlineScheduled.type]) });
-    const countSession = yield* holdSessionOnce("the deadlines module");
+    const started = Effect.andThen(yield* holdSessionOnce("the deadlines module"), checkIdleInTransactionOnce(sql));
 
     return yield* makeEventProcessor({
       configs: [config],
@@ -91,8 +92,8 @@ export const makeDeadlinesProcessor = (
       progressTracker: yield* makeDeadlineProgressTracker(),
       selectionOf: () => selection,
       instanceId: deps.instanceId ?? defaultInstanceId(),
-      // The first attempt at the lock marks that the module has started: it keeps nothing of its own for good (no LISTEN; its lock is on the process's lock session).
-      acquireLeader: Effect.andThen(countSession, tryAcquireGlobalLeader(sessionSql_, DEADLINES_LOCK_KEY, deps.leader)),
+      // The first attempt at the lock marks that the module has started: it keeps nothing of its own for good (no LISTEN; its lock is on the process's lock session); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
+      acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, DEADLINES_LOCK_KEY, deps.leader)),
       wakeupStream: Stream.never
     });
   });
