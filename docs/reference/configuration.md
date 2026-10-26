@@ -53,7 +53,11 @@ The outbox module's `OutboxConfig` adds one setting of its own:
 The deadlines module's `DeadlinesConfig` (`@crablet/automations/Deadlines`) takes the same settings except the four backoff ones: it does not back off,
 because no wake-up ends a wait (a new event makes nothing due; time does). Its interval defaults to **5000** instead: it is how late a deadline can fire
 after it is due, and deadlines are business time; an idle poll is one index lookup, on the leader only. Its batch is fired one deadline at a time, so a
-backlog (many deadlines due at the same instant) drains at about `batchSize` per interval ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)).
+backlog (many deadlines due at the same instant) drains at about `batchSize` per interval ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)). It adds one setting of its own:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `fireTimeoutMs` | `30000` | How long one deadline's command may take, its conflict retries included, before the firing counts as a failure (and toward `maxErrors`). Without it a command that hangs would hold back the deadlines after it for good. A timed-out command may have committed, so the deadline fires again, and its command's `idempotentBy` answers the repeat. |
 
 A single view, automation or topic publisher can override `pollingIntervalMs`, `batchSize` and the four backoff settings of its own; `maxErrors` and the leader retry
 belong to the module (the leader retry is not part of a processor's config at all: there is one leader lock per module). A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some

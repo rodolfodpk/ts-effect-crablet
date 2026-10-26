@@ -10,6 +10,7 @@ import type { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import { formatMarker } from "@crablet/eventstore/Marker";
 import type { Command } from "./Command.ts";
 import { IdempotencyMismatch, kindOf } from "./Errors.ts";
 import { defineEvent, Instant } from "./Event.ts";
@@ -27,9 +28,16 @@ export const DeadlineScheduled = defineEvent("crablet.DeadlineScheduled", {
 export const DeadlineOutcome = Schema.Literals(["appended", "noop", "failed"]);
 export type DeadlineOutcome = typeof DeadlineOutcome.Type;
 
-// How a deadline ended, caused by it (`causation_id` is the deadline's position). `reason`: a noop's reason, or a domain error's tag.
+// How a deadline ended, caused by it (`causation_id` is the deadline's position). `reason`: a noop's reason, or a domain error's tag. `marker`: where
+// the command's write ended, or for a noop the earlier write it pointed at (`formatMarker`; `waitUntilProcessed(view, parseMarker(marker))` waits until
+// a view shows the deadline's effect); null for a failure, or a noop with nothing to point at. Absent in a firing stored before it was recorded.
 export const DeadlineFired = defineEvent("crablet.DeadlineFired", {
-  schema: Schema.Struct({ deadlinePosition: Schema.String, outcome: DeadlineOutcome, reason: Schema.NullOr(Schema.String) }),
+  schema: Schema.Struct({
+    deadlinePosition: Schema.String,
+    outcome: DeadlineOutcome,
+    reason: Schema.NullOr(Schema.String),
+    marker: Schema.optionalKey(Schema.NullOr(Schema.String))
+  }),
   tags: () => ({})
 });
 
@@ -39,6 +47,8 @@ export interface FiredDeadline {
   readonly command: string;
   readonly outcome: DeadlineOutcome;
   readonly reason: string | null;
+  // As the firing records it (`DeadlineFired`'s marker).
+  readonly marker: string | null;
   // The events the command appended; empty for a noop or a failure.
   readonly events: ReadonlyArray<StoredEvent>;
 }
@@ -73,11 +83,20 @@ export const deadline = <In, Err, I extends Schema.Constraint>(command: Command<
   return DeadlineScheduled({ command: command.name, input: encoded, dueAt: options.at });
 };
 
-// How a command's run ends a deadline: appended, or a noop with its reason.
-export const outcomeOfResult = (result: ExecutionResult): { readonly outcome: DeadlineOutcome; readonly reason: string | null } =>
-  result.wasIdempotent ? { outcome: "noop", reason: result.reason } : { outcome: "appended", reason: null };
+// How a firing ended: what `crablet.DeadlineFired` records.
+export interface Firing {
+  readonly outcome: DeadlineOutcome;
+  readonly reason: string | null;
+  readonly marker: string | null;
+}
+
+// How a command's run ends a deadline: appended, or a noop with its reason; with the result's marker.
+export const outcomeOfResult = (result: ExecutionResult): Firing => {
+  const marker = result.marker === null ? null : formatMarker(result.marker);
+  return result.wasIdempotent ? { outcome: "noop", reason: result.reason, marker } : { outcome: "appended", reason: null, marker };
+};
 
 // A failure that is the command's answer, not a fault: a domain error, or a key used by a different request. The deadline is done (`failed`, with the
 // error's tag). Anything else (the database, a conflict that ran out of retries) is a fault: undefined, and the firing is retried.
-export const outcomeOfFailure = (error: unknown): { readonly outcome: "failed"; readonly reason: string } | undefined =>
-  kindOf(error) !== undefined || error instanceof IdempotencyMismatch ? { outcome: "failed", reason: (error as { _tag: string })._tag } : undefined;
+export const outcomeOfFailure = (error: unknown): Firing | undefined =>
+  kindOf(error) !== undefined || error instanceof IdempotencyMismatch ? { outcome: "failed", reason: (error as { _tag: string })._tag, marker: null } : undefined;

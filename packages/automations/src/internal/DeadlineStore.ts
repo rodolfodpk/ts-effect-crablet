@@ -72,7 +72,7 @@ export const makeRecordFiring = (sql: SqlClient.SqlClient, eventStore: EventStor
     Effect.gen(function* () {
       const deleted = yield* sql`DELETE FROM crablet_deadlines WHERE deadline_position = ${deadline.position.toString()}::bigint RETURNING 1 AS gone`;
       if (deleted.length === 0) return false;
-      const fired = DeadlineFired({ deadlinePosition: deadline.position.toString(), outcome: outcome.outcome, reason: outcome.reason });
+      const fired = DeadlineFired({ deadlinePosition: deadline.position.toString(), ...outcome });
       const append = CorrelationContext.withCausationId(deadline.position)(eventStore.append([fired]));
       yield* deadline.correlationId === null ? append : CorrelationContext.withCorrelationId(deadline.correlationId)(append);
       return true;

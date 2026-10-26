@@ -7,7 +7,7 @@ import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/events
 import type * as Schema from "effect/Schema";
 import type { Command, RawInput } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
-import { checkDeadlineCommands, DeadlineFired, DeadlineScheduled, outcomeOfFailure, type FiredDeadline } from "../Deadline.ts";
+import { checkDeadlineCommands, DeadlineFired, DeadlineScheduled, outcomeOfFailure, outcomeOfResult, type FiredDeadline } from "../Deadline.ts";
 import type { IdempotencyMismatch, InvalidInput } from "../Errors.ts";
 import type { ExecutionResult } from "../ExecutionResult.ts";
 
@@ -84,7 +84,12 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
     atMs === null ? effect : Effect.flatMap(Clock.Clock, (base) => Effect.provideService(effect, Clock.Clock, fixedClock(base, atMs)));
 
   // One command run, as `when` does it; under `cause` (a deadline's position) when one is given, as an automation or the deadlines processor runs it.
-  const run = async <In, Err>(command: Command<In, Err, any>, decodeInput: Effect.Effect<In, InvalidInput>, cause: bigint | null): Promise<ScenarioResult<Err>> => {
+  // With the executor's result, when there is one: its marker is what a firing records.
+  const run = async <In, Err>(
+    command: Command<In, Err, any>,
+    decodeInput: Effect.Effect<In, InvalidInput>,
+    cause: bigint | null
+  ): Promise<{ readonly result: ScenarioResult<Err>; readonly executed: ExecutionResult | undefined }> => {
     const before = store.log.length;
     const attempt = Effect.gen(function* () {
       const input = yield* decodeInput;
@@ -102,20 +107,21 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
 
     const exit = await Effect.runPromiseExit(program);
     if (Exit.isSuccess(exit)) {
-      return {
+      const result: ScenarioResult<Err> = {
         outcome: exit.value.wasIdempotent ? "idempotent" : "created",
         events: store.log.slice(before),
         error: undefined,
         reason: exit.value.reason
       };
+      return { result, executed: exit.value };
     }
     const failure = exit.cause.reasons.find(Cause.isFailReason);
     // A defect (a bug in the command or the framework) must fail the test loudly, not become a result.
     if (failure === undefined) throw new Error(`command "${command.name}" died: ${Cause.pretty(exit.cause)}`);
-    return { outcome: "failed", events: [], error: failure.error as never, reason: null };
+    return { result: { outcome: "failed", events: [], error: failure.error as never, reason: null }, executed: undefined };
   };
 
-  const when: Scenario["when"] = (command, rawInput) => run(command, command.decodeInput(rawInput), null);
+  const when: Scenario["when"] = async (command, rawInput) => (await run(command, command.decodeInput(rawInput), null)).result;
 
   const fireDue: Scenario["fireDue"] = async (...commands) => {
     const byName = checkDeadlineCommands(commands);
@@ -132,19 +138,14 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
     for (const { event, scheduled } of due) {
       const command = byName.get(scheduled.command);
       if (command === undefined) throw new Error(`deadline at position ${event.position}: command "${scheduled.command}" is not among the commands given to fireDue`);
-      const result = await run(command, command.decodeInput(scheduled.input), event.position);
-      const outcome =
-        result.outcome === "created"
-          ? { outcome: "appended" as const, reason: null }
-          : result.outcome === "idempotent"
-            ? { outcome: "noop" as const, reason: result.reason }
-            : outcomeOfFailure(result.error);
+      const { result, executed } = await run(command, command.decodeInput(scheduled.input), event.position);
+      const outcome = executed !== undefined ? outcomeOfResult(executed) : outcomeOfFailure(result.error);
       if (outcome === undefined) throw new Error(`deadline at position ${event.position}: command "${command.name}" failed with a fault, not a decision: ${String(result.error)}`);
       const record = Effect.flatMap(EventStore, (eventStore) =>
-        eventStore.append([DeadlineFired({ deadlinePosition: event.position.toString(), outcome: outcome.outcome, reason: outcome.reason })])
+        eventStore.append([DeadlineFired({ deadlinePosition: event.position.toString(), ...outcome })])
       );
       await Effect.runPromise(atClock(CorrelationContext.withCausationId(event.position)(record).pipe(Effect.provide(store.layer))));
-      results.push({ deadlinePosition: event.position, command: command.name, outcome: outcome.outcome, reason: outcome.reason, events: result.events });
+      results.push({ deadlinePosition: event.position, command: command.name, ...outcome, events: result.events });
     }
     return results;
   };
