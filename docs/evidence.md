@@ -41,6 +41,7 @@ magnitude; they are not capacity. The last column says how many runs each rests 
 | Takeover after a silent partition, with the lock session's idle timeout (ADR-0045) | **3.04 s** with a 3 s timeout (the old leader stopped at 1.42 s); no takeover in 6 s without it | one run each, Postgres in a container, a proxy that cuts silently | `leader-partition.test.ts` |
 | The same in Kubernetes, with the RDS keepalives (300/30/2) | **18 to 19 s** (18, 19, 18, 18, 19, 18 on a quiet host; 33 to 48 s while the host also ran test suites), against 388 s before; 0 acknowledged commands missing | six runs on a quiet host | kind lab, `partition-rds` |
 | A pod cut off in the middle of a transaction | the views wait until the server ends its session: for as long as watched without `idle_in_transaction_session_timeout`, about 2 s with it at 2 s; the vanished append rolled back | integration test | `zombie-transaction.test.ts` |
+| An attempt for the lock right after the shared lock session dies (ADR-0046) | **0** failed attempts in 40 rounds × 6 runs; without the guard, a failure in each of 3 runs, at rounds 0 to 5 | integration test, repeated | `leader-shared-session-race.test.ts` |
 | A stale leader's handler calls after losing its session | **0** (723 before the fix) | one run, 40 s | reliability report, D1 |
 | Acknowledged commands missing from the views | **0**: of 50 (rolling update), 52 (pod killed), 214 (long transaction), 283 (node lost); and in each partition run | one run each, except the partitions | kind lab |
 

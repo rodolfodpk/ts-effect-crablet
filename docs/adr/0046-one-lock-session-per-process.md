@@ -84,7 +84,11 @@ lead alone, to know within seconds that it no longer does, and to give the lock 
 - **Found by CI** (2026-10-25): after a session was terminated, an attempt could run on it in the moment between its leaders being lost and their
   release giving it back, and fail with the server's error instead of leading on a new session (`leader-shared-session.test.ts`, on CI only). An
   attempt now takes a new session when every leader on the current one is lost, and a statement that fails on a session holding locks loses its
-  leaders, as one that does not answer does. The race did not reproduce locally, so the fix is shown by CI, not by a local mutation.
+  leaders, as one that does not answer does. Reproduced since (2026-10-26, `leader-shared-session-race.test.ts`): 40 rounds of terminating the
+  session and attempting the moment a leader is seen lost. Without the guard (a mutation) an attempt failed with the server's error in 3 runs of 3,
+  at rounds 0 to 5; with it, 0 in 6 runs. The second half has a test of its own: an attempt on a session that died before the heartbeat noticed
+  fails and loses every leader on it at once, and the next attempt leads on a new session; without `loseAll` on the failure (a mutation) the
+  leaders stay leading until the heartbeat.
 
 ## Alternatives considered
 
