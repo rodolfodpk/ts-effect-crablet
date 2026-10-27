@@ -6,13 +6,15 @@
 // Why not just add the two reports: Node (V8) reports whole ranges, so it marks nearly every line of a function that ran as covered, including imports, comments, blank lines and
 // signatures. Adding that to Bun's statement-level report would inflate the percentage. So:
 //
-//   - A line is EXECUTABLE if Bun reports it (Bun reports statements), or if Node reports it as NOT executed (a miss is a miss). A line only Node reports, as executed, is not counted.
+//   - A line is EXECUTABLE if Bun reports it (Bun reports statements), or if Node reports it as NOT executed and it looks like code (a miss is a miss). A line only Node
+//     reports, as executed, is not counted. "Looks like code" is the filter below: Node marks every line of a range that did not run, a closing brace or a comment
+//     included, and Bun 1.4.4 stopped reporting closing braces, so without the filter each brace of a function the integration suite skips became a miss.
 //   - A file Bun never loaded has no statement report; for it, Node's lines are filtered to those that look like code (not blank, not a comment, not a lone brace or an import or type line).
 //   - A line is COVERED if either suite executed it. Hit counts add up.
 //   - Only lines are written (SF, DA, LF, LH): function and branch records are named differently by the two tools, so merging them would mislead.
 //
-// The known imprecision: a comment inside a block Node reports as not executed counts as a miss, and a file Bun never loaded is judged by a heuristic. Both are small
-// (a few lines in about a hundred files); the aim is a stable, honest number to ratchet on, not an exact one.
+// The known imprecision: what is code is judged by a heuristic, for a file Bun never loaded and for the lines only Node reports as missed. It is small (a few lines in
+// about a hundred files); the aim is a stable, honest number to ratchet on, not an exact one.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -77,12 +79,12 @@ export const mergeSuites = (unit: Coverage, integration: Coverage, readSource: (
     const a = unit.get(file);
     const b = integration.get(file);
     let executable: Set<number>;
+    const source = readSource(file);
+    const code = source === null ? null : codeLines(source);
     if (a !== undefined) {
       executable = new Set(a.keys());
-      for (const [n, hits] of b ?? []) if (hits === 0) executable.add(n);
+      for (const [n, hits] of b ?? []) if (hits === 0 && (code === null || code.has(n))) executable.add(n);
     } else {
-      const source = readSource(file);
-      const code = source === null ? null : codeLines(source);
       executable = new Set([...(b ?? new Map<number, number>())].filter(([n, hits]) => hits === 0 || code === null || code.has(n)).map(([n]) => n));
     }
     const lines: LineHits = new Map();
