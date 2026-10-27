@@ -1,15 +1,19 @@
 // `.period`: a model that declares its period once, and a command that never writes the rollover itself (docs/history/plans/period-rollover.md). In memory, with a clock: `given(...).at(date).when(...)`.
 import { describe, expect, test } from "bun:test";
-import { Effect, Metric, DateTime } from "effect";
+import { Clock, Effect, Metric, DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import { byModel, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
-import { defineModel } from "../src/Model.ts";
+import { all, defineModel } from "../src/Model.ts";
 import { Period } from "../src/Period.ts";
+import * as LogPosition from "@crablet/eventstore/LogPosition";
 import { given } from "../src/testing/Scenario.ts";
 import * as Tag from "@crablet/eventstore/Tag";
+import * as Query from "@crablet/eventstore/Query";
+import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
+import type { Loaded, ModelInstance } from "../src/Model.ts";
 
 const Opened = defineEvent("PX_Opened", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ acct: d.id }) });
 const Credited = defineEvent("PX_Credited", { schema: Schema.Struct({ id: Schema.String, amount: Schema.Number, opId: Schema.String }), tags: (d) => ({ acct: d.id, op_id: d.opId }) });
@@ -161,7 +165,7 @@ describe("a model with a period", () => {
         close: (state, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, closing: state.balance })
       });
     const Cmd = defineCommand({ name: "px_bare", input, errors: [NoSuchAccount], model: (cc) => bareModel.of({ id: cc.id }), decide: (a, cc) => (a.exists ? emit(Credited(cc, a.period.tags)) : fail(new NoSuchAccount({ id: cc.id }))) });
-    await expect(given(Opened({ id: "a1" })).at(oct).when(Cmd, c(1, "o1"))).rejects.toThrow(/PX_BareOpened.*"year"/s);
+    await expect(given(Opened({ id: "a1" })).at(oct).when(Cmd, c(1, "o1"))).rejects.toThrow(/PX_BareOpened.*"year".*as its period's opening/s);
   });
 
   test("Period.custom: a fiscal year that starts in April turns on 1 April, not on 1 January", async () => {
@@ -386,5 +390,166 @@ describe("an event the command's own model reads back", () => {
     });
     const r = await given().at(oct).when(OpenOther, { id: "a1", other: "b1" });
     expect(r.outcome).toBe("created");
+  });
+});
+
+// The branches of a period's load that only a crafted log or a race reaches (found by mutation testing, docs/history/plans/mutation-testing.md).
+describe("a period's load, at its edges", () => {
+  // A model loaded directly, with the clock at `at` (Scenario.at does the same for a command).
+  const loadAt = <S>(store: ReturnType<typeof makeInMemoryEventStore>, model: ModelInstance<S>, at: DateTime.Utc, service = store.service) => {
+    const ms = DateTime.toEpochMillis(at);
+    return Effect.runPromise(
+      Effect.flatMap(Clock.Clock, (base) =>
+        Effect.provideService(model.load(service as never), Clock.Clock, Object.assign(Object.create(base), { currentTimeMillisUnsafe: () => ms, currentTimeMillis: Effect.succeed(ms) }) as Clock.Clock)
+      ) as Effect.Effect<Loaded<S>>
+    );
+  };
+  const acct = Tag.of("acct", "a1");
+  const novTags = [Tag.of("year", "2026"), Tag.of("month", "11")];
+  const count = () => Effect.runPromise(Metric.value(PeriodMetrics.clockBehind)).then((m) => (m as unknown as { count: number }).count);
+
+  test("the instance's query is its lifecycle events and its periods' openings and closings; lifecycleQuery is the first; it binds by its id", () => {
+    const lifecycle = Query.queryItemOf(["PX_Opened"], [acct]);
+    expect(Monthly.of({ id: "a1" }).query).toEqual(Query.of([lifecycle, Query.queryItemOf(["PX_PeriodOpened", "PX_PeriodClosed"], [acct])]));
+    expect(Monthly.lifecycleQuery("a1")).toEqual(Query.of([lifecycle]));
+    expect(Monthly.of({ id: "a1" }).bindings).toStrictEqual(["acct"]); // strict: toEqual would ignore an undefined item
+  });
+
+  test("deciding in the open period: the guard is that period's closing, and the fold keeps the period", async () => {
+    const store = makeInMemoryEventStore();
+    store.seed(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 4 }));
+    const loaded = await loadAt(store, Monthly.of({ id: "a1" }), nov);
+    expect(loaded.prefix).toBeUndefined();
+    expect(loaded.guard).toEqual(Query.of([Query.queryItemOf(["PX_PeriodClosed"], [acct, ...novTags])]));
+    const folded = loaded.fold!(loaded.state, [Credited({ id: "a1", amount: 3, opId: "o1" }, novTags)]);
+    expect([folded.balance, folded.period.key]).toEqual([7, loaded.state.period.key]);
+  });
+
+  test("another account's later period is not this account's: each entity tracks its own periods", async () => {
+    const s = given(Opened({ id: "a1" }), Opened({ id: "b1" }), PeriodOpened({ id: "b1", year: 2026, month: 12, opening: 0 }));
+    const r = await s.at(nov).when(Credit, c(1, "o1"));
+    expect(types(r)).toEqual(["PX_PeriodOpened", "PX_Credited"]);
+    expect(r.events[0]!.data).toMatchObject({ month: 11 });
+  });
+
+  test("a closing of another period does not close the open one: it is closed when the next is opened", async () => {
+    const s = given(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 10, opening: 0 }), PeriodClosed({ id: "a1", year: 2026, month: 9, closing: 0 }));
+    const r = await s.at(nov).when(Credit, c(1, "o1"));
+    expect(types(r)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened", "PX_Credited"]);
+    expect(r.events[0]!.data).toMatchObject({ month: 10 });
+  });
+
+  test("a closing with no period open is ignored, and so is a closing of the period now while an older one is open: the older is closed and the new opened", async () => {
+    const stray = given(Opened({ id: "a1" }), PeriodClosed({ id: "a1", year: 2026, month: 9, closing: 0 }));
+    expect(types(await stray.at(nov).when(Credit, c(1, "o1")))).toEqual(["PX_PeriodOpened", "PX_Credited"]);
+    const s = given(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 10, opening: 0 }), PeriodClosed({ id: "a1", year: 2026, month: 11, closing: 0 }));
+    const r = await s.at(nov).when(Credit, c(1, "o1"));
+    expect(types(r)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened", "PX_Credited"]);
+    expect(r.events[0]!.data).toMatchObject({ month: 10 });
+  });
+
+  test("an opening that lands between the two reads is not turned again, and is not a clock behind", async () => {
+    const store = makeInMemoryEventStore();
+    store.seed(Opened({ id: "a1" }));
+    let reads = 0;
+    const racing: typeof store.service = {
+      ...store.service,
+      project: (query, after, projectors) =>
+        Effect.tap(store.service.project(query, after, projectors), () =>
+          Effect.sync(() => void (++reads === 1 && store.seed(PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 0 }))))
+        )
+    };
+    const before = await count();
+    const loaded = await loadAt(store, Monthly.of({ id: "a1" }), nov, racing);
+    expect(loaded.prefix).toBeUndefined();
+    expect(loaded.state.period.key).toBe(Period.month.key({ year: 2026, month: 11 }));
+    expect(await count()).toBe(before);
+  });
+
+  test("an opening found by the entity's tag but not by its period's tags is a defect, not a guess", async () => {
+    const untagged = { ...PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 0 }), tags: [acct] };
+    await expect(given(Opened({ id: "a1" }), untagged).at(nov).when(Credit, c(1, "o1"))).rejects.toThrow(/is open for a1 by its opening but its own events say otherwise/);
+  });
+
+  test("a period that was closed is not opened again", async () => {
+    const s = given(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 0 }), PeriodClosed({ id: "a1", year: 2026, month: 11, closing: 0 }));
+    await expect(s.at(nov).when(Credit, c(1, "o1"))).rejects.toThrow(/was closed for a1 and no period is open; a closed period is not reopened/);
+  });
+
+  test("an opening without the fields of its period (a monthly opening read by a daily period) is a defect naming them", async () => {
+    const s = given(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 10, opening: 0 }));
+    await expect(s.at(oct).when(CreditDaily, c(1, "o1"))).rejects.toThrow(/PX_PeriodOpened" does not carry the fields of its period \(year, month, day\)/);
+  });
+
+  test("the handlers get the entity's id, on the opening the turn builds and on the events read", async () => {
+    const Seeing = defineModel({ by: "acct", initial: () => ({ exists: false, seenBy: "" }) })
+      .lifecycle(Opened, (a) => ({ ...a, exists: true }))
+      .on(PeriodOpened, (a, _d, ctx) => ({ ...a, seenBy: ctx.id }))
+      .period(Period.month, {
+        opened: PeriodOpened,
+        closed: PeriodClosed,
+        open: (_carry, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, opening: 0 }),
+        close: (_state, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, closing: 0 })
+      });
+    const store = makeInMemoryEventStore();
+    store.seed(Opened({ id: "a1" }));
+    expect((await loadAt(store, Seeing.of({ id: "a1" }), nov)).state.seenBy).toBe("a1"); // the turn's opening
+    store.seed(PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 0 }));
+    expect((await loadAt(store, Seeing.of({ id: "a1" }), nov)).state.seenBy).toBe("a1"); // the stored one
+  });
+
+  test("a closing event that does not carry the tags of its period is refused when the period is turned, naming its role and every tag it needs", async () => {
+    const BareClosed = defineEvent("PX_BareClosed", { schema: Schema.Struct({ id: Schema.String, year: Schema.Number, month: Schema.Number, closing: Schema.Number }), tags: (d) => ({ acct: d.id }) });
+    const model = base.period(Period.month, {
+      opened: PeriodOpened,
+      closed: BareClosed,
+      open: (carry, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, opening: carry.balance }),
+      close: (state, p) => ({ id: p.id, year: p.fields.year, month: p.fields.month, closing: state.balance })
+    });
+    const s = given(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 10, opening: 0 }));
+    await expect(s.at(nov).when(credit(model as never), c(1, "o1"))).rejects.toThrow(/the event "PX_BareClosed" does not carry the tag "year" \(it needs "acct", "year", "month" to be found as its period's closing\)/);
+  });
+
+  // `all(...)` with a period among its members: the whole carries the member's turn, its boundary, its guard and its clock.
+  describe("all(...) with a period member", () => {
+    const Plain = defineModel({ by: "acct", initial: () => 0 }).on(Credited, (n, d) => n + d.amount);
+    const whole = () => all({ p: Monthly.of({ id: "a1" }), q: Plain.of({ id: "b1" }) });
+    const itemsOf = (q: Query.Query | undefined) => (q?.items ?? []).map((i) => JSON.stringify(i));
+
+    test("turning: the member's prefix, and a boundary that is its boundary and the others' queries; no guard", async () => {
+      const store = makeInMemoryEventStore();
+      store.seed(Opened({ id: "a1" }));
+      const loaded = await loadAt(store, whole(), nov);
+      expect(loaded.prefix!.map((e) => e.type)).toEqual(["PX_PeriodOpened"]);
+      expect(itemsOf(loaded.boundary)).toEqual(expect.arrayContaining([...itemsOf(Plain.of({ id: "b1" }).query), ...itemsOf(Monthly.of({ id: "a1" }).query)]));
+      expect(loaded.guard).toBeUndefined();
+      expect(loaded.now).toEqual(DateTime.toDateUtc(nov));
+    });
+
+    test("the clock is the period member's, wherever it is among the members", async () => {
+      const store = makeInMemoryEventStore();
+      store.seed(Opened({ id: "a1" }));
+      const loaded = await loadAt(store, all({ q: Plain.of({ id: "b1" }), p: Monthly.of({ id: "a1" }) }), nov);
+      expect(loaded.now).toEqual(DateTime.toDateUtc(nov));
+    });
+
+    test("in the open period: no prefix, the boundary, and the guard of the period decided in", async () => {
+      const store = makeInMemoryEventStore();
+      store.seed(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 0 }));
+      const loaded = await loadAt(store, whole(), nov);
+      expect(loaded.prefix).toBeUndefined();
+      expect(itemsOf(loaded.boundary)).toEqual(expect.arrayContaining(itemsOf(Plain.of({ id: "b1" }).query)));
+      expect(loaded.guard).toEqual(Query.of([Query.queryItemOf(["PX_PeriodClosed"], [acct, ...novTags])]));
+    });
+
+    test("a member that neither folds nor completes keeps its state, and adds no tags and no conflicts", async () => {
+      const zero = LogPosition.zero();
+      const bare: ModelInstance<number> = { query: Query.of([]), load: () => Effect.succeed({ state: 1, logPosition: zero, horizon: zero, latest: zero }) };
+      const store = makeInMemoryEventStore();
+      store.seed(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 11, opening: 0 }));
+      const loaded = await loadAt(store, all({ p: Monthly.of({ id: "a1" }), x: bare }), nov);
+      expect(loaded.fold!(loaded.state, [Credited({ id: "a1", amount: 2, opId: "o1" }, novTags)]).x).toBe(1);
+      expect(loaded.complete!(Credited({ id: "a1", amount: 2, opId: "o1" })).conflicts).toEqual([]);
+    });
   });
 });

@@ -135,6 +135,7 @@ const foldWith = <S>(entries: ReadonlyArray<OnEntry<S>>, query: Query.Query, id:
   return (state: S, events: ReadonlyArray<AppendEvent>): S =>
     events.reduce((s, event) => {
       const entry = byType.get(event.type);
+      // Stryker disable next-line ConditionalExpression: the query holds only the types the model handles, so an event without a handler never matches it.
       return entry !== undefined && queryMatches(query, { ...event, position: 0n }) ? entry.apply(s, event.eventData, { event: asStored(event), id }) : s;
     }, state);
 };
@@ -156,6 +157,7 @@ const completeWith = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: str
     const lacking = scopeTags.filter((t) => !has(t.key, t.value));
     const absent = lacking.filter((t) => !event.tags.some((e) => e.key === t.key));
     const conflicts = lacking.filter((t) => !absent.includes(t)).map((t) => `${t.key}=${t.value}`);
+    // Stryker disable next-line ConditionalExpression: with nothing absent, the copy has the same type, data and tags as the event.
     return { event: absent.length === 0 ? event : { ...event, tags: [...event.tags, ...absent] }, conflicts };
   };
 };
@@ -218,7 +220,7 @@ export interface PeriodModel<S> {
   readonly lifecycleQuery: (id: string) => Query.Query;
 }
 
-const unionOf = (...queries: ReadonlyArray<Query.Query | undefined>): Query.Query => Query.of(queries.flatMap((q) => q?.items ?? []));
+const unionOf = (...queries: ReadonlyArray<Query.Query>): Query.Query => Query.of(queries.flatMap((q) => q.items));
 
 const periodModel = <S, F extends PeriodFields, OD, CD>(
   declared: ReadonlyArray<OnEntry<S>>,
@@ -311,6 +313,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       });
 
       const first = yield* read(eventStore, id, target);
+      // Stryker disable next-line ConditionalExpression: the fast path; without it the tracking read finds the same open period and decides in it.
       if (first.opened && !first.closed) return inOpen(first, target);
 
       // The period "now" falls in is not open: find which one is, and turn it.
@@ -351,12 +354,14 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
 
   return {
     of: ({ id }) => ({
+      // Stryker disable next-line ArrayDeclaration: lifecycle items carry no scope tags, so the scope tags of a lifecycle-only query are never read.
       query: unionOf(queryOf(entries, def.by, id, [], true), trackingQuery(id)),
       handles: eventTypes,
       ignores: ignored,
       bindings: [...new Set([def.by, ...entries.flatMap((e) => e.by ?? [])])],
       load: (eventStore) => load(eventStore, id) as never
     }),
+    // Stryker disable next-line ArrayDeclaration: as above, a lifecycle-only query reads no scope tags.
     lifecycleQuery: (id) => queryOf(entries, def.by, id, [], true)
   };
 };
@@ -396,6 +401,7 @@ export const defineModel = <S, const By extends string, Scope extends object = {
     return {
       on: (event, apply, opts) => add(event as EventLike, apply as never, opts),
       lifecycle: (event, apply) => add(event as EventLike, apply as never, { lifecycle: true }),
+      // Stryker disable next-line ArrayDeclaration: a lifecycle-only query reads no scope tags.
       lifecycleQuery: (id) => queryFor(id, [], true),
       period: (spec, config) => periodModel(entries, ignored, def, spec, config) as never,
       // a declaration only: the boundary and the fold are untouched

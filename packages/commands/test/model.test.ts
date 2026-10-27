@@ -247,3 +247,67 @@ describe("malformed stored data", () => {
     }
   });
 });
+
+// What a load gives the executor besides the state (found by mutation testing, docs/history/plans/mutation-testing.md): the fold of the command's own
+// events, the tags `complete` adds to them, and what `all(...)` makes of its members'.
+describe("the query, the fold and complete", () => {
+  test("a type handled twice appears once in its item (the last handler wins)", () => {
+    const Twice = defineModel({ by: "account_id", initial: () => 0 }).on(Deposited, (n) => n + 1).on(Deposited, (n, d) => n + d.amount);
+    expect(Twice.of({ id: "x" }).query).toEqual(Query.of([Query.queryItemOf(["Deposited"], [Tag.of("account_id", "x")])]));
+  });
+
+  test("fold applies the events of this entity in its scope, and only those", async () => {
+    const fake = makeInMemoryEventStore();
+    const loaded = await load(fake, AccountModel.of({ id: "a1", year: 2026 }));
+    const year = [Tag.of("year", "2026")];
+    const after = loaded.fold!(loaded.state, [
+      Deposited({ accountId: "a1", amount: 5 }, year),
+      Deposited({ accountId: "other", amount: 100 }, year), // another account
+      Deposited({ accountId: "a1", amount: 1000 }, [Tag.of("year", "2025")]), // another scope
+      Transferred({ fromId: "a1", toId: "b", amount: 2 }, year), // through another binding, with the handler's context
+      Unrelated({}) // a type the model does not handle
+    ]);
+    expect(after.balance).toBe(3);
+  });
+
+  test("complete adds the scope tags an event of this entity lacks, leaves other entities' events alone, and names a scope it contradicts", async () => {
+    const loaded = await load(makeInMemoryEventStore(), AccountModel.of({ id: "a1", year: 2026 }));
+    const keys = (e: { tags: ReadonlyArray<Tag.Tag> }) => e.tags.map((t) => `${t.key}=${t.value}`).sort();
+    expect(keys(loaded.complete!(Deposited({ accountId: "a1", amount: 1 })).event)).toEqual(["account_id=a1", "year=2026"]);
+    // a tag is matched by key AND value: another key with the scope's value is not the scope
+    expect(keys(loaded.complete!(Deposited({ accountId: "a1", amount: 1 }, [Tag.of("batch", "2026")])).event)).toEqual(["account_id=a1", "batch=2026", "year=2026"]);
+    // bound through one of its keys: from_id is this account, to_id is not
+    expect(keys(loaded.complete!(Transferred({ fromId: "a1", toId: "b", amount: 1 })).event)).toEqual(["from_id=a1", "to_id=b", "year=2026"]);
+    expect(keys(loaded.complete!(Deposited({ accountId: "other", amount: 1 })).event)).toEqual(["account_id=other"]);
+    expect(keys(loaded.complete!(Opened({ accountId: "a1", initial: 0 })).event)).toEqual(["account_id=a1"]); // lifecycle: not scoped
+    expect(loaded.complete!(Deposited({ accountId: "a1", amount: 1 }, [Tag.of("year", "2025")])).conflicts).toEqual(["year=2026"]);
+  });
+});
+
+describe("all: what the whole gives the executor", () => {
+  test("no members: an empty state at the zero cursor", async () => {
+    const loaded = await load(makeInMemoryEventStore(), all({}));
+    expect(loaded.state).toEqual({});
+    expect([loaded.logPosition.position, loaded.horizon.position, loaded.latest.position]).toEqual([0n, 0n, 0n]);
+  });
+
+  test("latest is the newest of the members' newest events; members without a period add no prefix, boundary, guard or clock", async () => {
+    const fake = makeInMemoryEventStore();
+    fake.seed(Opened({ accountId: "a", initial: 1 }), Opened({ accountId: "b", initial: 1 }), Deposited({ accountId: "b", amount: 1 }, [Tag.of("year", "1")]));
+    const loaded = await load(fake, all({ x: AccountModel.of({ id: "a", year: 1 }), y: AccountModel.of({ id: "b", year: 1 }) }));
+    expect(loaded.latest.position).toBe(3n);
+    expect(Object.keys(loaded).sort()).toEqual(["complete", "fold", "horizon", "latest", "logPosition", "state"]);
+  });
+
+  test("fold and complete go through every member: each folds what it reads, and the tags and conflicts add up", async () => {
+    const both = all({ from: AccountModel.of({ id: "a", year: 2026 }), to: AccountModel.of({ id: "b", year: 2026 }) });
+    const loaded = await load(makeInMemoryEventStore(), both);
+    const folded = loaded.fold!(loaded.state, [Transferred({ fromId: "a", toId: "b", amount: 7 }, [Tag.of("year", "2026")])]);
+    expect([folded.from.balance, folded.to.balance]).toEqual([-7, 7]);
+    const scoped = defineModel({ by: "account_id", initial: () => 0, scope: (s: { year: number }) => ({ year: s.year }) }).on(Deposited, (n) => n);
+    const split = await load(makeInMemoryEventStore(), all({ p: scoped.of({ id: "a", year: 2026 }), q: scoped.of({ id: "a", year: 2027 }) }));
+    const done = split.complete!(Deposited({ accountId: "a", amount: 1 }));
+    expect(done.event.tags.map((t) => `${t.key}=${t.value}`)).toEqual(["account_id=a", "year=2026"]); // the first member's
+    expect(done.conflicts).toEqual(["year=2027"]); // and the second's, which wants another year
+  });
+});
