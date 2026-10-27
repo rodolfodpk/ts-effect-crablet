@@ -1,0 +1,10 @@
+{
+  "name": "crablet-mutation",
+  "private": true,
+  "description": "Mutation testing of the core packages (docs/history/plans/mutation-testing.md). Not a workspace: its own install, so Stryker's TypeScript 5.9 never meets the root's 7.",
+  "devDependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@hughescr/stryker-bun-runner": "1.6.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,6 +1,8 @@
 # Plan: mutation testing for the core packages
 
-**Status:** proposed (2026-10-08), with a pilot done. Not started in the repository.
+**Status:** steps 0 and 1 done (2026-10-27): the tooling is in `tools/mutation/` and `bun run mutation` measures tier 1 in about a minute (once: `cd tools/mutation && bun install`); the baseline
+is below. Next is step 2, the triage, which the owner decides on after seeing the numbers. It runs on demand only for now (the owner's decision on
+2026-10-27: where it runs in CI waits for the baseline and the triage). Proposed 2026-10-08, with a pilot.
 
 ## Why
 
@@ -54,6 +56,15 @@ Each is its own commit.
 
 Done when: a one-page decision in this plan says which of the options was chosen and why.
 
+**Decision (2026-10-27).**
+
+- **TypeScript: isolation works.** `tools/mutation/` has its own `package.json` and install, and is left out of the workspaces (`"!tools/mutation"` in
+  the root `workspaces`), so Stryker reads the configuration with its own `typescript@5.9.3` while the root stays on 7.0.2 and the root lockfile does
+  not change. Checked first on one file (`Tag.ts`: 16 of 16 killed, as in the pilot).
+- **The runner:** `@hughescr/stryker-bun-runner` **1.6.0** (Apache-2.0; peer `typescript <7`, Stryker 9 or 10), with `@stryker-mutator/core` 10.1.1,
+  both pinned. Its README now documents the TypeScript 7 problem and the workaround used here. The `command` runner stays the way out.
+- **CI:** not yet; on demand (`bun run mutation`), by the owner's decision.
+
 ### 1. Tier 1: the pure and in-memory core, measured
 
 - Scope: `packages/{eventstore,commands,event-poller}/src`, excluding files that only the integration tests exercise (they would all show as "no coverage" and mean nothing here): the list is generated from the merged coverage (files whose unit-only coverage is low).
@@ -61,6 +72,70 @@ Done when: a one-page decision in this plan says which of the options was chosen
 - Output: the first score per file and per package, written into this plan as the baseline.
 
 Done when: `bun run mutation` produces the report locally in minutes, and the baseline table is here.
+
+**Baseline (2026-10-27, on Effect 4.0.6).** 3,006 mutants in 51 files, run in **1 minute 6 seconds** (concurrency 4, per-test coverage, the 533 unit
+tests of the three packages). The configuration is `tools/mutation/stryker.config.mjs`: `ignoreStatic` (692 module-level mutants skipped), the
+`StringLiteral` mutator off (SQL text and messages), and ten files left out because only the integration tests reach them (the first run found them
+as all, or almost all, "no coverage": `EventStore.ts`, both `internal/sql.ts`, `Storage.ts`, `CommandAuditStore.ts`, `CommandAudit.ts`, `Crablet.ts`,
+`VerifyEvents.ts`, `PostgresProgressTracker.ts`, `SqlEventFetcher.ts`); they are tier 2. Reports: `tools/mutation/reports/` (HTML and JSON, not
+committed). "Covered score" leaves out the mutants no unit test reaches.
+
+| Package | Killed | Survived | No coverage | Ignored (static) | Score | Covered score |
+|---|---|---|---|---|---|---|
+| `commands` | 819 | 189 | 111 | 449 | 73.2% | 81.2% |
+| `event-poller` | 272 | 62 | 29 | 72 | 74.9% | 81.4% |
+| `eventstore` | 584 | 155 | 93 | 171 | 70.2% | 79.0% |
+| **All three** | 1,675 | 406 | 233 | 692 | 72.4% | 80.5% |
+
+The pilot's findings hold: `LogPosition.ts` is still at **59 %** with full line coverage, `NotifyPayload.ts` at 81 %, `Tag.ts` and `Marker.ts` at 100 %.
+`Model.ts` is lower than in the pilot (64 %, it was 91 %): the file grew (297 mutants, 57 then), with the change-impact metadata, `scope` and the
+period resolver. The largest numbers of survivors are in `Model.ts` (86), `Leader.ts` (46), `EventProcessor.ts` (44), `ModelImpact.ts` (26), the
+in-memory store (24) and `Personal.ts` (21): where step 2 would start, after the pilot's starting points. Per file, lowest first:
+
+| File | Killed | Survived | No coverage | Score |
+|---|---|---|---|---|
+| `eventstore/src/EventDecoding.ts` | 1 | 4 | 1 | 17% |
+| `commands/src/CommandExecutor.ts` | 15 | 1 | 46 | 24% |
+| `eventstore/src/AppendCondition.ts` | 3 | 0 | 5 | 38% |
+| `eventstore/src/CorrelationContext.ts` | 4 | 1 | 4 | 44% |
+| `eventstore/src/AppendEvent.ts` | 17 | 8 | 12 | 46% |
+| `eventstore/src/Query.ts` | 12 | 4 | 9 | 48% |
+| `eventstore/src/testing/InMemoryEventStore.ts` | 39 | 24 | 9 | 54% |
+| `eventstore/src/LogPosition.ts` | 24 | 13 | 4 | 59% |
+| `commands/src/Errors.ts` | 20 | 4 | 9 | 61% |
+| `event-poller/src/ProgressCursor.ts` | 12 | 2 | 5 | 63% |
+| `commands/src/Model.ts` | 189 | 86 | 22 | 64% |
+| `event-poller/src/EventProcessor.ts` | 127 | 44 | 24 | 65% |
+| `eventstore/src/Leader.ts` | 131 | 46 | 22 | 66% |
+| `eventstore/src/SessionClients.ts` | 31 | 3 | 12 | 67% |
+| `eventstore/src/SharedListen.ts` | 24 | 3 | 7 | 71% |
+| `commands/src/Personal.ts` | 99 | 21 | 14 | 74% |
+| `commands/src/ModelImpact.ts` | 99 | 26 | 7 | 75% |
+| `commands/src/CommandDecision.ts` | 16 | 3 | 2 | 76% |
+| `eventstore/src/Listen.ts` | 26 | 7 | 1 | 76% |
+| `commands/src/Repeat.ts` | 35 | 9 | 1 | 78% |
+| `eventstore/src/ServerSettings.ts` | 14 | 4 | 0 | 78% |
+| `eventstore/src/spec/Spec.ts` | 69 | 14 | 4 | 79% |
+| `commands/src/ExecutionResult.ts` | 4 | 0 | 1 | 80% |
+| `eventstore/src/NotifyPayload.ts` | 109 | 22 | 3 | 81% |
+| `event-poller/src/ProcessorManagementService.ts` | 46 | 10 | 0 | 82% |
+| `commands/src/Event.ts` | 62 | 10 | 3 | 83% |
+| `commands/src/testing/Scenario.ts` | 94 | 13 | 4 | 85% |
+| `commands/src/testing/EventFixtures.ts` | 94 | 10 | 1 | 90% |
+| `commands/src/Command.ts` | 26 | 3 | 0 | 90% |
+| `event-poller/src/ProcessorRuntimeOverrides.ts` | 18 | 2 | 0 | 90% |
+| `event-poller/src/EventSelection.ts` | 10 | 1 | 0 | 91% |
+| `commands/src/Deadline.ts` | 27 | 2 | 0 | 93% |
+| `event-poller/src/BackoffState.ts` | 16 | 1 | 0 | 94% |
+| `event-poller/src/MonitorProcessors.ts` | 35 | 2 | 0 | 95% |
+| `commands/src/Period.ts` | 38 | 1 | 1 | 95% |
+| `eventstore/src/internal/WakeupNotifier.ts` | 45 | 2 | 0 | 96% |
+| `commands/src/Contract.ts` | 1 | 0 | 0 | 100% |
+| `event-poller/src/ProcessorConfig.ts` | 2 | 0 | 0 | 100% |
+| `event-poller/src/internal/identifiers.ts` | 6 | 0 | 0 | 100% |
+| `eventstore/src/Marker.ts` | 19 | 0 | 0 | 100% |
+| `eventstore/src/Tag.ts` | 16 | 0 | 0 | 100% |
+
 
 ### 2. Triage the first report (the real work)
 
