@@ -88,7 +88,10 @@ lead alone, to know within seconds that it no longer does, and to give the lock 
   session and attempting the moment a leader is seen lost. Without the guard (a mutation) an attempt failed with the server's error in 3 runs of 3,
   at rounds 0 to 5; with it, 0 in 6 runs. The second half has a test of its own: an attempt on a session that died before the heartbeat noticed
   fails and loses every leader on it at once, and the next attempt leads on a new session; without `loseAll` on the failure (a mutation) the
-  leaders stay leading until the heartbeat.
+  leaders stay leading until the heartbeat. Since 2026-10-27 that attempt does not fail: once its failure has lost the session's leaders, it is made
+  again at once on a new session, so the module leads again without waiting for its retry interval (5 s by default). Only that case is retried: a
+  failure on a new session, or a statement that did not answer, says the database is unreachable, and the error goes to the module as before. The
+  test now checks that the attempt leads on a new session; without the retry (a mutation) it fails.
 
 ## Alternatives considered
 

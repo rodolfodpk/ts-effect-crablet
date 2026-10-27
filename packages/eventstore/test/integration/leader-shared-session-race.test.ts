@@ -58,7 +58,7 @@ describe("an attempt right after the shared lock session dies (ADR-0046)", () =>
 });
 
 describe("an attempt on the shared lock session after it died, before the heartbeat noticed (ADR-0046)", () => {
-  it("fails, and loses every leader on the session at once, so the next attempt leads on a new session", { timeout: 30_000 }, async () => {
+  it("loses every leader on the session at once, and leads at once on a new session instead of waiting for the module's retry", { timeout: 30_000 }, async () => {
     const slow = { heartbeat: "10 seconds", verifyTimeout: "500 millis", failuresBeforeLost: 1 } as const;
     const acquireSlow = (key: bigint) => processA.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => tryAcquireGlobalLeader(sql, key, slow)));
     const leaders = (await Promise.all(KEYS.slice(0, 3).map(acquireSlow))) as Array<LeaderHandle>;
@@ -67,10 +67,10 @@ describe("an attempt on the shared lock session after it died, before the heartb
     await sleep(200);
     assert.ok(leaders.every((l) => l.isLeader()), "the heartbeat has not noticed yet");
 
-    await assert.rejects(acquireSlow(DEADLINES_LOCK_KEY), "the attempt ran on the dead session");
-    assert.ok(leaders.every((l) => !l.isLeader()), "its failure lost every leader on the session, without waiting for the heartbeat");
+    // The attempt runs on the dead session first: its failure loses every leader on it, and the attempt is made again on a new one.
     const again = await acquireSlow(DEADLINES_LOCK_KEY);
-    assert.ok(again !== null && again.isLeader(), "the next attempt leads");
+    assert.ok(leaders.every((l) => !l.isLeader()), "every leader on the dead session is lost, without waiting for the heartbeat");
+    assert.ok(again !== null && again.isLeader(), "the attempt leads");
     assert.notStrictEqual(await holderPid(), pid, "on a new session");
     await processA.runPromise(again.release());
     for (const l of leaders) await processA.runPromise(l.release());
