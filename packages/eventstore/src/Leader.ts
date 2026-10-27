@@ -300,78 +300,86 @@ export const tryAcquireGlobalLeader = (
         )
       );
 
+    // Set when the attempt's statement failed on a session that held other leaders' locks: its connection failed, those leaders are lost with it,
+    // and the attempt is made again at once on a new session (below) instead of waiting for the module's retry interval.
+    let failedOnShared = false;
+
+    const once: Effect.Effect<LeaderHandle | null, SqlError> = Effect.gen(function* () {
+      // Session-level advisory locks are re-entrant: this session taking a key it holds would get it again, and two leaders of one module in one
+      // process would both lead (ADR-0046, decision 2).
+      if (sessions.current?.members.has(key)) return null;
+
+      // A session whose leaders are all lost is on its way back to the pool (their releases close it): an attempt takes a new one.
+      if (sessions.current !== null && ![...sessions.current.members.values()].some((m) => m.state.status === "leading")) sessions.current = null;
+      let session = sessions.current;
+      if (session === null) {
+        const scope = yield* Scope.make();
+        const connection = yield* reserve(scope).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
+        session = { scope, connection, members: new Map(), monitor: null, leased: false, abandoned: false };
+      }
+      const fresh = session.members.size === 0;
+      const live = session;
+
+      // On a replica nothing is taken: the CASE evaluates the lock only on a primary. Bounded: on a shared session a statement that hangs (a silent
+      // partition) would otherwise hold the permit, and with it every leader of the process, until the TCP keepalives give up.
+      const acquired = yield* attempt(
+        live,
+        live.connection.execute("SELECT CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock($1) END AS acquired", [key], undefined),
+        "the attempt"
+      ).pipe(
+        Effect.map((rows) => Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired)),
+        // A failed statement on a session that holds locks means its connection failed: its leaders are lost with it.
+        Effect.onError(() => (live.abandoned ? Effect.void : fresh ? closeSession(live) : Effect.andThen(Effect.sync(() => void (failedOnShared = true)), loseAll(live))))
+      );
+      if (!acquired) {
+        if (fresh) yield* closeSession(live);
+        return null;
+      }
+
+      // The lease, set with the session's first lock: from now on the server ends this session if it stays idle longer than this, and the heartbeat
+      // keeps it from being idle. If the setting cannot be made the lock is given back, and the attempt fails and is retried.
+      if (fresh && idleTimeout !== null) {
+        yield* attempt(live, live.connection.execute(`SET idle_session_timeout = '${Duration.toMillis(idleTimeout)}ms'`, [], undefined), "the lease").pipe(
+          Effect.tapError(() => (live.abandoned ? Effect.void : within(verifyTimeout, live.connection.execute("SELECT pg_advisory_unlock($1)", [key], undefined)).pipe(Effect.ignore))),
+          Effect.onError(() => (live.abandoned ? Effect.void : closeSession(live)))
+        );
+        live.leased = true;
+      }
+
+      // `isLeader()` is synchronous (the poller asks it on every tick), so each leader's state is one plain cell, read and replaced only through the pure
+      // transitions above, never mutated in pieces; a `Ref` would make that read an Effect.
+      const member: Member = { key: lockKey, state: leading };
+      live.members.set(key, member);
+      sessions.current = live;
+
+      // One heartbeat for every leader of the session, for as long as it holds a lock.
+      if (live.monitor === null) {
+        live.monitor = yield* Effect.forkDetach(
+          Effect.gen(function* () {
+            while (live.members.size > 0) {
+              yield* Effect.sleep(heartbeat);
+              if (live.members.size === 0) break;
+              yield* check(live, [...live.members.values()]);
+            }
+          })
+        );
+      }
+
+      const handle: LeaderHandle = {
+        lockKey,
+        isLeader: () => member.state.status === "leading",
+        verify: Effect.suspend(() =>
+          member.state.status !== "leading" ? Effect.succeed(false) : Effect.map(check(live, [member]), (alive) => alive.get(member) ?? false)
+        ),
+        release: () => release(live, member)
+      };
+      return handle;
+    });
+
+    // Once more, on a new session, only after a failure on a shared one (`loseAll` cleared it): a failure on a new session, or a statement that did not
+    // answer (`attempt` abandoned it), says the database itself is unreachable, and the error goes to the module, which retries at its interval.
     return yield* Semaphore.withPermit(
       sessions.permit,
-      Effect.gen(function* () {
-        // Session-level advisory locks are re-entrant: this session taking a key it holds would get it again, and two leaders of one module in one
-        // process would both lead (ADR-0046, decision 2).
-        if (sessions.current?.members.has(key)) return null;
-
-        // A session whose leaders are all lost is on its way back to the pool (their releases close it): an attempt takes a new one.
-        if (sessions.current !== null && ![...sessions.current.members.values()].some((m) => m.state.status === "leading")) sessions.current = null;
-        let session = sessions.current;
-        if (session === null) {
-          const scope = yield* Scope.make();
-          const connection = yield* reserve(scope).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
-          session = { scope, connection, members: new Map(), monitor: null, leased: false, abandoned: false };
-        }
-        const fresh = session.members.size === 0;
-        const live = session;
-
-        // On a replica nothing is taken: the CASE evaluates the lock only on a primary. Bounded: on a shared session a statement that hangs (a silent
-        // partition) would otherwise hold the permit, and with it every leader of the process, until the TCP keepalives give up.
-        const acquired = yield* attempt(
-          live,
-          live.connection.execute("SELECT CASE WHEN pg_is_in_recovery() THEN false ELSE pg_try_advisory_lock($1) END AS acquired", [key], undefined),
-          "the attempt"
-        ).pipe(
-          Effect.map((rows) => Boolean((rows[0] as { acquired: boolean } | undefined)?.acquired)),
-          // A failed statement on a session that holds locks means its connection failed: its leaders are lost with it.
-          Effect.onError(() => (live.abandoned ? Effect.void : fresh ? closeSession(live) : loseAll(live)))
-        );
-        if (!acquired) {
-          if (fresh) yield* closeSession(live);
-          return null;
-        }
-
-        // The lease, set with the session's first lock: from now on the server ends this session if it stays idle longer than this, and the heartbeat
-        // keeps it from being idle. If the setting cannot be made the lock is given back, and the attempt fails and is retried.
-        if (fresh && idleTimeout !== null) {
-          yield* attempt(live, live.connection.execute(`SET idle_session_timeout = '${Duration.toMillis(idleTimeout)}ms'`, [], undefined), "the lease").pipe(
-            Effect.tapError(() => (live.abandoned ? Effect.void : within(verifyTimeout, live.connection.execute("SELECT pg_advisory_unlock($1)", [key], undefined)).pipe(Effect.ignore))),
-            Effect.onError(() => (live.abandoned ? Effect.void : closeSession(live)))
-          );
-          live.leased = true;
-        }
-
-        // `isLeader()` is synchronous (the poller asks it on every tick), so each leader's state is one plain cell, read and replaced only through the pure
-        // transitions above, never mutated in pieces; a `Ref` would make that read an Effect.
-        const member: Member = { key: lockKey, state: leading };
-        live.members.set(key, member);
-        sessions.current = live;
-
-        // One heartbeat for every leader of the session, for as long as it holds a lock.
-        if (live.monitor === null) {
-          live.monitor = yield* Effect.forkDetach(
-            Effect.gen(function* () {
-              while (live.members.size > 0) {
-                yield* Effect.sleep(heartbeat);
-                if (live.members.size === 0) break;
-                yield* check(live, [...live.members.values()]);
-              }
-            })
-          );
-        }
-
-        const handle: LeaderHandle = {
-          lockKey,
-          isLeader: () => member.state.status === "leading",
-          verify: Effect.suspend(() =>
-            member.state.status !== "leading" ? Effect.succeed(false) : Effect.map(check(live, [member]), (alive) => alive.get(member) ?? false)
-          ),
-          release: () => release(live, member)
-        };
-        return handle;
-      })
+      once.pipe(Effect.catch((error) => (failedOnShared ? Effect.andThen(Effect.sync(() => void (failedOnShared = false)), once) : Effect.fail(error))))
     );
   });
