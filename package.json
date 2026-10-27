@@ -10,7 +10,8 @@
   "workspaces": [
     "packages/*",
     "examples/*",
-    "tools/*"
+    "tools/*",
+    "!tools/mutation"
   ],
   "scripts": {
     "test:unit": "bun test packages/*/test/*.test.ts examples/*/test/*.test.ts tools/*/test/*.test.ts examples/*/tutorial/*.test.ts scripts/*.test.ts && bun run test:unit:period",
@@ -24,7 +25,8 @@
     "coverage:baseline": "bun scripts/coverage-gate.ts --update",
     "test:coverage": "bun run test:unit:coverage && bun run test:integration:coverage && bun run coverage:merge && bun run coverage:check",
     "typecheck": "tsc --noEmit -p tsconfig.json && bun run --cwd examples/course-enrolment-ui typecheck && bun run --cwd tools/processors-admin-ui typecheck && bun run --cwd tools/chaos-ui typecheck",
-    "docs:api": "bun examples/wallet-example-app/scripts/generate-openapi.ts"
+    "docs:api": "bun examples/wallet-example-app/scripts/generate-openapi.ts",
+    "mutation": "tools/mutation/node_modules/.bin/stryker run tools/mutation/stryker.config.mjs"
   },
   "devDependencies": {
     "@readme/openapi-parser": "9.0.0",
