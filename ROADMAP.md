@@ -18,7 +18,7 @@ not on npm ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
 
 | Item | State | Record |
 |---|---|---|
-| Mutation testing of the core packages | tier 1 measured: `bun run mutation`, 72.4 % over 3,006 mutants of eventstore, commands and event-poller; the triage of the survivors is next, and CI is not decided | [plan](docs/history/plans/mutation-testing.md) |
+| Mutation testing of the core packages | tier 1 measured with `bun run mutation` (72.4 %, now 77.6 % after the triage of `LogPosition.ts` and `Model.ts`); the triage of the other files goes on, and CI is not decided | [plan](docs/history/plans/mutation-testing.md) |
 | `Period.hour` | needs a "latest matching event" primitive in the event store first, because the turnover read grows with the number of periods | [period follow-ups](docs/history/plans/period-follow-ups.md) (B1, B2) |
 | The timed walk-through of the documents by a person who did not write them | a test sheet is ready and has not been run; an AI agent's cold-start run is recorded and its findings fixed, but it cannot measure reading time | [test sheet](docs/history/plans/newcomer-walkthrough.md), [record](docs/history/plans/newcomer-accessibility.md) |
 

@@ -1,7 +1,7 @@
 # Plan: mutation testing for the core packages
 
 **Status:** steps 0 and 1 done (2026-10-27): the tooling is in `tools/mutation/` and `bun run mutation` measures tier 1 in about a minute (once: `cd tools/mutation && bun install`); the baseline
-is below. Next is step 2, the triage, which the owner decides on after seeing the numbers. It runs on demand only for now (the owner's decision on
+is below. Step 2, the triage, is under way (two files done, see its progress table). It runs on demand only for now (the owner's decision on
 2026-10-27: where it runs in CI waits for the baseline and the triage). Proposed 2026-10-08, with a pilot.
 
 ## Why
@@ -144,6 +144,15 @@ in-memory store (24) and `Personal.ts` (21): where step 2 would start, after the
 - Starting points from the pilot: `Model.lifecycleQuery`, the type deduplication and `all({})` in `Model.ts`; the `useXid` guard and the negative-position check in `LogPosition.ts`; the same-key and no-key branches of the wake-up filter in `NotifyPayload.ts`.
 
 Done when: every survivor in scope has a test or a marked reason, and the reasons can be read in one `grep`.
+
+**Progress** (`grep -rn "Stryker disable" packages/*/src` lists every reason):
+
+| File | Before | After | What it found |
+|---|---|---|---|
+| `eventstore/src/LogPosition.ts` | 59 % | 100 % | no test of a negative position, of a cursor with no transaction id or with `"0"` where the two orders disagree, nor of `latest` at all (what a repeat answered by its model points at, ADR-0034); one equivalent mutant marked |
+| `commands/src/Model.ts` | 64 % | 100 % | `all(...)`'s result (prefix, boundary, guard, clock, members without fold or complete) was untested; so were a period's defects on an inconsistent or closed period, a closing of another period, an opening that lands between the two reads, the tracking of another entity's periods, and the period model's `lifecycleQuery` and `bindings` (the pilot's finding); `unionOf` took an `undefined` nobody passes; seven equivalent mutants marked |
+
+After these two files tier 1 is at **77.6 %** (85.3 % of what the unit tests reach), from 72.4 %; `commands` 82.6 %.
 
 ### 3. A ratchet for the score
 

@@ -27,6 +27,7 @@ export const latest = (a: LogPosition, b: LogPosition): LogPosition => (earliest
 export const earliest = (a: LogPosition, b: LogPosition): LogPosition => {
   const ax = a.transactionId, bx = b.transactionId;
   const useXid = ax !== null && ax !== "0" && bx !== null && bx !== "0" && BigInt(ax) !== BigInt(bx);
+  // Stryker disable next-line EqualityOperator: `useXid` holds only when the two ids differ, so `<` and `<=` give the same answer here.
   if (useXid) return BigInt(ax) < BigInt(bx) ? a : b;
   return a.position <= b.position ? a : b;
 };
