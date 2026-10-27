@@ -1,7 +1,8 @@
 # Plan: mutation testing for the core packages
 
 **Status:** steps 0 and 1 done (2026-10-27): the tooling is in `tools/mutation/` and `bun run mutation` measures tier 1 in about a minute (once: `cd tools/mutation && bun install`); the baseline
-is below. Step 2, the triage, is under way (two files done, see its progress table). It runs on demand only for now (the owner's decision on
+is below. Step 2, the triage, is under way (eight files done, see its progress table). Since 2026-10-27 it mutates in place (`inPlace` in the config): in Stryker's
+sandbox, one package's tests imported the other packages' sources unmutated. It runs on demand only for now (the owner's decision on
 2026-10-27: where it runs in CI waits for the baseline and the triage). Proposed 2026-10-08, with a pilot.
 
 ## Why
@@ -152,7 +153,16 @@ Done when: every survivor in scope has a test or a marked reason, and the reason
 | `eventstore/src/LogPosition.ts` | 59 % | 100 % | no test of a negative position, of a cursor with no transaction id or with `"0"` where the two orders disagree, nor of `latest` at all (what a repeat answered by its model points at, ADR-0034); one equivalent mutant marked |
 | `commands/src/Model.ts` | 64 % | 100 % | `all(...)`'s result (prefix, boundary, guard, clock, members without fold or complete) was untested; so were a period's defects on an inconsistent or closed period, a closing of another period, an opening that lands between the two reads, the tracking of another entity's periods, and the period model's `lifecycleQuery` and `bindings` (the pilot's finding); `unionOf` took an `undefined` nobody passes; seven equivalent mutants marked |
 
-After these two files tier 1 is at **77.6 %** (85.3 % of what the unit tests reach), from 72.4 %; `commands` 82.6 %.
+| `eventstore/src/{AppendCondition,AppendEvent,CorrelationContext,EventDecoding,Query}.ts` | 17 to 50 % | 100 % | the builders and helpers had no test of their own (`Query.isEmpty`, `AppendCondition.idempotent` and `failIfChanged`, a build with no data, the fresh-transaction flag, an issue with no path, the decoding-failure count by event type); five that nothing in the repository used were deleted (`Query.queryItemOfTypes`, `queryItemOfTags`, `queryItemOfTag` and `empty`, the same as `noCondition`; `AppendEvent.hasTag`) |
+| `eventstore/src/testing/InMemoryEventStore.ts` | 54 % | 94 % | a **real difference from Postgres**: a repeat caught by the trigger backstop (ADR-0035) was reported at the first event of the earlier append, Postgres reports its last (the marker the first run answered); fixed, and two conformance cases now check the `Duplicate`'s `latest`, `requests` and `byTrigger` on both stores. Also untested: a projection's projectors filtering by event type, the no-projector message, and a rollback of the backstop's keys. Two pieces of code that did nothing went (one key per event where only the first is read, a rollback of fingerprints that the next append overwrites); four equivalent mutants marked |
+
+After these files tier 1 is at **80.8 %** (87.3 % of what the unit tests reach), from 72.4 %; `commands` 82.6 %, `eventstore` 81.0 %, `event-poller` 74.9 %.
+
+**The sandbox hid mutants (found 2026-10-27).** Stryker runs in a copy of the repository and links each `node_modules` folder back to the original.
+Each package's `node_modules` holds its sibling packages (`@crablet/eventstore` for `commands`), so in the copy a commands test imported the eventstore
+source **unmutated**: an eventstore mutant that only the commands tests reach always survived. Mutating in place (`inPlace: true`) fixes it; on the
+same code it moved tier 1 from 77.6 % to 79.1 % and `eventstore` from 72.2 % to 76.1 %. The baseline above was measured in the sandbox, so it is
+lower than the code deserved there. Do not edit the sources while a run is going; Stryker restores them when it ends.
 
 ### 3. A ratchet for the score
 

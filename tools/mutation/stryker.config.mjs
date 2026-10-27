@@ -34,12 +34,17 @@ export default {
   ignoreStatic: true,
   // String literals are mostly SQL text, log and error messages: their mutants are equivalent noise.
   mutator: { excludedMutations: ["StringLiteral"] },
+  // Mutate the files where they are, not in a sandbox copy. Each package's node_modules links its sibling packages (`@crablet/eventstore`), and Stryker
+  // links those folders back to the repository: in a sandbox, a commands test imports the eventstore source unmutated, so the eventstore mutants that
+  // only the commands tests reach always survive (found 2026-10-27: tier 1 was 77.6 % in a sandbox, 79.1 % in place). Stryker restores the files when
+  // it ends, including on Ctrl-C; do not edit the sources while it runs (after a crash, `git checkout packages` restores them).
+  inPlace: true,
   concurrency: 4,
   reporters: ["clear-text", "progress", "html", "json"],
   htmlReporter: { fileName: "tools/mutation/reports/mutation.html" },
   jsonReporter: { fileName: "tools/mutation/reports/mutation.json" },
   tempDirName: "tools/mutation/.stryker-tmp",
-  // The docs and examples stay in the sandbox: some unit tests check the guides and links against them.
+  // The docs and examples are not ignored: some unit tests check the guides and links against them.
   ignorePatterns: ["coverage", "tools/mutation", ".git"],
   cleanTempDir: "always"
 };

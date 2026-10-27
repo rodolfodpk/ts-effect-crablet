@@ -11,6 +11,9 @@ import { Cause, Clock, Effect, Exit } from "effect";
 import { EventStore, type StoredEvent } from "../../src/EventStore.ts";
 import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
+import { Duplicate } from "../../src/AppendErrors.ts";
+import type * as AppendEvent from "../../src/AppendEvent.ts";
+import * as CorrelationContext from "../../src/CorrelationContext.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
 import * as Query from "../../src/Query.ts";
 import * as Tag from "../../src/Tag.ts";
@@ -21,6 +24,13 @@ export interface ConformanceCase {
   readonly name: string;
   readonly run: (h: Harness) => Promise<void>;
 }
+
+// The Duplicate an append is refused with (it fails the case if the append is accepted or refused otherwise).
+const duplicateFrom = (h: Harness, events: ReadonlyArray<AppendEvent.AppendEvent>, condition: AppendCondition.AppendCondition) =>
+  h.run(Effect.flatMap(EventStore, (es) => Effect.flip(es.append(events, condition)))).then((error) => {
+    assert.ok(error instanceof Duplicate, `expected a Duplicate, got ${String(error)}`);
+    return error;
+  });
 
 export const cases: ReadonlyArray<ConformanceCase> = [
   {
@@ -247,6 +257,41 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     }
   },
   {
+    name: "a Duplicate names the newest matching event and each distinct request behind the matches; the query saw it, not the trigger backstop",
+    run: async (h) => {
+      const id = uid();
+      const under = (fingerprint: string) => (events: ReadonlyArray<AppendEvent.AppendEvent>) =>
+        h.run(CorrelationContext.withRequestFingerprint(fingerprint)(Effect.flatMap(EventStore, (es) => es.append(events))));
+      await under("aa01")([ev("ConfDup", [["op", id]])]);
+      await under("aa02")([ev("ConfDup", [["op", id]])]);
+      const newest = await under("aa02")([ev("ConfDup", [["op", id]])]);
+      const duplicate = await duplicateFrom(h, [ev("ConfDup", [["op", id]])], AppendCondition.idempotentFromQuery(Query.forEventAndTag("ConfDup", "op", id)));
+      assert.deepEqual(duplicate.latest, { position: newest.lastPosition, transactionId: newest.transactionId });
+      assert.deepEqual([...duplicate.requests].sort((a, b) => String(a.fingerprint).localeCompare(String(b.fingerprint))), [
+        { fingerprint: "aa01", causationId: null },
+        { fingerprint: "aa02", causationId: null }
+      ]);
+      assert.equal(duplicate.byTrigger, false);
+    }
+  },
+  {
+    name: "the same trigger appending the same request again is refused by the backstop, pointing at the earlier append's last event, even with a condition that checks nothing",
+    run: async (h) => {
+      const id = uid();
+      const trigger = (await h.run(Effect.flatMap(EventStore, (es) => es.append([ev("ConfTrigger", [["t", id]])])))).lastPosition;
+      const underTrigger = <A, E>(effect: Effect.Effect<A, E, EventStore>) =>
+        CorrelationContext.withCausationId(trigger)(CorrelationContext.withRequestFingerprint(id)(effect));
+      const first = await h.run(underTrigger(Effect.flatMap(EventStore, (es) => es.append([ev("ConfEmitted", [["t", id]]), ev("ConfEmitted2", [["t", id]])]))));
+      const again = await h.run(underTrigger(Effect.flatMap(EventStore, (es) => Effect.flip(es.append([ev("ConfEmitted", [["t", id]]), ev("ConfEmitted2", [["t", id]])], AppendCondition.empty())))));
+      assert.ok(again instanceof Duplicate, "refused with Duplicate");
+      assert.equal(again.byTrigger, true);
+      assert.deepEqual(again.latest, { position: first.lastPosition, transactionId: first.transactionId });
+      assert.deepEqual(again.requests, [{ fingerprint: id, causationId: trigger }]);
+      // Another request under the same trigger is a different emit: accepted.
+      await h.run(CorrelationContext.withCausationId(trigger)(CorrelationContext.withRequestFingerprint(`ff${id}`)(Effect.flatMap(EventStore, (es) => es.append([ev("ConfEmitted", [["t", id]])])))));
+    }
+  },
+  {
     name: "a refused append stores NOTHING, even from a multi-event batch; an accepted batch stores all, in order",
     run: async (h) => {
       const id = uid();
@@ -271,7 +316,25 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     name: "projecting with no projector at all is a defect, not a typed failure",
     run: async (h) => {
       const exit = await h.run(Effect.flatMap(EventStore, (es) => Effect.exit(es.project(Query.of([]), LogPosition.zero(), []))));
-      assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "expected a Die");
+      assert.ok(Exit.isFailure(exit), "expected a failure");
+      const die = exit.cause.reasons.find(Cause.isDieReason);
+      assert.equal(die?.defect, "At least one projector is required");
+    }
+  },
+  {
+    name: "each projector of a projection sees only its own event types (none listed: every type), in log order, over one state",
+    run: async (h) => {
+      const id = uid();
+      await append(h, [ev("ConfProjA", [["p", id]]), ev("ConfProjB", [["p", id]]), ev("ConfProjA", [["p", id]])]);
+      const projector = (name: string, eventTypes: ReadonlyArray<string>) => ({
+        eventTypes,
+        initialState: [] as ReadonlyArray<string>,
+        transition: (seen: ReadonlyArray<string>, e: StoredEvent) => [...seen, `${name}:${e.type}`]
+      });
+      const { state } = await h.run(
+        Effect.flatMap(EventStore, (es) => es.project(Query.of(item([], [["p", id]])), LogPosition.zero(), [projector("a", ["ConfProjA"]), projector("b", ["ConfProjB"]), projector("all", [])]))
+      );
+      assert.deepEqual(state, ["a:ConfProjA", "all:ConfProjA", "b:ConfProjB", "all:ConfProjB", "a:ConfProjA", "all:ConfProjA"]);
     }
   },
   {

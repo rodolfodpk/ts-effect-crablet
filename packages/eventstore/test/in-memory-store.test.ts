@@ -104,6 +104,22 @@ describe("InMemoryEventStore: transaction", () => {
     expect(types(store)).toEqual([]);
   });
 
+  // The trigger backstop (ADR-0035) remembers what a trigger appended; a rollback takes back what it appended, and only that.
+  test("a rolled-back append under a trigger is forgotten by the backstop; one committed before the transaction is not", async () => {
+    const store = makeInMemoryEventStore();
+    const underTrigger = (trigger: bigint, type: string) =>
+      CorrelationContext.withCausationId(trigger)(CorrelationContext.withRequestFingerprint("fp")(Effect.flatMap(EventStore, (es) => es.append([ev(type)], AppendCondition.empty()))));
+    await Effect.runPromise(provide(store, underTrigger(1n, "Committed")));
+    await Effect.runPromiseExit(provide(store, store.transaction(Effect.andThen(underTrigger(2n, "Doomed"), Effect.fail("nope")))));
+    expect(types(store)).toEqual(["Committed"]);
+    // The trigger whose append was rolled back runs again and appends.
+    await Effect.runPromise(provide(store, underTrigger(2n, "Doomed")));
+    // The committed one, the last event before that transaction, is still recognised.
+    const again = await Effect.runPromise(provide(store, Effect.flip(underTrigger(1n, "Committed"))));
+    expect(again).toMatchObject({ _tag: "Duplicate", byTrigger: true });
+    expect(types(store)).toEqual(["Committed", "Doomed"]);
+  });
+
   test("transactions are exclusive: two running at once never interleave", async () => {
     const store = makeInMemoryEventStore();
     const steps: Array<string> = [];
