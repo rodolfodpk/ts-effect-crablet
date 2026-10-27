@@ -5,15 +5,6 @@ import { queryMatches } from "../src/spec/Spec.ts";
 const event = (type: string, tags: ReadonlyArray<readonly [string, string]> = []) => ({ type, position: 1n, tags: tags.map(([key, value]) => ({ key, value })) });
 const t = { key: "k", value: "1" };
 
-describe("Query: the item builders", () => {
-  test("each builds the item it names, with nothing else in it", () => {
-    expect(Query.queryItemOfTypes(["A", "B"])).toEqual({ eventTypes: ["A", "B"], tags: [] });
-    expect(Query.queryItemOfTags([t])).toEqual({ eventTypes: [], tags: [t] });
-    expect(Query.queryItemOfType("A")).toEqual({ eventTypes: ["A"], tags: [] });
-    expect(Query.queryItemOfTag(t)).toEqual({ eventTypes: [], tags: [t] });
-  });
-});
-
 describe("Query: the query builders", () => {
   test("of takes one item or a list of them", () => {
     const item = Query.queryItemOfType("A");
@@ -35,10 +26,9 @@ describe("Query: the query builders", () => {
     expect(Query.forEvent("A")).toEqual({ items: [{ eventTypes: ["A"], tags: [] }] });
   });
 
-  test("empty and noCondition have no items; isEmpty tells a query with none", () => {
-    expect(Query.empty()).toEqual({ items: [] });
+  test("noCondition has no items; isEmpty tells a query with none", () => {
     expect(Query.noCondition()).toEqual({ items: [] });
-    expect(Query.isEmpty(Query.empty())).toBe(true);
+    expect(Query.isEmpty(Query.noCondition())).toBe(true);
     expect(Query.isEmpty(Query.forEvent("A"))).toBe(false);
   });
 });

@@ -61,5 +61,3 @@ export const of = (type: string, tagKey: string, tagValue: string, eventData: un
 export const ofUntagged = (type: string, eventData: unknown): AppendEvent =>
   builder(type).data(eventData).build();
 
-export const hasTag = (event: AppendEvent, key: string, value: string): boolean =>
-  event.tags.some((t) => t.key === key.toLowerCase() && t.value === value);

@@ -13,11 +13,8 @@ describe("AppendEvent", () => {
     expect(AppendEvent.builder("Paid").data(0).build().eventData).toBe(0);
   });
 
-  test("hasTag: the key in any case, and the exact value", () => {
-    const event = AppendEvent.of("Paid", "account_id", "a1", {});
-    expect(AppendEvent.hasTag(event, "Account_ID", "a1")).toBe(true);
-    expect(AppendEvent.hasTag(event, "account_id", "a2")).toBe(false);
-    expect(AppendEvent.hasTag(event, "wallet_id", "a1")).toBe(false);
-    expect(AppendEvent.hasTag(AppendEvent.ofUntagged("Paid", {}), "account_id", "a1")).toBe(false);
+  test("of and ofUntagged: one tag, or none", () => {
+    expect(AppendEvent.of("Paid", "Account_ID", "a1", {}).tags).toEqual([{ key: "account_id", value: "a1" }]);
+    expect(AppendEvent.ofUntagged("Paid", {}).tags).toEqual([]);
   });
 });

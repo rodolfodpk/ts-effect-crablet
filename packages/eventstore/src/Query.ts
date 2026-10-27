@@ -9,10 +9,7 @@ export const queryItemOf = (eventTypes: ReadonlyArray<string>, tags: ReadonlyArr
   eventTypes,
   tags
 });
-export const queryItemOfTypes = (eventTypes: ReadonlyArray<string>): QueryItem => queryItemOf(eventTypes, []);
-export const queryItemOfTags = (tags: ReadonlyArray<Tag>): QueryItem => queryItemOf([], tags);
 export const queryItemOfType = (eventType: string): QueryItem => queryItemOf([eventType], []);
-export const queryItemOfTag = (tag: Tag): QueryItem => queryItemOf([], [tag]);
 
 export interface Query {
   readonly items: ReadonlyArray<QueryItem>;
@@ -23,16 +20,7 @@ export const of = (items: ReadonlyArray<QueryItem> | QueryItem): Query => {
   return { items: [items as QueryItem] };
 };
 
-// Structurally identical to empty() but semantically distinct inside AppendCondition:
-// empty() means "accept all event types"; noCondition() means "this check does not apply".
-//
-// PATTERN NOTE: TypeScript's type system is *structural*, not nominal - two values with the same
-// shape (`{ items: [] }`) are the same type as far as the compiler is concerned, full stop. There's no way to make `empty()`'s return value a distinct type from `noCondition()`'s just
-// by giving them different names; the compiler cannot catch a mix-up between the two here. The two
-// factory functions exist purely for *readability at the call site* (self-documenting code), not
-// for type safety - keep that distinction in mind whenever you see two differently-named factories
-// producing the same shape in this codebase.
-export const empty = (): Query => ({ items: [] });
+// No items: inside an AppendCondition, "this check does not apply".
 export const noCondition = (): Query => ({ items: [] });
 
 export const forEventAndTag = (eventType: string, tagKey: string, tagValue: string): Query =>
