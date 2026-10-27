@@ -40,7 +40,9 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
   const log: Array<StoredEvent> = [];
   // The request fingerprint each event was appended with (ADR-0034), by position: not part of StoredEvent, as in Postgres.
   const fingerprints = new Map<bigint, string | null>();
-  // The emit keys of events appended under a cause, as `<cause>/<fingerprint>/<n>` (ADR-0035): the database's unique index, in memory.
+  // The appends made under a cause, by `<cause>/<fingerprint>` (ADR-0035): the database's unique emit key, in memory. A request appends the same
+  // events again, so a repeat always collides with an earlier append as a whole. The value is that append's last event, which the repeat is
+  // reported with, as in Postgres.
   const emitKeys = new Map<string, bigint>();
   const appended: Array<{ events: ReadonlyArray<AppendEvent>; condition: AppendCondition | null }> = [];
   let transactionCounter = 0;
@@ -56,9 +58,6 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
     occurredAt: Date = new Date()
   ): AppendResult => {
     const transactionId = String(++transactionCounter);
-    events.forEach((_, i) => {
-      if (causationId !== null && fingerprint !== null) emitKeys.set(`${causationId}/${fingerprint}/${i + 1}`, BigInt(log.length + 1 + i));
-    });
     for (const e of events) {
       fingerprints.set(BigInt(log.length + 1), fingerprint);
       log.push({
@@ -74,6 +73,8 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
         causationId
       });
     }
+    // Stryker disable next-line ConditionalExpression,LogicalOperator: `append` looks a key up only with both set, so a key stored without them is never read.
+    if (causationId !== null && fingerprint !== null) emitKeys.set(`${causationId}/${fingerprint}`, BigInt(log.length));
     return { transactionId, lastPosition: BigInt(log.length) };
   };
 
@@ -113,7 +114,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
       const fingerprint = yield* CorrelationContext.requestFingerprint;
       const occurredAt = new Date(yield* Clock.currentTimeMillis);
       // The same trigger appending the same request again: refused like Postgres's unique emit key (ADR-0035).
-      const repeated = causationId !== null && fingerprint !== null ? emitKeys.get(`${causationId}/${fingerprint}/1`) : undefined;
+      const repeated = causationId !== null && fingerprint !== null ? emitKeys.get(`${causationId}/${fingerprint}`) : undefined;
       if (repeated !== undefined) {
         const earlier = log[Number(repeated) - 1]!;
         return yield* new Duplicate({
@@ -171,7 +172,7 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
           Exit.isSuccess(exit)
             ? Effect.void
             : Effect.sync(() => {
-                for (const event of log.slice(logMark)) fingerprints.delete(event.position);
+                // `fingerprints` needs nothing: the next event stored at a position replaces its entry before anything reads it.
                 for (const [key, position] of emitKeys) if (position > BigInt(logMark)) emitKeys.delete(key);
                 log.length = logMark;
                 appended.length = appendedMark;
