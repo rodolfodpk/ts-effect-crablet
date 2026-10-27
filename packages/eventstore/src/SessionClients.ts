@@ -79,7 +79,7 @@ export const holdSessionOnce = (what: string): Effect.Effect<Effect.Effect<void>
 // Its pool must hold what the process keeps for good (see `sessionPoolWarning`), plus room for the attempts of the modules that do not lead (one each). The first version of this advice
 // said 5 for every process, and a wallet behind PgBouncer never got its outbox leader back after its connection was killed.
 // (A `Reference` is not tracked in a layer's output type, hence `Layer<never, ...>`.)
-export const sessionClientsLayer = (config: Parameters<typeof PgClient.layer>[0]): Layer.Layer<never, SqlError> =>
+export const sessionClientsLayer = (config: PgClient.PgPoolConfig): Layer.Layer<never, SqlError> =>
   Layer.effect(
     SessionClients,
     Effect.gen(function* () {

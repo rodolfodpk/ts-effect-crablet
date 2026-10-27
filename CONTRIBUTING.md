@@ -5,7 +5,7 @@ Thank you for looking. This project is **experimental and pre-release**: the API
 
 ## Set up
 
-You need **Bun 1.4+** (CI uses 1.4.2), **Node 24+** (`.nvmrc`), and **Docker** for the integration tests.
+You need **Bun 1.4+** (CI uses 1.4.4), **Node 24+** (`.nvmrc`), and **Docker** for the integration tests.
 
 ```bash
 git clone https://github.com/rodolfodpk/ts-effect-crablet.git

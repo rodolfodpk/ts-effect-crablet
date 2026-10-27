@@ -17,6 +17,6 @@
     "./StorageMetrics": "./src/StorageMetrics.ts"
   },
   "dependencies": {
-    "effect": "4.0.2"
+    "effect": "4.0.6"
   }
 }

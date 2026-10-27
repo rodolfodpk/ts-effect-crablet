@@ -25,7 +25,7 @@ import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
 // That takes `Layer.provideMerge`; the near-identical `Layer.provide` silently drops `SqlClient` from
 // the output, and the mistake only surfaces as a "service not found" at runtime, not a compile error.
 
-export type PgConfig = Parameters<typeof PgClient.layer>[0];
+export type PgConfig = PgClient.PgPoolConfig;
 
 export type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
 

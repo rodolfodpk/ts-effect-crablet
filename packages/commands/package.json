@@ -24,13 +24,13 @@
     "./Crablet": "./src/Crablet.ts"
   },
   "dependencies": {
-    "effect": "4.0.2",
+    "effect": "4.0.6",
     "@crablet/eventstore": "workspace:*",
     "@crablet/metrics-otel": "workspace:*",
-    "@effect/sql-pg": "4.0.2"
+    "@effect/sql-pg": "4.0.6"
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*",
-    "pg": "8.23.0"
+    "pg": "8.23.1"
   }
 }

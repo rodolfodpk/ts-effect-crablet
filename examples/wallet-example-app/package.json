@@ -7,9 +7,9 @@
     "start": "node src/index.ts"
   },
   "dependencies": {
-    "effect": "4.0.2",
-    "@effect/sql-pg": "4.0.2",
-    "@effect/platform-node": "4.0.2",
+    "effect": "4.0.6",
+    "@effect/sql-pg": "4.0.6",
+    "@effect/platform-node": "4.0.6",
     "@crablet/eventstore": "workspace:*",
     "@crablet/commands": "workspace:*",
     "@crablet/event-poller": "workspace:*",
@@ -20,7 +20,7 @@
     "@crablet/views-http": "workspace:*",
     "@crablet/processors-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",
-    "pg": "8.23.0"
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*"

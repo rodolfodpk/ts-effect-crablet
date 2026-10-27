@@ -10,7 +10,7 @@
     "./ReadQuery": "./src/ReadQuery.ts"
   },
   "dependencies": {
-    "effect": "4.0.2",
+    "effect": "4.0.6",
     "@crablet/commands-http": "workspace:*",
     "@crablet/event-poller": "workspace:*",
     "@crablet/eventstore": "workspace:*",
@@ -19,8 +19,8 @@
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*",
-    "@effect/platform-node": "4.0.2",
-    "@effect/sql-pg": "4.0.2",
-    "pg": "8.23.0"
+    "@effect/platform-node": "4.0.6",
+    "@effect/sql-pg": "4.0.6",
+    "pg": "8.23.1"
   }
 }

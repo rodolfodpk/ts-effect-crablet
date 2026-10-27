@@ -29,12 +29,12 @@
     "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ServerSettings"]
   },
   "dependencies": {
-    "effect": "4.0.2",
-    "@effect/sql-pg": "4.0.2",
+    "effect": "4.0.6",
+    "@effect/sql-pg": "4.0.6",
     "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {
     "@crablet/test-support": "workspace:*",
-    "pg": "8.23.0"
+    "pg": "8.23.1"
   }
 }

@@ -85,7 +85,8 @@ describe("how optional fields are described", () => {
     const body = specOf(Schema.Struct({ id: Schema.String, note: Schema.optionalKey(Schema.String), count: Schema.optionalKey(Schema.Int) }));
     expect(body.required).toEqual(["id"]);
     expect(body.properties.note).toEqual({ type: "string" });
-    expect(body.properties.count).toEqual({ type: "integer" });
+    // Since Effect 4.0.6 an Int carries the bounds JavaScript can represent exactly.
+    expect(body.properties.count).toEqual({ type: "integer", minimum: -Number.MAX_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER });
   });
 
   test("Schema.optional is described as nullable, which the decoder would refuse: the lint reports it", () => {
