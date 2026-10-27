@@ -128,6 +128,32 @@ describe("redact", () => {
     expect(redact(U, { kind: "b", id: "7" })).toEqual({ kind: "b", id: "7" });
   });
 
+  test("unions: a member that comes later still redacts what it marks", () => {
+    const U = Schema.Union([Schema.Struct({ kind: Schema.Literal("a"), name: Schema.String }), Schema.Struct({ kind: Schema.Literal("b"), secret: personal(Schema.String) })]);
+    expect(redact(U, { kind: "b", secret: "s" })).toEqual({ kind: "b", secret: REDACTED });
+  });
+
+  test("tuples: each position by its own schema, the rest by the rest's; only what changed is copied", () => {
+    const T = Schema.Tuple([personal(Schema.String), Schema.Number]);
+    expect(redact(T, ["Ann", 1])).toEqual([REDACTED, 1]);
+    const TR = Schema.TupleWithRest(Schema.Tuple([Schema.String]), [personal(Schema.String)]);
+    expect(redact(TR, ["id", "a", "b"])).toEqual(["id", REDACTED, REDACTED]);
+    const plain = ["x", 2];
+    expect(redact(Schema.Tuple([Schema.String, Schema.Number]), plain)).toBe(plain);
+    // Items past a tuple with no rest are not the schema's: left as they are.
+    expect(redact(Schema.Tuple([Schema.String]), ["x", "extra"])).toEqual(["x", "extra"]);
+  });
+
+  test("a struct with a rest: its own fields by their schema, every other key by the rest's", () => {
+    const S = Schema.StructWithRest(Schema.Struct({ id: Schema.String }), [Schema.Record(Schema.String, personal(Schema.String))]);
+    expect(redact(S, { id: "i", x: "y" })).toEqual({ id: "i", x: REDACTED });
+  });
+
+  test("an array where an object is expected is not an object: returned as it is", () => {
+    const notes = ["x"];
+    expect(redact(Schema.Record(Schema.String, personal(Schema.String)), notes)).toBe(notes);
+  });
+
   test("a value that does not fit the schema's shape is returned unchanged", () => {
     expect(redact(Person, "not an object")).toBe("not an object");
     expect(redact(Schema.Struct({ xs: Schema.Array(personal(Schema.String)) }), { xs: "nope" })).toEqual({ xs: "nope" });
@@ -147,6 +173,25 @@ describe("personalValues", () => {
     const S = Schema.Struct({ contact: personal(Schema.Struct({ a: Schema.String, n: Schema.Int })), id: Schema.String });
     expect(personalValues(S, { contact: { a: "X", n: 7 }, id: "i" })).toEqual(["x", "7"]);
     expect(personalValues(Schema.Struct({ phone: Schema.optionalKey(personal(Schema.String)) }), {})).toEqual([]);
+  });
+
+  test("a marked array contributes its items; a null inside a marked object, or on the way to a marked field, contributes nothing", () => {
+    expect(personalValues(Schema.Struct({ phones: personal(Schema.Array(Schema.String)) }), { phones: ["A", "b"] })).toEqual(["a", "b"]);
+    const S = Schema.Struct({ contact: personal(Schema.Struct({ a: Schema.NullOr(Schema.String), b: Schema.String })) });
+    expect(personalValues(S, { contact: { a: null, b: "X" } })).toEqual(["x"]);
+    const N = Schema.Struct({ nested: Schema.NullOr(Schema.Struct({ taxId: personal(Schema.String) })) });
+    expect(personalValues(N, { nested: null })).toEqual([]);
+  });
+
+  test("a marked root and a marked tuple position are collected too", () => {
+    expect(personalValues(personal(Schema.String), " Ann ")).toEqual(["ann"]);
+    expect(personalValues(Schema.Tuple([personal(Schema.String), Schema.Number]), ["Ann", 1])).toEqual(["ann"]);
+  });
+
+  test("a value that does not fit the schema's shape contributes nothing (a string is not indexed as a tuple)", () => {
+    expect(personalValues(Schema.Struct({ phones: Schema.Array(personal(Schema.String)) }), { phones: "x" })).toEqual([]);
+    expect(personalValues(Schema.Struct({ notes: Schema.Record(Schema.String, personal(Schema.String)) }), { notes: "x" })).toEqual([]);
+    expect(personalValues(Schema.Tuple([personal(Schema.String)]), "Ann")).toEqual([]);
   });
 });
 

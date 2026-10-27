@@ -181,6 +181,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         }).pipe(
           Effect.map((cursor): { ready: true; cursor: ProgressCursor } => ({ ready: true, cursor })),
           Effect.catchTag("ProgressTableNotReady", () =>
+            // Stryker disable next-line ObjectLiteral: an object without `ready` reads as not ready all the same.
             Effect.succeed<{ ready: false }>({ ready: false })
           )
         );

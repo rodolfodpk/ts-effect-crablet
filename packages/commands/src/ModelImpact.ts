@@ -79,6 +79,7 @@ export const eventFactsFromFixtures = (definitions: ReadonlyArray<unknown>, fixt
   for (const d of defs.values()) keys.set(d.type, new Set());
   for (const fixture of fixtures) {
     const def = defs.get(fixture.type);
+    // Stryker disable next-line ConditionalExpression: without it the next line throws on `undefined` and the catch below skips the fixture all the same.
     if (def === undefined) continue;
     try {
       const built = (def as unknown as (data: unknown) => AppendEvent)(def.decode(fixture.payload));
@@ -87,6 +88,7 @@ export const eventFactsFromFixtures = (definitions: ReadonlyArray<unknown>, fixt
       // an unreadable fixture is reported by the fixtures check, not here
     }
   }
+  // Stryker disable next-line EqualityOperator: the types are a map's keys, never equal, so `<` and `<=` sort them the same.
   return [...keys].map(([type, set]) => ({ type, tagKeys: [...set].sort() })).sort((a, b) => (a.type < b.type ? -1 : 1));
 };
 
@@ -102,6 +104,8 @@ export const eventFactsFromLog: Effect.Effect<ReadonlyArray<EventFacts>, SqlErro
 });
 
 const pairKey = (model: string, eventType: string): string => `${model}\u0000${eventType}`;
+// Stryker disable next-line EqualityOperator: the pairs sorted are distinct, so `<` and `<=` sort them the same.
+const byPair = (a: BaselineEntry, b: BaselineEntry): number => (pairKey(a.model, a.eventType) < pairKey(b.model, b.eventType) ? -1 : 1);
 
 export const modelImpact = (options: {
   readonly events: ReadonlyArray<EventFacts>;
@@ -129,11 +133,12 @@ export const modelImpact = (options: {
 
 // The baseline that accepts the current findings. A pair that was already in `previous` keeps its reason; a NEW pair gets a blank one, which the check refuses
 // until a person writes why.
+// Stryker disable next-line ArrayDeclaration: a default with entries in it adds reasons for pairs no finding has, which are never read.
 export const baselineOf = (report: ImpactReport, previous: ReadonlyArray<BaselineEntry> = []): ReadonlyArray<BaselineEntry> => {
   const reasons = new Map(previous.map((b) => [pairKey(b.model, b.eventType), b.reason] as const));
   return report.findings
     .map((f) => ({ model: f.model, eventType: f.eventType, reason: reasons.get(pairKey(f.model, f.eventType)) ?? "" }))
-    .sort((a, b) => (pairKey(a.model, a.eventType) < pairKey(b.model, b.eventType) ? -1 : 1));
+    .sort(byPair);
 };
 
 export const formatImpactReport = (report: ImpactReport): string => {
