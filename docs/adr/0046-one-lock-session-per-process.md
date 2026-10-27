@@ -92,6 +92,10 @@ lead alone, to know within seconds that it no longer does, and to give the lock 
   again at once on a new session, so the module leads again without waiting for its retry interval (5 s by default). Only that case is retried: a
   failure on a new session, or a statement that did not answer, says the database is unreachable, and the error goes to the module as before. The
   test now checks that the attempt leads on a new session; without the retry (a mutation) it fails.
+- **Found by CI again** (2026-10-27, `leader-shared-session.test.ts` on main): after the heartbeat had lost every leader of a dead session, an attempt
+  for one of their keys that took the permit before their releases found the key still in the session's members, held by a lost member, and
+  answered that the key was led here already (`null`), so the "all lost: a new session" guard after it never ran. The guard now comes first. The race
+  test makes that attempt 40 times right after every leader is lost and requires it to lead: before the fix it failed in 3 runs of 3, after it 0 in 3.
 
 ## Alternatives considered
 
