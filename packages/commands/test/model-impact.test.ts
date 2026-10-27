@@ -5,7 +5,7 @@ import path from "node:path";
 import * as Schema from "effect/Schema";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
-import { assertModelImpact, baselineOf, eventFactsFromFixtures, formatImpactReport, loadBaseline, modelFactsOf, modelImpact, saveBaseline, type EventFacts, type ModelFacts } from "../src/ModelImpact.ts";
+import { assertModelImpact, baselineOf, eventFactsFromFixtures, formatImpactReport, isExplained, loadBaseline, MIN_REASON_LENGTH, modelFactsOf, modelImpact, saveBaseline, type EventFacts, type ModelFacts } from "../src/ModelImpact.ts";
 
 const Opened = defineEvent("Opened", { schema: Schema.Struct({ walletId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
 const Deposited = defineEvent("Deposited", { schema: Schema.Struct({ walletId: Schema.String, depositId: Schema.String }), tags: (d) => ({ wallet_id: d.walletId, deposit_id: d.depositId }) });
@@ -88,6 +88,39 @@ describe("modelImpact", () => {
     expect(Object.fromEntries(refreshed.map((b) => [b.eventType, b.reason]))).toEqual({ Deposited: "Deposits are folded by another model.", Welcomed: "", DepositReversed: "" });
   });
 
+  test("a reason counts from MIN_REASON_LENGTH characters, not counting the spaces around it", () => {
+    expect(isExplained({ reason: "x".repeat(MIN_REASON_LENGTH) })).toBe(true);
+    expect(isExplained({ reason: "x".repeat(MIN_REASON_LENGTH - 1) })).toBe(false);
+    expect(isExplained({ reason: `  ${"x".repeat(MIN_REASON_LENGTH - 1)}  ` })).toBe(false);
+    expect(isExplained({})).toBe(false);
+  });
+
+  test("the baseline is sorted by model, then event type, whatever order the findings came in", () => {
+    const r = modelImpact({ events, models: [model("zeta", ["Opened"], [], ["wallet_id"]), model("alpha", ["Opened"], [], ["wallet_id"])] });
+    expect(baselineOf(r).map((b) => `${b.model}/${b.eventType}`)).toEqual(["alpha/Deposited", "alpha/Welcomed", "zeta/Deposited", "zeta/Welcomed"]);
+  });
+
+  test("the report says what to do with each kind of entry, counts them, and ends with the verdict", () => {
+    const m = model("balance", ["Opened"], [], ["wallet_id"]);
+    const r = modelImpact({ events, models: [m], baseline: [...reviewed([{ model: "balance", eventType: "Deposited" }]), { model: "balance", eventType: "Gone", reason: WHY }] });
+    expect(formatImpactReport(r).split("\n")).toEqual([
+      "NEW  balance: event Welcomed carries wallet_id (a binding tag of the model), and the model neither handles nor ignores it.",
+      "     Decide for each: it changes the decision -> .on(Event, ...) ; it does not -> .ignores(Event) ; reviewed and fine as it is -> add it to the baseline.",
+      "STALE baseline entry balance / Gone: it is no longer a finding; remove it from the baseline so it cannot regress unnoticed.",
+      "2 unaccounted (model, event) pair(s): 1 in the baseline, 1 new; 1 stale and 0 unexplained baseline entry.",
+      "FAILED"
+    ]);
+    expect(formatImpactReport(modelImpact({ events: [], models: [m] })).split("\n")).toEqual([
+      "0 unaccounted (model, event) pair(s): 0 in the baseline, 0 new; 0 stale and 0 unexplained baseline entries.",
+      "OK"
+    ]);
+    const unexplained = modelImpact({ events, models: [model("balance", ["Opened", "Deposited"], [], ["wallet_id"])], baseline: [{ model: "balance", eventType: "Welcomed", reason: "" }] });
+    expect(formatImpactReport(unexplained).split("\n").slice(-2)).toEqual([
+      "1 unaccounted (model, event) pair(s): 1 in the baseline, 0 new; 0 stale and 1 unexplained baseline entry.",
+      "FAILED"
+    ]);
+  });
+
   test("a model with no metadata is never reported", () => {
     expect(modelFactsOf("legacy", { query: { items: [] }, load: undefined as never })).toEqual({ name: "legacy", handles: [], ignores: [], bindings: [] });
   });
@@ -109,6 +142,11 @@ describe("facts from real models and fixtures", () => {
       { type: "Deposited", payload: { walletId: "w", depositId: "d" }, tags: ["wallet_id=w", "deposit_id=d", "year=2026"], scopeTags: ["year"] }
     ]);
     expect(facts).toEqual([{ type: "Deposited", tagKeys: ["deposit_id", "wallet_id"] }, { type: "Opened", tagKeys: ["wallet_id"] }]);
+  });
+
+  test("event facts are sorted by type; a fixture of a type with no definition is skipped", () => {
+    const facts = eventFactsFromFixtures([Opened, Welcomed, Deposited], [{ type: "Unknown", payload: { walletId: "w" } } as never]);
+    expect(facts.map((f) => f.type)).toEqual(["Deposited", "Opened", "Welcomed"]);
   });
 
   test("a definition with no fixture still appears, with no keys (nothing is known about it, so nothing is reported)", () => {

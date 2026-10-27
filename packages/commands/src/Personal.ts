@@ -30,11 +30,18 @@ export const personal = <S extends Schema.Top>(schema: S): S["Rebuild"] =>
 interface AstLike {
   readonly _tag: string;
   readonly checks?: ReadonlyArray<{ readonly annotations?: Record<string, unknown> }> | undefined;
-  readonly propertySignatures?: ReadonlyArray<{ readonly name: PropertyKey; readonly type: AstLike }>;
-  readonly indexSignatures?: ReadonlyArray<{ readonly type: AstLike }>;
-  readonly elements?: ReadonlyArray<AstLike>;
-  readonly rest?: ReadonlyArray<AstLike>;
-  readonly types?: ReadonlyArray<AstLike>;
+}
+// The nodes walked, by their tag: Effect's AST always gives them these lists (empty when there is nothing).
+interface ObjectsAst extends AstLike {
+  readonly propertySignatures: ReadonlyArray<{ readonly name: PropertyKey; readonly type: AstLike }>;
+  readonly indexSignatures: ReadonlyArray<{ readonly type: AstLike }>;
+}
+interface ArraysAst extends AstLike {
+  readonly elements: ReadonlyArray<AstLike>;
+  readonly rest: ReadonlyArray<AstLike>;
+}
+interface UnionAst extends AstLike {
+  readonly types: ReadonlyArray<AstLike>;
 }
 
 const astOf = (schema: Schema.Top): AstLike => (schema as unknown as { ast: AstLike }).ast;
@@ -46,16 +53,20 @@ export const personalPaths = (schema: Schema.Top): ReadonlyArray<string> => {
   const walk = (ast: AstLike, prefix: ReadonlyArray<string>): Array<string> => {
     const out: Array<string> = isMarked(ast) ? [prefix.join(".") || "(root)"] : [];
     switch (ast._tag) {
-      case "Objects":
-        for (const p of ast.propertySignatures ?? []) out.push(...walk(p.type, [...prefix, String(p.name)]));
-        for (const i of ast.indexSignatures ?? []) out.push(...walk(i.type, [...prefix, "*"]));
+      case "Objects": {
+        const { propertySignatures, indexSignatures } = ast as ObjectsAst;
+        for (const p of propertySignatures) out.push(...walk(p.type, [...prefix, String(p.name)]));
+        for (const i of indexSignatures) out.push(...walk(i.type, [...prefix, "*"]));
         break;
-      case "Arrays":
-        (ast.elements ?? []).forEach((e, n) => out.push(...walk(e, [...prefix, String(n)])));
-        for (const r of ast.rest ?? []) out.push(...walk(r, [...prefix, "[]"]));
+      }
+      case "Arrays": {
+        const { elements, rest } = ast as ArraysAst;
+        elements.forEach((e, n) => out.push(...walk(e, [...prefix, String(n)])));
+        for (const r of rest) out.push(...walk(r, [...prefix, "[]"]));
         break;
+      }
       case "Union":
-        for (const t of ast.types ?? []) out.push(...walk(t, prefix));
+        for (const t of (ast as UnionAst).types) out.push(...walk(t, prefix));
         break;
       default:
         break;
@@ -84,28 +95,27 @@ export const redact = (schema: Schema.Top, value: unknown, replacement: string =
     switch (ast._tag) {
       case "Objects": {
         if (!isRecord(v)) return v;
-        const known = new Set((ast.propertySignatures ?? []).map((p) => String(p.name)));
+        const { propertySignatures, indexSignatures } = ast as ObjectsAst;
+        const known = new Set(propertySignatures.map((p) => String(p.name)));
         let out: Record<string, unknown> | undefined;
         const set = (key: string, next: unknown) => {
           if (next !== v[key]) (out ??= { ...v })[key] = next;
         };
-        for (const p of ast.propertySignatures ?? []) {
-          const key = String(p.name);
-          if (key in v) set(key, go(p.type, v[key]));
-        }
-        const index = ast.indexSignatures?.[0];
+        // A missing key stays missing: `go` returns `undefined` for it, the value it already has, so `set` adds nothing.
+        for (const p of propertySignatures) set(String(p.name), go(p.type, v[String(p.name)]));
+        const index = indexSignatures[0];
         if (index !== undefined) for (const key of Object.keys(v)) if (!known.has(key)) set(key, go(index.type, v[key]));
         return out ?? v;
       }
       case "Arrays": {
         if (!Array.isArray(v)) return v;
-        const elements = ast.elements ?? [];
-        const rest = ast.rest?.[0];
+        const { elements } = ast as ArraysAst;
+        const rest = (ast as ArraysAst).rest[0];
         const mapped = v.map((item, n) => (n < elements.length ? go(elements[n]!, item) : rest !== undefined ? go(rest, item) : item));
         return mapped.some((item, n) => item !== v[n]) ? mapped : v;
       }
       case "Union": {
-        for (const member of ast.types ?? []) {
+        for (const member of (ast as UnionAst).types) {
           const next = go(member, v);
           if (next !== v) return next;
         }
@@ -127,13 +137,14 @@ export const personalValues = (schema: Schema.Top, value: unknown): ReadonlyArra
     else if (Array.isArray(v)) v.forEach(collect);
     else if (isRecord(v)) Object.values(v).forEach(collect);
   };
+  // `null` and `undefined` contribute nothing: `collect` takes neither, and neither is an array or an object to go into.
   const at = (v: unknown, path: ReadonlyArray<string>): void => {
-    if (v === null || v === undefined) return;
     if (path.length === 0) return collect(v);
     const [head, ...tail] = path;
     if (head === "[]") (Array.isArray(v) ? v : []).forEach((item) => at(item, tail));
     else if (head === "*") (isRecord(v) ? Object.values(v) : []).forEach((item) => at(item, tail));
-    else if (isRecord(v)) at(v[head!], tail);
+    // A field, or a tuple's position (`0`): an array is indexed like an object.
+    else if (typeof v === "object" && v !== null) at((v as Record<string, unknown>)[head!], tail);
   };
   for (const path of personalPaths(schema)) at(value, path === "(root)" ? [] : path.split("."));
   return out;

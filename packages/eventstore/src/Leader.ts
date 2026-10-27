@@ -67,6 +67,7 @@ const within = <A, E>(limit: Duration.Duration, effect: Effect.Effect<A, E>): Ef
   Effect.gen(function* () {
     const fiber = yield* Effect.forkDetach(effect);
     const result = yield* Effect.timeoutOption(Fiber.join(fiber), limit);
+    // Stryker disable next-line ConditionalExpression: interrupting a fiber that already answered does nothing.
     if (Option.isNone(result)) yield* Effect.forkDetach(Fiber.interrupt(fiber));
     return result;
   });
@@ -108,6 +109,7 @@ export const leading: LeaderState = { status: "leading", failures: 0 };
 // stays as it is.
 export const afterCheck = (state: LeaderState, alive: boolean, failuresBeforeLost: number): LeaderState => {
   if (state.status !== "leading") return state;
+  // Stryker disable next-line ConditionalExpression: a copy of an unchanged state is the same state; returning it keeps the reference.
   if (alive) return state.failures === 0 ? state : { status: "leading", failures: 0 };
   const failures = state.failures + 1;
   return failures >= failuresBeforeLost ? { status: "lost", failures } : { status: "leading", failures };
@@ -204,12 +206,12 @@ export const tryAcquireGlobalLeader = (
     const key = lockKey.toString();
 
     // Gives the session's connection back, without its lease: an idle pooled connection would otherwise be ended under the pool. On a dead connection
-    // the reset fails or hangs: bounded, and ignored.
+    // the reset fails or hangs: bounded, and ignored. It has no leader left, so the next attempt does not take it (`once`).
     const closeSession = (session: Session): Effect.Effect<void> =>
       Effect.gen(function* () {
-        if (sessions.current === session) sessions.current = null;
         if (session.leased) yield* within(verifyTimeout, session.connection.execute("RESET idle_session_timeout", [], undefined)).pipe(Effect.ignore);
         yield* Scope.close(session.scope, Exit.void);
+        // Stryker disable next-line ConditionalExpression: a monitor left running wakes once more, finds no leader and ends (its loop checks that too).
         if (session.monitor !== null) yield* Fiber.interrupt(session.monitor);
       });
 
@@ -234,12 +236,14 @@ export const tryAcquireGlobalLeader = (
     // A statement on the session that did not answer within `verifyTimeout`: the connection cannot be trusted (on a healthy one an attempt at a lock
     // answers at once), and the statement may still take effect, so every leader on it is lost and the session is given back only once the statement
     // has been interrupted: the driver then retires the connection, and a lock the late statement may have taken goes with it. Runs under the permit.
-    // Every leader on the session is lost, released from another fiber (the last release gives the session back), and no attempt uses it again.
+    // Every leader on the session is lost, released from another fiber (the last release gives the session back), and no attempt uses it again
+    // (`once`: a session with no leader left is not taken).
     const loseAll = (session: Session): Effect.Effect<void> =>
       Effect.gen(function* () {
-        if (sessions.current === session) sessions.current = null;
         for (const member of session.members.values()) {
+          // Stryker disable next-line ConditionalExpression: a member that is not leading is lost or closed, and its release is already under way or done.
           if (member.state.status !== "leading") continue;
+          // Stryker disable next-line ObjectLiteral: any state other than leading reads as not leading, and its release closes it.
           member.state = { status: "lost", failures: member.state.failures };
           yield* Effect.forkDetach(release(session, member));
         }
@@ -275,6 +279,7 @@ export const tryAcquireGlobalLeader = (
         const keys = yield* heldKeys(session.connection, verifyTimeout);
         const alive = new Map<Member, boolean>();
         for (const member of members) {
+          // Stryker disable next-line ConditionalExpression: `afterCheck` leaves a leader that is not leading as it is, and its release is under way or done.
           if (member.state.status !== "leading") continue;
           const isAlive = Option.isSome(keys) && keys.value.has(member.key.toString());
           member.state = afterCheck(member.state, isAlive, failuresBeforeLost);
@@ -302,12 +307,12 @@ export const tryAcquireGlobalLeader = (
 
     // Set when the attempt's statement failed on a session that held other leaders' locks: its connection failed, those leaders are lost with it,
     // and the attempt is made again at once on a new session (below) instead of waiting for the module's retry interval.
-    let failedOnShared = false;
+    let failedOnShared = false; // once set, the attempt below is made at most once more
 
     const once: Effect.Effect<LeaderHandle | null, SqlError> = Effect.gen(function* () {
-      // A session whose leaders are all lost is on its way back to the pool (their releases close it): an attempt takes a new one. First, before the
-      // re-entrancy check: a lost member of that session still holds its key in `members` until its release runs, and the attempt would answer that
-      // its key is led here already (found on CI, leader-shared-session.test.ts).
+      // A session with no leader left (all lost, or all released) is on its way back to the pool, or back already: an attempt takes a new one. The only
+      // place a session stops being the current one. First, before the re-entrancy check: a lost member of that session still holds its key in
+      // `members` until its release runs, and the attempt would answer that its key is led here already (found on CI, leader-shared-session.test.ts).
       if (sessions.current !== null && ![...sessions.current.members.values()].some((m) => m.state.status === "leading")) sessions.current = null;
 
       // Session-level advisory locks are re-entrant: this session taking a key it holds would get it again, and two leaders of one module in one
@@ -316,6 +321,7 @@ export const tryAcquireGlobalLeader = (
       let session = sessions.current;
       if (session === null) {
         const scope = yield* Scope.make();
+        // Stryker disable next-line ArrowFunction: a reservation that failed put nothing in the scope; closing it is tidiness.
         const connection = yield* reserve(scope).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
         session = { scope, connection, members: new Map(), monitor: null, leased: false, abandoned: false };
       }
@@ -358,8 +364,10 @@ export const tryAcquireGlobalLeader = (
       if (live.monitor === null) {
         live.monitor = yield* Effect.forkDetach(
           Effect.gen(function* () {
+            // Stryker disable next-line EqualityOperator: the check after the sleep ends the loop too.
             while (live.members.size > 0) {
               yield* Effect.sleep(heartbeat);
+              // Stryker disable next-line ConditionalExpression: the last release interrupts the monitor before it wakes (`closeSession`).
               if (live.members.size === 0) break;
               yield* check(live, [...live.members.values()]);
             }
@@ -382,6 +390,6 @@ export const tryAcquireGlobalLeader = (
     // answer (`attempt` abandoned it), says the database itself is unreachable, and the error goes to the module, which retries at its interval.
     return yield* Semaphore.withPermit(
       sessions.permit,
-      once.pipe(Effect.catch((error) => (failedOnShared ? Effect.andThen(Effect.sync(() => void (failedOnShared = false)), once) : Effect.fail(error))))
+      once.pipe(Effect.catch((error) => (failedOnShared ? once : Effect.fail(error))))
     );
   });
