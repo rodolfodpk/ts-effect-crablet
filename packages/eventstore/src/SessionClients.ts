@@ -63,6 +63,7 @@ export const holdSession = (what: string, n: number): Effect.Effect<void> =>
 // process's lock session is counted once, by the first module that starts; a module's LISTEN is not in the pool (`sharedListen`).
 export const holdSessionOnce = (what: string): Effect.Effect<Effect.Effect<void>> =>
   Effect.map(Ref.make(false), (done) =>
+    // Stryker disable next-line BooleanLiteral: a later call would add 0 all the same, since the lock session is counted once per process (`lockSessionCounted`).
     Effect.flatMap(Ref.getAndSet(done, true), (was) =>
       was
         ? Effect.void

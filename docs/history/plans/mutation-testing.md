@@ -1,7 +1,7 @@
 # Plan: mutation testing for the core packages
 
 **Status:** steps 0 and 1 done (2026-10-27): the tooling is in `tools/mutation/` and `bun run mutation` measures tier 1 in about a minute (once: `cd tools/mutation && bun install`); the baseline
-is below. Step 2, the triage, is under way (twelve files done, see its progress table). Since 2026-10-27 it mutates in place (`inPlace` in the config): in Stryker's
+is below. Step 2, the triage, is under way (nineteen files done, see its progress table). Since 2026-10-27 it mutates in place (`inPlace` in the config): in Stryker's
 sandbox, one package's tests imported the other packages' sources unmutated. It runs on demand only for now (the owner's decision on
 2026-10-27: where it runs in CI waits for the baseline and the triage). Proposed 2026-10-08, with a pilot.
 
@@ -161,7 +161,9 @@ Done when: every survivor in scope has a test or a marked reason, and the reason
 | `eventstore/src/Leader.ts` | 66 % | 100 % of what the unit tests reach | its failure paths had no unit test: a failed or silent statement on a shared session, the lease that cannot be set, a check that hangs, a pool with no connection, the heartbeat finding a lost lock by itself. A stand-in connection that fails or hangs on chosen statements, and checks each statement's parameters against its placeholders, now drives them. Two lines that cleared the current session went: the check at the start of an attempt (ADR-0046, the fix of #38) already does it, and is now the one place it happens; so did a flag reset that changed nothing. Eight equivalent mutants marked (belt and braces: a monitor that is interrupted and also stops by itself) |
 | `event-poller/src/EventProcessor.ts` | 65 % | 100 % | the batch in one transaction (`atomically`) had no unit test at all, nor a cursor someone else moved, a progress table not there yet, a follower, a lock that cannot be asked for, a wake-up for other types, a failing stream of wake-ups, the poll metrics, or the backoff after a failure; one equivalent mutant marked |
 
-After these files tier 1 is at **89.4 %** (94.0 % of what the unit tests reach), from 72.4 %; `commands` 87.8 %, `eventstore` 89.4 %, `event-poller` 93.9 %.
+| seven small files: `commands/src/{CommandDecision,Errors,Repeat}.ts`, `event-poller/src/ProgressCursor.ts`, `eventstore/src/{Listen,SessionClients,SharedListen}.ts` | 61 to 78 % | 100 % of what the unit tests reach | edges, no bug: the fingerprint pinned against SHA-256 of its canonical JSON (nested keys sorted, a bigint as digits), `isSameRequest`'s three rules, `kindOf` for each kind and for `null`, a symbol key in an input issue's path, the cursor order within one transaction, the LISTEN retry delay (it doubled, it never jumped to the maximum, it starts over after a lost connection), merged wake-ups with tag keys and a wildcard, the session clients a leader and a LISTEN use, the session-pool warning's text, a LISTEN connection that opened part-way. Code that did nothing went: a filter of empty wake-up batches (the debounce flushes none, and a test now says so), and a guard in `SharedListen`'s `drop` that always held; seven equivalent mutants marked. What opens a real connection (`sessionClientsLayer`, `sharedListen`) is tier 2 |
+
+After these files tier 1 is at **92.0 %** (95.5 % of what the unit tests reach), from 72.4 %; `commands` 90.4 %, `eventstore` 92.5 %, `event-poller` 95.8 %.
 
 **The sandbox hid mutants (found 2026-10-27).** Stryker runs in a copy of the repository and links each `node_modules` folder back to the original.
 Each package's `node_modules` holds its sibling packages (`@crablet/eventstore` for `commands`), so in the copy a commands test imported the eventstore

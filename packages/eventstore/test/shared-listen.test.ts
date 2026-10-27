@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Queue, Scope, Exit } from "effect";
+import { Cause, Effect, Queue, Scope, Exit } from "effect";
 import { SqlError } from "effect/sql/SqlError";
 import { makeSharedListener, type Listener } from "../src/SharedListen.ts";
 
@@ -131,5 +131,19 @@ describe("one LISTEN connection per process (sharedListen)", () => {
         expect(attempts).toBe(2);
       })
     );
+  });
+
+  test("a connection that opened part-way and then failed is closed, not left open", async () => {
+    let closed = false;
+    const shared = makeSharedListener(
+      Effect.gen(function* () {
+        yield* Effect.addFinalizer(() => Effect.sync(() => void (closed = true)));
+        return yield* Effect.fail(lost());
+      })
+    );
+    const exit = await Effect.runPromise(Effect.exit(Effect.scoped(shared.listen("crablet_events"))));
+    expect(closed).toBe(true);
+    // The listen fails with the connection's error, and nothing else: giving the listen back with no connection open is not a defect.
+    expect(Exit.isFailure(exit) && exit.cause.reasons.every(Cause.isFailReason)).toBe(true);
   });
 });

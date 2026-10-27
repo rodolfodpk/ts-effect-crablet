@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { defineCommand, emit } from "../src/Command.ts";
-import { InvalidInput } from "../src/Errors.ts";
+import { DomainErrorKind, InvalidInput, inputIssuesOf, kindOf } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 import { personal } from "../src/Personal.ts";
 
@@ -63,5 +63,25 @@ describe("InvalidInput.issues", () => {
 
   test("valid input still decodes", async () => {
     expect(await Effect.runPromise(Register.decodeInput(good))).toEqual(good);
+  });
+});
+
+describe("inputIssuesOf: the path's keys", () => {
+  test("a symbol key is named as text (a path is data a client reads)", async () => {
+    const key = Symbol.for("secret");
+    const S = Schema.Struct({ [key]: Schema.String });
+    const exit = await Effect.runPromiseExit(Schema.decodeUnknownEffect(S)({ [key]: 1 }));
+    const error = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined;
+    expect(inputIssuesOf(error as Schema.SchemaError).map((i) => i.path)).toEqual([["Symbol(secret)"]]);
+  });
+});
+
+describe("kindOf", () => {
+  test("the kind a domain error declares; undefined for anything else, null and undefined included", () => {
+    for (const kind of ["not_found", "invalid", "conflict", "forbidden"] as const) expect(kindOf({ [DomainErrorKind]: kind })).toBe(kind);
+    expect(kindOf({ [DomainErrorKind]: "teapot" })).toBeUndefined();
+    expect(kindOf(new Error("plain"))).toBeUndefined();
+    expect(kindOf(null)).toBeUndefined();
+    expect(kindOf(undefined)).toBeUndefined();
   });
 });

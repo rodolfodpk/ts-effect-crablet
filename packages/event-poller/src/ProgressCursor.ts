@@ -24,7 +24,9 @@ export const after = (event: { readonly transactionId: string; readonly position
 export const compare = (a: ProgressCursor, b: ProgressCursor): -1 | 0 | 1 => {
   const xa = BigInt(a.transactionId);
   const xb = BigInt(b.transactionId);
+  // Stryker disable next-line EqualityOperator: the two differ here, so `<` and `<=` answer the same.
   if (xa !== xb) return xa < xb ? -1 : 1;
+  // Stryker disable next-line EqualityOperator: as above.
   if (a.position !== b.position) return a.position < b.position ? -1 : 1;
   return 0;
 };

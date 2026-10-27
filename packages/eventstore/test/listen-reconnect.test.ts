@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Fiber, Queue, Ref, Scope, Stream } from "effect";
+import { Effect, Fiber, Option, Queue, Ref, Scope, Stream } from "effect";
 import { SqlError } from "effect/sql/SqlError";
 import { wakeupStreamFrom, type WakeupBatch } from "../src/Listen.ts";
 import { encodePayload } from "../src/NotifyPayload.ts";
@@ -94,6 +94,56 @@ describe("wakeupStream reconnects", () => {
       expect(gaps[2]!).toBeGreaterThanOrEqual(35);
       expect(gaps[3]!).toBeGreaterThanOrEqual(70);
       expect(gaps[3]!).toBeLessThan(400);
+      yield* Fiber.interrupt(fiber);
+    }));
+  });
+
+  test("the delay doubles from the base, never jumps to the maximum, and after an established connection is lost it is the base again", async () => {
+    await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();
+      const second = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();
+      const times: Array<number> = [];
+      const { listen: inner } = yield* fakeListen(["fail", "fail", "fail", first, second]);
+      const listen: typeof inner = Effect.suspend(() => { times.push(Date.now()); return inner; });
+      const { out, fiber } = yield* collect(wakeupStreamFrom(listen, { retryBase: "50 millis", retryMax: "400 millis" }));
+      yield* Queue.offer(first, payload("A"));
+      yield* next(out);
+      yield* Queue.fail(first, lost());
+      yield* next(out);
+      // attempts: three failures, the connection, the reconnect. Gaps: 50 -> 100 -> 200, then the base after the lost connection (not 400).
+      const gaps = times.slice(1).map((t, i) => t - times[i]!);
+      expect(gaps).toHaveLength(4);
+      expect(gaps[1]!).toBeGreaterThanOrEqual(90);
+      expect(gaps[2]!).toBeGreaterThanOrEqual(180);
+      expect(gaps[2]!).toBeLessThan(350);
+      expect(gaps[3]!).toBeLessThan(250);
+      yield* Fiber.interrupt(fiber);
+    }));
+  });
+
+  test("with no options it listens, on the defaults", async () => {
+    await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();
+      const { listen } = yield* fakeListen([first]);
+      const { out, fiber } = yield* collect(wakeupStreamFrom(listen));
+      yield* Queue.offer(first, payload("A"));
+      expect([...(yield* next(out)).types]).toEqual(["A"]);
+      yield* Fiber.interrupt(fiber);
+    }));
+  });
+
+  test("notifications close together are one wake-up: their types and tag keys merged, and a wildcard among them makes it a wildcard", async () => {
+    await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* Queue.unbounded<{ readonly payload: string | null }, SqlError>();
+      const { listen } = yield* fakeListen([first as never]);
+      const { out, fiber } = yield* collect(wakeupStreamFrom(listen, { retryBase: "10 millis" }));
+      yield* Queue.offerAll(first, [{ payload: encodePayload(new Set(["A"]), new Set(["k1"])) }, { payload: encodePayload(new Set(["B"]), new Set(["k2"])) }]);
+      const merged = yield* next(out);
+      expect([merged.wildcard, [...merged.types].sort(), [...merged.tagKeys].sort()]).toEqual([false, ["A", "B"], ["k1", "k2"]]);
+      yield* Queue.offerAll(first, [{ payload: encodePayload(new Set(["A"]), new Set()) }, { payload: null }]);
+      expect((yield* next(out)).wildcard).toBe(true);
+      // and nothing comes while nothing is notified
+      expect(yield* Queue.take(out).pipe(Effect.timeoutOption("100 millis"))).toEqual(Option.none());
       yield* Fiber.interrupt(fiber);
     }));
   });

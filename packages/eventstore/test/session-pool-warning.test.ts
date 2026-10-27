@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { Effect, Ref } from "effect";
-import { holdSession, holdSessionOnce, SessionClients, sessionPoolWarning } from "../src/SessionClients.ts";
+import { Effect, Logger, Ref } from "effect";
+import { SqlClient } from "effect/sql";
+import { PgClient } from "@effect/sql-pg";
+import { holdSession, holdSessionOnce, SessionClients, sessionPg, sessionPoolWarning, sessionSql } from "../src/SessionClients.ts";
 
 // What a process keeps in its session pool for good: one connection per module that leads (a reserved one), one per LISTEN (the modules' wake-ups, and the views' progress hub
 // where the api runs). The framework counts it as those start (see holdSession below).
@@ -67,5 +69,30 @@ describe("holdSession", () => {
 
   test("without session clients there is nothing to count", async () => {
     await Effect.runPromise(holdSession("anything", 99));
+    await Effect.runPromise(Effect.flatten(holdSessionOnce("a module")));
+  });
+
+  test("the warning is logged once, naming what started last", async () => {
+    const lines: Array<string> = [];
+    const capture = Logger.layer([Logger.make((o) => void lines.push(String(o.message)))], { mergeWithExisting: false });
+    const session = await Effect.runPromise(sessionWith(1));
+    await Effect.runPromise(Effect.provide(Effect.provideService(Effect.all([holdSession("views", 1), holdSession("outbox", 1), holdSession("api", 1)], { discard: true }), SessionClients, session), capture));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("maxConnections is 1, but this process keeps 2 of them for good");
+    expect(lines[0]).toContain("(last to start: outbox)");
+  });
+});
+
+describe("the clients a leader and a LISTEN use", () => {
+  test("the session clients when there are some, the application's otherwise", async () => {
+    const app = { name: "app" } as never;
+    const sessionSqlClient = { name: "session sql" } as never;
+    const sessionPgClient = { name: "session pg" } as never;
+    const session = { sql: sessionSqlClient, pg: sessionPgClient } as unknown as SessionClients;
+    const both = <A>(effect: Effect.Effect<A, never, never>) => Effect.runPromise(effect);
+    expect(await both(Effect.provideService(sessionSql, SqlClient.SqlClient, app))).toBe(app);
+    expect(await both(Effect.provideService(sessionPg, PgClient.PgClient, app))).toBe(app);
+    expect(await both(Effect.provideService(Effect.provideService(sessionSql, SqlClient.SqlClient, app), SessionClients, session))).toBe(sessionSqlClient);
+    expect(await both(Effect.provideService(Effect.provideService(sessionPg, PgClient.PgClient, app), SessionClients, session))).toBe(sessionPgClient);
   });
 });
