@@ -4,6 +4,7 @@
 //   view frees it.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import { Clock, Deferred, Effect, Exit, Fiber, ManagedRuntime, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import * as Crablet from "@crablet/commands/Crablet";
@@ -76,7 +77,8 @@ describe("the monthly fee on Postgres", () => {
   it("a payment and the release of the same invoice, both read before either appends, never both happen", { timeout: 120_000 }, async () => {
     for (let round = 0; round < 15; round++) {
       const { courseId, studentId, billingId } = await billedStudent();
-      assert.ok(Exit.isSuccess(await run(IssueInvoice, { billingId, courseId, studentId, n: 1 })));
+      const issued = await run(IssueInvoice, { billingId, courseId, studentId, n: 1 });
+      if (!Exit.isSuccess(issued)) assert.fail(`round ${round}: invoice 1 was not issued: ${inspect(issued, { depth: 8 })}`);
       const invoiceTag = `invoice_id=${invoiceIdOf(billingId, 1)}`;
       // Both are allowed on their own (the invoice is not due yet, and the release's deadline is what times it): only the boundary decides. To make
       // them race for real, a transaction holds the writer locks their appends take ((type, tag), exclusive) until both have read and are waiting.
