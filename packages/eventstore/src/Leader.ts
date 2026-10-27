@@ -305,12 +305,14 @@ export const tryAcquireGlobalLeader = (
     let failedOnShared = false;
 
     const once: Effect.Effect<LeaderHandle | null, SqlError> = Effect.gen(function* () {
-      // Session-level advisory locks are re-entrant: this session taking a key it holds would get it again, and two leaders of one module in one
-      // process would both lead (ADR-0046, decision 2).
-      if (sessions.current?.members.has(key)) return null;
-
-      // A session whose leaders are all lost is on its way back to the pool (their releases close it): an attempt takes a new one.
+      // A session whose leaders are all lost is on its way back to the pool (their releases close it): an attempt takes a new one. First, before the
+      // re-entrancy check: a lost member of that session still holds its key in `members` until its release runs, and the attempt would answer that
+      // its key is led here already (found on CI, leader-shared-session.test.ts).
       if (sessions.current !== null && ![...sessions.current.members.values()].some((m) => m.state.status === "leading")) sessions.current = null;
+
+      // Session-level advisory locks are re-entrant: this session taking a key it holds would get it again, and two leaders of one module in one
+      // process would both lead (ADR-0046, decision 2). A key whose member is lost on a session that still has leaders waits for its release.
+      if (sessions.current?.members.has(key)) return null;
       let session = sessions.current;
       if (session === null) {
         const scope = yield* Scope.make();

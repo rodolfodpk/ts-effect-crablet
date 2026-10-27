@@ -57,6 +57,23 @@ describe("an attempt right after the shared lock session dies (ADR-0046)", () =>
   });
 });
 
+describe("an attempt right after every leader on the dead session is lost, before their releases ran (ADR-0046)", () => {
+  // CI (2026-10-27, leader-shared-session.test.ts): the attempt found its own key on the dead session, held by a member already lost, and answered
+  // "led here already" (null) instead of taking a new session. Repeated, because the releases race the attempt for the session's permit.
+  it("leads on a new session, every time", { timeout: 120_000 }, async () => {
+    for (let round = 0; round < 40; round++) {
+      const leaders = (await Promise.all(KEYS.map(acquire))) as Array<LeaderHandle>;
+      const pid = (await holderPid())!;
+      await probe.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.asVoid(sql.unsafe("SELECT pg_terminate_backend($1)", [pid]))));
+      while (leaders.some((l) => l.isLeader())) await sleep(1);
+      const again = await acquire(VIEWS_LOCK_KEY);
+      assert.ok(again !== null && again.isLeader(), `round ${round}: the attempt leads`);
+      await processA.runPromise(again.release());
+      for (const l of leaders) await processA.runPromise(l.release());
+    }
+  });
+});
+
 describe("an attempt on the shared lock session after it died, before the heartbeat noticed (ADR-0046)", () => {
   it("loses every leader on the session at once, and leads at once on a new session instead of waiting for the module's retry", { timeout: 30_000 }, async () => {
     const slow = { heartbeat: "10 seconds", verifyTimeout: "500 millis", failuresBeforeLost: 1 } as const;
