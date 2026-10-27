@@ -8,7 +8,9 @@ Where the project is, what is open, and what is deliberately not decided. It is 
 ## Where it is
 
 **Pre-release.** The framework is complete enough to build and run an application: commands with dynamic consistency boundaries, views, automations,
-deadlines, an outbox, an HTTP layer with OpenAPI, consistent reads, leadership with failover, event evolution checks, metrics, a dashboard and a chaos lab
+deadlines, an outbox, an HTTP layer with OpenAPI, consistent reads, leadership with failover (a silent partition taken over in about 20 s, one lock
+session and one LISTEN connection per process: [ADR-0045](docs/adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md),
+[ADR-0046](docs/adr/0046-one-lock-session-per-process.md)), event evolution checks, metrics, a dashboard and a chaos lab
 ([what is guaranteed and measured](docs/evidence.md)). The API is not stable: a breaking change is made whenever it is worth it, and the packages are
 not on npm ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
 
@@ -18,7 +20,7 @@ not on npm ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
 |---|---|---|
 | Mutation testing of the core packages | proposed; a pilot ran outside the repository | [plan](docs/history/plans/mutation-testing.md) |
 | `Period.hour` | needs a "latest matching event" primitive in the event store first, because the turnover read grows with the number of periods | [period follow-ups](docs/history/plans/period-follow-ups.md) (B1, B2) |
-| A leader lease with a deadline in Postgres | proposed: `idle_session_timeout` on the lock session, so a silent partition's takeover is about 20 s, not the keepalives' 388 s on RDS | [ADR-0045](docs/adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md), [kind lab](docs/history/plans/kind-lab.md) |
+| The timed walk-through of the documents by a person who did not write them | a test sheet is ready and has not been run; an AI agent's cold-start run is recorded and its findings fixed, but it cannot measure reading time | [test sheet](docs/history/plans/newcomer-walkthrough.md), [record](docs/history/plans/newcomer-accessibility.md) |
 
 ## Deliberately not decided
 
