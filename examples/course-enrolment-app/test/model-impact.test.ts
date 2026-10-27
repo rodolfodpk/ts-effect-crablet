@@ -8,14 +8,17 @@ import { assertModelImpact, eventFactsFromFixtures, modelFactsOf } from "@crable
 import { CourseCancelled, CourseDefined, CourseModel, StudentModel, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
 import { CoursePriced, CoursePricing, ReceiptSent, SubscriptionModel, SubscriptionPaid } from "../src/domain/Payments.ts";
 import { CourseConfirmed, CourseReadiness, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
+import { BillingModel, BillingStarted, BillingStopped, InvoiceIssued, InvoiceModel, InvoiceOverdue, InvoicePaid } from "../src/features/monthly-fee/index.ts";
 
 describe("the course decision models", () => {
   test("every event type that carries a model's binding tag is accounted for", () => {
     assertModelImpact({
-      events: eventFactsFromFixtures([CourseDefined, StudentSubscribed, SubscriptionReleased, CourseCancelled, TeacherAssigned, RoomBooked, CourseConfirmed, CoursePriced, SubscriptionPaid, ReceiptSent], loadEventFixtures(path.join(import.meta.dir, "fixtures/events"))),
+      events: eventFactsFromFixtures([CourseDefined, StudentSubscribed, SubscriptionReleased, CourseCancelled, TeacherAssigned, RoomBooked, CourseConfirmed, CoursePriced, SubscriptionPaid, ReceiptSent,
+        BillingStarted, InvoiceIssued, InvoicePaid, InvoiceOverdue, BillingStopped], loadEventFixtures(path.join(import.meta.dir, "fixtures/events"))),
       models: [modelFactsOf("CourseModel", CourseModel.of({ id: "c" })), modelFactsOf("StudentModel", StudentModel.of({ id: "s" })), modelFactsOf("CourseReadiness", CourseReadiness.of({ id: "c" })),
         modelFactsOf("CoursePricing", CoursePricing.of({ id: "c" })),
-        modelFactsOf("SubscriptionModel", SubscriptionModel.of({ id: "s", courseId: "c" }))],
+        modelFactsOf("SubscriptionModel", SubscriptionModel.of({ id: "s", courseId: "c" })),
+        modelFactsOf("BillingModel", BillingModel.of({ id: "b" })), modelFactsOf("InvoiceModel", InvoiceModel.of({ id: "b#1" }))],
       baselineFile: path.join(import.meta.dir, "fixtures/model-impact-baseline.json")
     });
   });

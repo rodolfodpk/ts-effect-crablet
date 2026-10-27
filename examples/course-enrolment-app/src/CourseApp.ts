@@ -16,6 +16,7 @@ import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
 import { ReleaseUnpaidSubscription } from "./domain/Payments.ts";
 import { CancelUnreadyCourse } from "./domain/CourseStart.ts";
+import { monthlyFeeDeadlineCommands } from "./features/monthly-fee/index.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
 import { CourseSeatsView } from "./views/CourseSeatsViewProjector.ts";
@@ -87,9 +88,10 @@ export const startCourseViews = (
 
 // #region deadlines
 // Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes it runs the release
-// Subscribe set, and when a course's readiness period ends the cancellation DefineCourse set. One instance fires, the others wait on its lock.
+// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the
+// feature lists its own). One instance fires, the others wait on its lock.
 export const startCourseDeadlines = (
   instanceId: string = defaultInstanceId()
 ): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
-  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse], instanceId });
+  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
 // #endregion deadlines
