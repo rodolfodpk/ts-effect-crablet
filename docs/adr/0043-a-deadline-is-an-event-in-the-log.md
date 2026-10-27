@@ -235,3 +235,11 @@ domain error; a deadline due while no processor ran fires once; two instances ho
 the table; a deadline for a command not given makes the processor `FAILED` after `maxErrors`, and a reset brings it back. End to end in the course app
 (`course-deadlines.test.ts`): a subscription over HTTP sets the deadline three days on, and the processor, with a clock past the window, releases the
 unpaid seat and the seats view frees it.
+
+**A deadline that repeats, in an application** (2026-10-27): the course app's monthly fee (`examples/course-enrolment-app/src/features/monthly-fee`)
+bills a subscription every 30 days with no primitive for recurrence: each invoice's run sets the next invoice's deadline and its own due date's, and
+the series ends when the subscription is no longer billed by it, with nothing cancelled. What the application case added to the package's acceptance
+test (`deadline-recurring.test.ts`): the series' id comes from the client, because a student released and subscribed again would otherwise share the
+old series' id and its pending deadlines; an invoice issued late gets a floor under its due date, or a series catching up after downtime would release
+seats for invoices nobody saw; and a payment and the release of the same invoice race over that invoice's events, so they cannot both happen (forced
+on Postgres in `test/integration/monthly-fee.test.ts`, both orders seen). In memory, `test/monthly-fee.test.ts`.

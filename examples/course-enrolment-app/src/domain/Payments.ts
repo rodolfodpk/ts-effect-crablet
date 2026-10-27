@@ -6,6 +6,8 @@ import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emi
 // The enrolment's events and errors, not its rules (Enrolment.ts): Enrolment.ts may import this module.
 import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
 import { CourseNotFound } from "./enrolment.contract.ts";
+// The one event of the monthly fee (src/features/monthly-fee) the subscription folds: a subscription is paid once, or billed monthly.
+import { BillingStarted } from "../features/monthly-fee/monthly-fee.events.ts";
 
 // #region events
 // A price in cents. A separate event, not a field added to CourseDefined: stored CourseDefined events stay as they are.
@@ -34,6 +36,7 @@ export class CourseNotPriced extends DomainError("CourseNotPriced", { fields: { 
 export class NotSubscribed extends DomainError("NotSubscribed", { fields: { courseId: Schema.String, studentId: Schema.String }, kind: "not_found" }) {}
 export class AlreadyPaid extends DomainError("AlreadyPaid", { fields: { courseId: Schema.String, studentId: Schema.String }, kind: "conflict" }) {}
 export class WrongAmount extends DomainError("WrongAmount", { fields: { expected: Schema.Int, given: Schema.Int }, kind: "invalid" }) {}
+export class BilledMonthly extends DomainError("BilledMonthly", { fields: { courseId: Schema.String, studentId: Schema.String }, kind: "conflict" }) {}
 export class PaymentWindowClosed extends DomainError("PaymentWindowClosed", { fields: { courseId: Schema.String, studentId: Schema.String, closedAt: Instant }, kind: "conflict" }) {}
 
 // #region models
@@ -44,16 +47,23 @@ export const CoursePricing = defineModel({ by: "course_id", initial: () => ({ ex
   .ignores(StudentSubscribed, SubscriptionReleased, SubscriptionPaid, CourseCancelled);
 
 // One student's subscription to one course: the student's events, narrowed by `scope` to that course's. `windowClosesAt` is when the payment window
-// closes, from the time the subscription recorded; null for a subscription stored before it recorded one, which has no window.
+// closes, from the time the subscription recorded; null for a subscription stored before it recorded one, which has no window. A subscription is
+// paid once (`paid`) or billed monthly (`billed`, by `billingId`: the monthly fee's slices check it is still their billing).
 export const SubscriptionModel = defineModel({
   by: "student_id",
-  initial: () => ({ status: "none" as "none" | "subscribed" | "paid" | "released", windowClosesAt: null as DateTime.Utc | null }),
+  initial: () => ({
+    status: "none" as "none" | "subscribed" | "paid" | "billed" | "released",
+    windowClosesAt: null as DateTime.Utc | null,
+    billingId: null as string | null
+  }),
   scope: (s: { courseId: string }) => ({ course_id: s.courseId })
 })
   .on(StudentSubscribed, (_s, d) => ({
     status: "subscribed" as const,
-    windowClosesAt: d.subscribedAt === undefined ? null : DateTime.add(d.subscribedAt, { days: PAYMENT_WINDOW_DAYS })
+    windowClosesAt: d.subscribedAt === undefined ? null : DateTime.add(d.subscribedAt, { days: PAYMENT_WINDOW_DAYS }),
+    billingId: null
   }))
+  .on(BillingStarted, (s, d) => ({ ...s, status: "billed" as const, billingId: d.billingId }))
   .on(SubscriptionPaid, (s) => ({ ...s, status: "paid" as const }))
   .on(SubscriptionReleased, (s) => ({ ...s, status: "released" as const }))
   // A cancelled course ends its subscriptions: none can be paid any more, and the payment deadline finds nothing to release. A paid one is owed a
@@ -80,7 +90,7 @@ export const PriceCourse = defineCommand({
 export const PaySubscription = defineCommand({
   name: "pay_subscription",
   input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String, paymentId: Schema.String, amount: Schema.Int }),
-  errors: [NotSubscribed, AlreadyPaid, PaymentWindowClosed, CourseNotPriced, WrongAmount],
+  errors: [NotSubscribed, AlreadyPaid, BilledMonthly, PaymentWindowClosed, CourseNotPriced, WrongAmount],
   model: (c) => all({ pricing: CoursePricing.of({ id: c.courseId }), subscription: SubscriptionModel.of({ id: c.studentId, courseId: c.courseId }) }),
   // A payment can be retried, and the subscription's state cannot tell the retry from a second payment: the payment id does.
   idempotentBy: (c) => SubscriptionPaid.where({ payment_id: c.paymentId }),
@@ -90,20 +100,23 @@ export const PaySubscription = defineCommand({
       ? fail(new NotSubscribed({ courseId: c.courseId, studentId: c.studentId }))
       : subscription.status === "paid"
         ? fail(new AlreadyPaid({ courseId: c.courseId, studentId: c.studentId }))
-        : windowClosed(subscription, now)
-          ? fail(new PaymentWindowClosed({ courseId: c.courseId, studentId: c.studentId, closedAt: subscription.windowClosesAt! }))
-          : pricing.price === null
-            ? fail(new CourseNotPriced({ courseId: c.courseId }))
-            : c.amount !== pricing.price
-              ? fail(new WrongAmount({ expected: pricing.price, given: c.amount }))
-              : emit(SubscriptionPaid(c))
+        : subscription.status === "billed"
+          ? fail(new BilledMonthly({ courseId: c.courseId, studentId: c.studentId }))
+          : windowClosed(subscription, now)
+            ? fail(new PaymentWindowClosed({ courseId: c.courseId, studentId: c.studentId, closedAt: subscription.windowClosesAt! }))
+            : pricing.price === null
+              ? fail(new CourseNotPriced({ courseId: c.courseId }))
+              : c.amount !== pricing.price
+                ? fail(new WrongAmount({ expected: pricing.price, given: c.amount }))
+                : emit(SubscriptionPaid(c))
 });
 // #endregion pay
 
 // #region release
 // Gives back a subscription that was not paid once its window has closed. Its boundary is the subscription's events, so a payment and a release that
 // race cannot both happen: the second conflicts, re-runs, and sees the first. The deadline `Subscribe` sets runs it at the window's end; for a paid
-// subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel).
+// subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel). One billed monthly is not released here:
+// an overdue invoice releases it (src/features/monthly-fee).
 export const ReleaseUnpaidSubscription = defineCommand({
   name: "release_unpaid_subscription",
   input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),
@@ -116,9 +129,11 @@ export const ReleaseUnpaidSubscription = defineCommand({
         ? noop("ALREADY_RELEASED")
         : s.status === "paid"
           ? noop("PAID")
-          : s.windowClosesAt !== null && !windowClosed(s, now)
-            ? noop("WINDOW_OPEN")
-            : emit(SubscriptionReleased(c))
+          : s.status === "billed"
+            ? noop("BILLED_MONTHLY")
+            : s.windowClosesAt !== null && !windowClosed(s, now)
+              ? noop("WINDOW_OPEN")
+              : emit(SubscriptionReleased(c))
 });
 // #endregion release
 

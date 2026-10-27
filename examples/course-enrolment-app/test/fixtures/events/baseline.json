@@ -166,5 +166,106 @@
     },
     "tags": [],
     "note": "the readiness deadline DefineCourse sets (ADR-0043)"
+  },
+  {
+    "type": "BillingStarted",
+    "payload": {
+      "billingId": "b-1",
+      "courseId": "c-1",
+      "studentId": "s-1",
+      "amount": 12000,
+      "every": 30,
+      "startsAt": "2026-10-27T10:00:00.000Z"
+    },
+    "tags": [
+      "billing_id=b-1",
+      "course_id=c-1",
+      "student_id=s-1"
+    ],
+    "note": "the monthly fee (src/features/monthly-fee), first release"
+  },
+  {
+    "type": "InvoiceIssued",
+    "payload": {
+      "billingId": "b-1",
+      "invoiceId": "b-1#1",
+      "n": 1,
+      "amount": 12000,
+      "dueAt": "2026-11-06T10:00:00.000Z"
+    },
+    "tags": [
+      "billing_id=b-1",
+      "invoice_id=b-1#1"
+    ],
+    "note": "the monthly fee (src/features/monthly-fee), first release"
+  },
+  {
+    "type": "InvoicePaid",
+    "payload": {
+      "billingId": "b-1",
+      "invoiceId": "b-1#1",
+      "n": 1,
+      "paymentId": "p-2",
+      "amount": 12000
+    },
+    "tags": [
+      "billing_id=b-1",
+      "invoice_id=b-1#1",
+      "payment_id=p-2"
+    ],
+    "note": "the monthly fee (src/features/monthly-fee), first release"
+  },
+  {
+    "type": "InvoiceOverdue",
+    "payload": {
+      "billingId": "b-1",
+      "invoiceId": "b-1#2",
+      "n": 2
+    },
+    "tags": [
+      "billing_id=b-1",
+      "invoice_id=b-1#2"
+    ],
+    "note": "the monthly fee (src/features/monthly-fee), first release"
+  },
+  {
+    "type": "BillingStopped",
+    "payload": {
+      "billingId": "b-1"
+    },
+    "tags": [
+      "billing_id=b-1"
+    ],
+    "note": "the monthly fee (src/features/monthly-fee), first release"
+  },
+  {
+    "type": "crablet.DeadlineScheduled",
+    "payload": {
+      "command": "issue_invoice",
+      "input": {
+        "billingId": "b-1",
+        "courseId": "c-1",
+        "studentId": "s-1",
+        "n": 2
+      },
+      "dueAt": "2026-11-26T10:00:00.000Z"
+    },
+    "tags": [],
+    "note": "the monthly fee's next invoice, set by the previous one (ADR-0043)"
+  },
+  {
+    "type": "crablet.DeadlineScheduled",
+    "payload": {
+      "command": "release_overdue_invoice",
+      "input": {
+        "billingId": "b-1",
+        "courseId": "c-1",
+        "studentId": "s-1",
+        "n": 1
+      },
+      "dueAt": "2026-11-06T10:00:00.000Z"
+    },
+    "tags": [],
+    "note": "the monthly fee's due date of an invoice (ADR-0043)"
   }
 ]

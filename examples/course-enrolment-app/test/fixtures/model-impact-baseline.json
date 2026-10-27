@@ -1,11 +1,15 @@
 [
+  {"model":"CourseModel","eventType":"BillingStarted","reason":"Seats and capacity do not depend on how the subscription is paid; only a release gives a seat back."},
   {"model":"CourseModel","eventType":"CourseConfirmed","reason":"Seats and capacity do not depend on whether the course was confirmed to start."},
   {"model":"CourseModel","eventType":"CoursePriced","reason":"Seats and capacity do not depend on the course's price."},
   {"model":"CourseModel","eventType":"RoomBooked","reason":"Seats and capacity do not depend on the room the course is in."},
   {"model":"CourseModel","eventType":"SubscriptionPaid","reason":"A seat is taken when the student subscribes, paid or not; only a release gives it back."},
   {"model":"CourseModel","eventType":"TeacherAssigned","reason":"Seats and capacity do not depend on who teaches the course."},
+  {"model":"CoursePricing","eventType":"BillingStarted","reason":"A billing copies the price when it starts; the price does not depend on billings."},
   {"model":"CoursePricing","eventType":"CourseConfirmed","reason":"The price does not depend on whether the course was confirmed to start."},
   {"model":"CoursePricing","eventType":"RoomBooked","reason":"The price does not depend on the room the course is in."},
   {"model":"CoursePricing","eventType":"TeacherAssigned","reason":"The price does not depend on who teaches the course."},
+  {"model":"CourseReadiness","eventType":"BillingStarted","reason":"Readiness counts subscribed students, paid once, billed monthly or not paid yet."},
+  {"model":"StudentModel","eventType":"BillingStarted","reason":"A student's courses do not depend on how a subscription is paid; only a release gives the slot back."},
   {"model":"StudentModel","eventType":"SubscriptionPaid","reason":"The three-course limit counts subscriptions, paid or not; only a release gives a slot back."}
 ]

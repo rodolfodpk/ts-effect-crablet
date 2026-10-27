@@ -51,7 +51,8 @@ model already knows (the subscription was paid), and a cancel would be a second 
 ```ts
 // Gives back a subscription that was not paid once its window has closed. Its boundary is the subscription's events, so a payment and a release that
 // race cannot both happen: the second conflicts, re-runs, and sees the first. The deadline `Subscribe` sets runs it at the window's end; for a paid
-// subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel).
+// subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel). One billed monthly is not released here:
+// an overdue invoice releases it (src/features/monthly-fee).
 export const ReleaseUnpaidSubscription = defineCommand({
   name: "release_unpaid_subscription",
   input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),
@@ -64,9 +65,11 @@ export const ReleaseUnpaidSubscription = defineCommand({
         ? noop("ALREADY_RELEASED")
         : s.status === "paid"
           ? noop("PAID")
-          : s.windowClosesAt !== null && !windowClosed(s, now)
-            ? noop("WINDOW_OPEN")
-            : emit(SubscriptionReleased(c))
+          : s.status === "billed"
+            ? noop("BILLED_MONTHLY")
+            : s.windowClosesAt !== null && !windowClosed(s, now)
+              ? noop("WINDOW_OPEN")
+              : emit(SubscriptionReleased(c))
 });
 ```
 
@@ -81,11 +84,12 @@ Start it with the commands deadlines may name, owned by a Scope like the other p
 <!-- file: examples/course-enrolment-app/src/CourseApp.ts#deadlines -->
 ```ts
 // Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes it runs the release
-// Subscribe set, and when a course's readiness period ends the cancellation DefineCourse set. One instance fires, the others wait on its lock.
+// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the
+// feature lists its own). One instance fires, the others wait on its lock.
 export const startCourseDeadlines = (
   instanceId: string = defaultInstanceId()
 ): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
-  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse], instanceId });
+  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
 ```
 
 `startDeadlinesProcessor` (`@crablet/automations/Deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in
@@ -117,6 +121,64 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
 });
 ```
 
+## 5. A deadline that repeats
+
+A deadline whose command sets the next one is a series: nothing else in the framework is needed. The course app's monthly fee
+(`examples/course-enrolment-app/src/features/monthly-fee`) bills a subscription every 30 days instead of charging it once. Each run issues one invoice and
+sets two deadlines, the next invoice and this invoice's due date:
+
+<!-- file: examples/course-enrolment-app/src/features/monthly-fee/issue-invoice.ts#issue-invoice -->
+```ts
+// When the n-th invoice is issued: from the billing's start, never from when the deadline fired. A run that fires late (the processor was down, or
+// behind) does not push the series: the next deadline is still at its planned date, and a series that fell behind catches up by itself, one invoice
+// per poll, because each next deadline is already due.
+const issueDateOf = (startsAt: DateTime.Utc, every: number, n: number): DateTime.Utc => DateTime.add(startsAt, { days: (n - 1) * every });
+
+// When it falls due: INVOICE_DUE_DAYS after its planned date, but never sooner than INVOICE_DUE_DAYS from now. An invoice issued late still gives the
+// student those days to pay; without it, the invoices of a series that caught up would be born overdue, and the seat released before the student
+// ever saw them.
+const dueDateOf = (issueDate: DateTime.Utc, now: DateTime.Utc): DateTime.Utc =>
+  DateTime.max(DateTime.add(issueDate, { days: INVOICE_DUE_DAYS }), DateTime.add(now, { days: INVOICE_DUE_DAYS }));
+
+// The deadline of the next run. A function with its type written, so the command can name itself: its own type is not needed to type its decide.
+const next = (input: typeof IssueInvoiceInput.Type, at: DateTime.Utc): AppendEvent => deadline(IssueInvoice, input, { at });
+
+// The model answers a repeat (the same deadline fired twice: a crash between running it and recording it, or a zombie leader): the billing knows the
+// invoices it issued. A series ends without a cancel: once the subscription is no longer billed by it (an overdue invoice released it, the student
+// stopped, the course was cancelled, or the student subscribed again), its pending deadline fires and answers NOT_BILLED, and sets no other.
+export const IssueInvoice = defineCommand({
+  name: "issue_invoice",
+  input: IssueInvoiceInput,
+  model: (c) => all({ billing: BillingModel.of({ id: c.billingId }), subscription: SubscriptionModel.of({ id: c.studentId, courseId: c.courseId }) }),
+  idempotentBy: byModel(),
+  decide: ({ billing, subscription }, c, { now }) => {
+    if (!billedBy(subscription, c.billingId) || billing.startsAt === null) return noop("NOT_BILLED");
+    if (billing.lastIssued >= c.n) return noop("ALREADY_ISSUED");
+    const dueAt = dueDateOf(issueDateOf(billing.startsAt, billing.every, c.n), now);
+    return emit(
+      InvoiceIssued({ billingId: c.billingId, invoiceId: invoiceIdOf(c.billingId, c.n), n: c.n, amount: billing.amount, dueAt }),
+      next({ ...c, n: c.n + 1 }, issueDateOf(billing.startsAt, billing.every, c.n + 1)),
+      deadline(ReleaseOverdueInvoice, c, { at: dueAt })
+    );
+  }
+});
+```
+
+- **Dates from the anchor.** Invoice *n* is issued at `startsAt + (n − 1) × 30 days`, never "the previous one plus 30": a late run does not push the
+  series, and a series that fell behind (the processor was down) catches up by itself, one invoice per poll, because each next deadline is already due.
+- **A floor under the due date.** An invoice issued late still gets its 10 days to be paid. Without it, the invoices of a series that caught up would be
+  born overdue, and the seat released before the student saw them.
+- **The series has an id from the client** (`billingId`, as a payment has its id). A student released, subscribed again and billed again starts a new
+  series; the subscription remembers which one is current, so the old series' pending deadlines answer `NOT_BILLED`, and so do they after an overdue
+  invoice, a stop, or a cancelled course. Nothing is cancelled.
+- **Paying and releasing an invoice race over its events.** The payment reads only that invoice, so it does not conflict with issuing the next one; the
+  release appends `InvoiceOverdue` tagged with the invoice, so a payment and a release that both read before either appended cannot both happen,
+  whatever the pods' clocks say (`examples/course-enrolment-app/test/integration/monthly-fee.test.ts` forces that race on Postgres).
+- **One file per slice.** The feature is its events (the contract between its slices), a file of shared models, and one file per command. Its events
+  are tagged with the billing and the invoice, so the rest of the app's models never see them, except `BillingStarted`, which the subscription folds (a
+  subscription is paid once or billed). The models that do not care about it are listed in the change-impact baseline with a reason, not edited.
+  The feature lists its deadline commands (`monthlyFeeDeadlineCommands`) and the app spreads them into the processor's.
+
 ## What to know
 
 - **What is in the log.** `crablet.DeadlineScheduled { command, input, dueAt }` with the decision, and `crablet.DeadlineFired { deadlinePosition,
@@ -128,13 +190,12 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
   default), plus the deadlines due before it. It is for business time, not timers in seconds. One due while no instance ran fires once when one starts.
 - **Moving one.** Set a new deadline and let the command tell which one is current: put the time it is for in its input and answer `noop` when the model
   says another is current.
-- **Recurring work** (a plan charged every month) is a chain: each run's decision sets the next deadline, and the chain lasts while the model says it should
-  (a cancelled plan answers `noop`, and nothing more is set). Compute period *n*'s due time from an anchor (`DateTime.add(anchor, { months: n })`), never
-  from the previous due time: Effect moves January 31 + 1 month to February 28, and a chain of "+1 month" stays on the 28th; and a late firing would push
-  every later one. Put the period number (and a version, if the schedule can change) in the input, so a repeat or a superseded deadline answers `noop`.
-  A command that sets its own next deadline names itself, so annotate its type from its input schema (`const Charge: Command<typeof input.Type, never,
-  typeof input> = defineCommand(...)`): TypeScript cannot infer it from its own initializer. The whole case, with cancelling, a change of price and the
-  catch-up after missed periods: `packages/commands/test/deadline-recurring.test.ts`.
+- **Recurring work** is a chain of deadlines, each set by the run before it: section 5, and the acceptance test with a change of price and a calendar
+  month (`packages/commands/test/deadline-recurring.test.ts`). With months, compute period *n* from the anchor (`DateTime.add(anchor, { months: n })`):
+  Effect moves January 31 + 1 month to February 28, and a chain of "+1 month" stays on the 28th. Put the period number (and a version, if the schedule
+  can change) in the input, so a repeat or a superseded deadline answers `noop`. A command that sets its own next deadline names
+  itself; TypeScript cannot infer a type from its own initializer, so either annotate the command (`const Charge: Command<typeof input.Type, never,
+  typeof input> = defineCommand(...)`) or, as the course app does, set the deadline from a function whose return type is written (`AppendEvent`).
 - **A fault stops it.** A command that fails with something other than a domain error (the database, a conflict that ran out of retries), a command
   that takes longer than `fireTimeoutMs` (30 seconds by default), a command the processor was not given, or an input that no longer decodes: the batch is retried and, after `maxErrors`, the processor is `FAILED`, and the deadlines
   after it wait. Deadlines fire in due order, as a view's events are applied in order.
