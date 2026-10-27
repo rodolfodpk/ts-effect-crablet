@@ -29,11 +29,12 @@ export const makeSharedListener = (connect: Effect.Effect<Listener, SqlError, Sc
   let current: { readonly scope: Scope.Closeable; readonly listener: Listener } | null = null;
   let users = 0;
 
-  const drop = (connection: NonNullable<typeof current>): Effect.Effect<void> =>
-    Effect.suspend(() => {
-      if (current === connection) current = null;
-      return Scope.close(connection.scope, Exit.void);
-    });
+  // Closes the connection, if there is one. Only under the permit, so it is the one the caller saw.
+  const drop: Effect.Effect<void> = Effect.suspend(() => {
+    const connection = current;
+    current = null;
+    return connection === null ? Effect.void : Scope.close(connection.scope, Exit.void);
+  });
 
   const open = Effect.gen(function* () {
     const scope = yield* Scope.make();
@@ -46,7 +47,7 @@ export const makeSharedListener = (connect: Effect.Effect<Listener, SqlError, Sc
     permit,
     Effect.suspend(() => {
       users -= 1;
-      return users === 0 && current !== null ? drop(current) : Effect.void;
+      return users === 0 ? drop : Effect.void;
     })
   );
 
@@ -62,7 +63,7 @@ export const makeSharedListener = (connect: Effect.Effect<Listener, SqlError, Sc
           const exit = yield* Effect.exit(Scope.provide(first.listener.listen(channel), caller));
           if (Exit.isSuccess(exit)) return exit.value;
           // A listen on a lost connection fails: replace it, once. (Every queue on it has failed too, and their streams are reconnecting.)
-          yield* drop(first);
+          yield* drop;
           const second = yield* open;
           return yield* Scope.provide(second.listener.listen(channel), caller);
         })

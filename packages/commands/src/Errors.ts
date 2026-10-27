@@ -33,7 +33,9 @@ export class IdempotencyMismatch extends Data.TaggedError("IdempotencyMismatch")
 // `{ path, message }`; a path segment is a key or an object wrapping one.)
 export const inputIssuesOf = (error: Schema.SchemaError): ReadonlyArray<InputIssue> =>
   SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map((issue) => ({
+    // Stryker disable next-line ArrayDeclaration: Effect's formatter always gives a path; the fallback follows the Standard Schema type, where it is optional.
     path: (issue.path ?? []).map((segment) => {
+      // Stryker disable next-line ConditionalExpression,EqualityOperator: Effect's formatter gives keys, never segment objects; the branch follows the Standard Schema type.
       const key = typeof segment === "object" && segment !== null ? segment.key : segment;
       return typeof key === "number" ? key : String(key);
     }),

@@ -84,9 +84,9 @@ export const wakeupStreamFrom = (listen: ListenSource, options: WakeupOptions = 
         // `Stream.groupedWithin(maxSize, duration)` is the debounce/coalesce technique: it buffers elements into an array and flushes the buffer
         // whenever EITHER `maxSize` elements have arrived OR `duration` has elapsed since the last flush - whichever comes first. Passing
         // `Number.MAX_SAFE_INTEGER` for size effectively disables the size trigger, leaving pure time-based batching: every NOTIFY that arrives
-        // within the same 20ms window gets merged into one `WakeupBatch` instead of dispatching N separate wakeups.
+        // within the same 20ms window gets merged into one `WakeupBatch` instead of dispatching N separate wakeups. A window with nothing in it
+        // flushes nothing (listen-reconnect.test.ts checks it).
         Stream.groupedWithin(Number.MAX_SAFE_INTEGER, Duration.millis(DEBOUNCE_MS)),
-        Stream.filter((batch) => batch.length > 0),
         Stream.map(mergeBatch)
       );
     })

@@ -8,6 +8,7 @@ import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { byModel, concurrent, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { runHandler } from "../src/CommandExecutor.ts";
+import { fingerprintOf, isSameRequest } from "../src/Repeat.ts";
 import { IdempotencyMismatch } from "../src/Errors.ts";
 import type { ExecutionResult } from "../src/ExecutionResult.ts";
 import { defineEvent } from "../src/Event.ts";
@@ -202,5 +203,28 @@ describe("the same trigger cannot append the same request twice", () => {
     await underTrigger({ accountId: "b", kind: "A" }, 2n);
     expect((await underTrigger({ accountId: "b", kind: "B" }, 2n)).wasIdempotent).toBe(false);
     expect((await underTrigger({ accountId: "b", kind: "A" }, 2n)).wasIdempotent).toBe(true);
+  });
+});
+
+describe("the fingerprint and the request it names", () => {
+  const sha256 = async (text: string) =>
+    Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))), (b) => b.toString(16).padStart(2, "0")).join("");
+
+  test("it is SHA-256 of the name and the encoded input as JSON with every object's keys sorted, a bigint as its digits", async () => {
+    const S = Schema.Struct({ amounts: Schema.Record(Schema.String, Schema.BigInt), list: Schema.Array(Schema.NullOr(Schema.Struct({ z: Schema.Number, a: Schema.Number }))) });
+    const input = { amounts: { b: 2n, a: 1n }, list: [{ z: 1, a: 2 }, null] };
+    expect(await Effect.runPromise(fingerprintOf("pay", S, input))).toBe(await sha256(`pay\u0000{"amounts":{"a":"1","b":"2"},"list":[{"a":2,"z":1},null]}`));
+  });
+
+  const duplicate = (requests: ReadonlyArray<{ fingerprint: string | null; causationId: bigint | null }>) => ({ requests }) as never;
+
+  test("the same trigger is the same request, if any of the matches came from it", () => {
+    expect(isSameRequest(duplicate([{ fingerprint: "x", causationId: 1n }, { fingerprint: "y", causationId: 2n }]), "z", 2n)).toBe(true);
+  });
+
+  test("a request with no fingerprint is the same request; one with a fingerprint is, only if every stored one matches it or has none", () => {
+    expect(isSameRequest(duplicate([{ fingerprint: "x", causationId: null }]), null, null)).toBe(true);
+    expect(isSameRequest(duplicate([{ fingerprint: "a", causationId: null }, { fingerprint: null, causationId: null }]), "a", null)).toBe(true);
+    expect(isSameRequest(duplicate([{ fingerprint: "a", causationId: null }, { fingerprint: "b", causationId: null }]), "a", null)).toBe(false);
   });
 });
