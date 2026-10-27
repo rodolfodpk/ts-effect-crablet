@@ -768,7 +768,7 @@
               "retry-after": {
                 "schema": {
                   "type": "string",
-                  "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+                  "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$"
                 },
                 "required": false
               }
@@ -898,7 +898,7 @@
               "retry-after": {
                 "schema": {
                   "type": "string",
-                  "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+                  "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$"
                 },
                 "required": false
               }
@@ -1077,7 +1077,7 @@
               "retry-after": {
                 "schema": {
                   "type": "string",
-                  "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+                  "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$"
                 },
                 "required": false
               }
@@ -1226,7 +1226,7 @@
               "retry-after": {
                 "schema": {
                   "type": "string",
-                  "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+                  "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$"
                 },
                 "required": false
               }
@@ -1276,7 +1276,9 @@
             }
           },
           "retryAfterSeconds": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -1370,7 +1372,9 @@
                   "type": "string"
                 },
                 {
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
                 }
               ]
             },

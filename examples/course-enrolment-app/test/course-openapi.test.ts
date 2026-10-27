@@ -49,7 +49,7 @@ describe("course API OpenAPI document", () => {
 
   test("request bodies are the commands' input schemas, constraints included", () => {
     const capacity = operation("define_course").requestBody.content["application/json"].schema.properties.capacity;
-    expect(capacity).toEqual({ type: "integer", minimum: 1 });
+    expect(capacity).toEqual({ type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }); // the upper bound: Effect 4.0.6 bounds an Int to what JavaScript represents exactly
     expect(operation("subscribe").requestBody.content["application/json"].schema.required).toEqual(["studentId", "courseId"]);
   });
 

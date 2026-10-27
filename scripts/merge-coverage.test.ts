@@ -18,6 +18,13 @@ describe("merge-coverage", () => {
     expect(totalsOf(merged)).toEqual({ hit: 1, total: 2 });
   });
 
+  test("a line only Node reports as missed counts when it is code, not when it is a brace or a comment (Bun 1.4.4 does not report braces)", () => {
+    const source = ["export const f = (n: number) => {", "  if (n > 0) {", "    // why", "    return 1;", "  }", "  return 0;", "};"].join("\n");
+    // Bun reports the statements of lines 2, 4 and 6; Node, which never ran f, marks lines 1 to 7 as missed.
+    const merged = mergeSuites(cov("packages/a/src/x.ts", [[2, 1], [4, 0], [6, 1]]), cov("packages/a/src/x.ts", [1, 2, 3, 4, 5, 6, 7].map((n) => [n, 0])), () => source);
+    expect([...merged.get("packages/a/src/x.ts")!.keys()].sort((x, y) => x - y)).toEqual([1, 2, 4, 6]);
+  });
+
   test("a file Bun never loaded is judged by its code lines, taken from the source", () => {
     const source = ["import { x } from \"y\";", "// a comment", "", "export const f = () => {", "  return 1;", "};"].join("\n");
     const merged = mergeSuites(new Map(), cov("packages/a/src/x.ts", [[1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2]]), () => source);

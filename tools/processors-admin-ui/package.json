@@ -9,18 +9,18 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "effect": "4.0.2",
-    "foldkit": "0.167.0",
-    "@effect/platform-browser": "4.0.2",
+    "effect": "4.0.6",
+    "foldkit": "0.169.0",
+    "@effect/platform-browser": "4.0.6",
     "@crablet/processors-http": "workspace:*"
   },
   "devDependencies": {
     "@crablet/commands": "workspace:*",
     "@crablet/eventstore": "workspace:*",
     "@crablet/test-support": "workspace:*",
-    "@effect/sql-pg": "4.0.2",
+    "@effect/sql-pg": "4.0.6",
     "wallet-example-app": "workspace:*",
-    "pg": "8.23.0",
-    "vite": "7.3.6"
+    "pg": "8.23.1",
+    "vite": "7.3.7"
   }
 }

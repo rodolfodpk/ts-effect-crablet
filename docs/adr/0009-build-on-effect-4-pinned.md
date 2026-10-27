@@ -74,3 +74,23 @@ bump all Effect packages together, exact versions, full suite.
 
 Typecheck clean, 838 unit and 394 integration tests green. ADR-0024's findings (pool of 7 or more, listen reserving a pooled connection) were rechecked on 4.0.2 by `session-clients.test.ts` and `pgbouncer-e2e.test.ts`, both in that run.
 
+
+## Addendum (2026-10-27): moved to 4.0.6
+
+`effect`, `@effect/sql-pg`, `@effect/platform-node` and `@effect/platform-browser` went from `4.0.2` to `4.0.6` (the npm `latest`), Foldkit from 0.167.0 to
+0.169.0 in the three UIs (its peer dependency is still `effect: 4.0.0` exact; it resolves the workspace's 4.0.6, one copy), with the patch releases of
+`pg` (8.23.1), `@testcontainers/postgresql` (12.2.1), `vite` (7.3.7) and Bun (1.4.4, `@types/bun` and CI). The `undici` that `@effect/platform-node` brings is
+now 8.12.3, which closes its two high denial-of-service advisories; what `bun audit` still reports is in test and build tooling only (Testcontainers'
+`undici` 6, `@grpc/grpc-js` and `brace-expansion`, and `fast-uri` under the OpenAPI test's parser). Three changes followed:
+
+- **`PgClient.layer` is generic over its config's requirements** (`PgPoolConfig<R>`). `Parameters<typeof PgClient.layer>[0]` now instantiates `R` as
+  `unknown`, which leaked into `Crablet.layer` and `sessionClientsLayer` as a layer with unknown requirements; both now name `PgClient.PgPoolConfig`.
+- **An `Int`'s JSON Schema is bounded** by `Number.MAX_SAFE_INTEGER` either way, and the numeric-string pattern of `retry-after` was rewritten (it
+  accepts the same strings without the backtracking-prone `\d*\.?\d+`). The generated OpenAPI descriptions in `docs/api/` were regenerated, and the two
+  tests that spelled an integer's schema now include the bounds.
+- **Bun 1.4.4 no longer reports a line that holds only a closing brace** in its coverage. The merge of the two suites' coverage counted every line Node
+  reports as missed, so each brace of a function only the unit suite runs became a miss, and the gate failed in every package (CI on the first push).
+  `scripts/merge-coverage.ts` now counts a line only Node misses when it looks like code (the filter it already used for files Bun never loaded), which
+  also removes the documented imprecision of comments inside blocks. With Bun 1.4.4 the gate passes: 99.7 % against a baseline of 99.6 %.
+
+Majors left for later: Node's types 26 (CI runs Node 24), `@readme/openapi-parser` 10, Vite 8. Typecheck clean, 1121 unit and 499 integration tests green.
