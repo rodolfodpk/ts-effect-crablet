@@ -1,6 +1,8 @@
-// The four examples from https://dcb.events/examples/ (unique username, invoice number, dynamic product
-// price, opt-in token), written against this framework to see where the API fits and where it strains.
-// In the examples' words each decision reads events by TAG and appends under the resulting condition.
+// Six examples from https://dcb.events/examples/ (unique username, invoice number, dynamic product price, opt-in token, product reviews,
+// bike rental), written against this framework to see where the API fits and where it strains. In the examples' words each decision reads
+// events by TAG and appends under the resulting condition. Three more of them are elsewhere: course subscriptions is the course enrolment
+// app (examples/course-enrolment-app), following references is support/borrow-book.ts, and preventing record duplication is
+// `idempotentBy` (ADR-0034, ADR-0035).
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
@@ -179,3 +181,157 @@ const confirmSignUp = (name: string, wait: Effect.Effect<void>) =>
   });
 export const ConfirmSignUp = confirmSignUp("confirm_sign_up", Effect.void);
 export const confirmSignUpWith = (wait: Effect.Effect<void>) => confirmSignUp("confirm_sign_up_raced", wait);
+
+// ---------------------------------------------------------------------------------------------
+// 5. Product reviews: one review per customer and product, from a verified purchase, of a listed product
+// No lookup table and no aggregate: each rule is a model bound by one tag and scoped by the other, so a review reads only the events of
+// its customer AND product. Other customers' reviews, and the customer's other products, are outside its boundary.
+// ---------------------------------------------------------------------------------------------
+const review = Schema.Struct({
+  productId: Schema.String,
+  customerId: Schema.String,
+  rating: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).check(Schema.isLessThanOrEqualTo(5))
+});
+const product = Schema.Struct({ productId: Schema.String });
+export const ProductReviewed = defineEvent("ProductReviewed", {
+  schema: review,
+  tags: (d) => ({ product_id: d.productId, customer_id: d.customerId })
+});
+// One order, many products: tagged with the customer and once per product, so "this customer bought this product" is a query for both.
+export const OrderPlaced = defineEvent("OrderPlaced", {
+  schema: Schema.Struct({ customerId: Schema.String, lines: Schema.Array(Schema.Struct({ productId: Schema.String, quantity: Schema.Int })) }),
+  tags: (d) => ({ customer_id: d.customerId, product_id: d.lines.map((l) => l.productId) })
+});
+export const ProductDelisted = defineEvent("ProductDelisted", {
+  schema: product,
+  tags: (d) => ({ product_id: d.productId })
+});
+
+const ReviewedByCustomer = defineModel({ by: "product_id", initial: () => ({ reviewed: false }), scope: (s: { customerId: string }) => ({ customer_id: s.customerId }) })
+  .on(ProductReviewed, () => ({ reviewed: true }));
+const BoughtByCustomer = defineModel({ by: "customer_id", initial: () => ({ bought: false }), scope: (s: { productId: string }) => ({ product_id: s.productId }) })
+  .on(OrderPlaced, () => ({ bought: true }));
+const ProductListed = defineModel({ by: "product_id", initial: () => ({ listed: true }) }).on(ProductDelisted, () => ({ listed: false }));
+
+export class ProductAlreadyReviewed extends DomainError("ProductAlreadyReviewed", { fields: { productId: Schema.String }, kind: "conflict" }) {}
+export class NotBoughtByCustomer extends DomainError("NotBoughtByCustomer", { fields: { productId: Schema.String }, kind: "forbidden" }) {}
+export class ProductWasDelisted extends DomainError("ProductWasDelisted", { fields: { productId: Schema.String }, kind: "conflict" }) {}
+
+const reviewProduct = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [ProductWasDelisted, NotBoughtByCustomer, ProductAlreadyReviewed],
+    input: review,
+    model: (c) =>
+      afterLoad(
+        all({
+          product: ProductListed.of({ id: c.productId }),
+          purchase: BoughtByCustomer.of({ id: c.customerId, productId: c.productId }),
+          review: ReviewedByCustomer.of({ id: c.productId, customerId: c.customerId })
+        }),
+        wait
+      ),
+    // in the example's order: delisted, then not bought, then reviewed already
+    decide: (m, c) =>
+      !m.product.listed
+        ? fail(new ProductWasDelisted({ productId: c.productId }))
+        : !m.purchase.bought
+          ? fail(new NotBoughtByCustomer({ productId: c.productId }))
+          : m.review.reviewed
+            ? fail(new ProductAlreadyReviewed({ productId: c.productId }))
+            : emit(ProductReviewed(c))
+  });
+export const ReviewProduct = reviewProduct("review_product", Effect.void);
+export const reviewProductWith = (wait: Effect.Effect<void>) => reviewProduct("review_product_raced", wait);
+
+export const DelistProduct = defineCommand({
+  name: "delist_product",
+  errors: [ProductWasDelisted],
+  input: product,
+  model: (c) => ProductListed.of({ id: c.productId }),
+  decide: (p, c) => (p.listed ? emit(ProductDelisted(c)) : fail(new ProductWasDelisted({ productId: c.productId })))
+});
+
+// ---------------------------------------------------------------------------------------------
+// 6. Bike rental: a bike's lifecycle, and a member's limit of two bikes at a time
+// Renting reads the bike and the member: its boundary is those two, so members renting different bikes do not affect each other, and one
+// BikeRented counts for both. The example's BikeRentedByMember projection is the bike model's `rentedBy`: it reads the same events.
+// ---------------------------------------------------------------------------------------------
+const bike = Schema.Struct({ bikeId: Schema.String });
+const rental = Schema.Struct({ bikeId: Schema.String, memberId: Schema.String });
+export const BikeAddedToFleet = defineEvent("BikeAddedToFleet", { schema: bike, tags: (d) => ({ bike_id: d.bikeId }) });
+export const BikeRented = defineEvent("BikeRented", { schema: rental, tags: (d) => ({ bike_id: d.bikeId, member_id: d.memberId }) });
+export const BikeReturned = defineEvent("BikeReturned", { schema: rental, tags: (d) => ({ bike_id: d.bikeId, member_id: d.memberId }) });
+export const BikeSentToRepair = defineEvent("BikeSentToRepair", { schema: bike, tags: (d) => ({ bike_id: d.bikeId }) });
+export const BikeRepaired = defineEvent("BikeRepaired", { schema: bike, tags: (d) => ({ bike_id: d.bikeId }) });
+
+export const MAX_RENTALS = 2;
+type BikeStatus = "unknown" | "available" | "rented" | "in_repair";
+const Bike = defineModel({ by: "bike_id", initial: () => ({ status: "unknown" as BikeStatus, rentedBy: null as string | null }) })
+  .on(BikeAddedToFleet, () => ({ status: "available", rentedBy: null }))
+  .on(BikeRented, (_, d) => ({ status: "rented", rentedBy: d.memberId }))
+  .on(BikeReturned, () => ({ status: "available", rentedBy: null }))
+  .on(BikeSentToRepair, () => ({ status: "in_repair", rentedBy: null }))
+  .on(BikeRepaired, () => ({ status: "available", rentedBy: null }));
+const MemberRentals = defineModel({ by: "member_id", initial: () => ({ active: 0 }) })
+  .on(BikeRented, (m) => ({ active: m.active + 1 }))
+  .on(BikeReturned, (m) => ({ active: m.active - 1 }));
+
+export class BikeAlreadyInFleet extends DomainError("BikeAlreadyInFleet", { fields: { bikeId: Schema.String }, kind: "conflict" }) {}
+export class BikeNotAvailable extends DomainError("BikeNotAvailable", { fields: { bikeId: Schema.String }, kind: "conflict" }) {}
+export class BikeNotInRepair extends DomainError("BikeNotInRepair", { fields: { bikeId: Schema.String }, kind: "conflict" }) {}
+export class RentalLimitReached extends DomainError("RentalLimitReached", { fields: { memberId: Schema.String }, kind: "conflict" }) {}
+export class BikeNotRented extends DomainError("BikeNotRented", { fields: { bikeId: Schema.String }, kind: "conflict" }) {}
+export class BikeRentedByAnotherMember extends DomainError("BikeRentedByAnotherMember", { fields: { bikeId: Schema.String }, kind: "forbidden" }) {}
+
+export const AddBikeToFleet = defineCommand({
+  name: "add_bike_to_fleet",
+  errors: [BikeAlreadyInFleet],
+  input: bike,
+  model: (c) => Bike.of({ id: c.bikeId }),
+  decide: (b, c) => (b.status === "unknown" ? emit(BikeAddedToFleet(c)) : fail(new BikeAlreadyInFleet(c)))
+});
+export const SendBikeToRepair = defineCommand({
+  name: "send_bike_to_repair",
+  errors: [BikeNotAvailable],
+  input: bike,
+  model: (c) => Bike.of({ id: c.bikeId }),
+  decide: (b, c) => (b.status === "available" ? emit(BikeSentToRepair(c)) : fail(new BikeNotAvailable(c)))
+});
+export const RepairBike = defineCommand({
+  name: "repair_bike",
+  errors: [BikeNotInRepair],
+  input: bike,
+  model: (c) => Bike.of({ id: c.bikeId }),
+  decide: (b, c) => (b.status === "in_repair" ? emit(BikeRepaired(c)) : fail(new BikeNotInRepair(c)))
+});
+
+const rentBike = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [BikeNotAvailable, RentalLimitReached],
+    input: rental,
+    model: (c) => afterLoad(all({ bike: Bike.of({ id: c.bikeId }), member: MemberRentals.of({ id: c.memberId }) }), wait),
+    decide: (m, c) =>
+      m.bike.status !== "available"
+        ? fail(new BikeNotAvailable({ bikeId: c.bikeId }))
+        : m.member.active >= MAX_RENTALS
+          ? fail(new RentalLimitReached({ memberId: c.memberId }))
+          : emit(BikeRented(c))
+  });
+export const RentBike = rentBike("rent_bike", Effect.void);
+export const rentBikeWith = (wait: Effect.Effect<void>) => rentBike("rent_bike_raced", wait);
+
+// A damaged bike goes to repair in the same append as its return: no moment where it is available.
+export const ReturnBike = defineCommand({
+  name: "return_bike",
+  errors: [BikeNotRented, BikeRentedByAnotherMember],
+  input: Schema.Struct({ bikeId: Schema.String, memberId: Schema.String, damaged: Schema.Boolean }),
+  model: (c) => Bike.of({ id: c.bikeId }),
+  decide: (b, c) => {
+    if (b.status !== "rented") return fail(new BikeNotRented({ bikeId: c.bikeId }));
+    if (b.rentedBy !== c.memberId) return fail(new BikeRentedByAnotherMember({ bikeId: c.bikeId }));
+    const returned = BikeReturned({ bikeId: c.bikeId, memberId: c.memberId });
+    return c.damaged ? emit(returned, BikeSentToRepair({ bikeId: c.bikeId })) : emit(returned);
+  }
+});
