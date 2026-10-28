@@ -28,7 +28,8 @@
     "docs:api": "bun examples/wallet-example-app/scripts/generate-openapi.ts",
     "mutation": "tools/mutation/node_modules/.bin/stryker run tools/mutation/stryker.config.mjs",
     "mutation:check": "bun scripts/mutation-gate.ts",
-    "mutation:baseline": "bun scripts/mutation-gate.ts --update"
+    "mutation:baseline": "bun scripts/mutation-gate.ts --update",
+    "breaks": "bun scripts/breaks.ts"
   },
   "devDependencies": {
     "@readme/openapi-parser": "9.0.0",

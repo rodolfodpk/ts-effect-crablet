@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 // Mutation testing, tier 1 (docs/history/plans/mutation-testing.md): the pure and in-memory core of eventstore, commands and event-poller, killed by
 // their Bun unit tests. Once, `cd tools/mutation && bun install` (its own install, so Stryker gets TypeScript 5.9 while the root keeps 7); then, from the
 // repository root, `bun run mutation`, then `bun run mutation:check`: the ratchet against tools/mutation/baseline.json (scripts/mutation-gate.ts; CI runs both
-// weekly, .github/workflows/mutation.yml). Reports in tools/mutation/reports. The database-bound code is tier 2 (a list of breaks).
+// weekly, .github/workflows/mutation.yml). Reports in tools/mutation/reports. The database-bound code is tier 2: `bun run breaks` (scripts/breaks.ts).
 const CORE = ["eventstore", "commands", "event-poller"];
 // The unit tests only: the top-level `*.test.ts` of each package (test/integration runs under Node with Testcontainers, which this runner cannot drive).
 const unitTests = CORE.flatMap((p) => readdirSync(`packages/${p}/test`).filter((f) => f.endsWith(".test.ts")).map((f) => `packages/${p}/test/${f}`));

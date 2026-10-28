@@ -3,7 +3,8 @@
 **Status:** steps 0 and 1 done (2026-10-27): the tooling is in `tools/mutation/` and `bun run mutation` measures tier 1 in about a minute (once: `cd tools/mutation && bun install`); the baseline
 is below. Step 2, the triage, is under way (nineteen files done, see its progress table). Since 2026-10-27 it mutates in place (`inPlace` in the config): in Stryker's
 sandbox, one package's tests imported the other packages' sources unmutated. Step 3 done (2026-10-27): a ratchet (`bun run mutation:check`, baseline in
-`tools/mutation/baseline.json`), run on demand and weekly in CI, not on pull requests (see step 3 for why). Proposed 2026-10-08, with a pilot.
+`tools/mutation/baseline.json`), run on demand and weekly in CI, not on pull requests (see step 3 for why). Step 4 done (2026-10-28): 35 deliberate breaks
+of the database-bound code (`bun run breaks`), all caught, weekly in CI too. Proposed 2026-10-08, with a pilot.
 
 ## Why
 
@@ -198,6 +199,28 @@ Done when: a change that deletes a test of the core makes the mutation job fail,
 - Optional, only if the list keeps finding gaps: Stryker's `command` runner over two or three files (`Leader.ts`, `PostgresProgressTracker.ts`, the SQL builders) at concurrency 4 and a few hundred mutants, nightly, not gated. The SQL of the migrations is not mutated by any tool; those mutants stay on the list.
 
 Done when: the break list runs from one command, in CI nightly, and fails if any break survives.
+
+**Done (2026-10-28), weekly in CI with tier 1 rather than nightly.**
+
+- `scripts/breaks.ts` holds 35 breaks as data (file, text, replacement, the integration tests that must fail, and why the break matters), over the append's
+  client and SQL functions, the reads, the poller's queries, the progress trackers (the poller's and the outbox's), leadership, the deadlines, and the audit and
+  verification of commands. `bun run breaks` runs the chosen tests once with nothing broken (a test that already fails would make every break look caught),
+  then applies one break at a time and restores the file, also on Ctrl-C. `bun run breaks -- --only <ids>` and `--list`. About five minutes.
+- `scripts/breaks.test.ts`, a unit test, checks on every pull request that each break's text is still in its file exactly once and that its tests exist: a
+  refactor that moves the code fails at once, not at the next weekly run.
+- `.github/workflows/mutation.yml` has a second job, `tier-2`, that runs them.
+- **The first run: 10 of 35 survived.** Five were the wrong tests named in the list; the full integration suite caught them (one of those, the poller's
+  batch order, only through a test of 2,000 events from 8 concurrent writers, so not every run: a deterministic test now catches it). Five were gaps, each
+  closed with a test:
+  - a model's read in position order, not (transaction id, position) order: with two settled events whose orders disagree, the cursor was the earlier one and
+    the decision conflicted with an event it had seen (`append-cursor-inversion`);
+  - the append condition counting an event of its own transaction as a conflict (`append-cursor-inversion`);
+  - a condition on an event type with no tags not waiting for an in-flight writer of that type (`append-writer-locking`);
+  - the CRB01 refusal (ADR-0033) checked by its message only, not as a defect with the advice (`causal-order-postgres`);
+  - the leader's check counting another session's lock as its own: caught only by timing before, now by a session that answers without the lock while
+    another holds the key (`leader-liveness`).
+
+  On the second run all 35 were caught.
 
 ### 5. Keep it honest
 

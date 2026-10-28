@@ -58,11 +58,11 @@ after(async () => {
 const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) =>
   Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
 
-const fetchAfter = (cursor: ProgressCursor) =>
+const fetchAfter = (cursor: ProgressCursor, types: ReadonlyArray<string> = ["InvA", "InvB"], batchSize = 1000) =>
   run(
     Effect.gen(function* () {
       const fetcher = yield* makeSqlEventFetcher();
-      return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["InvA", "InvB"]) }), cursor, 1000);
+      return yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(types) }), cursor, batchSize);
     })
   );
 
@@ -105,6 +105,34 @@ describe("poller cursor vs. out-of-order position/xid", () => {
       // The row is committed and visible; a correct poller must deliver it: (x2, p2) sorts after (x1, p1).
       const second = await fetchAfter(cursor);
       assert.deepStrictEqual(second.map((e) => e.type), ["InvA"]);
+    } finally {
+      await t1.end();
+      await t2.end();
+    }
+  });
+
+  it("a batch is in (xid, position) order, not position order: one event at a time, both of two inverted events are delivered", async () => {
+    const t1 = await connect();
+    const t2 = await connect();
+    try {
+      await t1.query("BEGIN");
+      await t1.query("SELECT pg_current_xact_id()"); // T1 takes the lower xid
+      await t2.query("BEGIN");
+      await t2.query(`INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ('InvD', ARRAY['case=order'], '{}'::jsonb, pg_current_xact_id())`);
+      await t2.query("COMMIT"); // the higher xid, the lower position
+      await t1.query(`INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ('InvC', ARRAY['case=order'], '{}'::jsonb, pg_current_xact_id())`);
+      await t1.query("COMMIT"); // the lower xid, the higher position
+
+      // In position order InvD would come first, and the cursor after it would pass InvC for good.
+      const delivered: Array<string> = [];
+      let cursor = ProgressCursorNS.zero;
+      for (let i = 0; i < 5; i++) {
+        const batch = await fetchAfter(cursor, ["InvC", "InvD"], 1);
+        if (batch.length === 0) break;
+        delivered.push(batch[0]!.type);
+        cursor = ProgressCursorNS.after(batch[0]!);
+      }
+      assert.deepStrictEqual(delivered, ["InvC", "InvD"]);
     } finally {
       await t1.end();
       await t2.end();
