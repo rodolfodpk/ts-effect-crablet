@@ -2,8 +2,8 @@
 
 **Status:** steps 0 and 1 done (2026-10-27): the tooling is in `tools/mutation/` and `bun run mutation` measures tier 1 in about a minute (once: `cd tools/mutation && bun install`); the baseline
 is below. Step 2, the triage, is under way (nineteen files done, see its progress table). Since 2026-10-27 it mutates in place (`inPlace` in the config): in Stryker's
-sandbox, one package's tests imported the other packages' sources unmutated. It runs on demand only for now (the owner's decision on
-2026-10-27: where it runs in CI waits for the baseline and the triage). Proposed 2026-10-08, with a pilot.
+sandbox, one package's tests imported the other packages' sources unmutated. Step 3 done (2026-10-27): a ratchet (`bun run mutation:check`, baseline in
+`tools/mutation/baseline.json`), run on demand and weekly in CI, not on pull requests (see step 3 for why). Proposed 2026-10-08, with a pilot.
 
 ## Why
 
@@ -177,6 +177,19 @@ lower than the code deserved there. Do not edit the sources while a run is going
 - CI: **incremental** on pull requests (Stryker's incremental mode reuses the previous results and re-tests only mutants whose code or tests changed), the full run nightly or on demand. The incremental file is cached between runs.
 
 Done when: a change that deletes a test of the core makes the mutation job fail, and a change that touches one file re-tests only that file's mutants.
+
+**Done (2026-10-27), with CI changed: weekly and on demand, not on pull requests.**
+
+- `scripts/mutation-gate.ts` reads Stryker's JSON report and compares each package, and tier 1 as a whole, with `tools/mutation/baseline.json` (tolerance 0.5 points). The score is
+  Stryker's own (killed and timed out over those plus survived and not covered). `bun run mutation && bun run mutation:check` checks; `bun run mutation:baseline` raises the baseline
+  and never lowers it (the coverage gate's `raise`); lowering it is a hand edit with the reason in the commit message.
+- The baseline is the triage's result: tier 1 92.0, `commands` 90.3, `eventstore` 92.5, `event-poller` 95.7 (rounded down to a tenth).
+- `.github/workflows/mutation.yml` runs tier 1 in full and the gate every Monday and by hand (`gh workflow run mutation.yml`), and keeps the HTML report as an artifact.
+- **Why not on pull requests, for now.** A full run takes about 70 seconds locally, so speed is not the reason. Noise is: some tier 1 tests depend on real time (the LISTEN retry
+  delays), and a mutant they kill on one run can survive the next; a gate that fails at random on pull requests stops being trusted. Stryker's incremental mode would also need its
+  file cached from `main`, and it decides what to re-test per file, which is how the sandbox went wrong across packages. If the weekly job stays green for a few weeks, move the gate to
+  pull requests (a full run, not incremental).
+- Checked: with `event-poller/test/event-processor-paths.test.ts` removed, the gate fails (`event-poller` 76.7 % against 95.7 %, tier 1 88.8 % against 92.0 %); with it back, it passes.
 
 ### 4. Tier 2: the database-bound code, by list
 
