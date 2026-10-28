@@ -163,4 +163,60 @@ describe("append condition cursor vs. out-of-order position/xid", () => {
       await open.end();
     }
   });
+
+  it("two settled events whose xid order is the opposite of their position order: the cursor is the later by xid, so the decision does not conflict with them", async () => {
+    const id = crypto.randomUUID();
+    const query = Query.forEventsAndTags(["DcbOrderX", "DcbOrderY"], [Tag.of("k", id)]);
+    const t1 = await connect();
+    const t2 = await connect();
+    try {
+      await t1.query("BEGIN");
+      await t1.query("SELECT pg_current_xact_id()"); // T1 takes the lower xid
+      await t2.query("BEGIN");
+      await t2.query(`INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ('DcbOrderY', ARRAY['k=${id}'], '{}'::jsonb, pg_current_xact_id())`);
+      await t2.query("COMMIT"); // the higher xid, the lower position
+      await t1.query(`INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ('DcbOrderX', ARRAY['k=${id}'], '{}'::jsonb, pg_current_xact_id())`);
+      await t1.query("COMMIT"); // the lower xid, the higher position
+
+      const loaded = await run(Effect.flatMap(EventStore, (store) => Effect.map(store.project(query, LogPosition.zero(), [existsProjector()]), (r) => r.logPosition)));
+      const y = (await t1.query(`SELECT transaction_id::text AS x, position::text AS p FROM crablet_events WHERE type = 'DcbOrderY' AND tags @> ARRAY['k=${id}']`)).rows[0];
+      assert.deepStrictEqual([loaded.transactionId, loaded.position], [y.x, BigInt(y.p)], "the cursor is DcbOrderY's: last in (transaction_id, position) order, though not by position");
+
+      // Read in position order, the cursor would be DcbOrderX's, and DcbOrderY would sort after it: a conflict with an event the decision saw.
+      const outcome = await run(
+        Effect.flatMap(EventStore, (store) =>
+          store
+            .append([AppendEvent.builder("DcbOrderDecision").tags([Tag.of("k", id)]).data({}).build()], AppendCondition.failIfChanged(query).after(loaded))
+            .pipe(Effect.map(() => "ok" as const), Effect.catchTag("Conflict", () => Effect.succeed("conflict" as const)))
+        )
+      );
+      assert.equal(outcome, "ok");
+    } finally {
+      await t1.end();
+      await t2.end();
+    }
+  });
+
+  it("within one transaction, the events it appended are not a conflict for a later append in it", async () => {
+    const id = crypto.randomUUID();
+    const query = Query.forEventAndTag("DcbOwn", "k", id);
+    const event = () => AppendEvent.builder("DcbOwn").tags([Tag.of("k", id)]).data({}).build();
+    await run(Effect.flatMap(EventStore, (store) => store.append([event()]))); // settled before: the cursor carries a transaction id
+    const outcome = await run(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const store = yield* EventStore;
+        return yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* store.append([event()]); // this transaction's own, not settled: the cursor stays before it
+            const loaded = (yield* store.project(query, LogPosition.zero(), [existsProjector()])).logPosition;
+            return yield* store
+              .append([AppendEvent.builder("DcbOwnDecision").tags([Tag.of("k", id)]).data({}).build()], AppendCondition.failIfChanged(query).after(loaded))
+              .pipe(Effect.map(() => "ok" as const), Effect.catchTag("Conflict", () => Effect.succeed("conflict" as const)));
+          })
+        );
+      })
+    );
+    assert.equal(outcome, "ok");
+  });
 });

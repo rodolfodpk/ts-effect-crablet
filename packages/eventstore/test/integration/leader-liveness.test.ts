@@ -5,6 +5,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
+import type { Connection } from "effect/sql/SqlConnection";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
@@ -140,6 +141,30 @@ describe("a leader knows whether it still holds the lock", () => {
       assert.strictEqual(payloads.length, 1, "a leader whose session died cannot announce anything");
     } finally {
       await listener.end();
+    }
+  });
+
+  it("a session that still answers but no longer holds the lock is not leading, even while another session holds that key", { timeout: 20_000 }, async () => {
+    // What a connection that came back on a new session looks like: it answers, without the lock. The test keeps the leader's connection (its `reserve`,
+    // watched) to take the lock off it, and another session takes the key: "some session holds it" must not pass for "this one does".
+    const key = newKey();
+    let session: Connection | null = null;
+    const leader = (await run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) => {
+        const watched = Object.assign(Object.create(sql) as SqlClient.SqlClient, { reserve: Effect.tap(sql.reserve, (c) => Effect.sync(() => void (session = c))) });
+        return tryAcquireGlobalLeader(watched, key, { heartbeat: "1 hour", verifyTimeout: "1 second", failuresBeforeLost: 2, serverIdleTimeout: "off" });
+      })
+    ))!;
+    const other = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
+    await other.connect();
+    try {
+      assert.strictEqual(await Effect.runPromise(leader.verify), true);
+      await Effect.runPromise(session!.execute("SELECT pg_advisory_unlock($1)", [key.toString()], undefined));
+      assert.strictEqual((await other.query("SELECT pg_try_advisory_lock($1) AS got", [key.toString()])).rows[0].got, true, "the key is free, and another session takes it");
+      assert.strictEqual(await Effect.runPromise(leader.verify), false, "the leader's session does not hold it");
+    } finally {
+      await other.end();
+      await Effect.runPromise(leader.release());
     }
   });
 });

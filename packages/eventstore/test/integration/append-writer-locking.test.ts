@@ -133,6 +133,23 @@ describe("a checker waits for an in-flight writer whose events match its conditi
     }
   });
 
+  it("a condition on a type alone, with no tags: the checker waits for an in-flight writer of that type, then conflicts", async () => {
+    const type = `WL_T_${uid().slice(0, 8)}`;
+    const condition = Query.of([Query.queryItemOf([type], [])]);
+    const p0 = await positionOf(condition);
+
+    const writer = await inFlight([ev(type, ["k", uid()])]);
+    try {
+      const checker = check([ev("WL_Y", ["k", uid()])], AppendCondition.of(p0, condition));
+      assert.equal(await settled(checker), "still waiting");
+      writer.release();
+      await writer.done;
+      assert.equal(await checker, "conflict");
+    } finally {
+      writer.release();
+    }
+  });
+
   it("no false serialization: an in-flight writer whose events cannot match does not delay the checker", async () => {
     const id = uid();
     const condition = Query.of([Query.queryItemOf(["WL_X"], [Tag.of("k", id)])]);

@@ -21,7 +21,8 @@ many runs it rests on; the full experiments, with what was wrong before each fix
 **How good the tests are.** Line coverage of the packages (not the examples), merged from the unit and the integration suites, is gated in CI against a committed baseline (`scripts/coverage-gate.ts`, `coverage-baseline.json`): 99.7 % when the gate was set.
 Coverage only says a line ran, so the correctness core was also broken by hand on purpose, 17 times: three breaks survived, and all three were real
 gaps, now closed ([test coverage](./history/plans/test-coverage.md)). Mutation testing by a tool ([plan](./history/plans/mutation-testing.md)) covers the code the unit tests reach in `eventstore`, `commands` and `event-poller`: 92.0 % of its mutants are
-killed, held by a ratchet that CI runs weekly (`scripts/mutation-gate.ts`); the database-bound code is not mutated by the tool yet.
+killed, held by a ratchet that CI runs weekly (`scripts/mutation-gate.ts`). The database-bound code is broken on purpose instead, 35 times from a list
+(`scripts/breaks.ts`), weekly too: the first run found five gaps in the integration tests, now closed, and every break is caught.
 
 ## Numbers
 

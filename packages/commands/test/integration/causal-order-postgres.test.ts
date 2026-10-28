@@ -3,7 +3,7 @@
 // append is its transaction's first write, after the read. The executor makes the database refuse a command whose transaction already wrote.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Deferred, Effect, Exit, Fiber, Redacted } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
@@ -100,6 +100,9 @@ describe("delivery order follows causality (ADR-0033)", () => {
     );
     assert.ok(Exit.isFailure(exit), "refused");
     assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /already written/);
+    // A programming error, not a failure a caller handles: a defect, with what to do about it.
+    assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "a defect");
+    assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /Run the command outside any transaction that writes/);
     assert.deepStrictEqual(await orderOf(id), [], "nothing was appended");
   });
 });
