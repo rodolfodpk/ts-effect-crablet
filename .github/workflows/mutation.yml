@@ -1,0 +1,49 @@
+name: Mutation
+
+# Tier 1 of mutation testing (docs/history/plans/mutation-testing.md, step 3), weekly and on demand, not on pull requests: a full run, then the ratchet
+# (scripts/mutation-gate.ts against tools/mutation/baseline.json). Run it by hand from the Actions tab, or `gh workflow run mutation.yml`.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tier-1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # Stryker itself runs on Node; the test runner it drives is Bun.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Its own install, so Stryker gets TypeScript 5.9 while the root keeps 7 (tools/mutation/package.json).
+      - name: Install Stryker
+        run: bun install --frozen-lockfile --cwd tools/mutation
+
+      - name: Mutation testing, tier 1
+        run: bun run mutation
+
+      - name: Mutation score gate
+        run: bun run mutation:check
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: tools/mutation/reports/
+          if-no-files-found: ignore
