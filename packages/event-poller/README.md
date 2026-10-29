@@ -1,7 +1,7 @@
 # @crablet/event-poller
 
-The generic polling engine behind views, the outbox and automations: it reads new events after a **cursor**, hands them to a handler, and records progress. It is
-shared so the three modules get the same guarantees.
+The generic polling engine behind views, the outbox, automations and deadlines: it reads new events after a **cursor**, hands them to a handler, and records progress. It is
+shared so the four modules get the same guarantees. The deadlines module plugs in a fetcher that reads by due time instead of after the cursor.
 
 ## What it gives you
 

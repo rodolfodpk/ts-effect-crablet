@@ -7,6 +7,30 @@ left unpaid for three days is released, enrolment closes on Friday. A command ca
 passed. The deadline is an event in the log, appended with the decision that sets it, and the deadlines processor runs its command when it is due. The
 example is the course app's payment window.
 
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as Subscribe
+  participant P as PostgreSQL
+  participant D as Deadlines processor
+  participant R as ReleaseUnpaidSubscription
+
+  S->>P: one append: StudentSubscribed and crablet.DeadlineScheduled (in 3 days)
+  Note over P: the append also writes the deadline's row in crablet_deadlines
+  loop every 5 s, on the leader
+    D->>P: anything due by now?
+  end
+  Note over D: 3 days later
+  P-->>D: the deadline: its command and input
+  D->>R: run it, caused by the deadline
+  alt unpaid
+    R->>P: SubscriptionReleased
+  else paid in time
+    R-->>D: noop PAID, nothing appended
+  end
+  D->>P: crablet.DeadlineFired (appended, or noop PAID), and the row is deleted
+```
+
 [← Task guides](../README.md)
 
 ## 1. Set it with the decision
@@ -126,6 +150,29 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
 A deadline whose command sets the next one is a series: nothing else in the framework is needed. The course app's monthly fee
 (`examples/course-enrolment-app/src/features/monthly-fee`) bills a subscription every 30 days instead of charging it once. Each run issues one invoice and
 sets two deadlines, the next invoice and this invoice's due date:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant D as Deadlines processor
+  participant I as IssueInvoice
+  participant O as ReleaseOverdueInvoice
+  participant P as PostgreSQL
+
+  Note over P: StartMonthlyFee set IssueInvoice n=1, due at once
+  D->>I: n=1 is due
+  I->>P: InvoiceIssued 1, deadline IssueInvoice n=2 (start + 30 days), deadline ReleaseOverdueInvoice 1 (its due date)
+  Note over D: invoice 1 is paid
+  D->>O: invoice 1's due date
+  O-->>D: noop PAID
+  D->>I: n=2 is due (start + 30 days)
+  I->>P: InvoiceIssued 2, deadline IssueInvoice n=3 (start + 60 days), deadline ReleaseOverdueInvoice 2
+  Note over D: invoice 2 is not paid
+  D->>O: invoice 2's due date
+  O->>P: InvoiceOverdue 2 and SubscriptionReleased: no longer billed
+  D->>I: n=3 is due
+  I-->>D: noop NOT_BILLED, and no next deadline: the series has ended
+```
 
 <!-- file: examples/course-enrolment-app/src/features/monthly-fee/issue-invoice.ts#issue-invoice -->
 ```ts

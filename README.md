@@ -15,7 +15,8 @@ the two has to own "subscribe", and the other rule is patched with a saga, a pro
 
 Here there are no aggregates and no streams. Events go into one log, tagged with what they are about. A command declares the events its decision
 depends on, and its append succeeds only if none of them changed since it read them. So both rules are checked in one atomic decision, and two
-commands conflict only when one changes something the other relied on. This is an implementation of the open [DCB specification](https://dcb.events/specification/).
+commands conflict only when one changes something the other relied on. This is an implementation of the open [DCB specification](https://dcb.events/specification/); all ten of its
+[examples](./docs/concepts/dcb-examples.md) are written here, each raced on Postgres.
 
 > **Status: experimental, pre-release.** The API changes often, there is no stability promise yet, and the packages are not on npm. To try it today, clone this repository
 > and work in it. Not a fit if you are not on PostgreSQL or need a stable library now. What would make it ready, and what is still open: the
@@ -49,6 +50,7 @@ flowchart TB
     vw["<b>Views</b> · defineView<br/>tables you read, with read-your-writes"]
     au["<b>Automations</b><br/>an event in, a command out"]
     ob["<b>Outbox</b> · defineTopic<br/>publish to brokers and webhooks"]
+    dl["<b>Deadlines</b><br/>a time passes, a command out"]
   end
 
   co --> load
@@ -57,7 +59,9 @@ flowchart TB
   log -.-> vw
   log -.-> au
   log -.-> ob
+  log -. "due deadlines" .-> dl
   au -- "runs a command" --> co
+  dl -- "runs a command" --> co
 ```
 
 You write three pure declarations. The **model** is the key one: the same `.on(...)` handlers give `decide` its state and give the command its
@@ -184,11 +188,14 @@ Effect.runPromise(Effect.provide(program, AppLive));
   API and its OpenAPI description are generated from it.
 - **After a write, your next read sees it.** A command returns a *marker*. A read that carries it waits until the views include that write, or
   answers `503`. It never returns stale data.
+- **Things that happen because time passed.** A decision can set a *deadline*, a command to run at a given time (an unpaid seat given back
+  after three days), stored as an event with the decision. A deadline that repeats, a monthly fee, is a command that sets the next one
+  ([set a deadline](./docs/guides/build/set-a-deadline.md)).
 - **Built to be run.** If a node dies, another takes over within seconds, and two nodes never handle the same events as leader at once. No event is
   skipped, and changes to stored events are checked before a deploy. Each of these is tested and measured
   ([guarantees and evidence](./docs/evidence.md)).
 
-How the pieces fit (views, automations, the outbox, leadership), in diagrams: [Architecture](./docs/concepts/architecture.md).
+How the pieces fit (views, automations, the outbox, deadlines, leadership), in diagrams: [Architecture](./docs/concepts/architecture.md).
 
 ## Where next
 
@@ -196,7 +203,7 @@ How the pieces fit (views, automations, the outbox, leadership), in diagrams: [A
 |---|---|
 | Try it | [The quick start](./examples/quickstart/README.md): one command, no database |
 | Learn it | [The tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP and OpenAPI, reading your own writes, a web page |
-| Decide if it fits | [Why not something else?](./docs/concepts/why-not.md), [questions adopters ask](./docs/concepts/faq.md), [guarantees and evidence](./docs/evidence.md) |
+| Decide if it fits | [Why not something else?](./docs/concepts/why-not.md), [questions adopters ask](./docs/concepts/faq.md), [guarantees and evidence](./docs/evidence.md), [the dcb.events examples](./docs/concepts/dcb-examples.md) |
 | Understand it | [Consistency boundaries](./docs/concepts/dcb-guide.md) and the [architecture](./docs/concepts/architecture.md) |
 | Find anything else | [The documentation map](./docs/README.md): guides for building and operating, the reference, the decisions |
 

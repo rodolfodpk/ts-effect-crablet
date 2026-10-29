@@ -45,3 +45,34 @@ Two things the picture shows that an aggregate model cannot:
   with one boundary.
 
 The read model is not part of the quick start, because it needs the poller. [Tutorial step 4](../tutorial/04-read-your-own-writes.md) builds it.
+
+## With time: the payment window
+
+The course app goes further than the README: a subscription must be paid within three days, or its seat is given back. In an Event Model that is
+an automation triggered by time rather than by an event: a **processor** (the ⚙ lane) that runs a command once a time has passed. Here the
+deadline is itself an event, set by the decision ([set a deadline](../guides/build/set-a-deadline.md)):
+
+```text
+ Command    ┌──────────┐                                ┌──────────────┐
+            │Subscribe │                                │ReleaseUnpaid-│
+            │ann, math │                                │ Subscription │
+            └────┬─────┘                                └──────┬───────┘
+                 │                                 ▲           │  reads the subscription:
+ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ unpaid → release; paid → noop
+                 ▼                                 │           ▼
+ Event log  ┌──────────┐ ┌──────────────┐          │    ┌──────────────┐ ┌──────────────┐
+            │ Student- │ │crablet.      │          │    │Subscription- │ │crablet.      │
+            │Subscribed│ │Deadline-     │          │    │  Released    │ │DeadlineFired │
+            │          │ │Scheduled     │          │    │              │ │              │
+            └──────────┘ │ in 3 days    │          │    └──────┬───────┘ └──────────────┘
+          (one append)   └──────┬───────┘          │           │
+ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+                                ▼                  │           ▼
+ ⚙ Processor             ┌──────────────────────────┐   ┌──────────────────────────────┐
+                         │ deadlines: 3 days later, │   │ course_seats_view: the seat  │
+                         │ the deadline is due      │   │ is free again (read model)   │
+                         └──────────────────────────┘   └──────────────────────────────┘
+```
+
+A deadline that no longer matters is not cancelled: it fires, and the command answers `noop`. A deadline that repeats (the monthly fee) is a command
+that sets the next deadline in its own decision.
