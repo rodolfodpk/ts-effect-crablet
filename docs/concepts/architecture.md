@@ -482,5 +482,5 @@ erDiagram
 ```
 
 The event row carries its tags as an array (for the append condition and tag queries); `crablet_event_tag_keys` holds only the tag **keys**, one row per event and key, so that a poller's "has any of these keys" filter does
-not scan the log. There is no foreign key between them (migration V11). The tables are sized and monitored as described in [Monitor it](../guides/operate/monitor-it.md) and
+not scan the log. There is no foreign key between them ([ADR-0019](../adr/0019-storage-visibility-and-the-tag-table.md)). The tables are sized and monitored as described in [Monitor it](../guides/operate/monitor-it.md) and
 [ADR-0019](../adr/0019-storage-visibility-and-the-tag-table.md).

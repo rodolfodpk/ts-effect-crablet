@@ -1,26 +1,25 @@
 // DIAGNOSTIC EXPERIMENTS (docs/adr/0019-storage-visibility-and-the-tag-table.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/eventstore/diagnostics/storage.diagnostic.ts   and read the `DIAG` lines.   N=200000 node --test ... for a quicker, smaller run.
-// By default it runs on the schema as it was BEFORE migration V11 (the tag table with key, value, position and three indexes), which is what ADR-0019 measured and
-// decided about. SCHEMA=current runs E9a and E9c on the shipped schema (V11: crablet_event_tag_keys) to measure the result of the change.
+// It runs on the shipped schema (crablet_event_tag_keys). ADR-0019 measured and decided on the schema before it (a tag table with key, value, position and
+// three indexes) with a third experiment, E9b, comparing that table with its alternatives; that schema is no longer in the migrations (ADR-0047), so E9b
+// is gone, and its results are in the ADR.
 // E9a: where the bytes of one event go, at N events shaped like the wallet's (95 % deposits with 5 tags, 5 % transfers with 7).
-// E9b: what the tag table would cost, and what the poller's key-presence selections would cost, under alternatives to it.
 import { after, before, describe, it } from "node:test";
 import { performance } from "node:perf_hooks";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { migrationFiles, startTestDb, type TestDb } from "@crablet/test-support";
+import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "../src/EventStore.ts";
 import * as AppendEvent from "../src/AppendEvent.ts";
 
 const N = Number(process.env["N"] ?? 1_000_000);
-const CURRENT = process.env["SCHEMA"] === "current";
-const TAG_TABLE = CURRENT ? "crablet_event_tag_keys" : "crablet_event_tags";
+const TAG_TABLE = "crablet_event_tag_keys";
 const WALLETS = Math.max(1_000, Math.floor(N / 10));
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient, never>;
 before(async () => {
-  db = await startTestDb(CURRENT ? {} : { migrations: migrationFiles.slice(0, -1) });
+  db = await startTestDb();
   runtime = ManagedRuntime.make(
     Layer.provideMerge(EventStoreLive, PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient, never>
   );
@@ -73,48 +72,6 @@ describe("DIAG", () => {
     const evTotal = Number((await q<{ b: string }>("SELECT pg_total_relation_size('crablet_events') AS b"))[0]!.b);
     const toast = Number((await q<{ b: string }>("SELECT COALESCE(pg_total_relation_size(reltoastrelid), 0) AS b FROM pg_class WHERE relname = 'crablet_events'"))[0]!.b);
     console.log(`DIAG E9a total ${mb(evTotal + tagTotal)} for ${N} events = ${((evTotal + tagTotal) / N).toFixed(0)} B/event; events table ${mb(evTotal)} (${(evTotal / N).toFixed(0)} B/event, toast ${mb(toast)}), tag table ${mb(tagTotal)} (${(tagTotal / N).toFixed(0)} B/event, ${tagRows} rows, ${(tagTotal / tagRows).toFixed(0)} B/tag row) = ${((100 * tagTotal) / (evTotal + tagTotal)).toFixed(0)} % of events+tags`);
-  });
-
-  it("E9b: the tag table against its alternatives, for the poller's key-presence selections (V10 schema only)", { timeout: 1_800_000, skip: CURRENT }, async () => {
-    const sec = (text: string) => console.log(`DIAG E9b ${text}`);
-    // alternatives, built from the data that is there
-    await q("CREATE TABLE tag_slim AS SELECT key, position FROM crablet_event_tags");
-    await q("ALTER TABLE tag_slim ADD PRIMARY KEY (key, position)");
-    await q("CREATE TABLE ev_keys AS SELECT e.*, ARRAY(SELECT DISTINCT split_part(t, '=', 1) FROM unnest(e.tags) t) AS tag_keys FROM crablet_events e");
-    await q("ALTER TABLE ev_keys ADD PRIMARY KEY (position)");
-    await q("CREATE INDEX ev_keys_xp ON ev_keys (transaction_id, position)");
-    await q("CREATE INDEX ev_keys_gin ON ev_keys USING GIN (tag_keys)");
-    await q("VACUUM ANALYZE tag_slim"); await q("VACUUM ANALYZE ev_keys");
-    const size = async (name: string) => Number((await q<{ b: string }>(`SELECT pg_total_relation_size('${name}') AS b`))[0]!.b);
-    const cur = await size("crablet_event_tags"), slim = await size("tag_slim");
-    const gin = Number((await q<{ b: string }>("SELECT pg_relation_size('ev_keys_gin') AS b"))[0]!.b);
-    const colBytes = Number((await q<{ b: string }>("SELECT sum(pg_column_size(tag_keys)) AS b FROM ev_keys"))[0]!.b);
-    sec(`cost of finding events by tag KEY: the current tag table ${mb(cur)} (${(cur / N).toFixed(0)} B/event); a slim tag table (key, position), primary key only ${mb(slim)} (${((100 * slim) / cur).toFixed(0)} % of current); a tag_keys array column on the events + a GIN index on it ${mb(colBytes + gin)} (column ${mb(colBytes)} + index ${mb(gin)}, ${((colBytes + gin) / N).toFixed(0)} B/event, ${((100 * (colBytes + gin)) / cur).toFixed(0)} % of current)`);
-
-    const cursorRow = (await q<{ x: string; p: string }>(`SELECT transaction_id::text AS x, position::text AS p FROM crablet_events ORDER BY transaction_id, position OFFSET ${N - 5_000} LIMIT 1`))[0]!;
-    const zero = { x: "0", p: "0" };
-    const variants: ReadonlyArray<{ name: string; sql: (keysParam: string) => string }> = [
-      { name: "current tag table (EXISTS on key)", sql: (k) => `SELECT e.type, e.tags, e.data, e.position FROM crablet_events e WHERE (e.transaction_id, e.position) > ($1::xid8, $2::bigint) AND e.transaction_id < pg_snapshot_xmin(pg_current_snapshot()) AND EXISTS (SELECT 1 FROM crablet_event_tags t WHERE t.position = e.position AND t.key = ANY(${k})) ORDER BY e.transaction_id, e.position LIMIT 100` },
-      { name: "slim tag table (key, position)         ", sql: (k) => `SELECT e.type, e.tags, e.data, e.position FROM crablet_events e WHERE (e.transaction_id, e.position) > ($1::xid8, $2::bigint) AND e.transaction_id < pg_snapshot_xmin(pg_current_snapshot()) AND EXISTS (SELECT 1 FROM tag_slim t WHERE t.position = e.position AND t.key = ANY(${k})) ORDER BY e.transaction_id, e.position LIMIT 100` },
-      { name: "tag_keys column + GIN on the events    ", sql: (k) => `SELECT e.type, e.tags, e.data, e.position FROM ev_keys e WHERE (e.transaction_id, e.position) > ($1::xid8, $2::bigint) AND e.transaction_id < pg_snapshot_xmin(pg_current_snapshot()) AND e.tag_keys && ${k} ORDER BY e.transaction_id, e.position LIMIT 100` },
-      { name: "no helper: split the tags of each row  ", sql: (k) => `SELECT e.type, e.tags, e.data, e.position FROM crablet_events e WHERE (e.transaction_id, e.position) > ($1::xid8, $2::bigint) AND e.transaction_id < pg_snapshot_xmin(pg_current_snapshot()) AND EXISTS (SELECT 1 FROM unnest(e.tags) u WHERE split_part(u, '=', 1) = ANY(${k})) ORDER BY e.transaction_id, e.position LIMIT 100` }
-    ];
-    const cases: ReadonlyArray<{ label: string; keys: string[]; from: { x: string; p: string } }> = [
-      { label: "tail fetch, key on every event (wallet_id)", keys: ["wallet_id"], from: cursorRow },
-      { label: "tail fetch, key on 5 % of events (transfer_id)", keys: ["transfer_id"], from: cursorRow },
-      { label: "catch-up from the start, key on 5 % (transfer_id)", keys: ["transfer_id"], from: zero },
-      { label: "tail fetch, RARE key (0.01 %: audit_id)", keys: ["audit_id"], from: cursorRow },
-      { label: "catch-up from the start, RARE key (0.01 %: audit_id)", keys: ["audit_id"], from: zero }
-    ];
-    for (const c of cases) {
-      sec(`${c.label}: batch of 100, p50 / p95 of 15 runs`);
-      for (const v of variants) {
-        const xs: number[] = [];
-        await q(v.sql("$3::text[]"), [c.from.x, c.from.p, c.keys]);
-        for (let i = 0; i < 15; i++) { const t0 = performance.now(); await q(v.sql("$3::text[]"), [c.from.x, c.from.p, c.keys]); xs.push(performance.now() - t0); }
-        sec(`   ${v.name} ${pct(xs, 50).toFixed(1).padStart(8)} ms / ${pct(xs, 95).toFixed(1).padStart(8)} ms`);
-      }
-    }
   });
 
   it("E9c: what the tag rows cost on the write path (events per second through the real append path, with and without them)", { timeout: 1_800_000 }, async () => {

@@ -1,7 +1,7 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md.
-// V8 backfills the transaction id half of every progress cursor with crablet_progress_cursor_xid(last_position):
-// the smaller of the xid at last_position and the smallest xid among LATER events, so an event the old
-// position cursor had not delivered yet (a lower xid, a higher position) is never put behind the new cursor.
+// crablet_progress_cursor_xid(last_position) (migration V4) gives a position-only progress row the transaction id half of its cursor:
+// the smaller of the xid at last_position and the smallest xid among LATER events, so an event the position-only
+// cursor had not delivered yet (a lower xid, a higher position) is never put behind the pair cursor.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "pg";
@@ -36,7 +36,7 @@ const insert = async (position: number, xid: number) =>
 const xidFor = async (lastPosition: number) =>
   (await client.query("SELECT crablet_progress_cursor_xid($1)::text AS x", [lastPosition])).rows[0].x as string;
 
-describe("V8 progress cursor backfill", () => {
+describe("the transaction id half of a position-only progress cursor", () => {
   it("a row that never ran gets xid 0", async () => {
     assert.equal(await xidFor(0), "0");
   });

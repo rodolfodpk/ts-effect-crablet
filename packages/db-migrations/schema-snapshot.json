@@ -1,0 +1,960 @@
+{
+  "tables": [
+    {
+      "name": "crablet_automation_progress",
+      "comment": "Progress tracking for event-driven automations. Each automation tracks its own position independently.",
+      "columns": [
+        {
+          "name": "automation_name",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": "Unique name of the automation."
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "Instance ID of the leader processing this automation."
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "default": "'ACTIVE'::text",
+          "identity": "",
+          "comment": "Status: ACTIVE, PAUSED, or FAILED."
+        },
+        {
+          "name": "last_position",
+          "type": "bigint",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": "Last processed event position. Events with position > last_position will be processed."
+        },
+        {
+          "name": "error_count",
+          "type": "integer",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": "Number of consecutive errors. Automation is marked FAILED if it exceeds the configured threshold."
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_error_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_transaction_id",
+          "type": "xid8",
+          "notNull": true,
+          "default": "'0'::xid8",
+          "identity": "",
+          "comment": "Transaction id half of the progress cursor: events with (transaction_id, position) > (last_transaction_id, last_position) are processed next."
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_crablet_automation_instance_len",
+          "definition": "CHECK (((instance_id IS NULL) OR (length(instance_id) <= 256)))"
+        },
+        {
+          "name": "chk_crablet_automation_name_len",
+          "definition": "CHECK ((length(automation_name) <= 256))"
+        },
+        {
+          "name": "chk_crablet_automation_status",
+          "definition": "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'PAUSED'::text, 'FAILED'::text])))"
+        },
+        {
+          "name": "crablet_automation_progress_automation_name_not_null",
+          "definition": "NOT NULL automation_name"
+        },
+        {
+          "name": "crablet_automation_progress_created_at_not_null",
+          "definition": "NOT NULL created_at"
+        },
+        {
+          "name": "crablet_automation_progress_error_count_not_null",
+          "definition": "NOT NULL error_count"
+        },
+        {
+          "name": "crablet_automation_progress_last_position_not_null",
+          "definition": "NOT NULL last_position"
+        },
+        {
+          "name": "crablet_automation_progress_last_transaction_id_not_null",
+          "definition": "NOT NULL last_transaction_id"
+        },
+        {
+          "name": "crablet_automation_progress_last_updated_at_not_null",
+          "definition": "NOT NULL last_updated_at"
+        },
+        {
+          "name": "crablet_automation_progress_pkey",
+          "definition": "PRIMARY KEY (automation_name)"
+        },
+        {
+          "name": "crablet_automation_progress_status_not_null",
+          "definition": "NOT NULL status"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_automation_progress_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_automation_progress_pkey ON public.crablet_automation_progress USING btree (automation_name)"
+        }
+      ]
+    },
+    {
+      "name": "crablet_commands",
+      "comment": "Command audit log. One row per executed command, linked to crablet_events via transaction_id.",
+      "columns": [
+        {
+          "name": "command_id",
+          "type": "uuid",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "transaction_id",
+          "type": "xid8",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": "PostgreSQL xid8 for the command execution transaction; joins to crablet_events.transaction_id for events produced by the command. Not a business transaction ID."
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_crablet_command_type_length",
+          "definition": "CHECK (((length(type) >= 1) AND (length(type) <= 64)))"
+        },
+        {
+          "name": "crablet_commands_command_id_not_null",
+          "definition": "NOT NULL command_id"
+        },
+        {
+          "name": "crablet_commands_data_not_null",
+          "definition": "NOT NULL data"
+        },
+        {
+          "name": "crablet_commands_occurred_at_not_null",
+          "definition": "NOT NULL occurred_at"
+        },
+        {
+          "name": "crablet_commands_pkey",
+          "definition": "PRIMARY KEY (command_id)"
+        },
+        {
+          "name": "crablet_commands_transaction_id_not_null",
+          "definition": "NOT NULL transaction_id"
+        },
+        {
+          "name": "crablet_commands_type_not_null",
+          "definition": "NOT NULL type"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_commands_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_commands_pkey ON public.crablet_commands USING btree (command_id)"
+        },
+        {
+          "name": "idx_crablet_commands_transaction_id",
+          "definition": "CREATE UNIQUE INDEX idx_crablet_commands_transaction_id ON public.crablet_commands USING btree (transaction_id)"
+        }
+      ]
+    },
+    {
+      "name": "crablet_deadline_progress",
+      "comment": null,
+      "columns": [
+        {
+          "name": "processor_name",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "default": "'ACTIVE'::text",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_position",
+          "type": "bigint",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_transaction_id",
+          "type": "xid8",
+          "notNull": true,
+          "default": "'0'::xid8",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "error_count",
+          "type": "integer",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_error_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_crablet_deadline_instance_len",
+          "definition": "CHECK (((instance_id IS NULL) OR (length(instance_id) <= 256)))"
+        },
+        {
+          "name": "chk_crablet_deadline_name_len",
+          "definition": "CHECK ((length(processor_name) <= 256))"
+        },
+        {
+          "name": "chk_crablet_deadline_status",
+          "definition": "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'PAUSED'::text, 'FAILED'::text])))"
+        },
+        {
+          "name": "crablet_deadline_progress_created_at_not_null",
+          "definition": "NOT NULL created_at"
+        },
+        {
+          "name": "crablet_deadline_progress_error_count_not_null",
+          "definition": "NOT NULL error_count"
+        },
+        {
+          "name": "crablet_deadline_progress_last_position_not_null",
+          "definition": "NOT NULL last_position"
+        },
+        {
+          "name": "crablet_deadline_progress_last_transaction_id_not_null",
+          "definition": "NOT NULL last_transaction_id"
+        },
+        {
+          "name": "crablet_deadline_progress_last_updated_at_not_null",
+          "definition": "NOT NULL last_updated_at"
+        },
+        {
+          "name": "crablet_deadline_progress_pkey",
+          "definition": "PRIMARY KEY (processor_name)"
+        },
+        {
+          "name": "crablet_deadline_progress_processor_name_not_null",
+          "definition": "NOT NULL processor_name"
+        },
+        {
+          "name": "crablet_deadline_progress_status_not_null",
+          "definition": "NOT NULL status"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_deadline_progress_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_deadline_progress_pkey ON public.crablet_deadline_progress USING btree (processor_name)"
+        }
+      ]
+    },
+    {
+      "name": "crablet_deadlines",
+      "comment": "Pending deadlines (crablet.DeadlineScheduled events not yet fired), by due time. Written by append_events_batch, deleted when the deadline fires; rebuildable from the log.",
+      "columns": [
+        {
+          "name": "deadline_position",
+          "type": "bigint",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "due_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "crablet_deadlines_deadline_position_not_null",
+          "definition": "NOT NULL deadline_position"
+        },
+        {
+          "name": "crablet_deadlines_due_at_not_null",
+          "definition": "NOT NULL due_at"
+        },
+        {
+          "name": "crablet_deadlines_pkey",
+          "definition": "PRIMARY KEY (deadline_position)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_deadlines_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_deadlines_pkey ON public.crablet_deadlines USING btree (deadline_position)"
+        },
+        {
+          "name": "idx_crablet_deadlines_due",
+          "definition": "CREATE INDEX idx_crablet_deadlines_due ON public.crablet_deadlines USING btree (due_at, deadline_position)"
+        }
+      ]
+    },
+    {
+      "name": "crablet_event_tag_keys",
+      "comment": "Derived: one row per (tag key, event position), maintained atomically from crablet_events.tags on append, so the pollers can ask which events carry a tag with a given key. crablet_events.tags is the source of truth; this table can be rebuilt from it.",
+      "columns": [
+        {
+          "name": "key",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "position",
+          "type": "bigint",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "crablet_event_tag_keys_key_not_null",
+          "definition": "NOT NULL key"
+        },
+        {
+          "name": "crablet_event_tag_keys_pkey",
+          "definition": "PRIMARY KEY (key, \"position\")"
+        },
+        {
+          "name": "crablet_event_tag_keys_position_not_null",
+          "definition": "NOT NULL \"position\""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_event_tag_keys_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_event_tag_keys_pkey ON public.crablet_event_tag_keys USING btree (key, \"position\")"
+        }
+      ]
+    },
+    {
+      "name": "crablet_events",
+      "comment": "Canonical Crablet event log. tags is the source of truth for event tags.",
+      "columns": [
+        {
+          "name": "type",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "tags",
+          "type": "text[]",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "data",
+          "type": "jsonb",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "transaction_id",
+          "type": "xid8",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": "PostgreSQL xid8 for the transaction that appended this event; shared by all events appended in the same transaction and used to join command audit rows. Not a business transaction ID."
+        },
+        {
+          "name": "position",
+          "type": "bigint",
+          "notNull": true,
+          "default": "nextval('crablet_events_position_seq'::regclass)",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "correlation_id",
+          "type": "uuid",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "Business operation thread ID shared by all events caused by one user request, including automation-triggered downstream events."
+        },
+        {
+          "name": "causation_id",
+          "type": "bigint",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "Position (crablet_events.position) of the event that directly triggered this event. NULL for direct user actions."
+        },
+        {
+          "name": "request_fingerprint",
+          "type": "bytea",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "SHA-256 of the command name and its encoded input, for the events of a command with an idempotency key; NULL otherwise. Compared when the key repeats."
+        },
+        {
+          "name": "emit_key",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "For an event appended under a cause (an automation trigger): the request fingerprint and the event's place in its append. Unique per cause."
+        },
+        {
+          "name": "event_id",
+          "type": "uuid",
+          "notNull": true,
+          "default": "uuidv7()",
+          "identity": "",
+          "comment": "The event's stable public id (uuidv7): the message id a sink is given. Not an order: order is (transaction_id, position)."
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_event_type_length",
+          "definition": "CHECK (((length(type) >= 1) AND (length(type) <= 64)))"
+        },
+        {
+          "name": "crablet_events_data_not_null",
+          "definition": "NOT NULL data"
+        },
+        {
+          "name": "crablet_events_event_id_not_null",
+          "definition": "NOT NULL event_id"
+        },
+        {
+          "name": "crablet_events_occurred_at_not_null",
+          "definition": "NOT NULL occurred_at"
+        },
+        {
+          "name": "crablet_events_pkey",
+          "definition": "PRIMARY KEY (\"position\")"
+        },
+        {
+          "name": "crablet_events_position_not_null",
+          "definition": "NOT NULL \"position\""
+        },
+        {
+          "name": "crablet_events_tags_not_null",
+          "definition": "NOT NULL tags"
+        },
+        {
+          "name": "crablet_events_transaction_id_not_null",
+          "definition": "NOT NULL transaction_id"
+        },
+        {
+          "name": "crablet_events_type_not_null",
+          "definition": "NOT NULL type"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_events_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_events_pkey ON public.crablet_events USING btree (\"position\")"
+        },
+        {
+          "name": "idx_crablet_events_correlation_id",
+          "definition": "CREATE INDEX idx_crablet_events_correlation_id ON public.crablet_events USING btree (correlation_id) WHERE (correlation_id IS NOT NULL)"
+        },
+        {
+          "name": "idx_crablet_events_emit_key",
+          "definition": "CREATE UNIQUE INDEX idx_crablet_events_emit_key ON public.crablet_events USING btree (causation_id, emit_key) WHERE (emit_key IS NOT NULL)"
+        },
+        {
+          "name": "idx_crablet_events_tags_gin",
+          "definition": "CREATE INDEX idx_crablet_events_tags_gin ON public.crablet_events USING gin (tags)"
+        },
+        {
+          "name": "idx_crablet_events_transaction_position_btree",
+          "definition": "CREATE INDEX idx_crablet_events_transaction_position_btree ON public.crablet_events USING btree (transaction_id, \"position\")"
+        },
+        {
+          "name": "idx_crablet_events_type_position",
+          "definition": "CREATE INDEX idx_crablet_events_type_position ON public.crablet_events USING btree (type, \"position\")"
+        }
+      ]
+    },
+    {
+      "name": "crablet_outbox_topic_progress",
+      "comment": "Tracks last published event position per publisher per topic. Each publisher advances independently through events matching its topic criteria.",
+      "columns": [
+        {
+          "name": "topic",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "publisher",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_position",
+          "type": "bigint",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_published_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "default": "'ACTIVE'::text",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "error_count",
+          "type": "integer",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "leader_instance",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "Hostname/pod name of the instance currently holding the lock for this topic-publisher pair."
+        },
+        {
+          "name": "leader_since",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "When the current instance became the leader."
+        },
+        {
+          "name": "leader_heartbeat",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "Last heartbeat timestamp from the leader instance. Used to detect abandoned pairs when leader crashes."
+        },
+        {
+          "name": "last_transaction_id",
+          "type": "xid8",
+          "notNull": true,
+          "default": "'0'::xid8",
+          "identity": "",
+          "comment": "Transaction id half of the progress cursor: events with (transaction_id, position) > (last_transaction_id, last_position) are published next."
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_crablet_outbox_leader_instance_len",
+          "definition": "CHECK (((leader_instance IS NULL) OR (length(leader_instance) <= 256)))"
+        },
+        {
+          "name": "chk_crablet_outbox_publisher_len",
+          "definition": "CHECK ((length(publisher) <= 128))"
+        },
+        {
+          "name": "chk_crablet_outbox_status",
+          "definition": "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'PAUSED'::text, 'FAILED'::text])))"
+        },
+        {
+          "name": "chk_crablet_outbox_topic_len",
+          "definition": "CHECK ((length(topic) <= 128))"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_error_count_not_null",
+          "definition": "NOT NULL error_count"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_last_position_not_null",
+          "definition": "NOT NULL last_position"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_last_transaction_id_not_null",
+          "definition": "NOT NULL last_transaction_id"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_publisher_not_null",
+          "definition": "NOT NULL publisher"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_status_not_null",
+          "definition": "NOT NULL status"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_topic_not_null",
+          "definition": "NOT NULL topic"
+        },
+        {
+          "name": "crablet_outbox_topic_progress_updated_at_not_null",
+          "definition": "NOT NULL updated_at"
+        },
+        {
+          "name": "pk_crablet_outbox_topic_progress",
+          "definition": "PRIMARY KEY (topic, publisher)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "pk_crablet_outbox_topic_progress",
+          "definition": "CREATE UNIQUE INDEX pk_crablet_outbox_topic_progress ON public.crablet_outbox_topic_progress USING btree (topic, publisher)"
+        }
+      ]
+    },
+    {
+      "name": "crablet_view_progress",
+      "comment": "Progress tracking for view projections. Each view tracks its own position independently.",
+      "columns": [
+        {
+          "name": "view_name",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": "",
+          "comment": "Unique name of the view projection."
+        },
+        {
+          "name": "instance_id",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": "Instance ID of the leader processing this view."
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "default": "'ACTIVE'::text",
+          "identity": "",
+          "comment": "Status: ACTIVE, PAUSED, or FAILED."
+        },
+        {
+          "name": "last_position",
+          "type": "bigint",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": "Last processed event position. Events with position > last_position will be processed."
+        },
+        {
+          "name": "error_count",
+          "type": "integer",
+          "notNull": true,
+          "default": "0",
+          "identity": "",
+          "comment": "Number of consecutive errors. View is marked FAILED if it exceeds the configured threshold."
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_error_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "default": null,
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_updated_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP",
+          "identity": "",
+          "comment": null
+        },
+        {
+          "name": "last_transaction_id",
+          "type": "xid8",
+          "notNull": true,
+          "default": "'0'::xid8",
+          "identity": "",
+          "comment": "Transaction id half of the progress cursor: events with (transaction_id, position) > (last_transaction_id, last_position) are processed next."
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_crablet_view_instance_len",
+          "definition": "CHECK (((instance_id IS NULL) OR (length(instance_id) <= 256)))"
+        },
+        {
+          "name": "chk_crablet_view_name_len",
+          "definition": "CHECK ((length(view_name) <= 256))"
+        },
+        {
+          "name": "chk_crablet_view_status",
+          "definition": "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'PAUSED'::text, 'FAILED'::text])))"
+        },
+        {
+          "name": "crablet_view_progress_created_at_not_null",
+          "definition": "NOT NULL created_at"
+        },
+        {
+          "name": "crablet_view_progress_error_count_not_null",
+          "definition": "NOT NULL error_count"
+        },
+        {
+          "name": "crablet_view_progress_last_position_not_null",
+          "definition": "NOT NULL last_position"
+        },
+        {
+          "name": "crablet_view_progress_last_transaction_id_not_null",
+          "definition": "NOT NULL last_transaction_id"
+        },
+        {
+          "name": "crablet_view_progress_last_updated_at_not_null",
+          "definition": "NOT NULL last_updated_at"
+        },
+        {
+          "name": "crablet_view_progress_pkey",
+          "definition": "PRIMARY KEY (view_name)"
+        },
+        {
+          "name": "crablet_view_progress_status_not_null",
+          "definition": "NOT NULL status"
+        },
+        {
+          "name": "crablet_view_progress_view_name_not_null",
+          "definition": "NOT NULL view_name"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "crablet_view_progress_pkey",
+          "definition": "CREATE UNIQUE INDEX crablet_view_progress_pkey ON public.crablet_view_progress USING btree (view_name)"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "signature": "append_events_batch(p_types text[], p_tags text[], p_data jsonb[], p_occurred_at timestamp with time zone, p_correlation_id uuid, p_causation_id bigint, p_request_fingerprint bytea)",
+      "definition": "CREATE OR REPLACE FUNCTION public.append_events_batch(p_types text[], p_tags text[], p_data jsonb[], p_occurred_at timestamp with time zone, p_correlation_id uuid DEFAULT NULL::uuid, p_causation_id bigint DEFAULT NULL::bigint, p_request_fingerprint bytea DEFAULT NULL::bytea)\n RETURNS bigint\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    v_last_position BIGINT;\nBEGIN\n    WITH inserted AS (\n        INSERT INTO crablet_events (type, tags, data, transaction_id, occurred_at,\n                                    correlation_id, causation_id, request_fingerprint, emit_key)\n            SELECT t.type,\n                   t.tag_string::TEXT[],\n                   t.data,\n                   pg_current_xact_id(),\n                   p_occurred_at,\n                   p_correlation_id,\n                   p_causation_id,\n                   p_request_fingerprint,\n                   -- the request and the event's place in it, for an append made under a cause (ADR-0035)\n                   CASE WHEN p_causation_id IS NOT NULL AND p_request_fingerprint IS NOT NULL\n                        THEN encode(p_request_fingerprint, 'hex') || '/' || t.ord END\n            FROM UNNEST($1, $2, $3) WITH ORDINALITY AS t(type, tag_string, data, ord)\n            RETURNING position, tags, type, data),\n         tagged AS (\n             INSERT INTO crablet_event_tag_keys (key, position)\n                 SELECT DISTINCT split_part(tag, '=', 1), i.position\n                 FROM inserted i,\n                      LATERAL unnest(i.tags) AS tag\n                 WHERE tag LIKE '%=%'),\n         deadlines AS (\n             INSERT INTO crablet_deadlines (deadline_position, due_at)\n                 SELECT i.position, (i.data ->> 'dueAt')::timestamptz\n                 FROM inserted i\n                 WHERE i.type = 'crablet.DeadlineScheduled')\n    SELECT max(position) INTO v_last_position FROM inserted;\n    RETURN v_last_position;\nEND;\n$function$\n",
+      "comment": "Inserts events (and one row per tag KEY of each in crablet_event_tag_keys), with the request fingerprint if given, and returns the position of the last one."
+    },
+    {
+      "signature": "append_events_if(p_types text[], p_tags text[], p_data jsonb[], p_concurrency_items jsonb, p_after_cursor_position bigint, p_idempotency_items jsonb, p_occurred_at timestamp with time zone, p_correlation_id uuid, p_causation_id bigint, p_notify_channel text, p_notify_payload text, p_after_cursor_transaction_id xid8, p_require_fresh_transaction boolean, p_request_fingerprint bytea)",
+      "definition": "CREATE OR REPLACE FUNCTION public.append_events_if(p_types text[], p_tags text[], p_data jsonb[], p_concurrency_items jsonb DEFAULT NULL::jsonb, p_after_cursor_position bigint DEFAULT NULL::bigint, p_idempotency_items jsonb DEFAULT NULL::jsonb, p_occurred_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_correlation_id uuid DEFAULT NULL::uuid, p_causation_id bigint DEFAULT NULL::bigint, p_notify_channel text DEFAULT NULL::text, p_notify_payload text DEFAULT NULL::text, p_after_cursor_transaction_id xid8 DEFAULT NULL::xid8, p_require_fresh_transaction boolean DEFAULT false, p_request_fingerprint bytea DEFAULT NULL::bytea)\n RETURNS jsonb\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    v_has_duplicate BOOLEAN := FALSE;\n    v_has_conflict  BOOLEAN := FALSE;\n    v_has_idem      BOOLEAN := p_idempotency_items IS NOT NULL AND jsonb_array_length(p_idempotency_items) > 0;\n    v_has_conc      BOOLEAN := p_concurrency_items IS NOT NULL AND jsonb_array_length(p_concurrency_items) > 0;\n    v_lock          RECORD;\n    v_last_position BIGINT;\n    v_constraint    TEXT;\nBEGIN\n    -- A command's append must be its transaction's first write (ADR-0033).\n    IF p_require_fresh_transaction AND pg_current_xact_id_if_assigned() IS NOT NULL THEN\n        RAISE EXCEPTION 'a command must not run in a transaction that has already written: its events could be delivered before the events it read (ADR-0033)'\n            USING ERRCODE = 'CRB01';\n    END IF;\n\n    -- Take every lock first, in one globally sorted order (see crablet_writer_lock_keys).\n    FOR v_lock IN SELECT k, excl FROM crablet_writer_lock_keys(p_types, p_tags, p_concurrency_items, p_idempotency_items) ORDER BY k\n        LOOP\n            IF v_lock.excl THEN\n                PERFORM pg_advisory_xact_lock(v_lock.k);\n            ELSE\n                PERFORM pg_advisory_xact_lock_shared(v_lock.k);\n            END IF;\n        END LOOP;\n\n    -- Checks run in statements AFTER the locks above, so under READ COMMITTED they see every\n    -- transaction that committed while we waited for a lock.\n    IF v_has_idem THEN\n        v_has_duplicate := crablet_items_match_any(p_idempotency_items, NULL, NULL);\n    END IF;\n\n    IF v_has_conc AND NOT v_has_duplicate THEN\n        v_has_conflict := crablet_items_match_any(p_concurrency_items, p_after_cursor_position, p_after_cursor_transaction_id);\n    END IF;\n\n    IF v_has_duplicate THEN\n        -- What the key matched, so the caller can answer with the earlier write's marker and tell the same request from another (ADR-0034).\n        RETURN jsonb_build_object(\n                'success', false,\n                'message', 'duplicate operation detected',\n                'error_code', 'IDEMPOTENCY_VIOLATION',\n                'duplicate', crablet_items_duplicate(p_idempotency_items)\n               );\n    END IF;\n\n    IF v_has_conflict THEN\n        RETURN jsonb_build_object(\n                'success', false,\n                'message', 'append condition violated',\n                'error_code', 'DCB_VIOLATION'\n               );\n    END IF;\n\n    IF p_causation_id IS NOT NULL AND p_request_fingerprint IS NOT NULL THEN\n        -- Under a cause (an automation's trigger) the events carry an emit key, unique per cause: the same trigger cannot append the same request twice,\n        -- whatever its idempotency query says (ADR-0035). Two deliveries racing: the second waits for the first's commit, then hits the index.\n        BEGIN\n            v_last_position := append_events_batch(\n                    p_types,\n                    p_tags,\n                    p_data,\n                    COALESCE(p_occurred_at, CURRENT_TIMESTAMP),\n                    p_correlation_id,\n                    p_causation_id,\n                    p_request_fingerprint\n                    );\n        EXCEPTION\n            WHEN unique_violation THEN\n                GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;\n                IF v_constraint IS DISTINCT FROM 'idx_crablet_events_emit_key' THEN\n                    RAISE;\n                END IF;\n                RETURN jsonb_build_object(\n                        'success', false,\n                        'message', 'this trigger already appended this request',\n                        'error_code', 'IDEMPOTENCY_VIOLATION',\n                        'duplicate', (SELECT jsonb_build_object(\n                                                     'latest_transaction_id', e.transaction_id::TEXT,\n                                                     'latest_position', e.position::TEXT,\n                                                     'by_trigger', TRUE,\n                                                     'requests', jsonb_build_array(jsonb_build_object('fingerprint', encode(e.request_fingerprint, 'hex'), 'causation_id', e.causation_id::TEXT)))\n                                      FROM crablet_events e\n                                      WHERE e.causation_id = p_causation_id\n                                        AND e.emit_key LIKE encode(p_request_fingerprint, 'hex') || '/%'\n                                      ORDER BY e.transaction_id DESC, e.position DESC\n                                      LIMIT 1)\n                       );\n        END;\n    ELSE\n        v_last_position := append_events_batch(\n                p_types,\n                p_tags,\n                p_data,\n                COALESCE(p_occurred_at, CURRENT_TIMESTAMP),\n                p_correlation_id,\n                p_causation_id,\n                p_request_fingerprint\n                );\n    END IF;\n\n    IF p_notify_channel IS NOT NULL THEN\n        BEGIN\n            PERFORM pg_notify(p_notify_channel, COALESCE(p_notify_payload, '*'));\n        EXCEPTION\n            WHEN OTHERS THEN\n                RAISE WARNING 'pg_notify failed on channel %: %', p_notify_channel, SQLERRM;\n        END;\n    END IF;\n\n    RETURN jsonb_build_object(\n            'success', true,\n            'message', 'events appended successfully',\n            'events_count', array_length(p_types, 1),\n            'last_position', v_last_position::TEXT,\n            'transaction_id', pg_current_xact_id()::TEXT\n           );\nEND;\n$function$\n",
+      "comment": "Atomically appends events if no duplicate (p_idempotency_items) and no conflicting event after the cursor (p_after_cursor_transaction_id, p_after_cursor_position) in (transaction_id, position) order (p_concurrency_items) exists. Conditions are JSONB arrays of {types, tags} items, OR-ed together. Writers lock their own events' and their conditions' (type, tag) pairs with pg_advisory_xact_lock; requires READ COMMITTED. With p_require_fresh_transaction, refuses (CRB01) a transaction that has already written. Stores p_request_fingerprint on the events; a duplicate reports what it matched (crablet_items_duplicate)."
+    },
+    {
+      "signature": "crablet_items_duplicate(p_items jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.crablet_items_duplicate(p_items jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE\nAS $function$\nDECLARE\n    v_item     JSONB;\n    v_types    TEXT[];\n    v_tags     TEXT[];\n    v_latest   RECORD;\n    v_best     RECORD;\n    v_requests JSONB := '[]'::JSONB;\n    v_found    BOOLEAN := FALSE;\nBEGIN\n    IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN\n        RETURN NULL;\n    END IF;\n    FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)\n        LOOP\n            v_types := ARRAY(SELECT jsonb_array_elements_text(v_item -> 'types'));\n            v_tags := ARRAY(SELECT jsonb_array_elements_text(v_item -> 'tags'));\n            SELECT e.transaction_id, e.position INTO v_latest\n            FROM crablet_events e\n            WHERE (cardinality(v_types) = 0 OR e.type = ANY (v_types))\n              AND (cardinality(v_tags) = 0 OR e.tags @> v_tags)\n            ORDER BY e.transaction_id DESC, e.position DESC\n            LIMIT 1;\n            IF FOUND THEN\n                -- v_best is not assigned before the first match, so it is not compared then (plpgsql does not short-circuit OR).\n                IF NOT v_found THEN\n                    v_best := v_latest;\n                ELSIF (v_latest.transaction_id, v_latest.position) > (v_best.transaction_id, v_best.position) THEN\n                    v_best := v_latest;\n                END IF;\n                v_found := TRUE;\n                v_requests := v_requests || COALESCE((\n                    SELECT jsonb_agg(DISTINCT jsonb_build_object('fingerprint', encode(r.request_fingerprint, 'hex'), 'causation_id', r.causation_id::TEXT))\n                    FROM (SELECT e.request_fingerprint, e.causation_id\n                          FROM crablet_events e\n                          WHERE (cardinality(v_types) = 0 OR e.type = ANY (v_types))\n                            AND (cardinality(v_tags) = 0 OR e.tags @> v_tags)\n                          LIMIT 20) r), '[]'::JSONB);\n            END IF;\n        END LOOP;\n    IF NOT v_found THEN\n        RETURN NULL;\n    END IF;\n    RETURN jsonb_build_object(\n            'latest_transaction_id', v_best.transaction_id::TEXT,\n            'latest_position', v_best.position::TEXT,\n            'requests', (SELECT COALESCE(jsonb_agg(DISTINCT r), '[]'::JSONB) FROM jsonb_array_elements(v_requests) r)\n           );\nEND;\n$function$\n",
+      "comment": null
+    },
+    {
+      "signature": "crablet_items_match_any(p_items jsonb, p_after_position bigint, p_after_xid xid8)",
+      "definition": "CREATE OR REPLACE FUNCTION public.crablet_items_match_any(p_items jsonb, p_after_position bigint, p_after_xid xid8)\n RETURNS boolean\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    v_item  JSONB;\n    v_types TEXT[];\n    v_tags  TEXT[];\nBEGIN\n    FOR v_item IN SELECT value FROM jsonb_array_elements(p_items)\n        LOOP\n            v_types := ARRAY(SELECT jsonb_array_elements_text(v_item -> 'types'));\n            v_tags := ARRAY(SELECT jsonb_array_elements_text(v_item -> 'tags'));\n            IF EXISTS (SELECT 1\n                       FROM crablet_events e\n                       WHERE (p_after_position IS NULL\n                           OR (p_after_xid IS NULL AND e.position > p_after_position)\n                           OR (p_after_xid IS NOT NULL AND (e.transaction_id, e.position) > (p_after_xid, p_after_position)))\n                         -- The caller's own earlier appends (a command's `prepare`) were part of what it loaded; they\n                         -- are not settled, so they sit above the cursor, but they are not a concurrent change.\n                         AND (p_after_xid IS NULL OR e.transaction_id IS DISTINCT FROM pg_current_xact_id_if_assigned())\n                         AND (cardinality(v_types) = 0 OR e.type = ANY (v_types))\n                         AND (cardinality(v_tags) = 0 OR e.tags @> v_tags)\n                       LIMIT 1) THEN\n                RETURN TRUE;\n            END IF;\n        END LOOP;\n    RETURN FALSE;\nEND;\n$function$\n",
+      "comment": null
+    },
+    {
+      "signature": "crablet_leaf_lock_key(p_type text, p_tag text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.crablet_leaf_lock_key(p_type text, p_tag text)\n RETURNS bigint\n LANGUAGE sql\n IMMUTABLE\nAS $function$\nSELECT hashtextextended('L:' || p_type || '|' || p_tag, 0)\n$function$\n",
+      "comment": null
+    },
+    {
+      "signature": "crablet_progress_cursor_xid(p_last_position bigint)",
+      "definition": "CREATE OR REPLACE FUNCTION public.crablet_progress_cursor_xid(p_last_position bigint)\n RETURNS xid8\n LANGUAGE sql\n STABLE\nAS $function$\nSELECT CASE\n           WHEN p_last_position = 0 THEN '0'::xid8\n           ELSE COALESCE(\n                   LEAST((SELECT e.transaction_id FROM crablet_events e WHERE e.position = p_last_position),\n                         (SELECT MIN(e.transaction_id) FROM crablet_events e WHERE e.position > p_last_position)),\n                   -- the event at last_position is gone and nothing is newer: everything left was processed\n                   (SELECT MAX(e.transaction_id) FROM crablet_events e),\n                   '0'::xid8)\n       END\n$function$\n",
+      "comment": null
+    },
+    {
+      "signature": "crablet_writer_lock_keys(p_types text[], p_tags text[], p_concurrency_items jsonb, p_idempotency_items jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.crablet_writer_lock_keys(p_types text[], p_tags text[], p_concurrency_items jsonb, p_idempotency_items jsonb)\n RETURNS TABLE(k bigint, excl boolean)\n LANGUAGE sql\n STABLE\nAS $function$\nWITH event_rows AS (SELECT p_types[i] AS type, p_tags[i]::TEXT[] AS tags\n                    FROM generate_subscripts(p_types, 1) AS i),\n     items AS (SELECT item.value AS item\n               FROM jsonb_array_elements(COALESCE(p_concurrency_items, '[]'::JSONB)) AS item(value)\n               UNION ALL\n               SELECT item.value\n               FROM jsonb_array_elements(COALESCE(p_idempotency_items, '[]'::JSONB)) AS item(value)),\n     item_shapes AS (SELECT ARRAY(SELECT jsonb_array_elements_text(item -> 'types')) AS types,\n                            ARRAY(SELECT jsonb_array_elements_text(item -> 'tags'))  AS tags\n                     FROM items),\n     wanted AS (\n         -- events: exclusive on each (type, tag); shared on the type and on the global key\n         SELECT crablet_leaf_lock_key(e.type, tag) AS k, TRUE AS excl\n         FROM event_rows e, LATERAL unnest(e.tags) AS tag\n         UNION ALL\n         SELECT hashtextextended('T:' || e.type, 0), FALSE FROM event_rows e\n         UNION ALL\n         SELECT hashtextextended('G', 0), FALSE WHERE cardinality(p_types) > 0\n         UNION ALL\n         -- items with types and tags: exclusive on each (type, tag)\n         SELECT crablet_leaf_lock_key(type, tag), TRUE\n         FROM item_shapes s, LATERAL unnest(s.types) AS type, LATERAL unnest(s.tags) AS tag\n         WHERE cardinality(s.types) > 0 AND cardinality(s.tags) > 0\n         UNION ALL\n         -- items with types but no tags: exclusive on the type (writers hold it shared)\n         SELECT hashtextextended('T:' || type, 0), TRUE\n         FROM item_shapes s, LATERAL unnest(s.types) AS type\n         WHERE cardinality(s.types) > 0 AND cardinality(s.tags) = 0\n         UNION ALL\n         -- items with no types: exclusive on the global key (every writer holds it shared)\n         SELECT hashtextextended('G', 0), TRUE\n         FROM item_shapes s\n         WHERE cardinality(s.types) = 0)\nSELECT w.k, bool_or(w.excl) AS excl\nFROM wanted w\nGROUP BY w.k\n$function$\n",
+      "comment": null
+    }
+  ],
+  "sequences": [
+    {
+      "name": "crablet_events_position_seq",
+      "type": "bigint",
+      "ownedBy": "crablet_events.position"
+    }
+  ]
+}

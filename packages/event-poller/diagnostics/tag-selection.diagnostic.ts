@@ -1,6 +1,6 @@
 // DIAGNOSTIC EXPERIMENTS (docs/adr/0019-storage-visibility-and-the-tag-table.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/event-poller/diagnostics/tag-selection.diagnostic.ts   and read the `DIAG` lines.   N=200000 for a quicker, smaller run.
-// Runs on the shipped schema (V11): "table" below is the slim crablet_event_tag_keys (key, position). (ADR-0019 first measured these against the pre-V11 tag table, then
+// Runs on the shipped schema: "table" below is the slim crablet_event_tag_keys (key, position). (ADR-0019 first measured these against the pre-V11 tag table, then
 // against a slim copy of it by swapping the table name; the numbers are in the ADR.)
 // E9d: the poller's REAL queries (buildEventSelectionQuery / buildPendingSelectionQuery, through makeSqlEventFetcher / hasPendingSelectedEvents) with the wallet's
 //      real selections, answering tag-key presence from the tag table ("table") or from the events' own tags ("scan").
@@ -196,7 +196,7 @@ describe("DIAG", () => {
       const all = latencies.flat();
       line(`E9e ${label}: writer ${(written / SECONDS).toFixed(0)} events/s; ${READERS} pollers made ${all.length} fetches, latency p50 ${pct(all, 50).toFixed(1)} ms, p95 ${pct(all, 95).toFixed(1)} ms, p99 ${pct(all, 99).toFixed(1)} ms`);
     };
-    await phase("shipped (V11: key table written, pollers use it)", "table", 50_000_000);
+    await phase("shipped (key table written, pollers use it)", "table", 50_000_000);
     const def = (await q<{ d: string }>("SELECT pg_get_functiondef('append_events_batch(text[], text[], jsonb[], timestamptz, uuid, bigint, bytea)'::regprocedure) AS d"))[0]!.d;
     const stripped = def.replace(/,\s*tagged AS \([\s\S]*?WHERE tag LIKE '%=%'\)/u, "");
     if (stripped === def) { line("E9e could not strip the tag-row insert from the append function; skipping the second phase"); return; }
