@@ -1,5 +1,6 @@
 // The dcb.events examples against this framework, with no database (see support/dcb-examples.ts).
 import { describe, expect, test } from "bun:test";
+import { IdempotencyMismatch } from "../src/Errors.ts";
 import { given } from "../src/testing/Scenario.ts";
 import {
   AccountClosed,
@@ -42,7 +43,52 @@ import {
   TOKEN_TTL_MS,
   TokenInvalid,
   UsernameChanged,
-  UsernameClaimed
+  UsernameClaimed,
+  AddCopyToCatalog,
+  BookAlreadyReserved,
+  BookIsReserved,
+  BookNotReserved,
+  BookReserved,
+  BorrowerSuspended,
+  CancelReservation,
+  CapacityBelowSubscriptions,
+  CapacityUnchanged,
+  ChangeCourseCapacity,
+  ChangeProductPrice,
+  CopyAddedToCatalog,
+  CopyAlreadyInCatalog,
+  CopyLent,
+  CopyLentToAnotherMember,
+  CopyLimitReached,
+  CopyNotAvailable,
+  CopyNotInCatalog,
+  CopyNotLent,
+  CopyReturned,
+  CourseAlreadyDefined,
+  CourseDefined,
+  CourseFullyBooked,
+  CourseNotDefined,
+  DefineCourse,
+  LendCopy,
+  LoanRenewed,
+  LoanRenewedTwice,
+  MemberAlreadySuspended,
+  MemberNotSuspended,
+  MemberReinstated,
+  MemberSuspended,
+  OrderAlreadyPlaced,
+  PlaceOrder,
+  PlaceOrderIdempotent,
+  ProductNotDefined,
+  PurchaseOrderPlaced,
+  ReinstateMember,
+  RenewLoan,
+  ReservationCancelled,
+  ReserveBook,
+  ReturnCopy,
+  StudentSubscribedToCourse,
+  SubscribeStudentToCourse,
+  SuspendMember
 } from "./support/dcb-examples.ts";
 
 const now = () => Date.now();
@@ -101,6 +147,11 @@ describe("dynamic product price", () => {
     expect((await s.when(OrderProducts, order([["p1", 10]]))).outcome).toBe("created"); // within grace
     expect((await s.when(OrderProducts, order([["p1", 10]], now() + GRACE_MS + 1000))).error).toBeInstanceOf(InvalidPrice);
     expect((await s.when(OrderProducts, order([["p1", 12]], now() + GRACE_MS + 1000))).outcome).toBe("created"); // the new price
+  });
+
+  test("a price changes only for a defined product", async () => {
+    expect((await defined().when(ChangeProductPrice, { productId: "p1", newPrice: 12 })).events.map((e) => e.data)).toEqual([{ productId: "p1", newPrice: 12 }]);
+    expect((await given().when(ChangeProductPrice, { productId: "p1", newPrice: 12 })).error).toBeInstanceOf(ProductNotDefined);
   });
 });
 
@@ -223,5 +274,129 @@ describe("bike rental", () => {
   test("send a rented bike to repair: refused; repair only a bike in repair", async () => {
     expect((await given(...added("b1"), rented("b1", "m1")).when(SendBikeToRepair, { bikeId: "b1" })).error).toBeInstanceOf(BikeNotAvailable);
     expect((await given(...added("b1")).when(RepairBike, { bikeId: "b1" })).error).toBeInstanceOf(BikeNotInRepair);
+  });
+});
+
+// The scenarios of https://dcb.events/examples/library-loans/, by their names there (the page has none for the other commands; they are
+// the last two tests).
+describe("library loans", () => {
+  const cataloged = (...copies: Array<[string, string]>) => copies.map(([copyId, bookId]) => CopyAddedToCatalog({ copyId, bookId }));
+  const lent = (copyId: string, memberId: string) => CopyLent({ copyId, memberId });
+  const returned = (copyId: string, memberId: string) => CopyReturned({ copyId, memberId });
+  const c1 = cataloged(["c1", "book1"]);
+
+  test("Lend an available copy; Lend a copy that is not in the catalog; Lend a copy that is lent; Lend a returned copy", async () => {
+    expect((await given(...c1).when(LendCopy, { copyId: "c1", memberId: "m1" })).events.map((e) => e.type)).toEqual(["CopyLent"]);
+    expect((await given().when(LendCopy, { copyId: "c1", memberId: "m1" })).error).toBeInstanceOf(CopyNotInCatalog);
+    expect((await given(...c1, lent("c1", "m2")).when(LendCopy, { copyId: "c1", memberId: "m1" })).error).toBeInstanceOf(CopyNotAvailable);
+    expect((await given(...c1, lent("c1", "m2"), returned("c1", "m2")).when(LendCopy, { copyId: "c1", memberId: "m1" })).outcome).toBe("created");
+  });
+
+  test("Lend a fourth copy: refused; a returned one does not count", async () => {
+    const three = [...cataloged(["c1", "b1"], ["c2", "b2"], ["c3", "b3"], ["c4", "b4"]), lent("c1", "m1"), lent("c2", "m1"), lent("c3", "m1")];
+    expect((await given(...three).when(LendCopy, { copyId: "c4", memberId: "m1" })).error).toBeInstanceOf(CopyLimitReached);
+    expect((await given(...three, returned("c1", "m1")).when(LendCopy, { copyId: "c4", memberId: "m1" })).outcome).toBe("created");
+  });
+
+  test("Return a lent copy; Return a copy that is not lent; Return a copy lent to another member", async () => {
+    expect((await given(...c1, lent("c1", "m1")).when(ReturnCopy, { copyId: "c1", memberId: "m1" })).events.map((e) => e.type)).toEqual(["CopyReturned"]);
+    expect((await given(...c1).when(ReturnCopy, { copyId: "c1", memberId: "m1" })).error).toBeInstanceOf(CopyNotLent);
+    expect((await given(...c1, lent("c1", "m2")).when(ReturnCopy, { copyId: "c1", memberId: "m1" })).error).toBeInstanceOf(CopyLentToAnotherMember);
+  });
+
+  test("Renew a loan; Renew a copy that is not lent; Renew a loan a third time; Renew a copy that was lent again", async () => {
+    const loan = [...c1, lent("c1", "m1")];
+    expect((await given(...loan).when(RenewLoan, { copyId: "c1" })).events.map((e) => e.type)).toEqual(["LoanRenewed"]);
+    expect((await given(...c1).when(RenewLoan, { copyId: "c1" })).error).toBeInstanceOf(CopyNotLent);
+    const twice = [...loan, LoanRenewed({ copyId: "c1" }), LoanRenewed({ copyId: "c1" })];
+    expect((await given(...twice).when(RenewLoan, { copyId: "c1" })).error).toBeInstanceOf(LoanRenewedTwice);
+    expect((await given(...twice, returned("c1", "m1"), lent("c1", "m2")).when(RenewLoan, { copyId: "c1" })).outcome).toBe("created");
+  });
+
+  test("Renew a loan of a suspended member; Renew a loan while another member is suspended", async () => {
+    const loan = [...c1, lent("c1", "m1")];
+    const r = await given(...loan, MemberSuspended({ memberId: "m1" })).when(RenewLoan, { copyId: "c1" });
+    expect((r.error as BorrowerSuspended).memberId).toBe("m1");
+    expect((await given(...loan, MemberSuspended({ memberId: "m2" })).when(RenewLoan, { copyId: "c1" })).outcome).toBe("created");
+    expect((await given(...loan, MemberSuspended({ memberId: "m1" }), MemberReinstated({ memberId: "m1" })).when(RenewLoan, { copyId: "c1" })).outcome).toBe("created");
+  });
+
+  test("Renew a loan of a reserved book; after the reservation was cancelled; while another book is reserved", async () => {
+    const loan = [...cataloged(["c1", "book1"], ["c2", "book2"]), lent("c1", "m1")];
+    const reserved = BookReserved({ bookId: "book1", memberId: "m2" });
+    expect((await given(...loan, reserved).when(RenewLoan, { copyId: "c1" })).error).toBeInstanceOf(BookIsReserved);
+    expect((await given(...loan, reserved, ReservationCancelled({ bookId: "book1", memberId: "m2" })).when(RenewLoan, { copyId: "c1" })).outcome).toBe("created");
+    expect((await given(...loan, BookReserved({ bookId: "book2", memberId: "m2" })).when(RenewLoan, { copyId: "c1" })).outcome).toBe("created");
+  });
+
+  test("a copy joins the catalog once; a member is suspended once and reinstated only when suspended", async () => {
+    expect((await given().when(AddCopyToCatalog, { copyId: "c1", bookId: "book1" })).outcome).toBe("created");
+    expect((await given(...c1).when(AddCopyToCatalog, { copyId: "c1", bookId: "book1" })).error).toBeInstanceOf(CopyAlreadyInCatalog);
+    const s = given();
+    expect((await s.when(SuspendMember, { memberId: "m1" })).outcome).toBe("created");
+    expect((await s.when(SuspendMember, { memberId: "m1" })).error).toBeInstanceOf(MemberAlreadySuspended);
+    expect((await s.when(ReinstateMember, { memberId: "m1" })).outcome).toBe("created");
+    expect((await s.when(ReinstateMember, { memberId: "m1" })).error).toBeInstanceOf(MemberNotSuspended);
+  });
+
+  test("a member reserves a book once and cancels only their own reservation", async () => {
+    const s = given();
+    expect((await s.when(ReserveBook, { bookId: "book1", memberId: "m1" })).outcome).toBe("created");
+    expect((await s.when(ReserveBook, { bookId: "book1", memberId: "m1" })).error).toBeInstanceOf(BookAlreadyReserved);
+    expect((await s.when(ReserveBook, { bookId: "book1", memberId: "m2" })).outcome).toBe("created");
+    expect((await s.when(CancelReservation, { bookId: "book1", memberId: "m3" })).error).toBeInstanceOf(BookNotReserved);
+    expect((await s.when(CancelReservation, { bookId: "book1", memberId: "m1" })).outcome).toBe("created");
+  });
+});
+
+// https://dcb.events/examples/event-sourced-aggregate/ has no scenarios; these are its three rules, and what the aggregate's version means.
+describe("event-sourced aggregate", () => {
+  const defined = (capacity: number, subscribed = 0) => [
+    CourseDefined({ courseId: "c1", title: "Course 01", capacity }),
+    ...Array.from({ length: subscribed }, (_, i) => StudentSubscribedToCourse({ courseId: "c1", studentId: `s${i}` }))
+  ];
+
+  test("a course is defined once; a command on a course that is not defined is refused", async () => {
+    expect((await given().when(DefineCourse, { courseId: "c1", title: "Course 01", capacity: 10 })).outcome).toBe("created");
+    expect((await given(...defined(10)).when(DefineCourse, { courseId: "c1", title: "Course 01", capacity: 10 })).error).toBeInstanceOf(CourseAlreadyDefined);
+    expect((await given().when(ChangeCourseCapacity, { courseId: "c1", newCapacity: 5 })).error).toBeInstanceOf(CourseNotDefined);
+    expect((await given().when(SubscribeStudentToCourse, { courseId: "c1", studentId: "s1" })).error).toBeInstanceOf(CourseNotDefined);
+  });
+
+  test("a capacity change to the current capacity is refused; one below the subscriptions too; others are recorded", async () => {
+    expect((await given(...defined(10)).when(ChangeCourseCapacity, { courseId: "c1", newCapacity: 15 })).outcome).toBe("created");
+    expect((await given(...defined(10)).when(ChangeCourseCapacity, { courseId: "c1", newCapacity: 10 })).error).toBeInstanceOf(CapacityUnchanged);
+    const below = await given(...defined(2, 2)).when(ChangeCourseCapacity, { courseId: "c1", newCapacity: 1 });
+    expect((below.error as CapacityBelowSubscriptions).subscriptions).toBe(2);
+    expect((await given(...defined(2, 2)).when(ChangeCourseCapacity, { courseId: "c1", newCapacity: 3 })).outcome).toBe("created");
+  });
+
+  test("a student cannot subscribe to a fully booked course; a raised capacity makes room", async () => {
+    expect((await given(...defined(2, 1)).when(SubscribeStudentToCourse, { courseId: "c1", studentId: "s9" })).outcome).toBe("created");
+    const s = given(...defined(1, 1));
+    expect((await s.when(SubscribeStudentToCourse, { courseId: "c1", studentId: "s9" })).error).toBeInstanceOf(CourseFullyBooked);
+    await s.when(ChangeCourseCapacity, { courseId: "c1", newCapacity: 2 });
+    expect((await s.when(SubscribeStudentToCourse, { courseId: "c1", studentId: "s9" })).outcome).toBe("created");
+  });
+});
+
+// The scenarios of https://dcb.events/examples/prevent-record-duplication/, then the same with `idempotentBy`.
+describe("prevent record duplication", () => {
+  const placed = PurchaseOrderPlaced({ orderId: "o1", idempotencyToken: "t1" });
+
+  test("an order with a token that was used is refused; with a new token it is placed", async () => {
+    expect((await given(placed).when(PlaceOrder, { orderId: "o2", idempotencyToken: "t1" })).error).toBeInstanceOf(OrderAlreadyPlaced);
+    const r = await given(placed).when(PlaceOrder, { orderId: "o2", idempotencyToken: "t2" });
+    expect(r.events.map((e) => [e.type, e.data])).toEqual([["PurchaseOrderPlaced", { orderId: "o2", idempotencyToken: "t2" }]]);
+  });
+
+  test("with idempotentBy, the same request again is 'already done', not an error; another order with its token is refused", async () => {
+    const s = given();
+    const request = { orderId: "o1", idempotencyToken: "t1" };
+    expect((await s.when(PlaceOrderIdempotent, request)).outcome).toBe("created");
+    const again = await s.when(PlaceOrderIdempotent, request);
+    expect(again.outcome).toBe("idempotent");
+    expect(again.events).toEqual([]);
+    expect((await s.when(PlaceOrderIdempotent, { orderId: "o2", idempotencyToken: "t1" })).error).toBeInstanceOf(IdempotencyMismatch);
   });
 });
