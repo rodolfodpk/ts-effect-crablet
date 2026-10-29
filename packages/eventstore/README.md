@@ -18,7 +18,9 @@ framework sits on top of this package.
 
 ## Internal
 
-`CorrelationContext`, `Listen` (the reconnecting LISTEN) and `NotifyPayload` (the wake-up payload) are plumbing for the sibling packages. They are listed under `crablet.internal` in
+`CorrelationContext`, `Listen` (the reconnecting LISTEN), `NotifyPayload` (the wake-up payload) and `ReadSnapshot` (what a read could see: the snapshot
+`project` returns as `seen`, which the commands combine and put in `AppendCondition.seen`, so an event the read saw is not a conflict,
+[ADR-0048](../../docs/adr/0048-a-conflict-is-what-the-read-did-not-see.md)) are plumbing for the sibling packages. They are listed under `crablet.internal` in
 [`package.json`](./package.json), applications and the documents do not import them, and they can change without notice ([the boundary](../../docs/reference/README.md#public-api-and-plumbing)).
 
 ## Depends on

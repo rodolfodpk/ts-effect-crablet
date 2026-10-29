@@ -4,7 +4,8 @@ The SQL schema, as a plain file bundle. This repository owns the schema; applica
 
 ## What it gives you
 
-- **`migrationFiles`** - the migrations in the order to apply them, one file per part of the schema, each in its final shape ([ADR-0047](../../docs/adr/0047-the-migrations-are-the-schemas-shape.md)):
+- **`migrationFiles`** - the migrations in the order to apply them. V1 to V5 are one file per part of the schema, each in its shape at the time
+  ([ADR-0047](../../docs/adr/0047-the-migrations-are-the-schemas-shape.md)); from V6 on, each file is a change:
 
   | File | What it holds |
   |---|---|
@@ -13,6 +14,7 @@ The SQL schema, as a plain file bundle. This repository owns the schema; applica
   | `V3__crablet_command_audit.sql` | the command audit, `crablet_commands` |
   | `V4__crablet_processor_progress.sql` | the cursors and status of the views, automations and outbox publishers |
   | `V5__crablet_deadlines.sql` | the pending deadlines and the deadlines processor's status |
+  | `V6__crablet_append_sees_the_read.sql` | `append_events_if` and `crablet_items_match_any` again, taking the read's snapshot: an event the read could see is not a conflict ([ADR-0048](../../docs/adr/0048-a-conflict-is-what-the-read-did-not-see.md)) |
 
 - **`sqlDir`** - the directory holding the `.sql` files.
 
@@ -22,7 +24,7 @@ Nothing is applied for you. `schema-snapshot.json` is the schema they give, read
 
 **A database created before ADR-0047** (with the files V1 to V19) cannot be upgraded to these: its applied versions name files that no longer exist.
 Recreate it: `docker compose down -v` in an example, `lab.ts down` and `up` for the kind lab (the database goes with the cluster), or drop the
-database and apply the five files.
+database and apply the files.
 
 ## Depends on
 

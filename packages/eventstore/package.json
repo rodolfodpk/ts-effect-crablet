@@ -22,11 +22,12 @@
     "./ServerSettings": "./src/ServerSettings.ts",
     "./Leader": "./src/Leader.ts",
     "./NotifyPayload": "./src/NotifyPayload.ts",
+    "./ReadSnapshot": "./src/ReadSnapshot.ts",
     "./spec/Spec": "./src/spec/Spec.ts",
     "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "crablet": {
-    "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ServerSettings"]
+    "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ReadSnapshot", "./ServerSettings"]
   },
   "dependencies": {
     "effect": "4.0.6",

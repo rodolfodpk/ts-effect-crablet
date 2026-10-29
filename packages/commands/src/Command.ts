@@ -6,6 +6,7 @@ import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
+import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
 import * as CD from "./CommandDecision.ts";
@@ -260,13 +261,13 @@ export const defineCommand = <
       }
 
       // 2. Resolve (a lookup through a reader that records what it read), 3. load the model.
-      const reads: Array<{ readonly query: QueryType; readonly horizon: LogPosition }> = [];
+      const reads: Array<{ readonly query: QueryType; readonly horizon: LogPosition; readonly seen: ReadSnapshot.ReadSnapshot | undefined }> = [];
       const reader: ResolveReader = {
-        load: (m) => Effect.map(m.load(eventStore), (l) => (reads.push({ query: l.boundary ?? m.query, horizon: l.horizon }), l.state)),
+        load: (m) => Effect.map(m.load(eventStore), (l) => (reads.push({ query: l.boundary ?? m.query, horizon: l.horizon, seen: l.seen }), l.state)),
         exists: (query) =>
           Query.isEmpty(query)
             ? Effect.die(new Error(`command "${def.name}": resolve asked whether an empty query exists`))
-            : Effect.map(eventStore.project(query, LogPositionNS.zero(), [existsProjector()]), (r) => (reads.push({ query, horizon: r.horizon }), r.state))
+            : Effect.map(eventStore.project(query, LogPositionNS.zero(), [existsProjector()]), (r) => (reads.push({ query, horizon: r.horizon, seen: r.seen }), r.state))
       };
       const resolved = (def.resolve ? yield* def.resolve(input, reader) : undefined) as R;
       const model = def.model?.(input, { resolved }) ?? null;
@@ -322,6 +323,8 @@ export const defineCommand = <
         reads.reduce<LogPosition | null>((c, r) => (c === null ? r.horizon : LogPositionNS.earliest(c, r.horizon)), base) ?? LogPositionNS.zero();
       // The cursor of a condition over the model and the lookups: the model's own position when nothing was looked up (as before), else the earliest horizon of all reads.
       const cursor = (): LogPosition => (reads.length === 0 ? loaded!.logPosition : cursorFrom(loaded?.horizon ?? null));
+      // What every read could see, the model's and the lookups' (ADR-0048): only an event one of them could not see is a conflict.
+      const seen = ReadSnapshot.intersectAll([...(loaded !== null ? [loaded.seen] : []), ...reads.map((r) => r.seen)]);
       // A lookup cannot be a guard over an event this command appends (concurrent runs would refuse each other): then the condition is strict.
       const appended = new Set(events.map((e) => e.type));
       const lookupOverlapsAppend = readQuery !== null && readQuery.items.some((item) => item.eventTypes.some((t) => appended.has(t)));
@@ -332,14 +335,14 @@ export const defineCommand = <
           return yield* Effect.die(new Error(`command "${def.name}": strict consistency needs a model`));
         }
         const boundary = Query.of([...(loaded !== null ? (loaded.boundary ?? model!.query).items : []), ...(readQuery?.items ?? [])]);
-        append = CD.nonCommutative(events, boundary, cursor());
+        append = CD.nonCommutative(events, boundary, cursor(), seen);
       } else if (consistency.guard !== null || loaded?.guard !== undefined || readQuery !== null) {
         if (loaded === null && readQuery === null) {
           return yield* Effect.die(new Error(`command "${def.name}": a consistency guard needs a model (for its position)`));
         }
         const guard = Query.of([...(consistency.guard?.items ?? []), ...(loaded?.guard?.items ?? []), ...(readQuery?.items ?? [])]);
         // Throws if the guard includes an event type this command appends (see withLifecycleGuard in CommandDecision.ts).
-        append = CD.withLifecycleGuard(events, guard, loaded === null ? cursorFrom(null) : cursor());
+        append = CD.withLifecycleGuard(events, guard, loaded === null ? cursorFrom(null) : cursor(), seen);
       } else {
         append = CD.commutative(...events);
       }

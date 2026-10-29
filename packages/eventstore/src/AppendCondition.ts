@@ -2,6 +2,9 @@ import * as Query from "./Query.ts";
 import * as LogPosition from "./LogPosition.ts";
 import type { Query as QueryType } from "./Query.ts";
 import type { LogPosition as LogPositionType } from "./LogPosition.ts";
+import type { ReadSnapshot } from "./ReadSnapshot.ts";
+
+export type { ReadSnapshot } from "./ReadSnapshot.ts";
 
 // Supports two independent checks:
 // concurrencyQuery (conflicting writes after afterPosition) and idempotencyQuery (duplicate
@@ -10,6 +13,10 @@ export interface AppendCondition {
   readonly afterPosition: LogPositionType;
   readonly concurrencyQuery: QueryType;
   readonly idempotencyQuery: QueryType;
+  // What the read the decision was made on could see (ProjectionResult.seen). With it, a matching event after the cursor is a conflict only if
+  // that read could not see it: one it saw, committed but not yet settled, is not (ADR-0048). Without it, every matching event after the cursor is.
+  // Commands set it; nothing else needs to.
+  readonly seen?: ReadSnapshot;
 }
 
 export const of = (

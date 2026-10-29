@@ -1,6 +1,7 @@
 # @crablet/commands
 
-The authoring API. You declare **events**, **models** and **commands**; the executor turns a command into one atomic, conditional append and retries it on a conflict.
+The authoring API. You declare **events**, **models** and **commands**; the executor turns a command into one atomic, conditional append and retries it on a conflict:
+an event in the boundary that the command's reads could not see ([ADR-0048](../../docs/adr/0048-a-conflict-is-what-the-read-did-not-see.md)).
 This is the package most application code imports.
 
 ## What it gives you
