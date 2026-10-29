@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. The append condition's "a loaded-but-unsettled event is a conflict" is refined by
+[ADR-0048](0048-a-conflict-is-what-the-read-did-not-see.md): an event the read could see is not one.
 
 ## Context
 

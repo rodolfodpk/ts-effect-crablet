@@ -9,6 +9,8 @@ import type { Query } from "../Query.ts";
 import type { LogPosition } from "../LogPosition.ts";
 import { Conflict, Duplicate } from "../AppendErrors.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
+import * as ReadSnapshotNS from "../ReadSnapshot.ts";
+import type { ReadSnapshot } from "../ReadSnapshot.ts";
 
 // A Postgres text[] literal for one event's tags: `{"key=value","key2=value2"}`. Every element is
 // double-quoted, with `\` and `"` backslash-escaped, so a value may contain any character - commas,
@@ -24,7 +26,7 @@ function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
   return tags.map((t) => `${t.key}=${t.value}`);
 }
 
-// append_events_if takes 11 positional params. Uses sql.unsafe rather than the tagged template so
+// append_events_if takes 15 positional params. Uses sql.unsafe rather than the tagged template so
 // the param binding order is explicit.
 //
 // PATTERN NOTE - effect/sql gives two ways to run a query, both used in this codebase:
@@ -45,7 +47,8 @@ const APPEND_EVENTS_IF_SQL = `
     $7::timestamptz, $8::uuid, $9::bigint,
     $10::text, $11::text,
     $12::xid8, $13::boolean,
-    decode($14::text, 'hex')
+    decode($14::text, 'hex'),
+    $15::pg_snapshot
   ) AS result
 `;
 
@@ -137,7 +140,9 @@ export const appendEventsIf = (
       // The cursor is a (transaction_id, position) pair; null (an old-style position) compares by position only.
       concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null),
       requireFresh,
-      fingerprint
+      fingerprint,
+      // What the read could see: with it, only an event the read could not see is a conflict (ADR-0048).
+      concurrencyItems === null ? null : (condition.seen ?? null)
     ]).pipe(
       // CRB01: a command ran in a transaction that had already written (ADR-0033). A programming error, not a condition a caller can handle.
       Effect.catchTag("SqlError", (error) =>
@@ -250,9 +255,10 @@ export const queryEvents = (
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
   });
 
-// The oldest transaction id still running (or the next one to be assigned): everything below it has finished, committed or not.
-export const currentXmin = (sql: SqlClient.SqlClient): Effect.Effect<string, SqlError> =>
+// The current snapshot: which transactions had finished (below its xmin, and those between xmin and xmax not listed as running). Its xmin is the
+// oldest transaction id still running (or the next one to be assigned): everything below it has finished, committed or not.
+export const currentSnapshot = (sql: SqlClient.SqlClient): Effect.Effect<ReadSnapshot, SqlError> =>
   Effect.map(
-    sql.unsafe<{ xmin: string }>("SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS xmin"),
-    (rows) => rows[0]!.xmin
+    sql.unsafe<{ snapshot: string }>("SELECT pg_current_snapshot()::text AS snapshot"),
+    (rows) => ReadSnapshotNS.fromText(rows[0]!.snapshot)
   );

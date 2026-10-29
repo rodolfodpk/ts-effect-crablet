@@ -58,6 +58,10 @@ No event is delivered while an older transaction is still open, because that is 
 anywhere in the database, stalls every view, automation and publisher until it ends. In the lab a 30 s transaction raised the lag to about 30 s, and it
 was back under 2 s 0.2 s after the commit.
 
+Commands do not wait for it: an event their read could see is not a conflict, settled or not
+([ADR-0048](../../adr/0048-a-conflict-is-what-the-read-did-not-see.md)). Before that, a command over events written after the open transaction began
+was refused at every retry.
+
 **Watch** idle-in-transaction sessions (`pg_stat_activity`), and set `idle_in_transaction_session_timeout` on the server.
 
 ## The database runs out of connections

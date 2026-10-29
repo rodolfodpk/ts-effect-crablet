@@ -4,6 +4,7 @@ import type { AppendCondition as AppendConditionType } from "@crablet/eventstore
 import * as Query from "@crablet/eventstore/Query";
 import type { Query as QueryType } from "@crablet/eventstore/Query";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
+import type { ReadSnapshot } from "@crablet/eventstore/ReadSnapshot";
 
 // What a defined command's compiled handler hands back to the executor: either "append these events,
 // under this condition" or "nothing to do". Internal: applications declare commands with
@@ -73,7 +74,8 @@ export const withIdempotencyQuery = (decision: Append, query: QueryType): Append
 export const withLifecycleGuard = (
   events: AppendEvent | ReadonlyArray<AppendEvent>,
   guardQuery: QueryType,
-  logPosition: LogPosition
+  logPosition: LogPosition,
+  seen?: ReadSnapshot
 ): Append => {
   const list = eventList(events);
   const appendedTypes = new Set(list.map((e) => e.type));
@@ -83,7 +85,7 @@ export const withLifecycleGuard = (
       `Lifecycle guard query must not include appended event types: ${[...new Set(overlapping)].sort().join(", ")}`
     );
   }
-  return make(list, AppendCondition.of(logPosition, guardQuery), "guard");
+  return make(list, withSeen(AppendCondition.of(logPosition, guardQuery), seen), "guard");
 };
 
 // Non-commutative (strict): refuse the append if ANYTHING matching the decision model was appended
@@ -91,8 +93,13 @@ export const withLifecycleGuard = (
 export const nonCommutative = (
   events: AppendEvent | ReadonlyArray<AppendEvent>,
   decisionModel: QueryType,
-  logPosition: LogPosition
-): Append => make(eventList(events), AppendCondition.of(logPosition, decisionModel));
+  logPosition: LogPosition,
+  seen?: ReadSnapshot
+): Append => make(eventList(events), withSeen(AppendCondition.of(logPosition, decisionModel), seen));
+
+// What the decision's reads could see, when they carried it: then an event after `logPosition` that they did see is not a conflict (ADR-0048).
+const withSeen = (condition: AppendConditionType, seen: ReadSnapshot | undefined): AppendConditionType =>
+  seen === undefined ? condition : { ...condition, seen };
 
 export const noOp = (reason: string | null = null, marker: NoOp["marker"] = null): NoOp => ({ _tag: "NoOp", reason, marker });
 

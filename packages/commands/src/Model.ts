@@ -5,6 +5,7 @@ import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { EventStoreService, StateProjector, StoredEvent } from "@crablet/eventstore";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";
 import type { LogPosition } from "@crablet/eventstore/LogPosition";
+import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
@@ -63,6 +64,9 @@ export interface Loaded<S> {
   readonly logPosition: LogPosition;
   // A cursor before anything this load could have missed (see `ProjectionResult.horizon`); what `all` builds its cursor from.
   readonly horizon: LogPosition;
+  // What every read of this load could see (ProjectionResult.seen; the intersection of them when it read more than once): the append condition
+  // counts as a conflict only an event the load could not see (ADR-0048). Absent when a read did not carry one (the in-memory store).
+  readonly seen?: ReadSnapshot.ReadSnapshot;
   // The newest event the load read, settled or not (ProjectionResult.latest): an upper bound on what `decide` saw. A decision that answers
   // "already done" from the model returns it as its marker (ADR-0034).
   readonly latest: LogPosition;
@@ -283,7 +287,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         };
       }
     };
-    return Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), (r) => ({ ...r.state, query, logPosition: r.logPosition, horizon: r.horizon, latest: r.latest }));
+    return Effect.map(eventStore.project(query, LogPositionNS.zero(), [projector]), (r) => ({ ...r.state, query, logPosition: r.logPosition, horizon: r.horizon, seen: r.seen, latest: r.latest }));
   };
 
   const load = (eventStore: EventStoreService, id: string) =>
@@ -300,10 +304,11 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         return (state: S & { readonly period: PeriodInfo<F> }, events: ReadonlyArray<AppendEvent>) =>
           ({ ...(fold(state, events) as object), period: state.period }) as S & { readonly period: PeriodInfo<F> };
       };
-      const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition; latest: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
+      const inOpen = (m: Marked & { query: Query.Query; logPosition: LogPosition; horizon: LogPosition; seen: ReadSnapshot.ReadSnapshot | undefined; latest: LogPosition }, fields: F): Loaded<S & { readonly period: PeriodInfo<F> }> => ({
         state: withPeriod(m.s, fields),
         logPosition: m.logPosition,
         horizon: m.horizon,
+        seen: m.seen,
         latest: m.latest,
         boundary: m.query,
         guard: closingQuery(id, fields),
@@ -336,6 +341,7 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
       let carry = first.s;
       let boundary = unionOf(first.query, trackingQuery(id));
       let horizon = LogPositionNS.earliest(first.horizon, track.horizon);
+      let seen = ReadSnapshot.intersectAll([first.seen, track.seen]);
       let latest = LogPositionNS.latest(first.latest, track.latest);
       const prefix: Array<AppendEvent> = [];
       if (current !== null) {
@@ -343,13 +349,14 @@ const periodModel = <S, F extends PeriodFields, OD, CD>(
         carry = old.s;
         boundary = unionOf(boundary, old.query);
         horizon = LogPositionNS.earliest(horizon, old.horizon);
+        seen = ReadSnapshot.intersectAll([seen, old.seen]);
         latest = LogPositionNS.latest(latest, old.latest);
         prefix.push(requireTags(closed(config.close(old.s, context(current))), closed.type));
       }
       const opening = requireTags(opened(config.open(carry, context(target))), opened.type);
       prefix.push(opening);
       const state = openedEntry.apply(first.s, opening.eventData, { event: { type: opening.type, data: opening.eventData, tags: opening.tags } as unknown as StoredEvent, id });
-      return { state: withPeriod(state, target), logPosition: horizon, horizon, latest, prefix, boundary, fold: foldIn(target), complete: completeWith(entries, def.by, id, tagsOf(spec, target)), ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
+      return { state: withPeriod(state, target), logPosition: horizon, horizon, seen, latest, prefix, boundary, fold: foldIn(target), complete: completeWith(entries, def.by, id, tagsOf(spec, target)), ...stamp } satisfies Loaded<S & { readonly period: PeriodInfo<F> }>;
     });
 
   return {
@@ -417,10 +424,11 @@ export const defineModel = <S, const By extends string, Scope extends object = {
             return entry ? entry.apply(state, event.data, { event, id: args.id }) : state;
           }
         };
-        const loaded = (r: { readonly state: S; readonly logPosition: LogPosition; readonly horizon: LogPosition; readonly latest: LogPosition }): Loaded<S> => ({
+        const loaded = (r: { readonly state: S; readonly logPosition: LogPosition; readonly horizon: LogPosition; readonly seen?: ReadSnapshot.ReadSnapshot; readonly latest: LogPosition }): Loaded<S> => ({
           state: r.state,
           logPosition: r.logPosition,
           horizon: r.horizon,
+          seen: r.seen,
           latest: r.latest,
           fold: foldWith(entries, query, args.id),
           complete: completeWith(entries, def.by, args.id, scopeTags)
@@ -462,6 +470,8 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
         );
         const horizons = loaded.map(([, l]) => l.horizon);
         const horizon = horizons.length === 0 ? LogPositionNS.zero() : horizons.reduce((a, b) => LogPositionNS.earliest(a, b));
+        // What every member saw: an event one of them could not see stays a conflict for the whole (ADR-0048).
+        const seen = ReadSnapshot.intersectAll(loaded.map(([, l]) => l.seen));
         const latest = loaded.length === 0 ? LogPositionNS.zero() : loaded.map(([, l]) => l.latest).reduce((a, b) => LogPositionNS.latest(a, b));
         // Members with a period bring the events that turn it, the boundary they were read with and the guard of the period they decided in; the whole carries all of them.
         const entriesWithPeriod = Object.entries(members).map(([key, member]) => [key, member, loaded.find(([k]) => k === key)![1]] as const);
@@ -482,6 +492,7 @@ export const all = <M extends Record<string, ModelInstance<any>>>(
             }, { event, conflicts: [] }),
           logPosition: horizon,
           horizon,
+          ...(seen !== undefined ? { seen } : {}),
           latest,
           ...(loaded.find(([, l]) => l.now !== undefined)?.[1].now ? { now: loaded.find(([, l]) => l.now !== undefined)![1].now } : {}),
           ...(prefix.length > 0 ? { prefix } : {}),

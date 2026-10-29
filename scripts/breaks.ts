@@ -29,9 +29,12 @@ const SQL = "packages/eventstore/src/internal/sql.ts";
 const POLLER_SQL = "packages/event-poller/src/internal/sql.ts";
 const TRACKER = "packages/event-poller/src/PostgresProgressTracker.ts";
 const migration = (name: string) => `packages/db-migrations/sql/${name}.sql`;
-// The conditional append and its helpers, all in one file (ADR-0047): append_events_if, append_events_batch, crablet_items_match_any,
-// crablet_writer_lock_keys. A break's text must occur once in the whole file, so it names enough of its function to be unique.
+// The conditional append (ADR-0047): append_events_batch and the lock helpers (crablet_writer_lock_keys) in V2; append_events_if and
+// crablet_items_match_any in V6, which drops and creates them again with the read's snapshot (ADR-0048), so a break of those two edits V6 (V2's copy
+// is no longer what runs). A break's text must occur once in its file, so it names enough of its function to be unique.
 const APPEND = migration("V2__crablet_append");
+const APPEND_IF = migration("V6__crablet_append_sees_the_read");
+const READ_SNAPSHOT = "packages/eventstore/src/ReadSnapshot.ts";
 
 export const breaks: ReadonlyArray<Break> = [
   // The append: what the client sends and how it reads the answer (eventstore/src/internal/sql.ts).
@@ -102,8 +105,8 @@ export const breaks: ReadonlyArray<Break> = [
   {
     id: "fingerprint-not-sent",
     file: SQL,
-    find: "      requireFresh,\n      fingerprint\n",
-    replace: "      requireFresh,\n      null\n",
+    find: "      requireFresh,\n      fingerprint,\n",
+    replace: "      requireFresh,\n      null,\n",
     tests: [cmd("repeat-postgres"), cmd("trigger-backstop-postgres")],
     why: "a repeated request could not be told from a different one, and the trigger backstop would never hold (ADR-0034, ADR-0035)"
   },
@@ -127,7 +130,7 @@ export const breaks: ReadonlyArray<Break> = [
   // The SQL functions of the append (the migrations: the last definition of each).
   {
     id: "condition-cursor-inclusive",
-    file: APPEND,
+    file: APPEND_IF,
     find: "(e.transaction_id, e.position) > (p_after_xid, p_after_position)",
     replace: "(e.transaction_id, e.position) >= (p_after_xid, p_after_position)",
     tests: [es("conformance-postgres"), es("append"), es("append-cursor-inversion")],
@@ -135,7 +138,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "condition-own-transaction",
-    file: APPEND,
+    file: APPEND_IF,
     find: "AND (p_after_xid IS NULL OR e.transaction_id IS DISTINCT FROM pg_current_xact_id_if_assigned())",
     replace: "",
     tests: [es("append-cursor-inversion")],
@@ -143,7 +146,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "condition-tags-any",
-    file: APPEND,
+    file: APPEND_IF,
     // the condition check's own line, the one before its LIMIT (crablet_items_duplicate has the same test, for the idempotency report)
     find: "OR e.tags @> v_tags)\n                       LIMIT 1) THEN",
     replace: "OR e.tags && v_tags)\n                       LIMIT 1) THEN",
@@ -152,7 +155,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "idempotency-not-checked",
-    file: APPEND,
+    file: APPEND_IF,
     find: "v_has_duplicate := crablet_items_match_any(p_idempotency_items, NULL, NULL);",
     replace: "v_has_duplicate := FALSE;",
     tests: [es("conformance-postgres"), cmd("repeat-postgres")],
@@ -160,7 +163,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "writer-lock-shared",
-    file: APPEND,
+    file: APPEND_IF,
     find: "PERFORM pg_advisory_xact_lock(v_lock.k);",
     replace: "PERFORM pg_advisory_xact_lock_shared(v_lock.k);",
     tests: [es("append-writer-locking")],
@@ -168,11 +171,35 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "fresh-transaction-unchecked",
-    file: APPEND,
+    file: APPEND_IF,
     find: "IF p_require_fresh_transaction AND pg_current_xact_id_if_assigned() IS NOT NULL THEN",
     replace: "IF FALSE THEN",
     tests: [cmd("causal-order-postgres")],
     why: "a command could run in a transaction that already wrote, and its events be delivered before what it read (ADR-0033)"
+  },
+  {
+    id: "snapshot-not-passed",
+    file: APPEND_IF,
+    find: "p_after_cursor_transaction_id, p_after_snapshot);",
+    replace: "p_after_cursor_transaction_id, NULL);",
+    tests: [cmd("long-transaction-postgres")],
+    why: "an event the read saw, but not yet settled, would be a conflict: any open transaction makes commands over recent events fail (ADR-0048)"
+  },
+  {
+    id: "snapshot-after-xmax-seen",
+    file: APPEND_IF,
+    find: "OR e.transaction_id >= pg_snapshot_xmax(p_after_snapshot)",
+    replace: "OR FALSE",
+    tests: [cmd("dcb-examples-postgres"), es("conformance-postgres")],
+    why: "an event committed by a transaction that started after the read would not be a conflict: two racing decisions both append (ADR-0048)"
+  },
+  {
+    id: "snapshot-running-seen",
+    file: APPEND_IF,
+    find: "OR e.transaction_id = ANY (v_xip))",
+    replace: ")",
+    tests: [cmd("long-transaction-postgres")],
+    why: "an event of a transaction running when the read was taken, committed after it, would not be a conflict (ADR-0048, ADR-0012)"
   },
   {
     id: "no-emit-key",
@@ -205,6 +232,16 @@ export const breaks: ReadonlyArray<Break> = [
     replace: "SELECT hashtextextended('T:' || type, 0), FALSE\n         FROM item_shapes s, LATERAL unnest(s.types) AS type\n         WHERE cardinality(s.types) > 0 AND cardinality(s.tags) = 0",
     tests: [es("append-writer-locking")],
     why: "a condition on a type with no tags would not exclude a concurrent writer of that type"
+  },
+
+  // What a command's reads saw, combined (eventstore/src/ReadSnapshot.ts, ADR-0048).
+  {
+    id: "intersect-takes-last",
+    file: READ_SNAPSHOT,
+    find: "  const pa = parse(a), pb = parse(b);",
+    replace: "  return b;\n  const pa = parse(a), pb = parse(b);",
+    tests: [cmd("all-union-cursor-postgres")],
+    why: "a model over several entities would treat as seen what only its last read saw: an event its first read missed would not be a conflict"
   },
 
   // The poller's queries (event-poller/src/internal/sql.ts).

@@ -50,7 +50,7 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 
 ## Common tasks
 
-**Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (the next number, today `V6__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
+**Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (the next number, today `V7__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
 editing a migration that may have been applied ([ADR-0047](docs/adr/0047-the-migrations-are-the-schemas-shape.md) is the one exception, made before a first release). Test it from the
 state before it: `startTestDb({ migrations: migrationFiles.slice(0, -1) })` starts the test database without it, so the test can put data in and then apply it. Then rewrite
 the schema snapshot with `UPDATE_SCHEMA_SNAPSHOT=1 node --test packages/eventstore/test/integration/schema-snapshot.test.ts` and review its diff: it is what the migration

@@ -167,8 +167,8 @@ describe("DIAG", () => {
     const loop = () => { let state = 0; let last: unknown = null; for (const event of parsed) { for (const projector of noopProjectors) { if (projector.eventTypes.length === 0 || projector.eventTypes.includes(event.type)) state = projector.transition(state); } last = { position: event.position, occurredAt: event.occurredAt, transactionId: event.transactionId }; } return [state, last]; };
     console.log(`DIAG E5h   the projector loop and a LogPosition per row, over parsed events: ${spread(await timed(loop))}`);
     // the extra query `project` runs first
-    const xmin = await timed(() => run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS xmin"))));
-    console.log(`DIAG E5h the extra currentXmin query: ${spread(xmin)}`);
+    const xmin = await timed(() => run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT pg_current_snapshot()::text AS snapshot"))));
+    console.log(`DIAG E5h the extra currentSnapshot query: ${spread(xmin)}`);
     // end to end, interleaved so a slow moment hits both: the raw fetch and `project` with a do-nothing projector
     const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
     const q = Query.forEventAndTag("Ticked", "entity_id", "parsebig");

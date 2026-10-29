@@ -45,6 +45,7 @@ These records are for the history of each decision: its context, the options wei
 ## Reading, delivery and the pollers
 
 - [ADR-0012: Cursors are (transaction_id, position) pairs, not bare positions](0012-transaction-position-cursors.md) - why no event is skipped (accepted)
+- [ADR-0048: A conflict is what the read did not see](0048-a-conflict-is-what-the-read-did-not-see.md) - **accepted**: a read carries its snapshot, and the append counts as a conflict only an event that snapshot could not see; an open transaction elsewhere no longer makes commands over recent events fail (refines ADR-0012's append condition)
 - [ADR-0005: LISTEN/NOTIFY built on PgClient.listen + pg_notify() SQL function](0005-listen-notify-implementation.md) - accepted
 - [ADR-0006: Leader election via SqlClient.reserve + manually managed Scope](0006-leader-election-via-sql-reserve.md) - accepted
 - [ADR-0007: Event-poller fiber model - one daemon fiber per processorId, one shared leader-retry fiber](0007-event-poller-fiber-model.md) - accepted

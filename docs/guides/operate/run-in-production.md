@@ -23,7 +23,7 @@ cannot be upgraded to them and is recreated ([ADR-0047](../../adr/0047-the-migra
 
 **Do not let every instance run the migration at start-up.** Five instances starting at once on an empty database raced: some failed with `relation ... already exists`, and which ones changed from run to run ([the kind lab](../../history/plans/kind-lab.md)).
 Run the schema from **one pre-deploy job**, and start the application with the migration off (the wallet: `WALLET_MIGRATE=off`). A migration tool with a history table and a lock removes the race: the files here already follow
-Flyway's naming (the framework's are V1 to V5, so number your own from V100 and keep the range below 100 for the framework), and Flyway 13.10.0 applied both sets, in order, from five pods at once, three times out of three, on Postgres 18.6, when the framework's files were V1 to V14
+Flyway's naming (the framework's are V1 to V6, so number your own from V100 and keep the range below 100 for the framework), and Flyway 13.10.0 applied both sets, in order, from five pods at once, three times out of three, on Postgres 18.6, when the framework's files were V1 to V14
 (`examples/wallet-example-app/Dockerfile.migrations`). An existing database needs a baseline so the tool accepts the versions it already has; that was not tried.
 
 ## 2. One layer for the connection

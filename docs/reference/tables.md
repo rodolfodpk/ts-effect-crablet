@@ -2,7 +2,7 @@
 
 *Reference · developers and operators · none · look up*
 
-The tables the framework owns. The schema is the SQL in [`@crablet/db-migrations`](../../packages/db-migrations/README.md) (V1 to V5); your own
+The tables the framework owns. The schema is the SQL in [`@crablet/db-migrations`](../../packages/db-migrations/README.md) (V1 to V6); your own
 tables, views included, are numbered from V100. A diagram of how they relate is in
 [the architecture](../concepts/architecture.md#what-is-in-the-database).
 

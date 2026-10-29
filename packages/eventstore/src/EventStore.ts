@@ -12,6 +12,7 @@ import * as QueryNS from "./Query.ts";
 import type { Query } from "./Query.ts";
 import * as LogPositionNS from "./LogPosition.ts";
 import type { LogPosition } from "./LogPosition.ts";
+import * as ReadSnapshot from "./ReadSnapshot.ts";
 import { AppendTooLarge, Conflict, Duplicate, MAX_APPEND_EVENTS } from "./AppendErrors.ts";
 import * as Sql from "./internal/sql.ts";
 import { makeWakeupNotifier, PendingWakeups } from "./internal/WakeupNotifier.ts";
@@ -56,6 +57,9 @@ export interface ProjectionResult<T> {
   // condition using it can never skip one. In Postgres: `(xmin of a snapshot taken before the read, 0)`: a read sees every event whose
   // transaction id is below its xmin. A model over several entities uses the earliest of its members' horizons (ADR-0018, decision 8).
   readonly horizon: LogPosition;
+  // What this read could see: the snapshot taken just before it (Postgres only). An append condition that carries it counts as a conflict only an
+  // event this read could not see (ADR-0048). Taken BEFORE the read, so it never sees more than the read did. Absent in the in-memory store.
+  readonly seen?: ReadSnapshot.ReadSnapshot;
   // The newest event this read returned, settled or not (the read's start when it returned none): an upper bound on what the read
   // saw, which `logPosition` (the last SETTLED one) is not. A command that decides "already done" from what it read answers with it as
   // its marker, so a reader that waits for it sees the earlier write (ADR-0034).
@@ -204,8 +208,10 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
         if (projectors.length === 0) {
           return yield* Effect.die("At least one projector is required");
         }
-        // BEFORE the read: xmin never decreases, so this one is never above the read's own snapshot's (and a lower one is only more cautious).
-        const xmin = yield* Sql.currentXmin(sql);
+        // BEFORE the read: a snapshot taken earlier sees no more than the read's own (xmin never decreases, and a transaction it saw finished is still
+        // finished), so the horizon is never above what the read could miss, and `seen` never treats as seen an event the read did not see (ADR-0048).
+        const seen = yield* Sql.currentSnapshot(sql);
+        const xmin = ReadSnapshot.parse(seen).xmin.toString();
         const rows = yield* Sql.queryEvents(sql, query, after);
 
         let state = projectors[0]!.initialState;
@@ -235,7 +241,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
           latest = LogPositionNS.of(event.position, event.occurredAt, event.transactionId);
         }
 
-        return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin }, latest };
+        return { state: state as T, logPosition: lastLogPosition, horizon: { position: 0n, occurredAt: null, transactionId: xmin }, seen, latest };
       });
 
     // Asks the database for a yes or no (it stops at the first match) instead of reading every matching event.
