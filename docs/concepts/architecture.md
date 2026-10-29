@@ -8,7 +8,7 @@ each design, follow the links to the [decision records](../adr/README.md); for t
 The two example applications also have [C4 models](./c4-examples.md) (context, containers, components).
 
 Contents: [the mental model](#the-mental-model) · [the whole system](#the-whole-system) · [a command, from request to append](#a-command-from-request-to-append) · [two commands that conflict](#two-commands-that-conflict) ·
-[from event to view](#from-event-to-view) · [a read that includes your write](#a-read-that-includes-your-write) · [one lock per module, one leader per lock](#one-lock-per-module-one-leader-per-lock) ·
+[from event to view](#from-event-to-view) · [a read that includes your write](#a-read-that-includes-your-write) · [a deadline, from setting it to firing it](#a-deadline-from-setting-it-to-firing-it) · [one lock per module, one leader per lock](#one-lock-per-module-one-leader-per-lock) ·
 [changing an event](#changing-an-event) · [what is in the database](#what-is-in-the-database)
 
 ## The mental model
@@ -27,7 +27,7 @@ flowchart TB
   subgraph fw["What the framework does: CommandExecutor.run, one transaction"]
     direction LR
     load["1. load<br/>query the events with the model's tags,<br/>fold them into state"]
-    dec["2. decide(state, input)<br/>emit · fail · noop"]
+    dec["2. decide(state, input)<br/>emit · fail · noop<br/>emit may include deadline(Command, input, { at })"]
     app["3. append, only if nothing new<br/>arrived in the boundary;<br/>otherwise re-run on fresh state"]
     load --> dec --> app
   end
@@ -39,6 +39,7 @@ flowchart TB
     vw["<b>Views</b> · defineView<br/>tables you read, with read-your-writes"]
     au["<b>Automations</b><br/>an event in, a command out"]
     ob["<b>Outbox</b> · defineTopic<br/>publish to brokers and webhooks"]
+    dl["<b>Deadlines</b><br/>a time passes, a command out"]
   end
 
   co --> load
@@ -47,12 +48,16 @@ flowchart TB
   log -.-> vw
   log -.-> au
   log -.-> ob
+  log -. "due deadlines" .-> dl
   au -- "runs a command" --> co
+  dl -- "runs a command" --> co
 ```
 
 You write three pure declarations. The **model** is the key one: the same `.on(...)` handlers give `decide` its state and give the command its
 **consistency boundary**, the events whose arrival would change the answer. The executor loads that boundary, calls `decide`, and appends only if
-nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log.
+nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log. A decision
+can also set a **deadline**: a command to run once a time has passed, stored as an event in the same append; the deadlines processor runs it when
+it is due ([a deadline, from setting it to firing it](#a-deadline-from-setting-it-to-firing-it)).
 
 ## The whole system
 
@@ -77,6 +82,9 @@ flowchart TB
     subgraph om["outbox module: its own lock"]
       po["event-poller<br/>cursors, fence"] --> outbox["outbox<br/>publishers per topic"]
     end
+    subgraph dm["deadlines module: its own lock"]
+      pd["event-poller<br/>reads by due time, fence"] --> dead["deadlines<br/>a due deadline, its command"]
+    end
   end
 
   subgraph store["eventstore"]
@@ -94,6 +102,7 @@ flowchart TB
   phttp --> pv
   phttp --> pa
   phttp --> po
+  phttp --> pd
   http --> cmd
   cmd --> es
   es --> pg
@@ -103,17 +112,20 @@ flowchart TB
   pg -. new events .-> pv
   pg -. new events .-> pa
   pg -. new events .-> po
+  pg -. due deadlines .-> pd
   auto --> cmd
+  dead --> cmd
   outbox --> ext
   pv --> listen
   pa --> listen
   po --> listen
+  pd --> listen
   listen --> pg
 
   metrics -. recorded by every package .- app
 ```
 
-Reading it: a **write** goes client → `commands-http` → `commands` → `eventstore` → Postgres. A **reaction** starts at a module's poller (the views, the automations and the outbox each have their own, and their own leader lock), which reads new events and hands them to that module's processors; an automation turns an event back into a command. A **read** of a view goes through `views-http`, which can wait until the view has caught up. An operator can list the processors and pause, resume or reset one through `processors-http`. Each package
+Reading it: a **write** goes client → `commands-http` → `commands` → `eventstore` → Postgres. A **reaction** starts at a module's poller (the views, the automations, the outbox and the deadlines each have their own, and their own leader lock), which reads new events and hands them to that module's processors; an automation turns an event back into a command. The deadlines' poller reads by time instead: a deadline whose time has passed, whose command it runs. A **read** of a view goes through `views-http`, which can wait until the view has caught up. An operator can list the processors and pause, resume or reset one through `processors-http`. Each package
 is described in [the reference](../reference/README.md#packages).
 
 ## A command, from request to append
@@ -256,31 +268,67 @@ A read with no marker waits for the head of the log. Its first look is one state
 A client that did not write learns that something changed from a **ping** over server-sent events and reads again. See [ADR-0015](../adr/0015-read-consistency-by-marker.md),
 [ADR-0014](../adr/0014-live-updates-by-ping.md) and [ADR-0016](../adr/0016-one-listen-per-process-for-view-progress.md).
 
+## A deadline, from setting it to firing it
+
+Nothing runs a command because time passed, unless a decision asked for it. `decide` sets a **deadline** with `deadline(Command, input, { at })`:
+it is a framework event, `crablet.DeadlineScheduled`, appended with the decision, so it exists exactly when the decision does. The same append
+writes its row in `crablet_deadlines`, an index of the log by due time. The deadlines processor, a fourth module with its own leader lock, polls that
+index, runs each due deadline's command through the executor and records `crablet.DeadlineFired` with its outcome. There is no cancel: the command
+reads its model and answers `noop` when the deadline no longer matters ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as A command
+  participant P as PostgreSQL
+  participant D as Deadlines processor, the leader
+  participant X as CommandExecutor
+
+  C->>P: append the decision's events and crablet.DeadlineScheduled, one transaction
+  P->>P: the same append writes the row in crablet_deadlines (position, due time)
+  loop every poll (5 s by default)
+    D->>P: the rows whose due time has passed
+  end
+  P-->>D: a due deadline: its command and input
+  D->>D: fence, am I still the leader
+  D->>X: run the command, caused by the deadline
+  X->>P: decide on the model: emit, or noop when it no longer matters
+  D->>P: append crablet.DeadlineFired (outcome, reason), and delete the row
+```
+
+A deadline can fire twice (a leader that dies after the command and before the record), so its command must declare `idempotentBy`; the processor
+checks that when it starts. **A deadline that repeats** is a command that sets the next one in its own decision, from the planned time rather than
+from `now`, so a late firing does not push the series; the series ends when the command answers `noop`
+([set a deadline, section 5](../guides/build/set-a-deadline.md#5-a-deadline-that-repeats)).
+
 ## One lock per module, one leader per lock
 
 Every instance of the application starts the same processors. A PostgreSQL advisory lock decides which instance runs them, and **the lock is per module, not per processor**: there is one lock for
-the views, one for the automations and one for the outbox publishers (`VIEWS_LOCK_KEY`, `AUTOMATIONS_LOCK_KEY`, `OUTBOX_LOCK_KEY` in `eventstore`'s `Leader.ts`). The instance that holds a
-module's lock runs **all** of that module's processors (every view, every automation, every publisher); the others wait and retry. The three locks are independent, so a different instance may lead each
-module, though the first instance to start usually leads all three. The diagram shows one possible split, not the usual one.
+the views, one for the automations, one for the outbox publishers and one for the deadlines (`VIEWS_LOCK_KEY`, `AUTOMATIONS_LOCK_KEY`, `OUTBOX_LOCK_KEY`, `DEADLINES_LOCK_KEY` in `eventstore`'s `Leader.ts`). The instance that holds a
+module's lock runs **all** of that module's processors (every view, every automation, every publisher, the deadlines processor); the others wait and retry. The locks are independent, so a different instance may lead each
+module, though the first instance to start usually leads all of them. A process holds the locks of every module it leads on one session ([ADR-0046](../adr/0046-one-lock-session-per-process.md)). The diagram shows one possible split, not the usual one, for an application with the four modules.
 
 ```mermaid
 flowchart LR
-  subgraph pg["PostgreSQL: three advisory locks, each held by one session"]
+  subgraph pg["PostgreSQL: four advisory locks, each held by one session"]
     lv(("views lock"))
     la(("automations lock"))
     lo(("outbox lock"))
+    ld(("deadlines lock"))
   end
 
   subgraph a["Instance A (leader of views and outbox)"]
     av["views module<br/>all 4 view processors run here"]
     aa["automations module<br/>waits"]
     ao["outbox module<br/>every publisher runs here"]
+    ad["deadlines module<br/>waits"]
   end
 
-  subgraph b["Instance B (leader of automations)"]
+  subgraph b["Instance B (leader of automations and deadlines)"]
     bv["views module<br/>waits"]
     ba["automations module<br/>every automation runs here"]
     bo["outbox module<br/>waits"]
+    bd["deadlines module<br/>fires the due deadlines here"]
   end
 
   lv == "held by A" ==> av
@@ -289,13 +337,15 @@ flowchart LR
   la -. "A retries every 5 s" .-> aa
   lo == "held by A" ==> ao
   lo -. "B retries every 5 s" .-> bo
+  ld == "held by B" ==> bd
+  ld -. "A retries every 5 s" .-> ad
 ```
 
 Two consequences. **A processor's status is per processor** (you pause one view, not the module), but **who runs it is per module**: pausing a view does not move it to another instance, and a
 dead instance takes all of its modules' processors with it until another instance takes the locks. And **leadership is observed per module**: the `crablet.poller.leadership` gauge carries the lock's number
 (`lock_key`) and the instance, not a processor id.
 
-What happens when the leader dies, observed by killing the process (`kill -9`) in a two-instance run ([the crash test](../history/plans/dashboard.md)):
+What happens when the leader dies, observed by killing the process (`kill -9`) in a two-instance run of the wallet, whose three modules are the views, the automations and the outbox ([the crash test](../history/plans/dashboard.md)):
 
 ```mermaid
 sequenceDiagram
@@ -411,6 +461,13 @@ erDiagram
   crablet_outbox_topic_progress {
     text topic "cursor and status per topic"
   }
+  crablet_deadlines {
+    bigint deadline_position PK "the crablet.DeadlineScheduled event"
+    timestamptz due_at "indexed: the processor reads by time"
+  }
+  crablet_deadline_progress {
+    text processor_name PK "status and error count; no cursor moves"
+  }
   your_view_tables {
     text yours "written by your projectors"
   }
@@ -420,6 +477,7 @@ erDiagram
   crablet_view_progress }o--|| crablet_events : "cursor points into the log"
   crablet_automation_progress }o--|| crablet_events : "cursor points into the log"
   crablet_outbox_topic_progress }o--|| crablet_events : "cursor points into the log"
+  crablet_deadlines |o--|| crablet_events : "a pending deadline, written by its append, deleted when it fires"
   your_view_tables }o--|| crablet_view_progress : "kept up to date by"
 ```
 

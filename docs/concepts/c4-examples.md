@@ -13,7 +13,9 @@ The diagrams are Mermaid's C4 syntax (GitHub draws them); the layout is automati
 
 ## Course enrolment
 
-The [tutorial](../tutorial/README.md)'s service: a course holds at most N students and a student takes at most 3 courses, decided together; one view; a web page.
+The [tutorial](../tutorial/README.md)'s service: a course holds at most N students and a student takes at most 3 courses, decided together; two views; a web page.
+Beyond the tutorial it has payments with deadlines: an unpaid subscription is released when its payment window closes, a course that is not ready is
+cancelled at its start, and a monthly fee issues an invoice every 30 days ([set a deadline](../guides/build/set-a-deadline.md)).
 
 ### Level 1: context
 
@@ -40,14 +42,14 @@ C4Container
 
   System_Boundary(sys, "Course enrolment") {
     Container(page, "Web page", "Foldkit, TypeScript, Vite", "course-enrolment-ui. Sends commands and marker reads through a typed client")
-    Container(api, "API server", "Node, Effect HttpApi, port 8080", "course-enrolment-app. Commands, reads, live-update feed, OpenAPI, and the view processor in the same process")
-    ContainerDb(db, "PostgreSQL 18", "docker compose", "The event log, the framework tables, and course_seats_view")
+    Container(api, "API server", "Node, Effect HttpApi, port 8080", "course-enrolment-app. Commands, reads, live-update feed, OpenAPI, and the views and deadlines processors in the same process")
+    ContainerDb(db, "PostgreSQL 18", "docker compose", "The event log, the framework tables (crablet_deadlines among them), course_seats_view and course_enrolments_view")
   }
 
   Rel(user, page, "Uses", "browser")
   Rel(page, api, "POST /api/commands/name, GET /api/courses, GET /api/views/changes", "HTTP, server-sent events; the dev server proxies it, or CORS if VITE_API_URL is set")
   Rel(tools, api, "Calls", "HTTP")
-  Rel(api, db, "Appends events, reads the log and the view, LISTENs for progress", "SQL")
+  Rel(api, db, "Appends events, reads the log and the views, LISTENs for progress, polls the due deadlines", "SQL")
 ```
 
 ### Level 3: components of the API server
@@ -57,16 +59,17 @@ C4Component
   title Course enrolment: components of the API server
 
   Container(page, "Web page", "Foldkit")
-  ContainerDb(db, "PostgreSQL", "event log, course_seats_view")
+  ContainerDb(db, "PostgreSQL", "event log, crablet_deadlines, the view tables")
 
   Container_Boundary(api, "API server (course-enrolment-app)") {
     Component(cmdapi, "Command API", "commands-http", "POST /api/commands/define_course and subscribe, built from the two contracts; problem+json errors")
     Component(queryapi, "Query API", "views-http", "GET /api/courses and /api/courses/:courseId, wrapped in a consistent read that honours the marker")
     Component(feed, "Feed API", "server-sent events", "GET /api/views/changes: a ping when the seats view moves")
-    Component(commands, "Commands and models", "commands", "DefineCourse and Subscribe; CourseModel and StudentModel; Subscribe decides on both with all(...)")
+    Component(commands, "Commands and models", "commands", "DefineCourse and Subscribe; CourseModel and StudentModel; Subscribe decides on both with all(...) and sets the payment window's deadline in the same append")
     Component(executor, "CommandExecutor and EventStore", "Crablet.layer", "Validates, loads the boundary, decides, appends if nothing newer, retries on a conflict")
     Component(processor, "Views processor", "event-poller and views", "Leader-gated by the views module's advisory lock (one lock for all views, not one per view); reads new events, runs the projector, moves the cursor")
     Component(projector, "CourseSeatsViewProjector", "ViewProjector", "Idempotent seat counter per course, using decodeStored")
+    Component(deadlines, "Deadlines processor", "automations/Deadlines", "Leader-gated by the deadlines module's own lock; fires each due deadline: ReleaseUnpaidSubscription, CancelUnreadyCourse, IssueInvoice, ReleaseOverdueInvoice")
     Component(hub, "ViewProgressHub", "views", "One LISTEN per process; wakes waiting reads and open feeds")
     Component(openapi, "OpenAPI and docs", "commands-http", "GET /openapi.json, optional /docs page")
   }
@@ -80,13 +83,15 @@ C4Component
   Rel(processor, db, "Fetches events after the cursor", "SQL")
   Rel(processor, projector, "Hands each batch")
   Rel(projector, db, "Writes course_seats_view", "SQL")
+  Rel(deadlines, db, "Reads crablet_deadlines by due time", "SQL")
+  Rel(deadlines, executor, "Runs each due deadline's command, then records it fired")
   Rel(queryapi, db, "SELECT from the view", "SQL")
   Rel(queryapi, hub, "Waits until the view passes the marker")
   Rel(feed, hub, "Subscribes to progress")
   Rel(hub, db, "LISTEN crablet_view_progress", "SQL")
 ```
 
-Where to read the code: the contracts and commands in `src/domain/`, the API in `src/CourseApi.ts` and `src/CourseApp.ts`, the reads in `src/api/`, the projector in `src/views/`.
+Where to read the code: the contracts and commands in `src/domain/`, the API in `src/CourseApi.ts` and `src/CourseApp.ts`, the reads in `src/api/`, the projectors in `src/views/`, the monthly fee in `src/features/monthly-fee/`.
 The page's own structure (Model, Messages, `update`, `view`, subscriptions) is in [tutorial step 5](../tutorial/05-a-page-that-uses-it.md).
 
 ## Wallet

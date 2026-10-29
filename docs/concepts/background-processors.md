@@ -2,15 +2,17 @@
 
 *Concept · developers and operators running more than one instance · [views and delivery](./views-and-delivery.md) · 10 minutes*
 
-Views, automations and outbox publishers run in the background. You can run several instances of an application, and every instance answers commands
+Views, automations, outbox publishers and the deadlines processor run in the background. You can run several instances of an application, and every instance answers commands
 and reads. The background work, though, must run in one place at a time, or two instances would apply the same batch. This page is how that is
 arranged, and what happens when an instance dies.
 
 ## One leader per module
 
-The background work is grouped in three **modules**: the views, the automations and the outbox. Each module has one PostgreSQL advisory lock. The
-instance that holds it is the module's **leader** and runs all of that module's processors; the others are followers and retry the lock on an
-interval (5 seconds by default). The three modules can have different leaders.
+The background work is grouped in four **modules**: the views, the automations, the outbox and the deadlines. Each module has one PostgreSQL
+advisory lock. The instance that holds it is the module's **leader** and runs all of that module's processors; the others are followers and retry the
+lock on an interval (5 seconds by default). The modules can have different leaders. An application starts only the modules it uses: the wallet has
+no deadlines, the course app has no outbox. The deadlines module fires each deadline whose time has passed: it reads a table by due time instead of
+following the log ([a deadline, from setting it to firing it](./architecture.md#a-deadline-from-setting-it-to-firing-it)).
 
 ```mermaid
 flowchart LR
@@ -46,7 +48,7 @@ but holds no lock. The [reliability report](../history/plans/reliability-and-sca
 ## Roles: one process or several deployments
 
 The same application image can run everything in one process, or be split into deployments by role: `api` (commands, reads, the live feed),
-`views`, `automations` and `outbox`. Roles talk to each other only through Postgres, so splitting changes nothing in the code. A worker role with more
+`views`, `automations` (which runs the deadlines too: both fire commands through the same executor) and `outbox`. Roles talk to each other only through Postgres, so splitting changes nothing in the code. A worker role with more
 than one replica gives a warm standby, because the module lock still decides who works ([ADR-0022](../adr/0022-runtime-roles.md), accepted; the wallet
 runs it, and the kind lab ran its failure scenarios).
 

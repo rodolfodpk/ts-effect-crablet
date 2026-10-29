@@ -16,7 +16,7 @@ Either way, run at least two instances, so a follower is ready to take over each
 
 ## 2. The pool
 
-Start from **what is held for good, plus the commands you want at once**. A process that leads all three modules holds 2 connections for good (one
+Start from **what is held for good, plus the commands you want at once**. A process that leads every module it starts (up to four: views, automations, outbox, deadlines) holds 2 connections for good (one
 session for every lock, from the pool, and one connection for every `LISTEN`, beside it); a follower or an API-only process holds 1, the `LISTEN` connection. Then check the fleet: *instances × (pool + 1)* must stay under the server's `max_connections`, with room for
 migrations and monitoring. Running out is quiet: commands fail and nothing in the logs says why ([size the pool](run-in-production.md#size-the-pool)).
 
