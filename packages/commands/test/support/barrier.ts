@@ -21,3 +21,15 @@ export const afterLoad = <S>(model: ModelInstance<S>, wait: Effect.Effect<void>)
   ...model,
   load: (es) => Effect.tap(model.load(es), () => wait)
 });
+
+// The other deterministic race: a command loads, then pauses while the test runs something else to the end (another command), then
+// decides and appends. Only the first load pauses: when the append is refused, the retry runs straight through.
+export const pause = Effect.gen(function* () {
+  const loaded = yield* Deferred.make<void>();
+  const resumed = yield* Deferred.make<void>();
+  return {
+    wait: Effect.andThen(Deferred.succeed(loaded, undefined), Deferred.await(resumed)),
+    loaded: Deferred.await(loaded),
+    resume: Deferred.succeed(resumed, undefined)
+  };
+});

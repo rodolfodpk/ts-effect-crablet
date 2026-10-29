@@ -1,8 +1,8 @@
-// Six examples from https://dcb.events/examples/ (unique username, invoice number, dynamic product price, opt-in token, product reviews,
-// bike rental), written against this framework to see where the API fits and where it strains. In the examples' words each decision reads
-// events by TAG and appends under the resulting condition. Three more of them are elsewhere: course subscriptions is the course enrolment
-// app (examples/course-enrolment-app), following references is support/borrow-book.ts, and preventing record duplication is
-// `idempotentBy` (ADR-0034, ADR-0035).
+// Nine of the ten examples on https://dcb.events/examples/ (unique username, invoice number, dynamic product price, opt-in token, product
+// reviews, bike rental, library loans, event-sourced aggregate, prevent record duplication), written against this framework to see where
+// the API fits and where it strains. In the examples' words each decision reads events by TAG and appends under the resulting condition.
+// The tenth, course subscriptions, is the course enrolment app (examples/course-enrolment-app). Each is raced on Postgres in
+// integration/dcb-examples-postgres.test.ts; course subscriptions in the app's integration/step2-postgres.test.ts.
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
@@ -120,21 +120,36 @@ export class InvalidPrice extends DomainError("InvalidPrice", { fields: { produc
 const priceIsValid = (p: Price, displayed: number, now: number) =>
   p.current === displayed || p.superseded.some((s) => s.price === displayed && now - s.at <= GRACE_MS);
 
-export const OrderProducts = defineCommand({
-  name: "order_products",
-  errors: [InvalidPrice],
-  input: Schema.Struct({
-    items: Schema.Array(Schema.Struct({ productId: Schema.String, displayedPrice: Schema.Number })),
-    now: Schema.Number
-  }),
-  // the set of products is only known at run time: one model per item, combined into one boundary
-  model: (c) =>
-    all(Object.fromEntries(c.items.map((i) => [i.productId, ProductPrice.of({ id: i.productId })])) as Record<string, ModelInstance<Price>>),
-  decide: (prices, c) => {
-    const bad = c.items.find((i) => !priceIsValid(prices[i.productId]!, i.displayedPrice, c.now));
-    if (bad) return fail(new InvalidPrice({ productId: bad.productId }));
-    return emit(ProductsOrdered({ items: c.items.map((i) => ({ productId: i.productId, price: i.displayedPrice })) }));
-  }
+const orderProducts = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [InvalidPrice],
+    input: Schema.Struct({
+      items: Schema.Array(Schema.Struct({ productId: Schema.String, displayedPrice: Schema.Number })),
+      now: Schema.Number
+    }),
+    // the set of products is only known at run time: one model per item, combined into one boundary
+    model: (c) =>
+      afterLoad(
+        all(Object.fromEntries(c.items.map((i) => [i.productId, ProductPrice.of({ id: i.productId })])) as Record<string, ModelInstance<Price>>),
+        wait
+      ),
+    decide: (prices, c) => {
+      const bad = c.items.find((i) => !priceIsValid(prices[i.productId]!, i.displayedPrice, c.now));
+      if (bad) return fail(new InvalidPrice({ productId: bad.productId }));
+      return emit(ProductsOrdered({ items: c.items.map((i) => ({ productId: i.productId, price: i.displayedPrice })) }));
+    }
+  });
+export const OrderProducts = orderProducts("order_products", Effect.void);
+export const orderProductsWith = (wait: Effect.Effect<void>) => orderProducts("order_products_raced", wait);
+
+export class ProductNotDefined extends DomainError("ProductNotDefined", { fields: { productId: Schema.String }, kind: "not_found" }) {}
+export const ChangeProductPrice = defineCommand({
+  name: "change_product_price",
+  errors: [ProductNotDefined],
+  input: Schema.Struct({ productId: Schema.String, newPrice: Schema.Number }),
+  model: (c) => ProductPrice.of({ id: c.productId }),
+  decide: (p, c) => (p.current === null ? fail(new ProductNotDefined({ productId: c.productId })) : emit(ProductPriceChanged(c)))
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -334,4 +349,279 @@ export const ReturnBike = defineCommand({
     const returned = BikeReturned({ bikeId: c.bikeId, memberId: c.memberId });
     return c.damaged ? emit(returned, BikeSentToRepair({ bikeId: c.bikeId })) : emit(returned);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// 7. Library loans: copies of a book are lent, returned and renewed; members are suspended; books are reserved
+// Each rule reads only what it is about: lending reads the copy and the member's loans, a suspension only the member's suspensions, a
+// reservation only the book's reservations. Renewing is the two-step case: the copy says who borrowed it and of which book, and only then
+// are the borrower's suspension and the book's reservations known. That first step is `resolve`, and what it read joins the condition.
+// ---------------------------------------------------------------------------------------------
+const copy = Schema.Struct({ copyId: Schema.String });
+const loan = Schema.Struct({ copyId: Schema.String, memberId: Schema.String });
+const member = Schema.Struct({ memberId: Schema.String });
+const reservation = Schema.Struct({ bookId: Schema.String, memberId: Schema.String });
+export const CopyAddedToCatalog = defineEvent("CopyAddedToCatalog", {
+  schema: Schema.Struct({ copyId: Schema.String, bookId: Schema.String }),
+  tags: (d) => ({ copy_id: d.copyId, book_id: d.bookId })
+});
+export const CopyLent = defineEvent("CopyLent", { schema: loan, tags: (d) => ({ copy_id: d.copyId, member_id: d.memberId }) });
+export const CopyReturned = defineEvent("CopyReturned", { schema: loan, tags: (d) => ({ copy_id: d.copyId, member_id: d.memberId }) });
+export const LoanRenewed = defineEvent("LoanRenewed", { schema: copy, tags: (d) => ({ copy_id: d.copyId }) });
+export const MemberSuspended = defineEvent("MemberSuspended", { schema: member, tags: (d) => ({ member_id: d.memberId }) });
+export const MemberReinstated = defineEvent("MemberReinstated", { schema: member, tags: (d) => ({ member_id: d.memberId }) });
+export const BookReserved = defineEvent("BookReserved", { schema: reservation, tags: (d) => ({ book_id: d.bookId, member_id: d.memberId }) });
+export const ReservationCancelled = defineEvent("ReservationCancelled", {
+  schema: reservation,
+  tags: (d) => ({ book_id: d.bookId, member_id: d.memberId })
+});
+
+export const MAX_COPIES = 3;
+export const MAX_RENEWALS = 2;
+// the example's CopyInCatalog, CopyBookId, CopyBorrowerId and CopyRenewals: they read the same events, so they are one model
+const Copy = defineModel({
+  by: "copy_id",
+  initial: () => ({ inCatalog: false, bookId: null as string | null, borrowerId: null as string | null, renewals: 0 })
+})
+  .on(CopyAddedToCatalog, (c, d) => ({ ...c, inCatalog: true, bookId: d.bookId }))
+  .on(CopyLent, (c, d) => ({ ...c, borrowerId: d.memberId, renewals: 0 }))
+  .on(CopyReturned, (c) => ({ ...c, borrowerId: null }))
+  .on(LoanRenewed, (c) => ({ ...c, renewals: c.renewals + 1 }));
+const MemberLoanCount = defineModel({ by: "member_id", initial: () => ({ loans: 0 }) })
+  .on(CopyLent, (m) => ({ loans: m.loans + 1 }))
+  .on(CopyReturned, (m) => ({ loans: m.loans - 1 }));
+const MemberIsSuspended = defineModel({ by: "member_id", initial: () => ({ suspended: false }) })
+  .on(MemberSuspended, () => ({ suspended: true }))
+  .on(MemberReinstated, () => ({ suspended: false }));
+const BookReservations = defineModel({ by: "book_id", initial: () => ({ members: [] as ReadonlyArray<string> }) })
+  .on(BookReserved, (b, d) => ({ members: [...b.members, d.memberId] }))
+  .on(ReservationCancelled, (b, d) => ({ members: b.members.filter((m) => m !== d.memberId) }));
+
+export class CopyAlreadyInCatalog extends DomainError("CopyAlreadyInCatalog", { fields: { copyId: Schema.String }, kind: "conflict" }) {}
+export class CopyNotInCatalog extends DomainError("CopyNotInCatalog", { fields: { copyId: Schema.String }, kind: "not_found" }) {}
+export class CopyNotAvailable extends DomainError("CopyNotAvailable", { fields: { copyId: Schema.String }, kind: "conflict" }) {}
+export class CopyLimitReached extends DomainError("CopyLimitReached", { fields: { memberId: Schema.String }, kind: "conflict" }) {}
+export class CopyNotLent extends DomainError("CopyNotLent", { fields: { copyId: Schema.String }, kind: "conflict" }) {}
+export class CopyLentToAnotherMember extends DomainError("CopyLentToAnotherMember", { fields: { copyId: Schema.String }, kind: "forbidden" }) {}
+export class LoanRenewedTwice extends DomainError("LoanRenewedTwice", { fields: { copyId: Schema.String }, kind: "conflict" }) {}
+export class BorrowerSuspended extends DomainError("BorrowerSuspended", { fields: { memberId: Schema.String }, kind: "forbidden" }) {}
+export class BookIsReserved extends DomainError("BookIsReserved", { fields: { bookId: Schema.String }, kind: "conflict" }) {}
+export class MemberAlreadySuspended extends DomainError("MemberAlreadySuspended", { fields: { memberId: Schema.String }, kind: "conflict" }) {}
+export class MemberNotSuspended extends DomainError("MemberNotSuspended", { fields: { memberId: Schema.String }, kind: "conflict" }) {}
+export class BookAlreadyReserved extends DomainError("BookAlreadyReserved", { fields: { bookId: Schema.String }, kind: "conflict" }) {}
+export class BookNotReserved extends DomainError("BookNotReserved", { fields: { bookId: Schema.String }, kind: "conflict" }) {}
+
+export const AddCopyToCatalog = defineCommand({
+  name: "add_copy_to_catalog",
+  errors: [CopyAlreadyInCatalog],
+  input: Schema.Struct({ copyId: Schema.String, bookId: Schema.String }),
+  model: (c) => Copy.of({ id: c.copyId }),
+  decide: (copy, c) => (copy.inCatalog ? fail(new CopyAlreadyInCatalog({ copyId: c.copyId })) : emit(CopyAddedToCatalog(c)))
+});
+
+const lendCopy = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [CopyNotInCatalog, CopyNotAvailable, CopyLimitReached],
+    input: loan,
+    model: (c) => afterLoad(all({ copy: Copy.of({ id: c.copyId }), member: MemberLoanCount.of({ id: c.memberId }) }), wait),
+    decide: (m, c) =>
+      !m.copy.inCatalog
+        ? fail(new CopyNotInCatalog({ copyId: c.copyId }))
+        : m.copy.borrowerId !== null
+          ? fail(new CopyNotAvailable({ copyId: c.copyId }))
+          : m.member.loans >= MAX_COPIES
+            ? fail(new CopyLimitReached({ memberId: c.memberId }))
+            : emit(CopyLent(c))
+  });
+export const LendCopy = lendCopy("lend_copy", Effect.void);
+export const lendCopyWith = (wait: Effect.Effect<void>) => lendCopy("lend_copy_raced", wait);
+
+export const ReturnCopy = defineCommand({
+  name: "return_copy",
+  errors: [CopyNotLent, CopyLentToAnotherMember],
+  input: loan,
+  model: (c) => Copy.of({ id: c.copyId }),
+  decide: (copy, c) =>
+    copy.borrowerId === null
+      ? fail(new CopyNotLent({ copyId: c.copyId }))
+      : copy.borrowerId !== c.memberId
+        ? fail(new CopyLentToAnotherMember({ copyId: c.copyId }))
+        : emit(CopyReturned(c))
+});
+
+const renewLoan = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [CopyNotLent, LoanRenewedTwice, BorrowerSuspended, BookIsReserved],
+    input: copy,
+    // 1. the copy says who borrowed it and of which book
+    resolve: (c, read) => Effect.map(read.load(Copy.of({ id: c.copyId })), (copy) => ({ borrowerId: copy.borrowerId, bookId: copy.bookId })),
+    // 2. then the borrower's suspensions and the book's reservations can be read. The copy is read again for its renewals: the lookup
+    //    answers the question of which models, the model answers the decision.
+    model: (c, { resolved }) =>
+      afterLoad(
+        all({
+          copy: Copy.of({ id: c.copyId }),
+          borrower: MemberIsSuspended.of({ id: resolved.borrowerId ?? "nobody" }),
+          book: BookReservations.of({ id: resolved.bookId ?? "none" })
+        }),
+        wait
+      ),
+    decide: (m, c) =>
+      m.copy.borrowerId === null
+        ? fail(new CopyNotLent({ copyId: c.copyId }))
+        : m.copy.renewals >= MAX_RENEWALS
+          ? fail(new LoanRenewedTwice({ copyId: c.copyId }))
+          : m.borrower.suspended
+            ? fail(new BorrowerSuspended({ memberId: m.copy.borrowerId }))
+            : m.book.members.some((r) => r !== m.copy.borrowerId)
+              ? fail(new BookIsReserved({ bookId: m.copy.bookId! }))
+              : emit(LoanRenewed(c))
+  });
+export const RenewLoan = renewLoan("renew_loan", Effect.void);
+export const renewLoanWith = (wait: Effect.Effect<void>) => renewLoan("renew_loan_raced", wait);
+
+export const SuspendMember = defineCommand({
+  name: "suspend_member",
+  errors: [MemberAlreadySuspended],
+  input: member,
+  model: (c) => MemberIsSuspended.of({ id: c.memberId }),
+  decide: (m, c) => (m.suspended ? fail(new MemberAlreadySuspended(c)) : emit(MemberSuspended(c)))
+});
+export const ReinstateMember = defineCommand({
+  name: "reinstate_member",
+  errors: [MemberNotSuspended],
+  input: member,
+  model: (c) => MemberIsSuspended.of({ id: c.memberId }),
+  decide: (m, c) => (m.suspended ? emit(MemberReinstated(c)) : fail(new MemberNotSuspended(c)))
+});
+export const ReserveBook = defineCommand({
+  name: "reserve_book",
+  errors: [BookAlreadyReserved],
+  input: reservation,
+  model: (c) => BookReservations.of({ id: c.bookId }),
+  decide: (b, c) => (b.members.includes(c.memberId) ? fail(new BookAlreadyReserved({ bookId: c.bookId })) : emit(BookReserved(c)))
+});
+export const CancelReservation = defineCommand({
+  name: "cancel_reservation",
+  errors: [BookNotReserved],
+  input: reservation,
+  model: (c) => BookReservations.of({ id: c.bookId }),
+  decide: (b, c) => (b.members.includes(c.memberId) ? emit(ReservationCancelled(c)) : fail(new BookNotReserved({ bookId: c.bookId })))
+});
+
+// ---------------------------------------------------------------------------------------------
+// 8. Event-sourced aggregate: a course as one aggregate, on a DCB store
+// The classic aggregate is the special case of one model, bound by the aggregate's tag, that handles every event of the aggregate. Its
+// fold is the aggregate's `reconstitute`, the cursor the executor carries is the aggregate's version, and the append under the model's
+// condition is the repository's "fail if anything for this aggregate was stored after my version". What changes from the DCB examples
+// is the size of the boundary: every command on the course conflicts with every other, even a capacity change with a subscription.
+// ---------------------------------------------------------------------------------------------
+export const CourseDefined = defineEvent("CourseDefined", {
+  schema: Schema.Struct({ courseId: Schema.String, title: Schema.String, capacity: Schema.Int }),
+  tags: (d) => ({ course: d.courseId })
+});
+export const CourseCapacityChanged = defineEvent("CourseCapacityChanged", {
+  schema: Schema.Struct({ courseId: Schema.String, newCapacity: Schema.Int }),
+  tags: (d) => ({ course: d.courseId })
+});
+export const StudentSubscribedToCourse = defineEvent("StudentSubscribedToCourse", {
+  schema: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),
+  tags: (d) => ({ course: d.courseId })
+});
+
+const CourseAggregate = defineModel({ by: "course", initial: () => ({ defined: false, capacity: 0, subscriptions: 0 }) })
+  .on(CourseDefined, (_, d) => ({ defined: true, capacity: d.capacity, subscriptions: 0 }))
+  .on(CourseCapacityChanged, (c, d) => ({ ...c, capacity: d.newCapacity }))
+  .on(StudentSubscribedToCourse, (c) => ({ ...c, subscriptions: c.subscriptions + 1 }));
+
+export class CourseAlreadyDefined extends DomainError("CourseAlreadyDefined", { fields: { courseId: Schema.String }, kind: "conflict" }) {}
+export class CourseNotDefined extends DomainError("CourseNotDefined", { fields: { courseId: Schema.String }, kind: "not_found" }) {}
+export class CapacityUnchanged extends DomainError("CapacityUnchanged", { fields: { courseId: Schema.String }, kind: "invalid" }) {}
+export class CapacityBelowSubscriptions extends DomainError("CapacityBelowSubscriptions", {
+  fields: { courseId: Schema.String, subscriptions: Schema.Int },
+  kind: "conflict"
+}) {}
+export class CourseFullyBooked extends DomainError("CourseFullyBooked", { fields: { courseId: Schema.String }, kind: "conflict" }) {}
+
+const course = (courseId: string, wait: Effect.Effect<void>) => afterLoad(CourseAggregate.of({ id: courseId }), wait);
+
+export const DefineCourse = defineCommand({
+  name: "define_course",
+  errors: [CourseAlreadyDefined],
+  input: Schema.Struct({ courseId: Schema.String, title: Schema.String, capacity: Schema.Int }),
+  model: (c) => CourseAggregate.of({ id: c.courseId }),
+  decide: (course, c) => (course.defined ? fail(new CourseAlreadyDefined({ courseId: c.courseId })) : emit(CourseDefined(c)))
+});
+
+const changeCourseCapacity = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [CourseNotDefined, CapacityUnchanged, CapacityBelowSubscriptions],
+    input: Schema.Struct({ courseId: Schema.String, newCapacity: Schema.Int }),
+    model: (c) => course(c.courseId, wait),
+    decide: (course, c) =>
+      !course.defined
+        ? fail(new CourseNotDefined({ courseId: c.courseId }))
+        : course.capacity === c.newCapacity
+          ? fail(new CapacityUnchanged({ courseId: c.courseId }))
+          : c.newCapacity < course.subscriptions
+            ? fail(new CapacityBelowSubscriptions({ courseId: c.courseId, subscriptions: course.subscriptions }))
+            : emit(CourseCapacityChanged(c))
+  });
+export const ChangeCourseCapacity = changeCourseCapacity("change_course_capacity", Effect.void);
+export const changeCourseCapacityWith = (wait: Effect.Effect<void>) => changeCourseCapacity("change_course_capacity_raced", wait);
+
+const subscribeStudentToCourse = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [CourseNotDefined, CourseFullyBooked],
+    input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),
+    model: (c) => course(c.courseId, wait),
+    decide: (course, c) =>
+      !course.defined
+        ? fail(new CourseNotDefined({ courseId: c.courseId }))
+        : course.subscriptions >= course.capacity
+          ? fail(new CourseFullyBooked({ courseId: c.courseId }))
+          : emit(StudentSubscribedToCourse(c))
+  });
+export const SubscribeStudentToCourse = subscribeStudentToCourse("subscribe_student_to_course", Effect.void);
+export const subscribeStudentToCourseWith = (wait: Effect.Effect<void>) => subscribeStudentToCourse("subscribe_student_to_course_raced", wait);
+
+// ---------------------------------------------------------------------------------------------
+// 9. Prevent record duplication: an order placed twice with one idempotency token is placed once
+// The example's rule, as written: a used token is refused. `idempotentBy` is the framework's own answer to the same problem, and it
+// answers the same request again with the first outcome instead of an error, and a different order under a used token with
+// IdempotencyMismatch (ADR-0034, ADR-0035); both are here.
+// The example's event is OrderPlaced; that name is the product reviews' order, so this one is PurchaseOrderPlaced.
+// ---------------------------------------------------------------------------------------------
+const purchaseOrder = Schema.Struct({ orderId: Schema.String, idempotencyToken: Schema.String });
+export const PurchaseOrderPlaced = defineEvent("PurchaseOrderPlaced", {
+  schema: purchaseOrder,
+  tags: (d) => ({ order_id: d.orderId, idempotency_token: d.idempotencyToken })
+});
+const IdempotencyTokenWasUsed = defineModel({ by: "idempotency_token", initial: () => ({ used: false }) }).on(PurchaseOrderPlaced, () => ({
+  used: true
+}));
+
+export class OrderAlreadyPlaced extends DomainError("OrderAlreadyPlaced", { fields: { idempotencyToken: Schema.String }, kind: "conflict" }) {}
+
+const placeOrder = (name: string, wait: Effect.Effect<void>) =>
+  defineCommand({
+    name,
+    errors: [OrderAlreadyPlaced],
+    input: purchaseOrder,
+    model: (c) => afterLoad(IdempotencyTokenWasUsed.of({ id: c.idempotencyToken }), wait),
+    decide: (token, c) => (token.used ? fail(new OrderAlreadyPlaced({ idempotencyToken: c.idempotencyToken })) : emit(PurchaseOrderPlaced(c)))
+  });
+export const PlaceOrder = placeOrder("place_order", Effect.void);
+export const placeOrderWith = (wait: Effect.Effect<void>) => placeOrder("place_order_raced", wait);
+
+// The same, with the framework's idempotency: the model is not needed, and a repeat is "already done", not an error.
+export const PlaceOrderIdempotent = defineCommand({
+  name: "place_order_idempotent",
+  input: purchaseOrder,
+  idempotentBy: (c) => PurchaseOrderPlaced.where({ idempotency_token: c.idempotencyToken }),
+  decide: (_, c) => emit(PurchaseOrderPlaced(c))
 });
