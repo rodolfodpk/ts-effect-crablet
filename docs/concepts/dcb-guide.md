@@ -266,3 +266,5 @@ one of its types AND that carries all of its tags. What this framework does with
   after the state has moved on (a transfer whose sender is now empty) is recognised as a repeat instead of
   being re-decided or refused as a conflict. A key reused by a different request is refused, and a repeat answers with
   the earlier write's marker ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)).
+
+The ten examples of the DCB website are written in this framework, each with a race on Postgres: see [the dcb.events examples](./dcb-examples.md).

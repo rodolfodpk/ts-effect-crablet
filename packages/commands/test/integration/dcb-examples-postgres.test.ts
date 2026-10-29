@@ -307,7 +307,7 @@ describe("dcb.events examples on Postgres", () => {
     assert.equal((errorOf(exit) as BorrowerSuspended).memberId, member);
   });
 
-  it("event-sourced aggregate: a capacity change and a subscription at once conflict, though neither rule involves the other - the aggregate is the boundary", async () => {
+  it("event-sourced aggregate: a capacity change and a subscription at once - the whole course is the boundary, so one is re-decided on the other's event", async () => {
     const course = `c-${uid()}`;
     const { exits, retries } = await run(
       Effect.gen(function* () {
