@@ -29,10 +29,9 @@ const SQL = "packages/eventstore/src/internal/sql.ts";
 const POLLER_SQL = "packages/event-poller/src/internal/sql.ts";
 const TRACKER = "packages/event-poller/src/PostgresProgressTracker.ts";
 const migration = (name: string) => `packages/db-migrations/sql/${name}.sql`;
-const APPEND_IF = migration("V17__crablet_automation_emit_key"); // the last definition of append_events_if
-const APPEND_BATCH = migration("V19__crablet_deadlines"); // the last definition of append_events_batch
-const MATCH_ANY = migration("V7__crablet_append_condition_xid_cursor"); // the last definition of crablet_items_match_any
-const LOCK_KEYS = migration("V5__crablet_writer_side_locking"); // the last definition of crablet_writer_lock_keys
+// The conditional append and its helpers, all in one file (ADR-0047): append_events_if, append_events_batch, crablet_items_match_any,
+// crablet_writer_lock_keys. A break's text must occur once in the whole file, so it names enough of its function to be unique.
+const APPEND = migration("V2__crablet_append");
 
 export const breaks: ReadonlyArray<Break> = [
   // The append: what the client sends and how it reads the answer (eventstore/src/internal/sql.ts).
@@ -128,7 +127,7 @@ export const breaks: ReadonlyArray<Break> = [
   // The SQL functions of the append (the migrations: the last definition of each).
   {
     id: "condition-cursor-inclusive",
-    file: MATCH_ANY,
+    file: APPEND,
     find: "(e.transaction_id, e.position) > (p_after_xid, p_after_position)",
     replace: "(e.transaction_id, e.position) >= (p_after_xid, p_after_position)",
     tests: [es("conformance-postgres"), es("append"), es("append-cursor-inversion")],
@@ -136,7 +135,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "condition-own-transaction",
-    file: MATCH_ANY,
+    file: APPEND,
     find: "AND (p_after_xid IS NULL OR e.transaction_id IS DISTINCT FROM pg_current_xact_id_if_assigned())",
     replace: "",
     tests: [es("append-cursor-inversion")],
@@ -144,15 +143,16 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "condition-tags-any",
-    file: MATCH_ANY,
-    find: "AND (cardinality(v_tags) = 0 OR e.tags @> v_tags)",
-    replace: "AND (cardinality(v_tags) = 0 OR e.tags && v_tags)",
+    file: APPEND,
+    // the condition check's own line, the one before its LIMIT (crablet_items_duplicate has the same test, for the idempotency report)
+    find: "OR e.tags @> v_tags)\n                       LIMIT 1) THEN",
+    replace: "OR e.tags && v_tags)\n                       LIMIT 1) THEN",
     tests: [es("differential"), es("conformance-postgres")],
     why: "an item's tags are all required; with any of them, unrelated decisions conflict"
   },
   {
     id: "idempotency-not-checked",
-    file: APPEND_IF,
+    file: APPEND,
     find: "v_has_duplicate := crablet_items_match_any(p_idempotency_items, NULL, NULL);",
     replace: "v_has_duplicate := FALSE;",
     tests: [es("conformance-postgres"), cmd("repeat-postgres")],
@@ -160,7 +160,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "writer-lock-shared",
-    file: APPEND_IF,
+    file: APPEND,
     find: "PERFORM pg_advisory_xact_lock(v_lock.k);",
     replace: "PERFORM pg_advisory_xact_lock_shared(v_lock.k);",
     tests: [es("append-writer-locking")],
@@ -168,7 +168,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "fresh-transaction-unchecked",
-    file: APPEND_IF,
+    file: APPEND,
     find: "IF p_require_fresh_transaction AND pg_current_xact_id_if_assigned() IS NOT NULL THEN",
     replace: "IF FALSE THEN",
     tests: [cmd("causal-order-postgres")],
@@ -176,7 +176,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "no-emit-key",
-    file: APPEND_BATCH,
+    file: APPEND,
     find: "THEN encode(p_request_fingerprint, 'hex') || '/' || t.ord END",
     replace: "THEN NULL END",
     tests: [cmd("trigger-backstop-postgres"), "packages/automations/test/integration/automation-idempotency-postgres.test.ts"],
@@ -184,7 +184,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "no-tag-keys",
-    file: APPEND_BATCH,
+    file: APPEND,
     find: "WHERE tag LIKE '%=%'),",
     replace: "WHERE FALSE),",
     tests: [ep("tag-key-strategy-equivalence"), ep("event-processor-integration")],
@@ -192,7 +192,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "no-deadline-row",
-    file: APPEND_BATCH,
+    file: APPEND,
     find: "WHERE i.type = 'crablet.DeadlineScheduled')",
     replace: "WHERE FALSE)",
     tests: ["packages/automations/test/integration/deadlines.test.ts"],
@@ -200,7 +200,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "type-only-condition-lock-shared",
-    file: LOCK_KEYS,
+    file: APPEND,
     find: "SELECT hashtextextended('T:' || type, 0), TRUE\n         FROM item_shapes s, LATERAL unnest(s.types) AS type\n         WHERE cardinality(s.types) > 0 AND cardinality(s.tags) = 0",
     replace: "SELECT hashtextextended('T:' || type, 0), FALSE\n         FROM item_shapes s, LATERAL unnest(s.types) AS type\n         WHERE cardinality(s.types) > 0 AND cardinality(s.tags) = 0",
     tests: [es("append-writer-locking")],

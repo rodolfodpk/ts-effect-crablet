@@ -50,9 +50,11 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 
 ## Common tasks
 
-**Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (`V15__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
-editing a migration that has been applied. Test it from the state before it: see `packages/eventstore/test/integration/migration-v11.test.ts`, which starts the test
-database at a chosen migration with `startTestDb({ migrations })`. A migration that locks a table says so in its header.
+**Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (the next number, today `V6__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
+editing a migration that may have been applied ([ADR-0047](docs/adr/0047-the-migrations-are-the-schemas-shape.md) is the one exception, made before a first release). Test it from the
+state before it: `startTestDb({ migrations: migrationFiles.slice(0, -1) })` starts the test database without it, so the test can put data in and then apply it. Then rewrite
+the schema snapshot with `UPDATE_SCHEMA_SNAPSHOT=1 node --test packages/eventstore/test/integration/schema-snapshot.test.ts` and review its diff: it is what the migration
+changed. A migration that locks a table says so in its header.
 
 **Add a package entry point.** Add it to `exports` in the package's `package.json`, and decide whether an application should import it. If only the sibling packages should, add it to
 `crablet.internal` there (sorted) and describe it under "Internal" in the package's README; `scripts/public-api.test.ts` then keeps applications and the documents away from it

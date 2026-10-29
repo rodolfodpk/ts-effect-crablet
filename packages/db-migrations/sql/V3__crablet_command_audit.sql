@@ -1,10 +1,7 @@
--- Crablet command audit schema.
+-- The command audit (ADR-0047: one file per part of the schema, in its final shape).
 --
--- crablet_commands stores one row per executed command. It is linked to the
--- crablet_events table via transaction_id: both tables share the same
--- pg_current_xact_id() value when the command write and event appends happen
--- in the same database transaction.
--- There is no foreign key constraint - the join is intentionally via xid8 only.
+-- crablet_commands stores one row per executed command, when auditing is on. It is linked to crablet_events through transaction_id: both share the
+-- pg_current_xact_id() of the transaction in which the command was recorded and its events appended. There is no foreign key: the join is by xid8 only.
 
 CREATE TABLE crablet_commands
 (

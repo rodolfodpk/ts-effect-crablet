@@ -8,7 +8,7 @@ import type { ProgressCursor } from "./ProgressCursor.ts";
 import { assertSafeIdentifier } from "./internal/identifiers.ts";
 
 // Single-key progress table shape (matches crablet_view_progress/crablet_automation_progress in
-// V3__crablet_processing_schema.sql): `<idColumn> TEXT PRIMARY KEY, instance_id, status,
+// V4__crablet_processor_progress.sql): `<idColumn> TEXT PRIMARY KEY, instance_id, status,
 // last_position, last_updated_at, error_count, last_error, last_error_at`. Does NOT support the
 // outbox module's composite-key (topic, publisher) + leader-lease-column shape - that's a Phase 3
 // concern if/when ported.

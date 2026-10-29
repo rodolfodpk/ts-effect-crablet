@@ -137,7 +137,7 @@ export const withConflictRetry = <A, E, R>(
     )
   );
 
-// A command makes one append, whose writer locks (V5) are taken in sorted order, so two commands cannot deadlock each other. An
+// A command makes one append, whose writer locks (ADR-0003) are taken in sorted order, so two commands cannot deadlock each other. An
 // application transaction that appends several times in its own order can still deadlock with a command; Postgres aborts one of them
 // (SQLSTATE 40P01, deadlock_detected) and rolls its transaction back. When that is the command, it is exactly the situation a
 // `Conflict` retry handles: the whole command is re-run in a fresh transaction (test/integration/deadlock-retry.test.ts).

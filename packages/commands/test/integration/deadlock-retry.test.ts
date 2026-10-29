@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). A command makes one append, and its writer locks (V5) are taken in sorted order, so two commands
+// Runs under Node (Testcontainers). A command makes one append, and its writer locks (ADR-0003) are taken in sorted order, so two commands
 // cannot deadlock each other. An APPLICATION transaction that appends twice, in its own order, can still deadlock with a command:
 // Postgres detects it (SQLSTATE 40P01) and aborts one of the two. When that is the command, the executor must treat it like a
 // Conflict: re-run the whole command in a fresh transaction, so it ends up done.

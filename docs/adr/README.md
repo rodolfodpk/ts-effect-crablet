@@ -68,6 +68,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0020: The processors admin API is a description plus handlers, closed until the application says who may call it](0020-processors-admin-api.md) - accepted
 - [ADR-0019: Storage is visible, and the tag table is heavier than its reads need](0019-storage-visibility-and-the-tag-table.md) - accepted
 - [ADR-0018: A model's state can be snapshotted at a settled cursor; a snapshot is a cache, never a fact](0018-model-snapshots.md) - **superseded: the feature was dropped; its decision 8 (the read horizon of `all`) stays**
+- [ADR-0047: The migrations are the schema's shape, not its history](0047-the-migrations-are-the-schemas-shape.md) - **accepted**: the nineteen migrations became five, one per part of the schema, with the same schema; a catalog snapshot test keeps it from changing unseen; a database from before is recreated
 
 ## Platform and project
 

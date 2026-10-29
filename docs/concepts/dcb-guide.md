@@ -250,12 +250,12 @@ one of its types AND that carries all of its tags. What this framework does with
 - **Boundary and `strict()`** are the spec's condition as written: the query that built the decision model,
   plus the point in the log it was read at. That point is a `(transaction_id, position)` pair, not a bare position:
   a sequence value and a transaction id can be taken in opposite orders, so "after position N" alone can miss an event
-  that commits later with a lower position (migration V7, [ADR-0012](../adr/0012-transaction-position-cursors.md)).
+  that commits later with a lower position ([ADR-0012](../adr/0012-transaction-position-cursors.md)).
 - **`concurrent({ guard })`** uses the spec's allowance for a condition query that is *narrower* than the read
   query (the spec says the two are "typically" the same, not always). Only the guard's events can refuse the append.
 - **Query items** follow the spec: OR between items, type AND tags within one. Multi-item conditions are enforced
-  that way on Postgres (migration V4) and by the in-memory store, and a conformance suite runs the same cases on both.
-- **Writers lock their own events too** (migration V5). Every append locks the (event type, tag) pairs of its own events
+  that way on Postgres (`append_events_if`, in `V2__crablet_append.sql`) and by the in-memory store, and a conformance suite runs the same cases on both.
+- **Writers lock their own events too** ([ADR-0003](../adr/0003-non-commutative-append-concurrency-protection.md)). Every append locks the (event type, tag) pairs of its own events
   as well as of its condition, so a check always waits for an in-flight writer whose events it would match, even one
   that has no condition of its own (a `concurrent()` command). The price: appends to one hot (type, tag) queue, and two
   commands that each append more than once can deadlock, which the executor treats as a conflict and retries.

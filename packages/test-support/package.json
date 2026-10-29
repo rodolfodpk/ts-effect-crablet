@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./BrowserSafety": "./src/BrowserSafety.ts"
+    "./BrowserSafety": "./src/BrowserSafety.ts",
+    "./CatalogDump": "./src/CatalogDump.ts"
   },
   "dependencies": {
     "@crablet/db-migrations": "workspace:*",
