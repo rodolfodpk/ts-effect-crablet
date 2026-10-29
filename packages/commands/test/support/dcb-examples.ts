@@ -516,7 +516,7 @@ export const CancelReservation = defineCommand({
 // The classic aggregate is the special case of one model, bound by the aggregate's tag, that handles every event of the aggregate. Its
 // fold is the aggregate's `reconstitute`, the cursor the executor carries is the aggregate's version, and the append under the model's
 // condition is the repository's "fail if anything for this aggregate was stored after my version". What changes from the DCB examples
-// is the size of the boundary: every command on the course conflicts with every other, even a capacity change with a subscription.
+// is the size of the boundary: every command on the course conflicts with every other, whether or not its rule reads what the other wrote.
 // ---------------------------------------------------------------------------------------------
 export const CourseDefined = defineEvent("CourseDefined", {
   schema: Schema.Struct({ courseId: Schema.String, title: Schema.String, capacity: Schema.Int }),

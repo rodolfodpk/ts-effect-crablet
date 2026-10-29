@@ -32,6 +32,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | [C4 models](./concepts/c4-examples.md) | The two example applications, as context, container and component diagrams. |
 | [Why not something else?](./concepts/why-not.md) | A transaction with locks, or an event store with streams: what each gives, and when to choose them instead. |
 | [Questions adopters ask](./concepts/faq.md) | Effect, production, Postgres, speed, personal data, growth, adopting gradually, tenants, failures. |
+| [The dcb.events examples](./concepts/dcb-examples.md) | The ten examples of the DCB website in this framework: the boundary each one chose, and a race on Postgres for each. |
 | [Course enrolment as an Event Model](./concepts/event-model.md) | The README's example as events, commands and a view, laid out on a timeline. |
 
 ## Build: tasks while writing an application
