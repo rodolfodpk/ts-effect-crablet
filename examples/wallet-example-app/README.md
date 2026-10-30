@@ -18,7 +18,7 @@ Everything is set by environment variables, all optional. The ones you are most 
 | `WALLET_DB_HOST`, `_PORT`, `_NAME`, `_USER`, `_PASSWORD` | `localhost`, `5432`, `wallet_db`, `postgres`, `postgres` | The database. |
 | `PORT` | `8080` | The HTTP port. |
 | `WALLET_ROLES` | `all` | What this process runs: `api`, `views`, `automations`, `outbox`, or `all` ([ADR-0022](../../docs/adr/0022-runtime-roles.md)). |
-| `WALLET_ADMIN_TOKEN` | unset | Mounts the processors admin API at `/admin/processors`, behind this bearer token. |
+| `WALLET_ADMIN_TOKEN` | unset | Mounts the admin API at `/admin/processors` and the event log at `/admin/events` (owners redacted), behind this bearer token. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Exports metrics, spans and logs ([See it on a dashboard](../../docs/guides/operate/dashboard.md)). |
 
 The rest (the pool, a direct session connection behind a pooler, polling and wake-ups, the statement period, migrations) and the health endpoints

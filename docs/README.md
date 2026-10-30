@@ -93,7 +93,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | [`examples/course-enrolment-app`](../examples/course-enrolment-app/README.md), [`examples/course-enrolment-ui`](../examples/course-enrolment-ui/README.md) | What the tutorial builds. |
 | [`examples/wallet-example-app`](../examples/wallet-example-app/README.md) | The framework at full size: five commands, four views, an automation, an outbox. |
 | [`tools/chaos-ui`](../tools/chaos-ui/README.md) | A page for the kind lab: break the wallet's pods and watch who takes over. |
-| [`tools/processors-admin-ui`](../tools/processors-admin-ui/README.md) | A page to list, pause, resume and reset the background processors. |
+| [`tools/processors-admin-ui`](../tools/processors-admin-ui/README.md) | A page to list, pause, resume and reset the background processors, and to browse the event log (personal data masked). |
 
 ## Decisions and history
 

@@ -178,7 +178,9 @@ export const verifyStored = verifyEvents({ definitions: [DepositMade, DepositRev
 
 It reports, per event type, how many were checked, how many cannot be read, the first failing positions, what is wrong (most common first), and decodable
 events lacking a tag the definition derives now. `examples/wallet-example-app/scripts/verify-events.ts` is a runnable script (`--all`, `--sample`, `--from`,
-`--to`, `--type`) that exits 1 on failure: run it in CI against a copy of production before a deploy that changes an event.
+`--to`, `--type`) that exits 1 on failure: run it in CI against a copy of production before a deploy that changes an event. With `--all` it walks every
+event of each type with the event store's `stream`, so none that committed late is skipped; a transaction left open stops it before the events written
+after that transaction began, and the report then shows fewer checked than stored.
 
 **It is a tool you run, not something your application runs.** Nothing in the framework calls `verifyEvents` at run time. To use it in your own application, write a small script like the
 wallet's: list every event definition of your application in `definitions` (an event type in the log that none of them accounts for is reported), give it the connection to a copy of

@@ -71,7 +71,7 @@ flowchart TB
     direction TB
     http["commands-http<br/>POST /api/commands/name"]
     vhttp["views-http<br/>reads that wait for a marker"]
-    phttp["processors-http<br/>list, pause, resume, reset<br/>(behind your authorization)"]
+    phttp["processors-http<br/>list, pause, resume, reset;<br/>the event log, masked<br/>(behind your authorization)"]
     cmd["commands<br/>defineEvent, defineModel, defineCommand<br/>CommandExecutor"]
     subgraph vm["views module: its own lock"]
       pv["event-poller<br/>cursors, fence"] --> views["views<br/>projectors into your tables"]
