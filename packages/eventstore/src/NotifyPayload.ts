@@ -12,11 +12,16 @@
 
 const MAX_PAYLOAD_LENGTH = 7900;
 
+// A type or tag key holding the payload's own separators (`,`, `|`) would be split wrongly on the other side, and a subscriber that wants it could
+// be skipped: such a key is left out (the tag part is dropped, so the decoder skips its key checks), and such a type makes the payload a wildcard.
+// A wake-up only ever wakes too often, never too rarely; the cursor decides what is delivered (ADR-0049: a tag key may hold any character).
+const holdsSeparator = (s: string): boolean => s.includes(",") || s.includes("|");
+
 export function encodePayload(eventTypes: ReadonlySet<string>, tagKeys: ReadonlySet<string>): string {
   if (eventTypes.size === 0) return "*";
-
+  if ([...eventTypes].some(holdsSeparator)) return "*";
   const typesPart = [...eventTypes].sort().join(",");
-  if (tagKeys.size === 0) {
+  if (tagKeys.size === 0 || [...tagKeys].some(holdsSeparator)) {
     return typesPart.length <= MAX_PAYLOAD_LENGTH ? typesPart : "*";
   }
 

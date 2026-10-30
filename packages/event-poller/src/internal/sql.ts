@@ -1,4 +1,5 @@
 import type { Tag } from "@crablet/eventstore/Tag";
+import * as TagCodec from "@crablet/eventstore/TagCodec";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventSelection } from "../EventSelection.ts";
 import type { ProgressCursor } from "../ProgressCursor.ts";
@@ -48,7 +49,7 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
         ? `EXISTS (SELECT 1 FROM unnest(e.tags) u WHERE u LIKE '%=%' AND split_part(u, '=', 1) = $${paramIndex++})`
         : `EXISTS (SELECT 1 FROM crablet_event_tag_keys t WHERE t.position = e.position AND t.key = $${paramIndex++})`
     );
-    params.push(key);
+    params.push(TagCodec.encodeKey(key));
   }
 
   if (selection.anyOfTags.size > 0) {
@@ -57,11 +58,11 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
         ? `EXISTS (SELECT 1 FROM unnest(e.tags) u WHERE u LIKE '%=%' AND split_part(u, '=', 1) = ANY($${paramIndex++}))`
         : `EXISTS (SELECT 1 FROM crablet_event_tag_keys t WHERE t.position = e.position AND t.key = ANY($${paramIndex++}))`
     );
-    params.push([...selection.anyOfTags]);
+    params.push([...selection.anyOfTags].map(TagCodec.encodeKey));
   }
 
   if (selection.exactTags.size > 0) {
-    const literals = [...selection.exactTags.entries()].map(([k, v]) => `${k}=${v}`);
+    const literals = [...selection.exactTags.entries()].map(([key, value]) => TagCodec.encode({ key, value }));
     clauses.push(`e.tags @> $${paramIndex++}::text[]`);
     params.push(literals);
   }
@@ -208,10 +209,7 @@ export interface StoredEventRow {
 // through @crablet/eventstore's package.json "exports" map, and small enough that duplicating it
 // here is simpler than adding a new cross-package export just for this row shape.
 export const parseStoredEventRow = (row: StoredEventRow): StoredEvent => {
-  const tags: ReadonlyArray<Tag> = row.tags.map((raw) => {
-    const idx = raw.indexOf("=");
-    return idx < 0 ? { key: raw, value: "" } : { key: raw.slice(0, idx), value: raw.slice(idx + 1) };
-  });
+  const tags: ReadonlyArray<Tag> = row.tags.map(TagCodec.decode);
   return {
     eventId: row.event_id,
     type: row.type,

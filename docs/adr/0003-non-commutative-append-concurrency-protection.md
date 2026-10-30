@@ -46,6 +46,9 @@ the TS side.
 - Because the protection lives entirely in the SQL function, the TS client is simpler (no
   isolation-level or transaction-mode branching) but is also fully dependent on the migration
   being current; a stale migration silently reintroduces the race with no compile-time signal.
+- A transaction's own earlier appends are not a conflict for it (`crablet_items_match_any`), which the DCB specification does not foresee: see
+  [the compatibility notes](../concepts/dcb-guide.md#compatibility-with-the-specification) and ADR-0049 (`AppendCondition.firstWrite` refuses an
+  append that is not its transaction's first write).
 
 ## Addendum (Phase F): multi-item conditions, snapshot filter, per-item locks
 

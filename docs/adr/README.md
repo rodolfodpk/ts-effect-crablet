@@ -41,6 +41,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0042: An API is served in one layer, and its groups are typed against it](0042-serve-an-api-in-one-layer.md) - **accepted**: `serveApi`; read groups without `as any`; `problemOf`
 - [ADR-0043: A deadline is an event in the log, and a processor runs its command when it is due](0043-a-deadline-is-an-event-in-the-log.md) - **accepted**: `deadline(...)` in a decision, fired by a processor of the event-poller engine with its own lock; the course app's payment window; Effect's workflow and cluster weighed and not used for the state
 - [ADR-0044: Time in the domain is an Effect DateTime: `now` and `Instant`](0044-time-in-the-domain-is-a-datetime.md) - **accepted**: events stored encoded by their schema; `now` is a `DateTime.Utc`
+- [ADR-0049: Where the event store differs from the DCB specification, and the guards it adds](0049-where-the-event-store-differs-from-the-dcb-specification.md) - **accepted**: an item with neither types nor tags is refused; any tag key makes the round trip (the key is encoded) and a repeated tag is stored once; a transaction's own appends stay exempt from its condition, with `AppendCondition.firstWrite` to refuse an append that is not the first write; the append limit is configurable
 
 ## Reading, delivery and the pollers
 

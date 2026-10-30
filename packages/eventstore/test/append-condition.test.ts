@@ -27,3 +27,11 @@ describe("AppendCondition", () => {
     expect(AppendCondition.failIfChanged(model).after(at)).toEqual({ afterPosition: at, concurrencyQuery: model, idempotencyQuery: Query.noCondition() });
   });
 });
+
+describe("AppendCondition.firstWrite", () => {
+  test("asks for the append to be its transaction's first write, and keeps the rest of the condition", () => {
+    const condition = AppendCondition.of(at, model);
+    expect(AppendCondition.firstWrite(condition)).toEqual({ ...condition, firstWrite: true });
+    expect(condition.firstWrite).toBeUndefined();
+  });
+});

@@ -10,6 +10,12 @@ framework sits on top of this package.
   matched (the latest event and the requests behind the matches); `findDuplicate` asks the same before appending ([ADR-0034](../../docs/adr/0034-a-repeat-must-be-the-same-request.md)).
   Every stored event has a stable `eventId`, its public identity, not an order ([ADR-0036](../../docs/adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
 - **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition` and `Marker`, each its own import (`@crablet/eventstore/Query`, ...).
+  A query item targets events by type and/or tags; one with neither is refused. A tag's key and value may hold any characters (the key is encoded
+  when stored), and a tag repeated on an event is stored once. One append takes at most `maxAppendEvents` events (`EventStoreConfig`, default 50).
+  An append is not refused for events its own transaction appended earlier: if your next decision depends on what you just wrote, read again, or
+  use `AppendCondition.firstWrite(condition)`, which refuses (CRB01) an append that is not its transaction's first write. Where this differs from
+  the DCB specification, and why: [the compatibility table](../../docs/concepts/dcb-guide.md#compatibility-with-the-specification)
+  ([ADR-0049](../../docs/adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)).
 - **`Leader`** - a session-level advisory lock for "one process runs this"; **`SessionClients`** - an optional direct connection for the leader and LISTEN when the application's connection goes through a pooler in transaction mode ([ADR-0024](../../docs/adr/0024-session-connections-for-leader-and-listen.md)).
 - **`EventDecoding`** - the typed `EventDecodingError` for a stored event that cannot be read.
 - **`Storage`** - `storageReport()` and `monitorStorage()`: the size of the log and its indexes ([ADR-0019](../../docs/adr/0019-storage-visibility-and-the-tag-table.md)).
@@ -18,7 +24,7 @@ framework sits on top of this package.
 
 ## Internal
 
-`CorrelationContext`, `Listen` (the reconnecting LISTEN), `NotifyPayload` (the wake-up payload) and `ReadSnapshot` (what a read could see: the snapshot
+`CorrelationContext`, `Listen` (the reconnecting LISTEN), `NotifyPayload` (the wake-up payload), `TagCodec` (how a tag is stored: `key=value` with the key's `%` and `=` encoded, ADR-0049) and `ReadSnapshot` (what a read could see: the snapshot
 `project` returns as `seen`, which the commands combine and put in `AppendCondition.seen`, so an event the read saw is not a conflict,
 [ADR-0048](../../docs/adr/0048-a-conflict-is-what-the-read-did-not-see.md)) are plumbing for the sibling packages. They are listed under `crablet.internal` in
 [`package.json`](./package.json), applications and the documents do not import them, and they can change without notice ([the boundary](../../docs/reference/README.md#public-api-and-plumbing)).

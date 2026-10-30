@@ -4,7 +4,8 @@ import { EventStore, type EventStoreService, type StoredEvent } from "../EventSt
 import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
-import { AppendTooLarge, Conflict, Duplicate, MAX_APPEND_EVENTS } from "../AppendErrors.ts";
+import { AppendTooLarge, Conflict, Duplicate, maxAppendEventsOf } from "../AppendErrors.ts";
+import { refusingEmptyItems, withDistinctTags } from "../internal/guards.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 import * as LogPositionNS from "../LogPosition.ts";
 import { checkAppend, queryMatches } from "../spec/Spec.ts";
@@ -36,7 +37,9 @@ export interface InMemoryEventStore {
   readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
-export const makeInMemoryEventStore = (): InMemoryEventStore => {
+// `maxAppendEvents`: the most events one append takes, as in EventStoreConfig (default 50).
+export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: number } = {}): InMemoryEventStore => {
+  const maxAppendEvents = maxAppendEventsOf(options.maxAppendEvents);
   const log: Array<StoredEvent> = [];
   // The request fingerprint each event was appended with (ADR-0034), by position: not part of StoredEvent, as in Postgres.
   const fingerprints = new Map<bigint, string | null>();
@@ -96,12 +99,14 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
     });
   };
 
-  const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
+  const append = ((appendedEvents: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
     Effect.gen(function* () {
-      if (events.length === 0) return yield* Effect.die("Cannot append empty events list");
-      if (events.length > MAX_APPEND_EVENTS) {
-        return yield* new AppendTooLarge({ message: `Cannot append ${events.length} events in one call; the limit is ${MAX_APPEND_EVENTS}. Split them into several appends.`, count: events.length, max: MAX_APPEND_EVENTS });
+      if (appendedEvents.length === 0) return yield* Effect.die("Cannot append empty events list");
+      if (appendedEvents.length > maxAppendEvents) {
+        return yield* new AppendTooLarge({ message: `Cannot append ${appendedEvents.length} events in one call; the limit is ${maxAppendEvents}. Split them into several appends.`, count: appendedEvents.length, max: maxAppendEvents });
       }
+      if (condition) yield* refusingEmptyItems(condition.concurrencyQuery, refusingEmptyItems(condition.idempotencyQuery, Effect.void));
+      const events = withDistinctTags(appendedEvents);
       const verdict = condition ? checkAppend(log, condition) : "ok";
       if (verdict === "duplicate") {
         return yield* duplicateOf(condition!.idempotencyQuery)!;
@@ -157,9 +162,9 @@ export const makeInMemoryEventStore = (): InMemoryEventStore => {
 
   const service: EventStoreService = {
     append,
-    project,
-    exists: (query) => Effect.sync(() => log.some((event) => queryMatches(query, event))),
-    findDuplicate: (query) => Effect.sync(() => duplicateOf(query)),
+    project: ((query, after, projectors) => refusingEmptyItems(query, project(query, after, projectors))) as EventStoreService["project"],
+    exists: (query) => refusingEmptyItems(query, Effect.sync(() => log.some((event) => queryMatches(query, event)))),
+    findDuplicate: (query) => refusingEmptyItems(query, Effect.sync(() => duplicateOf(query))),
     withWakeups: (effect) => effect // nothing to wake in memory
   };
 

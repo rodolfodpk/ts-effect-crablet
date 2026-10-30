@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import * as TagCodec from "@crablet/eventstore/TagCodec";
 import { Effect, Exit } from "effect";
 import { EventDecodingFailure, describeIssues } from "@crablet/eventstore/EventDecoding";
 import type { Command } from "../Command.ts";
@@ -53,7 +54,7 @@ export interface FixtureReport {
   readonly uncovered: ReadonlyArray<string>;
 }
 
-const tagStrings = (event: AppendEvent): ReadonlyArray<string> => event.tags.map((t) => `${t.key}=${t.value}`);
+const tagStrings = (event: AppendEvent): ReadonlyArray<string> => event.tags.map(TagCodec.encode);
 
 export interface FixtureOptions {
   readonly definitions: ReadonlyArray<unknown>;
@@ -98,7 +99,7 @@ export const checkEventFixtures = (options: FixtureOptions): FixtureReport => {
       if (!stored.has(tag)) problems.push({ ...base, kind: "invented_tag", detail: `the definition now derives ${tag}, which this stored event does not have: a boundary on it would miss the event` });
     }
     for (const tag of stored) {
-      if (!derived.includes(tag) && !scope.has(tag.slice(0, tag.indexOf("=")))) problems.push({ ...base, kind: "lost_tag", detail: `the stored tag ${tag} is no longer derived from the payload` });
+      if (!derived.includes(tag) && !scope.has(TagCodec.decode(tag).key)) problems.push({ ...base, kind: "lost_tag", detail: `the stored tag ${tag} is no longer derived from the payload` });
     }
     if (fixture.type === DeadlineScheduled.type && deadlineCommands.size > 0) {
       const scheduled = decoded as typeof DeadlineScheduled.Type;
@@ -134,7 +135,7 @@ export const assertEventFixtures = (options: FixtureOptions & { readonly require
 export const fixtureOf = (event: { readonly type: string; readonly data: unknown; readonly tags: ReadonlyArray<{ readonly key: string; readonly value: string }> }, options: { readonly scopeTags?: ReadonlyArray<string>; readonly note?: string } = {}): EventFixture => ({
   type: event.type,
   payload: JSON.parse(JSON.stringify(event.data)),
-  tags: event.tags.map((t) => `${t.key}=${t.value}`),
+  tags: event.tags.map(TagCodec.encode),
   ...(options.scopeTags === undefined ? {} : { scopeTags: options.scopeTags }),
   ...(options.note === undefined ? {} : { note: options.note })
 });

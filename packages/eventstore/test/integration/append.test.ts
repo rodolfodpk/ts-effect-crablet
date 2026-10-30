@@ -2,11 +2,11 @@
 // Bun's wait-strategy handling, confirmed working under plain Node. Run via: node --test
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Fiber, Layer, Queue, Redacted, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Queue, Redacted, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector } from "../../src/EventStore.ts";
+import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector, makeEventStoreLayer } from "../../src/EventStore.ts";
 import { CommandAuditStore, CommandAuditStoreLive } from "../../src/CommandAuditStore.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as Query from "../../src/Query.ts";
@@ -299,5 +299,64 @@ describe("append size limit", () => {
     assert.strictEqual(error._tag, "AppendTooLarge");
     const ok = await run(Effect.flatMap(EventStore, (store) => store.append(batch(MAX_APPEND_EVENTS))));
     assert.strictEqual(typeof ok.transactionId, "string");
+  });
+});
+
+describe("maxAppendEvents (ADR-0049)", () => {
+  it("sets the limit of one append: 3 pass, 4 are refused with AppendTooLarge carrying the limit", async () => {
+    const pg = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
+    const small = Layer.provide(makeEventStoreLayer({ maxAppendEvents: 3 }), pg) as unknown as Layer.Layer<EventStore, never>;
+    const batch = (n: number) => Array.from({ length: n }, (_, i) => AppendEvent.of("SmallLimitEvent", "batch", `b${i}`, {}));
+    const go = <A, E>(effect: Effect.Effect<A, E, EventStore>) => Effect.runPromise(Effect.provide(effect, small) as Effect.Effect<A, E, never>);
+    await go(Effect.flatMap(EventStore, (store) => store.append(batch(3))));
+    const error = await go(Effect.flatMap(EventStore, (store) => Effect.flip(store.append(batch(4)))));
+    assert.deepStrictEqual({ tag: error._tag, max: (error as { max?: number }).max }, { tag: "AppendTooLarge", max: 3 });
+  });
+});
+
+describe("AppendCondition.firstWrite (ADR-0049)", () => {
+  const isCrb01Defect = (exit: Exit.Exit<unknown, unknown>) =>
+    Exit.isFailure(exit) && exit.cause.reasons.some((r) => Cause.isDieReason(r) && /already written|CRB01/.test(String(r.defect)));
+  const conditionOn = (id: string) => AppendCondition.of(LogPosition.zero(), Query.forEventAndTag("FirstWriteOther", "fw", id));
+
+  it("an append that asks for it, after a write in the same transaction, is refused (CRB01) and nothing is stored", async () => {
+    const id = crypto.randomUUID();
+    const exit = await run(
+      Effect.exit(
+        Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql.withTransaction(
+            Effect.flatMap(EventStore, (store) =>
+              Effect.andThen(store.append([AppendEvent.of("FirstWriteX", "fw", id, {})]), store.append([AppendEvent.of("FirstWriteY", "fw", id, {})], AppendCondition.firstWrite(conditionOn(id))))
+            )
+          )
+        )
+      )
+    );
+    assert.ok(isCrb01Defect(exit), `expected the CRB01 defect, got ${String(exit)}`);
+    const stored = await run(Effect.flatMap(EventStore, (store) => store.exists(Query.of(Query.queryItemOf([], [{ key: "fw", value: id }])))));
+    assert.strictEqual(stored, false, "the transaction rolled back");
+  });
+
+  it("without it, the same flow passes: a transaction's own earlier appends are not refused for it (the documented exception)", async () => {
+    const id = crypto.randomUUID();
+    await run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(
+          Effect.flatMap(EventStore, (store) =>
+            Effect.andThen(store.append([AppendEvent.of("FirstWriteX", "fw", id, {})]), store.append([AppendEvent.of("FirstWriteY", "fw", id, {})], conditionOn(id)))
+          )
+        )
+      )
+    );
+  });
+
+  it("an append that asks for it and is its transaction's first write passes", async () => {
+    const id = crypto.randomUUID();
+    const result = await run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(Effect.flatMap(EventStore, (store) => store.append([AppendEvent.of("FirstWriteY", "fw", id, {})], AppendCondition.firstWrite(conditionOn(id)))))
+      )
+    );
+    assert.strictEqual(typeof result.transactionId, "string");
   });
 });

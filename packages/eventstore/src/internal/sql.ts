@@ -10,6 +10,7 @@ import type { LogPosition } from "../LogPosition.ts";
 import { Conflict, Duplicate } from "../AppendErrors.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 import * as ReadSnapshotNS from "../ReadSnapshot.ts";
+import * as TagCodec from "../TagCodec.ts";
 import type { ReadSnapshot } from "../ReadSnapshot.ts";
 
 // A Postgres text[] literal for one event's tags: `{"key=value","key2=value2"}`. Every element is
@@ -19,11 +20,11 @@ import type { ReadSnapshot } from "../ReadSnapshot.ts";
 function encodeTagsLiteral(tags: ReadonlyArray<Tag>): string {
   if (tags.length === 0) return "{}";
   const quote = (s: string) => `"${s.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-  return `{${tags.map((t) => quote(`${t.key}=${t.value}`)).join(",")}}`;
+  return `{${tags.map((t) => quote(TagCodec.encode(t))).join(",")}}`;
 }
 
 function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
-  return tags.map((t) => `${t.key}=${t.value}`);
+  return tags.map(TagCodec.encode);
 }
 
 // append_events_if takes 15 positional params. Uses sql.unsafe rather than the tagged template so
@@ -53,12 +54,10 @@ const APPEND_EVENTS_IF_SQL = `
 `;
 
 // A Query is an OR of items; the SQL function evaluates each item as
-// (any-of types) AND (all tags) and ORs the results. Items with neither types nor tags carry no
-// information and are dropped; when nothing remains there is no condition to check (null).
+// (any-of types) AND (all tags) and ORs the results. A query with no items is no condition to check (null). An item with neither types nor tags never
+// gets here: the store refuses it (Query.emptyItemIn, ADR-0049).
 const conditionItemsJson = (query: Query): string | null => {
-  const items = query.items
-    .filter((i) => i.eventTypes.length > 0 || i.tags.length > 0)
-    .map((i) => ({ types: i.eventTypes, tags: flatTagStrings(i.tags) }));
+  const items = query.items.map((i) => ({ types: i.eventTypes, tags: flatTagStrings(i.tags) }));
   return items.length > 0 ? JSON.stringify(items) : null;
 };
 
@@ -118,7 +117,8 @@ export const appendEventsIf = (
 
     const correlationId = yield* CorrelationContext.correlationId;
     const causationId = yield* CorrelationContext.causationId;
-    const requireFresh = yield* CorrelationContext.requiresFreshTransaction;
+    // A command's transaction (the executor's flag), or a condition that asks for it (AppendCondition.firstWrite).
+    const requireFresh = (yield* CorrelationContext.requiresFreshTransaction) || condition.firstWrite === true;
     const fingerprint = yield* CorrelationContext.requestFingerprint;
     // The events' occurred_at: the Effect Clock, the one a command's `now` comes from, so a test clock fixes both.
     const occurredAt = new Date(yield* Clock.currentTimeMillis);

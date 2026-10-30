@@ -8,6 +8,7 @@ import type { LogPosition } from "@crablet/eventstore/LogPosition";
 import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
+import * as TagCodec from "@crablet/eventstore/TagCodec";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { queryMatches } from "@crablet/eventstore/spec/Spec";
 import { tagsOf, type PeriodFields, type PeriodSpec } from "./Period.ts";
@@ -160,7 +161,7 @@ const completeWith = <S>(entries: ReadonlyArray<OnEntry<S>>, by: string, id: str
     if (!(entry.by ?? [by]).some((key) => has(key, id))) return { event, conflicts: [] };
     const lacking = scopeTags.filter((t) => !has(t.key, t.value));
     const absent = lacking.filter((t) => !event.tags.some((e) => e.key === t.key));
-    const conflicts = lacking.filter((t) => !absent.includes(t)).map((t) => `${t.key}=${t.value}`);
+    const conflicts = lacking.filter((t) => !absent.includes(t)).map(TagCodec.encode);
     // Stryker disable next-line ConditionalExpression: with nothing absent, the copy has the same type, data and tags as the event.
     return { event: absent.length === 0 ? event : { ...event, tags: [...event.tags, ...absent] }, conflicts };
   };

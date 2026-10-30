@@ -85,4 +85,15 @@ describe("notify payload codec", () => {
     const batch = { wildcard: false, types: new Set(["A"]), tagKeys: new Set<string>() };
     expect(shouldWake(batch, { requiredTagKeys: new Set(["k1"]) })).toBe(true);
   });
+
+  test("a type or tag key holding a separator never makes a subscriber miss its wake-up", () => {
+    // a key with ',' or '|': the tag part is dropped, so every subscriber of the type wakes
+    const byKey = decodePayload(encodePayload(new Set(["A"]), new Set(["a,b", "k1"])));
+    expect(shouldWake(byKey, { eventTypes: new Set(["A"]), requiredTagKeys: new Set(["a,b"]) })).toBe(true);
+    expect(byKey.tagKeys.size).toBe(0);
+    expect(decodePayload(encodePayload(new Set(["A"]), new Set(["x|y"]))).tagKeys.size).toBe(0);
+    // a type with one: a wildcard
+    expect(encodePayload(new Set(["A,B"]), new Set(["k1"]))).toBe("*");
+    expect(encodePayload(new Set(["C", "A,B"]), new Set(["k1"]))).toBe("*");
+  });
 });

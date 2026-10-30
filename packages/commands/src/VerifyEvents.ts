@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
+import * as TagCodec from "@crablet/eventstore/TagCodec";
 import { EventDecodingFailure, type DecodingIssue } from "@crablet/eventstore/EventDecoding";
 
 // verify-events (ADR-0017, decision 4): decode what is really STORED, by event type, with the CURRENT definitions, and say which events cannot be read, where in
@@ -123,7 +124,7 @@ export const verifyEvents = (options: VerifyEventsOptions): Effect.Effect<Events
           return;
         }
         try {
-          const derived = (def as unknown as (data: unknown) => AppendEvent)(decoded).tags.map((t) => `${t.key}=${t.value}`);
+          const derived = (def as unknown as (data: unknown) => AppendEvent)(decoded).tags.map(TagCodec.encode);
           const stored = new Set(row.tags);
           if (derived.some((t) => !stored.has(t))) {
             inventedTags++;

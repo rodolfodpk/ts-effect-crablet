@@ -8,6 +8,7 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import * as Tag from "@crablet/eventstore/Tag";
 import { makeSqlEventFetcher } from "../../src/SqlEventFetcher.ts";
 import * as EventSelection from "../../src/EventSelection.ts";
 import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
@@ -256,4 +257,34 @@ describe("SqlEventFetcher: the event's stable id", () => {
     );
     assert.deepStrictEqual(fetched.map((e) => e.eventId), stored.map((r) => r.event_id));
   });
+});
+
+describe("selection by a tag key with any characters (ADR-0049: the key is stored encoded)", () => {
+  for (const tagKeys of ["table", "scan"] as const) {
+    it(`a key with '=' and '%' is found by required key, by any-of key and by exact tag (${tagKeys})`, async () => {
+      const marker = crypto.randomUUID();
+      const [key, value] = ["a=b%c", `v=${marker}`];
+      await run(Effect.flatMap(EventStore, (store) => store.append([AppendEvent.builder("FetchOddKey").tags([Tag.of(key, value), Tag.of("marker", marker)]).data({}).build()])));
+      const fetch = (selection: Partial<EventSelection.EventSelection>) =>
+        run(
+          Effect.gen(function* () {
+            const fetcher = yield* makeSqlEventFetcher({ tagKeys });
+            const rows = yield* fetcher.fetchEvents(EventSelection.of({ eventTypes: new Set(["FetchOddKey"]), ...selection }), ProgressCursorNS.zero, 1000);
+            return rows.filter((e) => e.tags.some((t) => t.key === "marker" && t.value === marker));
+          })
+        );
+      for (const [what, selection] of [
+        ["required key", { requiredTags: new Set([key]) }],
+        ["any-of key", { anyOfTags: new Set([key, "nope"]) }],
+        ["exact tag", { exactTags: new Map([[key, value]]) }]
+      ] as const) {
+        const rows = await fetch(selection);
+        assert.strictEqual(rows.length, 1, what);
+        assert.deepStrictEqual(rows[0]!.tags.find((t) => t.key === key)?.value, value, `${what}: read back as written`);
+      }
+      // the key "a" with the value "b%c=v=..." is another tag: not found
+      assert.strictEqual((await fetch({ exactTags: new Map([["a", `b%c=${value}`]]) })).length, 0);
+      assert.strictEqual((await fetch({ requiredTags: new Set(["a"]) })).length, 0);
+    });
+  }
 });
