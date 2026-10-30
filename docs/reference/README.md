@@ -24,7 +24,7 @@ wake-up payload in `@crablet/eventstore`, the progress channel in `@crablet/view
 The decision is [ADR-0031](../adr/0031-api-and-plumbing-are-separate.md). The line is enforced: `scripts/public-api.test.ts` fails if an example's or a tool's source, or a page of these documents, imports an entry point listed as internal. To
 promote one to the API, remove it from the list and document it; to demote one, add it (which is a breaking change for anyone importing it).
 
-`@crablet/event-poller` is the engine behind the views, automations and outbox modules, not a way to write your own processor.
+`@crablet/event-poller` is the engine behind the views, automations, outbox and deadlines modules, not a way to write your own processor.
 
 ## Packages
 
@@ -34,15 +34,15 @@ promote one to the API, remove it from the list and document it; to demote one, 
 | [`packages/test-support`](../../packages/test-support/README.md) | A throwaway Postgres (Testcontainers) for integration tests |
 | [`packages/eventstore`](../../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
 | [`packages/commands`](../../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and Given/When/Then test helpers |
-| [`packages/event-poller`](../../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, and automations modules build on |
+| [`packages/event-poller`](../../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, automations and deadlines modules build on |
 | [`packages/views`](../../packages/views/README.md) | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
 | [`packages/outbox`](../../packages/outbox/README.md) | Transactional outbox: per-topic publishers fed from the event stream by the poller |
-| [`packages/automations`](../../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command |
+| [`packages/automations`](../../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command; and deadlines: run a command once a time has passed ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)) |
 | [`packages/commands-http`](../../packages/commands-http/README.md) | A REST API over your commands, with RFC 7807 problem-detail errors |
 | [`packages/processors-http`](../../packages/processors-http/README.md) | An admin API over the processors: list them (status, failures, cursor, backlog), pause, resume or reset one; and the event log, page by page, with personal data and metadata masked ([ADR-0050](../adr/0050-the-event-store-used-directly.md)); closed until the application provides an authorization ([ADR-0020](../adr/0020-processors-admin-api.md)) |
 | [`packages/views-http`](../../packages/views-http/README.md) | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
 | [`packages/metrics-otel`](../../packages/metrics-otel/README.md) | Metrics (commands, event store, poller, leader, views, outbox, automations, storage) |
-| [`examples/course-enrolment-app`](../../examples/course-enrolment-app/README.md) | The [tutorial](../tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, one view, reads that wait for a write's marker |
+| [`examples/course-enrolment-app`](../../examples/course-enrolment-app/README.md) | The [tutorial](../tutorial/README.md)'s small service: two rules decided together, Postgres, HTTP + OpenAPI, views (two started, a third declared and tested), deadlines, reads that wait for a write's marker |
 | [`examples/course-enrolment-ui`](../../examples/course-enrolment-ui/README.md) | A Foldkit page for that API: a typed client, marker reads, live updates ([tutorial step 5](../tutorial/05-a-page-that-uses-it.md)) |
 | [`tools/processors-admin-ui`](../../tools/processors-admin-ui/README.md) | A generic Foldkit page for the processors admin API: a table of processors with Pause, Resume and Reset (with a confirmation), and an Events tab that browses the log; works against any application that mounts the API |
 | [`tools/chaos-ui`](../../tools/chaos-ui/README.md) | A Foldkit page and a local server for the kind lab: who leads each module, the load generator, the pods, faults chosen to run for N minutes, a consistency check of the data, and a reset ([the guide](../guides/operate/run-the-kind-lab.md)) |

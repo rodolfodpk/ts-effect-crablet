@@ -9,6 +9,7 @@ A transactional outbox: events are published to something outside the database, 
 - **`OutboxPublisher`** - the one thing you implement: `publishBatch(events)` (or one event at a time, with `preferredMode: "individual"`). `makeLogPublisher` is a ready-made one that logs.
 - **`defineTopic(name, { anyOfTags, publishers: [publisher] })`** (`/TopicConfig`), **`TopicPublisherAssignment`**, **`OutboxConfig`** - which events go to which topic, and the publishers themselves (or `{ publisher, pollingIntervalMs }`, a `TopicPublisherAssignment`, to give one publisher its own polling settings): the processor runs the publishers of its topics, so a topic cannot name one it does not have. `config` is optional: `OutboxConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings).
 - **`OutboxManagementService`** - inspect and control topics.
+- **`TopicPublisherPair`** (`/TopicPublisherPair`) - a topic and one of its publishers, and `toKey`/`fromKey`, the JSON pair a publisher's processor is identified by (in the admin API, say).
 
 A publisher must tolerate a repeat: after a crash, a publish that timed out (`publishTimeoutMs`, default 30 s) or a change of leader, an event is published
 again. Give the destination `event.eventId` as the message id, so a broker that deduplicates by id drops the repeat; a consumer that keeps the order can

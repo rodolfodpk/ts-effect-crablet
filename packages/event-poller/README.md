@@ -10,13 +10,14 @@ shared so the four modules get the same guarantees. The deadlines module plugs i
   and a cursor that can only move forward. With `atomically` (views use it) the handler's writes and the cursor commit in one transaction, and a batch whose cursor move matches no row (another processor took it first) is rolled back, so it is applied once ([ADR-0023](../../docs/adr/0023-view-batch-and-cursor-in-one-transaction.md)).
 - **`EventSelection`**, **`ProgressCursor`**, **`ProcessorRuntimeOverrides`** - which events a processor wants (types and tags), where it has got to, and what a single processor can override of its polling.
 - **`monitorProcessors`** (`@crablet/event-poller/MonitorProcessors`) - keeps the `crablet.poller.lag_*`, cursor and status gauges current.
+- **`defaultInstanceId`** (`/InstanceId`) - the id a process reports as leader by default (host name and pid).
 - **`ProcessorManagementService`**, **`ProcessorStatus`** - inspect and control processors (pause, reset, status).
 - **`ProcessorConfig`** - `PollingConfig` and `defaultPollingConfig`, the one list of polling settings and their defaults ([ADR-0030](../../docs/adr/0030-one-polling-config.md)).
 
 ## Internal
 
 The fetcher, handler and progress-tracker interfaces and their Postgres versions (`EventFetcher`, `EventHandler`, `SqlEventFetcher`, `ProgressTracker`, `PostgresProgressTracker`),
-`ProgressPing` and `BackoffState` are the engine's own parts, built on by the views, automations and outbox modules. This package is not a way to write your own processor: they are
+`ProgressPing` and `BackoffState` are the engine's own parts, built on by the views, automations, outbox and deadlines modules. This package is not a way to write your own processor: they are
 listed under `crablet.internal` in [`package.json`](./package.json), applications and the documents do not import them, and they can change without notice
 ([the boundary](../../docs/reference/README.md#public-api-and-plumbing)).
 

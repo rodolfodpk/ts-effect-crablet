@@ -29,6 +29,11 @@ Coverage of both suites, merged into one report (`coverage/lcov.info`; takes abo
 CI runs exactly these three (typecheck, unit with coverage, integration) on every push and pull request to `main`. There is no linter or formatter configured; match the
 style of the file you are in.
 
+Mutation testing runs apart from that ([the plan](docs/history/plans/mutation-testing.md)): the `mutation.yml` workflow runs every Monday and on demand. Locally,
+`bun run mutation` runs Stryker over the tier 1 code and `bun run mutation:check` compares its score with the committed baseline, which may not go down;
+`bun run breaks` applies the deliberate breaks of the database-bound code (`scripts/breaks.ts`) one at a time and checks that the integration tests catch each
+(needs Docker).
+
 ### Run one test
 
 ```bash
@@ -49,6 +54,10 @@ Node runs the TypeScript files directly by stripping types, which rejects TypeSc
 `commands` (events, models, commands) -> `commands-http` (REST); `event-poller` -> `views`, `outbox`, `automations` (pollers) -> `views-http` (consistent reads) and `processors-http` (the admin API).
 
 ## Common tasks
+
+**Change database-bound code.** A break in `scripts/breaks.ts` finds its text in the file it edits, and that text must occur exactly once: a change to that code
+can leave a break with nothing to edit. That does not go unnoticed, since `scripts/breaks.test.ts` runs with the unit tests and fails in CI; update the break's
+text. A new database-bound behaviour gets its break, with the integration tests that must catch it.
 
 **Change the database schema.** Add a new numbered file in `packages/db-migrations/sql/` (the next number, today `V8__...sql`) and list it in `packages/db-migrations/src/index.ts`, rather than
 editing a migration that may have been applied ([ADR-0047](docs/adr/0047-the-migrations-are-the-schemas-shape.md) is the one exception, made before a first release). Test it from the

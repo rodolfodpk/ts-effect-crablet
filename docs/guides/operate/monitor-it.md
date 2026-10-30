@@ -44,8 +44,9 @@ Suggestions, by what each metric tells you. Every metric and span, with what it 
 
 | Metric | What it tells you |
 |---|---|
-| `crablet.poller.leadership` | 1 when this instance acquires a **module**'s leader lock (views, automations or outbox: leadership is per module), 0 when it loses it; tagged `lock_key` and `instance_id`. A crashed leader never reports 0: its series stays at 1 but stops being re-sent, so look for a recent sample. No fresh sample at 1 for a lock means nothing is processing that module |
+| `crablet.poller.leadership` | 1 when this instance acquires a **module**'s leader lock (views, automations, outbox or deadlines: leadership is per module), 0 when it loses it; tagged `lock_key` and `instance_id`. A crashed leader never reports 0: its series stays at 1 but stops being re-sent, so look for a recent sample. No fresh sample at 1 for a lock means nothing is processing that module |
 | `crablet.view.project.failures`, `crablet.automation.decide.failures`, `crablet.outbox.publish.failures` | a handler is failing; the error is recorded against the processor |
+| `crablet.deadlines.fired` | deadlines fired, by `outcome`: a steady rate of `failed` is a deadline's command failing, and the deadlines after it waiting; the deadlines processor's `lag_*` gauges count the deadlines due and not fired |
 | `crablet.eventstore.decoding_failures` | a stored event the current definitions cannot read (an unsafe event change) |
 | `crablet.command.conflict_retries`, `crablet.eventstore.concurrency_violations` | contention: commands whose boundaries overlap |
 | `crablet.period.clock_behind` | a command found a period open that is later than its clock says (a model with a period never turns one back): a few is a pod a little behind, a steady rate is clocks that disagree ([ADR-0025](../../adr/0025-the-framework-turns-the-period.md)) |

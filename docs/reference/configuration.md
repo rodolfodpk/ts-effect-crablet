@@ -26,7 +26,8 @@ Processor settings (polling, backoff, `maxErrors`, the leader retry) are in [Vie
 ## Polling settings
 
 How a processor polls, backs off and gives up, in `PollingConfig` (`@crablet/event-poller/ProcessorConfig`). The views, automations and outbox modules each take a
-`Partial<PollingConfig>` as `config`, or none: what is left out takes the default below ([ADR-0030](../adr/0030-one-polling-config.md)).
+`Partial<PollingConfig>` as `config`, or none: what is left out takes the default below ([ADR-0030](../adr/0030-one-polling-config.md)). The deadlines module takes
+a `DeadlinesConfig`: the same, plus `fireTimeoutMs`, how long one deadline's command may take (30 s by default).
 
 ```ts
 startViewsProcessor({ views });                                                        // all defaults
