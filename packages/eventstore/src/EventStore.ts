@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Metric } from "effect";
+import { Context, Effect, Layer, Metric, Option, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import * as EventStoreMetrics from "@crablet/metrics-otel/EventStoreMetrics";
@@ -14,10 +14,11 @@ import * as LogPositionNS from "./LogPosition.ts";
 import type { LogPosition } from "./LogPosition.ts";
 import * as ReadSnapshot from "./ReadSnapshot.ts";
 import * as TagCodec from "./TagCodec.ts";
+import * as Cursor from "./Cursor.ts";
 import { AppendTooLarge, Conflict, Duplicate, maxAppendEventsOf } from "./AppendErrors.ts";
 import * as Sql from "./internal/sql.ts";
 import { makeWakeupNotifier, PendingWakeups } from "./internal/WakeupNotifier.ts";
-import { refusingEmptyItems, withDistinctTags } from "./internal/guards.ts";
+import { pageSizeOf, refusingEmptyItems, refusingNoItems, withDistinctTags } from "./internal/guards.ts";
 
 // The fixed channel every append notifies
 // on and every LISTEN/NOTIFY-based consumer (event-poller's wakeupStream) subscribes to.
@@ -115,6 +116,24 @@ export interface EventStoreService {
   // inside a transaction of its own wraps that transaction: `eventStore.withWakeups(sql.withTransaction(...))`. If `effect` fails nothing is sent. An `append` made outside any
   // `withWakeups` sends its wake-up when it returns. With `wakeupMode: "off"` this is the identity.
   readonly withWakeups: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+
+  // One page of the events `query` matches after `after` (from the start without it), in (transaction id, position) order, at most `limit` (1000
+  // unless set). Only events whose transaction had finished, so resuming from `cursor` never skips one; `more` is true when the page is full. `more:
+  // false` means no more finished events now: one still being written shows up in a later read, and an open transaction anywhere holds the page
+  // back to before it, as for the processors (ADR-0050). A query with no items is refused: every event is `Query.all()`.
+  readonly read: (query: Query, options?: ReadOptions) => Effect.Effect<ReadPage, SqlError>;
+}
+
+export interface ReadOptions {
+  readonly after?: Cursor.Cursor;
+  readonly limit?: number;
+}
+
+export interface ReadPage {
+  readonly events: ReadonlyArray<StoredEvent>;
+  // Where the page stopped: the last event's, or `after` when it returned none.
+  readonly cursor: Cursor.Cursor;
+  readonly more: boolean;
 }
 
 // How the event store tells pollers that events were appended (ADR-0021).
@@ -317,7 +336,22 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
             );
           });
 
-    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups };
+    const read = (query: Query, options: ReadOptions = {}): Effect.Effect<ReadPage, SqlError> => {
+      const limit = pageSizeOf(options.limit);
+      if (typeof limit === "string") return Effect.die(new Error(limit));
+      const after = options.after ?? Cursor.start;
+      const { transactionId, position } = Cursor.parts(after);
+      return refusingNoItems(
+        query,
+        Effect.map(Sql.queryPage(sql, query, { position, occurredAt: null, transactionId }, limit), (rows): ReadPage => {
+          const events = rows.map(parseRow);
+          const last = events[events.length - 1];
+          return { events, cursor: last === undefined ? after : Cursor.of(last.transactionId, last.position), more: events.length === limit };
+        })
+      ).pipe(Effect.withSpan("crablet.eventstore.read", { attributes: { "crablet.read.limit": limit } }));
+    };
+
+    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups, read };
 
     return service;
   })
@@ -325,3 +359,16 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
 
 // The default: coalesced wake-ups, 50 ms window (ADR-0021).
 export const EventStoreLive = makeEventStoreLayer();
+
+// Every event `query` matches after `after`, page after page (`read`, `batchSize` a page), until a page is not full: what had finished when each page
+// was read. It ends there; to follow the log as it grows, use a processor (ADR-0050).
+export const stream = (query: Query, options: { readonly after?: Cursor.Cursor; readonly batchSize?: number } = {}): Stream.Stream<StoredEvent, SqlError, EventStore> =>
+  Stream.unwrap(
+    Effect.map(Effect.service(EventStore), (es) =>
+      Stream.paginate(options.after ?? Cursor.start, (after) =>
+        Effect.map(es.read(query, { after, ...(options.batchSize === undefined ? {} : { limit: options.batchSize }) }), (page) =>
+          [page.events, page.more ? Option.some(page.cursor) : Option.none<Cursor.Cursor>()] as const
+        )
+      )
+    )
+  );

@@ -257,6 +257,25 @@ export const queryEvents = (
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
   });
 
+// One page of the events matching a query after a cursor, for a paged read (ADR-0050): only events whose transaction had finished (below the
+// snapshot's xmin), in (transaction_id, position) order, at most `limit`. An event that becomes visible later has an xid at or above that xmin, so it
+// sorts after every event of the page: a reader that resumes from the page's last event never skips one. The pollers fetch the same way.
+export const queryPage = (
+  sql: SqlClient.SqlClient,
+  query: Query,
+  after: LogPosition,
+  limit: number
+): Effect.Effect<ReadonlyArray<StoredEventRow>, SqlError> =>
+  Effect.gen(function* () {
+    const { whereSql, params } = whereOf(query, after);
+    const settled = "crablet_events.transaction_id < pg_snapshot_xmin(pg_current_snapshot())";
+    const sqlText =
+      "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id " +
+      `FROM crablet_events${whereSql === "" ? ` WHERE ${settled}` : `${whereSql} AND ${settled}`} ` +
+      `ORDER BY crablet_events.transaction_id, position ASC LIMIT $${params.length + 1}`;
+    return (yield* sql.unsafe<StoredEventRow>(sqlText, [...params, limit])) as ReadonlyArray<StoredEventRow>;
+  });
+
 // The current snapshot: which transactions had finished (below its xmin, and those between xmin and xmax not listed as running). Its xmin is the
 // oldest transaction id still running (or the next one to be assigned): everything below it has finished, committed or not.
 export const currentSnapshot = (sql: SqlClient.SqlClient): Effect.Effect<ReadSnapshot, SqlError> =>

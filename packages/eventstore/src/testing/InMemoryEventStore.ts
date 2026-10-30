@@ -5,7 +5,8 @@ import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
 import { AppendTooLarge, Conflict, Duplicate, maxAppendEventsOf } from "../AppendErrors.ts";
-import { refusingEmptyItems, withDistinctTags } from "../internal/guards.ts";
+import { pageSizeOf, refusingEmptyItems, refusingNoItems, withDistinctTags } from "../internal/guards.ts";
+import * as Cursor from "../Cursor.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 import * as LogPositionNS from "../LogPosition.ts";
 import { checkAppend, queryMatches } from "../spec/Spec.ts";
@@ -160,7 +161,26 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
       return { state: state as never, logPosition: last, horizon, latest: last };
     });
 
+  // Every event in memory is settled (appends are serial and atomic), so a page is the matching events after the cursor, in log order.
+  const read: EventStoreService["read"] = (query, options = {}) => {
+    const limit = pageSizeOf(options.limit);
+    if (typeof limit === "string") return Effect.die(new Error(limit));
+    const after = options.after ?? Cursor.start;
+    const from = Cursor.parts(after);
+    return refusingNoItems(
+      query,
+      Effect.sync(() => {
+        const isAfter = (e: StoredEvent) =>
+          BigInt(e.transactionId) > BigInt(from.transactionId) || (BigInt(e.transactionId) === BigInt(from.transactionId) && e.position > from.position);
+        const events = log.filter((e) => isAfter(e) && queryMatches(query, e)).slice(0, limit);
+        const last = events[events.length - 1];
+        return { events, cursor: last === undefined ? after : Cursor.of(last.transactionId, last.position), more: events.length === limit };
+      })
+    );
+  };
+
   const service: EventStoreService = {
+    read,
     append,
     project: ((query, after, projectors) => refusingEmptyItems(query, project(query, after, projectors))) as EventStoreService["project"],
     exists: (query) => refusingEmptyItems(query, Effect.sync(() => log.some((event) => queryMatches(query, event)))),

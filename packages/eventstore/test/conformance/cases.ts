@@ -7,8 +7,9 @@
 // Framework-neutral on purpose: a case is a plain async function using node:assert. Cases share one
 // store, so each isolates itself with unique tag values / event types (`unique()`).
 import assert from "node:assert/strict";
-import { Cause, Clock, Effect, Exit } from "effect";
-import { EventStore, type StoredEvent } from "../../src/EventStore.ts";
+import { Cause, Clock, Effect, Exit, Stream } from "effect";
+import { EventStore, stream, type StoredEvent } from "../../src/EventStore.ts";
+import * as Cursor from "../../src/Cursor.ts";
 import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { Duplicate } from "../../src/AppendErrors.ts";
@@ -257,6 +258,42 @@ export const cases: ReadonlyArray<ConformanceCase> = [
       }
       // the ambiguity a stored `a=b=c...` would have: the tag (a=b, c) is not the tag (a, b=c)
       assert.equal((await read(h, Query.forEventAndTag(`ConfTagChars${id}`, "a", `b=c${id}`))).state.length, 0);
+    }
+  },
+  {
+    name: "read: a page of the matching events in log order, resumed from its cursor without repeating or skipping one, until a page is not full (ADR-0050)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.of(item([], [["r", id]]));
+      await append(h, Array.from({ length: 5 }, (_, i) => ev(`ConfRead${i}`, [["r", id]], { i })));
+      await append(h, [ev("ConfReadOther", [["other", id]])]);
+      const page = (after?: Cursor.Cursor) => h.run(Effect.flatMap(EventStore, (es) => es.read(q, { limit: 2, ...(after === undefined ? {} : { after }) })));
+      const pages = [await page()];
+      while (pages[pages.length - 1]!.more) pages.push(await page(pages[pages.length - 1]!.cursor));
+      assert.deepEqual(pages.map((p) => p.events.map((e) => (e.data as { i: number }).i)), [[0, 1], [2, 3], [4]]);
+      assert.deepEqual(pages.map((p) => p.more), [true, true, false]);
+      // nothing after the last page: the same cursor back
+      const after = await page(pages[2]!.cursor);
+      assert.deepEqual([after.events.length, after.cursor, after.more], [0, pages[2]!.cursor, false]);
+      // a cursor kept as text resumes the same way
+      assert.deepEqual((await page(Cursor.fromString(Cursor.toString(pages[0]!.cursor)))).events.map((e) => (e.data as { i: number }).i), [2, 3]);
+      // the whole stream is every page together
+      const streamed = await h.run(Stream.runCollect(stream(q, { batchSize: 2 })));
+      assert.deepEqual(streamed.map((e) => (e.data as { i: number }).i), [0, 1, 2, 3, 4]);
+    }
+  },
+  {
+    name: "read: a query with no items and a page size that is not a whole number of at least 1 are refused, as defects (ADR-0050)",
+    run: async (h) => {
+      for (const [what, effect] of [
+        ["no items", Effect.flatMap(EventStore, (es) => es.read(Query.of([])))],
+        ["limit 0", Effect.flatMap(EventStore, (es) => es.read(Query.forEvent("X"), { limit: 0 }))],
+        ["limit 1.5", Effect.flatMap(EventStore, (es) => es.read(Query.forEvent("X"), { limit: 1.5 }))]
+      ] as const) {
+        const exit = await h.run(Effect.exit(effect));
+        assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), `${what}: expected a defect`);
+      }
+      assert.ok((await h.run(Effect.flatMap(EventStore, (es) => es.read(Query.all(), { limit: 1 })))).events.length <= 1, "Query.all() is read");
     }
   },
   {

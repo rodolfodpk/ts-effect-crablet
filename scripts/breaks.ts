@@ -74,6 +74,14 @@ export const breaks: ReadonlyArray<Break> = [
     why: "an item with neither types nor tags would reach the SQL: a read would skip it and a condition would match every event (ADR-0049)"
   },
   {
+    id: "page-unsettled",
+    file: SQL,
+    find: "`FROM crablet_events${whereSql === \"\" ? ` WHERE ${settled}` : `${whereSql} AND ${settled}`} ` +",
+    replace: "`FROM crablet_events${whereSql} ` +",
+    tests: [es("read-page")],
+    why: "a paged read would move its cursor past an event still being written at a lower (transaction id, position), and never read it (ADR-0050)"
+  },
+  {
     id: "query-all-dropped",
     file: SQL,
     find: "  if (query.all === true) return JSON.stringify([{ types: [], tags: [] }]);\n",
@@ -132,8 +140,8 @@ export const breaks: ReadonlyArray<Break> = [
   {
     id: "read-order-by-position",
     file: SQL,
-    find: "ORDER BY crablet_events.transaction_id, position ASC",
-    replace: "ORDER BY position ASC",
+    find: "ORDER BY crablet_events.transaction_id, position ASC`;",
+    replace: "ORDER BY position ASC`;",
     tests: [es("append-cursor-inversion")],
     why: "the events come back out of the order their cursor is taken in, so the next cursor skips some"
   },
