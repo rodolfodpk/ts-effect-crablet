@@ -1,4 +1,6 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
+import { stream, type EventStore } from "@crablet/eventstore";
+import * as Query from "@crablet/eventstore/Query";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
@@ -17,7 +19,7 @@ import { EventDecodingFailure, type DecodingIssue } from "@crablet/eventstore/Ev
 //   if (!report.ok) process.exit(1);
 //
 // Read-only. By default it checks a RANDOM SAMPLE of each type (a full scan costs time proportional to the log: about 476 bytes per event on disk, E8); `all: true`
-// walks every event in position order in batches (memory stays one batch). `fromPosition` / `toPosition` (inclusive) and `types` narrow it, which is the way to
+// walks every event of each type in batches, as the event store's stream reads them (memory stays one batch, and no event committed late is skipped). `fromPosition` / `toPosition` (inclusive) and `types` narrow it, which is the way to
 // re-check a window after a deploy. Meant for CI against a copy of production data and for operators.
 
 export interface VerifyEventsOptions {
@@ -78,7 +80,7 @@ interface Row {
   readonly data: unknown;
 }
 
-export const verifyEvents = (options: VerifyEventsOptions): Effect.Effect<EventsReport, SqlError, SqlClient.SqlClient> =>
+export const verifyEvents = (options: VerifyEventsOptions): Effect.Effect<EventsReport, SqlError, SqlClient.SqlClient | EventStore> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const definitions = new Map((options.definitions as ReadonlyArray<Definition>).map((d) => [d.type, d] as const));
@@ -136,16 +138,18 @@ export const verifyEvents = (options: VerifyEventsOptions): Effect.Effect<Events
       };
 
       if (options.all === true) {
-        let last = (BigInt(from) - 1n).toString();
-        for (;;) {
-          const rows = yield* sql.unsafe<Row>(
-            "SELECT position::text AS position, tags, data FROM crablet_events WHERE type = $1 AND position > $2::bigint AND position <= $3::bigint ORDER BY crablet_events.position LIMIT $4", // (qualified: a bare `position` would sort by the text alias above, as text)
-            [type, last, to, batchSize]
-          );
-          for (const row of rows) check(row);
-          if (rows.length < batchSize) break;
-          last = rows[rows.length - 1]!.position;
-        }
+        // Every event of the type, page after page, as the event store reads them (ADR-0050): in (transaction id, position) order and only
+        // finished ones, so an event that commits late at a lower position is not skipped, as a page by position could. The window is a filter:
+        // the type is read in full. A transaction left open in the database stops the walk before the events written after it began: `checked`
+        // then comes out below `total`, and a run without it checks the rest.
+        const lo = BigInt(from), hi = BigInt(to);
+        yield* Stream.runForEach(stream(Query.forEvent(type), { batchSize }), (e) =>
+          Effect.sync(() => {
+            if (e.position >= lo && e.position <= hi) check({ position: e.position.toString(), tags: e.tags.map(TagCodec.encode), data: e.data });
+          })
+        );
+        failing.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        invented.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
       } else {
         const rows = yield* sql.unsafe<Row>(
           "SELECT position::text AS position, tags, data FROM crablet_events WHERE type = $1 AND position >= $2::bigint AND position <= $3::bigint ORDER BY random() LIMIT $4",
