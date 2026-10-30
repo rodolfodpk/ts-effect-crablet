@@ -11,6 +11,7 @@ domain error mapped to a status code and documented in a generated OpenAPI 3.1 d
 - **`ProblemDetail`** - the problem bodies (bad request with the failing fields, conflict, a request id reused by a different request (422), unexpected error). `problemOf(error)` is a domain error's problem typed from the error, for a hand-written endpoint that declares `problemSchemaOf(ErrorClass)`. A command also answers with a **marker** for read-your-writes, a repeat included.
 - **`ApiDescription`**, **`InputJsonSchema`** - the generated OpenAPI description.
 - **`Cors`** - opt-in CORS.
+- **`CommandApiConfig`** (`/CommandApiConfig`) - the options of the write API: `basePath`, `correlationHeaderEnabled`, `openApiPath` and `docs`.
 
 ## Depends on
 

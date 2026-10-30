@@ -54,7 +54,7 @@ groups:
             model:
               refId: A
               instant: true
-              expr: 'label_replace(label_replace(label_replace(count by (lock_key) (crablet_poller_leadership_ratio) unless count by (lock_key) (crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), "module", "outbox", "lock_key", "4856221667890123456"), "module", "views", "lock_key", "4856221667890123457"), "module", "automations", "lock_key", "4856221667890123458") or label_replace(absent(crablet_poller_leadership_ratio), "module", "(no leadership data at all)", "", "")'
+              expr: 'label_replace(label_replace(label_replace(label_replace(count by (lock_key) (crablet_poller_leadership_ratio) unless count by (lock_key) (crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), "module", "outbox", "lock_key", "4856221667890123456"), "module", "views", "lock_key", "4856221667890123457"), "module", "automations", "lock_key", "4856221667890123458"), "module", "deadlines", "lock_key", "4856221667890123459") or label_replace(absent(crablet_poller_leadership_ratio), "module", "(no leadership data at all)", "", "")'
           - refId: C
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }

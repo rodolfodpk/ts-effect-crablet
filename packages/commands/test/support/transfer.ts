@@ -9,7 +9,7 @@ import { defineEvent } from "../../src/Event.ts";
 import { all, defineModel } from "../../src/Model.ts";
 import { afterLoad } from "./barrier.ts";
 
-// ---- START GUIDE ----
+// #region guide
 // Events. Note there are no streams or aggregates: an event is found by its TAGS.
 export const AccountOpened = defineEvent("AccountOpened", {
   schema: Schema.Struct({ accountId: Schema.String, balance: Schema.Number }),
@@ -66,7 +66,7 @@ export const Transfer = defineCommand({
           ? fail(new InsufficientFunds({ accountId: c.from, balance: from.balance, requested: c.amount }))
           : emit(Transferred(c))
 });
-// ---- END GUIDE ----
+// #endregion guide
 
 // Test-only variant: the same command, but it waits at a barrier AFTER loading its model, so that several
 // runs have all LOADED before any of them appends - a deterministic race instead of timing luck.

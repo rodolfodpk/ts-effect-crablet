@@ -8,7 +8,7 @@ and its page ([`tools/processors-admin-ui`](../../../tools/processors-admin-ui/R
 
 ## A processor has FAILED
 
-**Means:** a view, automation or outbox publisher failed `maxErrors` times in a row and stopped. Other processors carry on. Reads over a failed view
+**Means:** a view, automation, outbox publisher or the deadlines processor failed `maxErrors` times in a row and stopped. Other processors carry on. Reads over a failed view
 answer `503` with reason `view_failed`.
 
 **Check:**
@@ -18,6 +18,12 @@ answer `503` with reason `view_failed`.
    error that says `took longer than ... ms` is the publish timeout (`publishTimeoutMs`, default 30 s): the destination is slow or hanging.
 4. An automation whose error is `IdempotencyMismatch`: its `idempotentBy` matches another trigger's different request, so the key is too broad
    ([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md)). Fix the key in the code; the trigger has not been handled.
+5. **The deadlines processor:** its last error is in `crablet_deadline_progress.last_error`. The causes are those of [a deadline's fault](../build/set-a-deadline.md):
+   the command failed with something other than a domain error (the database, a conflict that ran out of retries), it took longer than `fireTimeoutMs`
+   (30 seconds by default), the processor was not given that command, or the deadline's input no longer decodes. `GET /admin/processors` lists it only if
+   the application gives the admin API a source made with `makeDeadlinesManagementService`, which none of the examples does; otherwise read the table.
+   Its reset is the same: it clears the error and the due deadlines fire again in due order. There is no cursor to rewind: what is left to fire is
+   the rows of `crablet_deadlines`.
 
 **Do:** fix the cause and deploy, then **reset** the processor. Reset clears the error count, sets it `ACTIVE` and resumes it from where it stopped;
 it does not rewind the cursor, so nothing is handled twice by the reset itself. An event is never skipped to get past a failure: order and no gaps come
@@ -26,7 +32,7 @@ part-way already kept the events it sent: it resumes at the first one that faile
 
 ## A module has no leader
 
-**Means:** for the views, the automations or the outbox, no instance has reported leading it for two minutes, so nothing is running that module's processors. Or, if the alert
+**Means:** for the views, the automations, the outbox or the deadlines, no instance has reported leading it for two minutes, so nothing is running that module's processors. Or, if the alert
 says "no leadership data at all", nothing is reporting. Why two minutes: leadership is a gauge that is re-sent while it holds. A leader that crashes never reports "not leading", so
 the alert waits until its last report is older than 120 seconds.
 
@@ -39,7 +45,7 @@ the alert waits until its last report is older than 120 seconds.
     "modules":[{"module":"views","runs":true,"leading":false},{"module":"automations","runs":true,"leading":true}]}
    ```
    (An example.) If no instance has `runs: true` for the module, nothing is started for it: start one. If some do and none leads, go on.
-2. **Ask Postgres who holds the lock.** There is one advisory lock per module: views `4856221667890123457`, automations `4856221667890123458`, outbox `4856221667890123456`.
+2. **Ask Postgres who holds the lock.** There is one advisory lock per module: views `4856221667890123457`, automations `4856221667890123458`, outbox `4856221667890123456`, deadlines `4856221667890123459`.
    ```sql
    SELECT a.pid, a.application_name, a.state, a.backend_start,
           ((l.classid::bigint << 32) | l.objid::bigint) AS lock_key
@@ -69,6 +75,8 @@ the alert waits until its last report is older than 120 seconds.
 1. A long-running or idle-in-transaction session in `pg_stat_activity`. No event is delivered while an older transaction is open ([failure modes](failure-modes.md#a-long-transaction-stays-open)).
 2. Handler failures (the next alert): a processor retrying a failing batch does not advance.
 3. The handler's duration (`crablet.view.project.duration` and its peers) against the rate of new events: a handler slower than the writers falls behind for good.
+4. **For the deadlines processor,** behind means deadlines that are due and not fired: its lag gauges count them, read from `crablet_deadlines`, and its management
+   service reports them as the backlog (`pendingEvents`, `oldestPendingSeconds`). A command that is slow to run, or that keeps failing, holds the ones after it.
 
 **Do:** end the long transaction; fix a failing handler; for a slow one, make the projector cheaper or raise `batchSize`. If the consumer may
 legitimately lag (a nightly export), raise the alert's threshold for it.

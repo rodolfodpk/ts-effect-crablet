@@ -17,6 +17,7 @@ example where it matters.
 
 Everything below is `packages/commands/test/support/transfer.ts` (the tests run exactly this).
 
+<!-- file: packages/commands/test/support/transfer.ts#guide -->
 ```ts
 // Events. Note there are no streams or aggregates: an event is found by its TAGS.
 export const AccountOpened = defineEvent("AccountOpened", {
@@ -126,6 +127,7 @@ enforce the other eventually (or with a saga). Here both rules are checked in on
 one event is tagged with both the student and the course, and two models look at it from each side.
 (`packages/commands/test/support/enrolment.ts`)
 
+<!-- file: packages/commands/test/support/enrolment.ts#guide -->
 ```ts
 export const CourseDefined = defineEvent("CourseDefined", {
   schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Number }),
@@ -271,8 +273,8 @@ one of its types AND that carries all of its tags. What this framework does with
 
 ### Compatibility with the specification
 
-Evaluated against [`docs/specification.md`](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) of dcb-events at
-commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. The specification says names and representations are free as long as the
+Evaluated against [the specification's source](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) in the
+dcb-events repository at commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. The specification says names and representations are free as long as the
 functionality is the same, so each row says two things: the **status** (how the requirement is met) and whether the **result** is the one the
 specification asks for. **compatible** means as written; **another form** means the requirement holds through a different representation, with the
 same result; **differs** means the result is not the same in some case, said in the note; **not offered** and **not yet** speak for themselves.

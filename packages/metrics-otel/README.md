@@ -6,7 +6,8 @@ configures. Every metric is named `crablet.<area>.<what>`.
 ## What it gives you
 
 One module per area, each its own import (`@crablet/metrics-otel/PollerMetrics`, ...): **EventStoreMetrics**, **CommandMetrics**, **PollerMetrics**, **LeaderMetrics**,
-**ViewMetrics**, **OutboxMetrics**, **AutomationMetrics**, **ReadConsistencyMetrics** and **StorageMetrics** (the `crablet.storage.*` gauges that `monitorStorage` keeps current).
+**ViewMetrics**, **OutboxMetrics**, **AutomationMetrics**, **DeadlineMetrics** (`crablet.deadlines.fired`, by outcome), **PeriodMetrics** (`crablet.period.clock_behind`: a
+pod's clock behind the period already open), **ReadConsistencyMetrics** and **StorageMetrics** (the `crablet.storage.*` gauges that `monitorStorage` keeps current).
 
 The other packages record into these; you do not call them yourself, you only wire an exporter. Two are not recorded by the processing loop: `monitorStorage` keeps the `crablet.storage.*` gauges current, and
 `monitorProcessors` (`@crablet/event-poller/MonitorProcessors`) keeps `crablet.poller.lag_events`, `lag_seconds`, `cursor_position` and `status`, so a processor with no leader still reports.

@@ -242,7 +242,7 @@
       "id": 4,
       "type": "stat",
       "title": "Modules without a leader",
-      "description": "Modules (views, automations, outbox) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
+      "description": "Modules (views, automations, outbox, deadlines) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -944,8 +944,8 @@
     {
       "id": 17,
       "type": "stat",
-      "title": "Leader changes in this range",
-      "description": "How many times a module changed hands in the time range selected above (a pod took a lock another had held). A deploy or a crash is one or more; a steady system is zero.",
+      "title": "Deadlines leader",
+      "description": "The pod that leads the deadlines module now: one advisory lock per module, so all of its processors run in that pod. Red when no pod does (a crashed leader drops out after two minutes).",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -953,6 +953,66 @@
       "gridPos": {
         "x": 18,
         "y": 11,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "max by (instance_id) (topk(1, timestamp((crablet_poller_leadership_ratio{lock_key=\"4856221667890123459\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123459\"}) < 120))))) or label_replace(absent((crablet_poller_leadership_ratio{lock_key=\"4856221667890123459\"} == 1 and (time() - timestamp(crablet_poller_leadership_ratio{lock_key=\"4856221667890123459\"}) < 120))) * 0, \"instance_id\", \"NO LEADER\", \"\", \"\")",
+          "legendFormat": "{{instance_id}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "-",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Leader changes in this range",
+      "description": "How many times a module changed hands in the time range selected above (a pod took a lock another had held). A deploy or a crash is one or more; a steady system is zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
         "w": 6,
         "h": 4
       },
@@ -1006,7 +1066,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 19,
       "type": "state-timeline",
       "title": "Who led what, over time",
       "description": "One bar per pod and module, from when the pod took the module's lock to when it stopped reporting as leader. A handover is one bar ending and another starting; a gap between them is the time with no leader. The vertical marks on the other graphs are the same changes.",
@@ -1016,7 +1076,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 15,
+        "y": 19,
         "w": 24,
         "h": 9
       },
@@ -1027,7 +1087,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "max by (module, instance_id) (label_replace(label_replace(label_replace((crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), \"module\", \"outbox\", \"lock_key\", \"4856221667890123456\"), \"module\", \"views\", \"lock_key\", \"4856221667890123457\"), \"module\", \"automations\", \"lock_key\", \"4856221667890123458\"))",
+          "expr": "max by (module, instance_id) (label_replace(label_replace(label_replace(label_replace((crablet_poller_leadership_ratio == 1 and (time() - timestamp(crablet_poller_leadership_ratio) < 120)), \"module\", \"outbox\", \"lock_key\", \"4856221667890123456\"), \"module\", \"views\", \"lock_key\", \"4856221667890123457\"), \"module\", \"automations\", \"lock_key\", \"4856221667890123458\"), \"module\", \"deadlines\", \"lock_key\", \"4856221667890123459\"))",
           "legendFormat": "{{module}} · {{instance_id}}",
           "instant": false,
           "range": true
@@ -1067,7 +1127,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 20,
       "type": "table",
       "title": "Status of each processor",
       "description": "Current status. Every instance reports the same value.",
@@ -1077,7 +1137,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 28,
         "w": 24,
         "h": 8
       },
@@ -1130,20 +1190,20 @@
       }
     },
     {
-      "id": 20,
+      "id": 21,
       "type": "row",
       "title": "Are the consumers keeping up?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 36,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 21,
+      "id": 22,
       "type": "timeseries",
       "title": "Lag in events",
       "description": "Events the processor selects that are committed and after its cursor, counted up to 100 000. Counted against the processor's own selection, not the end of the log. Every instance reports it, so the query takes the max.",
@@ -1153,7 +1213,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -1192,7 +1252,7 @@
       }
     },
     {
-      "id": 22,
+      "id": 23,
       "type": "timeseries",
       "title": "Lag in seconds",
       "description": "Age, by the events' own occurred_at, of the first event waiting for the processor; 0 when it is caught up. Rising while the processor is ACTIVE means it is stuck or slow.",
@@ -1202,7 +1262,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 33,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -1241,7 +1301,7 @@
       }
     },
     {
-      "id": 23,
+      "id": 24,
       "type": "table",
       "title": "Worst first",
       "description": "Lag now, per processor, the slowest first.",
@@ -1251,7 +1311,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 41,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -1316,7 +1376,7 @@
       }
     },
     {
-      "id": 24,
+      "id": 25,
       "type": "timeseries",
       "title": "Events fetched per second",
       "description": "Events the processor's loop fetched (the leader's work).",
@@ -1326,7 +1386,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 41,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -1365,7 +1425,7 @@
       }
     },
     {
-      "id": 25,
+      "id": 26,
       "type": "timeseries",
       "title": "Idle polls",
       "description": "The share of polls that found nothing. High and steady is normal for a quiet system.",
@@ -1375,7 +1435,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 53,
         "w": 12,
         "h": 8
       },
@@ -1414,7 +1474,7 @@
       }
     },
     {
-      "id": 26,
+      "id": 27,
       "type": "timeseries",
       "title": "Backed off",
       "description": "1 while the processor has backed off after errors or empty polls.",
@@ -1424,7 +1484,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 49,
+        "y": 53,
         "w": 12,
         "h": 8
       },
@@ -1463,7 +1523,7 @@
       }
     },
     {
-      "id": 27,
+      "id": 28,
       "type": "timeseries",
       "title": "Cursor position",
       "description": "Where each processor has read up to.",
@@ -1473,7 +1533,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 57,
+        "y": 61,
         "w": 12,
         "h": 8
       },
@@ -1512,20 +1572,20 @@
       }
     },
     {
-      "id": 28,
+      "id": 29,
       "type": "row",
       "title": "Is it failing?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 65,
+        "y": 69,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 29,
+      "id": 30,
       "type": "timeseries",
       "title": "View projection failures",
       "description": "Failures per second by view.",
@@ -1535,7 +1595,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 66,
+        "y": 70,
         "w": 12,
         "h": 8
       },
@@ -1574,7 +1634,7 @@
       }
     },
     {
-      "id": 30,
+      "id": 31,
       "type": "timeseries",
       "title": "Automation and outbox failures",
       "description": "Failures per second: automations decide, outbox publishers publish (to something outside the process).",
@@ -1584,7 +1644,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 66,
+        "y": 70,
         "w": 12,
         "h": 8
       },
@@ -1634,7 +1694,56 @@
       }
     },
     {
-      "id": 31,
+      "id": 32,
+      "type": "timeseries",
+      "title": "Deadlines fired",
+      "description": "Deadlines fired per second, by outcome: appended (the command appended), noop (it had nothing to do), failed (it failed with something other than a domain error, timed out, or could not be run). A failed one is retried; repeated failures mark the deadlines processor FAILED (ADR-0043).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 78,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum by (outcome) (rate(crablet_deadlines_fired[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
       "type": "timeseries",
       "title": "View projection time (p95)",
       "description": "95th percentile of one projection call, by view.",
@@ -1643,8 +1752,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
-        "y": 74,
+        "x": 12,
+        "y": 78,
         "w": 12,
         "h": 8
       },
@@ -1683,7 +1792,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 34,
       "type": "timeseries",
       "title": "Successful calls per second",
       "description": "Projections, automation decisions and outbox publishes that succeeded, to read the failure panels against.",
@@ -1692,8 +1801,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 74,
+        "x": 0,
+        "y": 86,
         "w": 12,
         "h": 8
       },
@@ -1754,7 +1863,7 @@
       }
     },
     {
-      "id": 33,
+      "id": 35,
       "type": "timeseries",
       "title": "Automation decision time (p95)",
       "description": "95th percentile of one automation decision, by automation.",
@@ -1763,8 +1872,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
-        "y": 82,
+        "x": 12,
+        "y": 86,
         "w": 12,
         "h": 8
       },
@@ -1803,7 +1912,7 @@
       }
     },
     {
-      "id": 34,
+      "id": 36,
       "type": "timeseries",
       "title": "Outbox publish time (p95)",
       "description": "95th percentile of one publish call, by publisher.",
@@ -1812,8 +1921,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 82,
+        "x": 0,
+        "y": 94,
         "w": 12,
         "h": 8
       },
@@ -1852,7 +1961,7 @@
       }
     },
     {
-      "id": 35,
+      "id": 37,
       "type": "timeseries",
       "title": "Events handled per second",
       "description": "Events projected by views, handled by automations and published by the outbox.",
@@ -1861,8 +1970,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
-        "y": 90,
+        "x": 12,
+        "y": 94,
         "w": 12,
         "h": 8
       },
@@ -1923,7 +2032,7 @@
       }
     },
     {
-      "id": 36,
+      "id": 38,
       "type": "timeseries",
       "title": "Stored events that could not be read",
       "description": "A stored event the current definitions cannot decode: an unsafe event change (Evolving events). Should stay at zero.",
@@ -1932,8 +2041,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 90,
+        "x": 0,
+        "y": 102,
         "w": 12,
         "h": 8
       },
@@ -1972,20 +2081,20 @@
       }
     },
     {
-      "id": 37,
+      "id": 39,
       "type": "row",
       "title": "The write side",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 98,
+        "y": 110,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 38,
+      "id": 40,
       "type": "timeseries",
       "title": "Appends per second",
       "description": "Events appended, and append calls that failed.",
@@ -1995,7 +2104,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 99,
+        "y": 111,
         "w": 12,
         "h": 8
       },
@@ -2056,7 +2165,7 @@
       }
     },
     {
-      "id": 39,
+      "id": 41,
       "type": "timeseries",
       "title": "Wake-ups per second",
       "description": "Notifications that tell pollers events were appended (ADR-0021): recorded per commit, actually sent, and saved by coalescing. Sent should stay near 1 / window per process.",
@@ -2066,7 +2175,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 99,
+        "y": 111,
         "w": 12,
         "h": 8
       },
@@ -2127,7 +2236,7 @@
       }
     },
     {
-      "id": 40,
+      "id": 42,
       "type": "timeseries",
       "title": "Contention",
       "description": "Commands that retried after a conflict, appends the DCB condition refused, commands recognised as repeats, and request ids reused by a different request.",
@@ -2137,7 +2246,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 107,
+        "y": 119,
         "w": 12,
         "h": 8
       },
@@ -2209,7 +2318,7 @@
       }
     },
     {
-      "id": 41,
+      "id": 43,
       "type": "timeseries",
       "title": "Command time (p95)",
       "description": "95th percentile of handling one command, by command type, retries included.",
@@ -2219,7 +2328,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 107,
+        "y": 119,
         "w": 12,
         "h": 8
       },
@@ -2258,7 +2367,7 @@
       }
     },
     {
-      "id": 42,
+      "id": 44,
       "type": "timeseries",
       "title": "Commands per second",
       "description": "Commands that succeeded, and commands that failed (rejected by their rules or by an error) by command type.",
@@ -2268,7 +2377,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 115,
+        "y": 127,
         "w": 12,
         "h": 8
       },
@@ -2318,7 +2427,7 @@
       }
     },
     {
-      "id": 43,
+      "id": 45,
       "type": "timeseries",
       "title": "Append time (p95)",
       "description": "95th percentile of the conditional append.",
@@ -2328,7 +2437,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 115,
+        "y": 127,
         "w": 12,
         "h": 8
       },
@@ -2367,7 +2476,7 @@
       }
     },
     {
-      "id": 44,
+      "id": 46,
       "type": "timeseries",
       "title": "Reads that waited for views",
       "description": "Reads that carried a consistency marker, per second by mode, and how long the waiting ones waited (p95).",
@@ -2377,7 +2486,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 123,
+        "y": 135,
         "w": 12,
         "h": 8
       },
@@ -2416,7 +2525,7 @@
       }
     },
     {
-      "id": 45,
+      "id": 47,
       "type": "timeseries",
       "title": "Time reads waited (p95)",
       "description": "How long reads spent waiting for views to catch up (only reads that waited).",
@@ -2426,7 +2535,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 123,
+        "y": 135,
         "w": 12,
         "h": 8
       },
@@ -2465,20 +2574,20 @@
       }
     },
     {
-      "id": 46,
+      "id": 48,
       "type": "row",
       "title": "Storage",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 131,
+        "y": 143,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 47,
+      "id": 49,
       "type": "timeseries",
       "title": "Table size",
       "description": "Total bytes (heap, indexes and TOAST) of each library table. Nothing deletes events, so watch the growth.",
@@ -2488,7 +2597,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 132,
+        "y": 144,
         "w": 12,
         "h": 8
       },
@@ -2527,7 +2636,7 @@
       }
     },
     {
-      "id": 48,
+      "id": 50,
       "type": "timeseries",
       "title": "Rows",
       "description": "The planner's estimate, as fresh as the last autovacuum or ANALYZE.",
@@ -2537,7 +2646,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 132,
+        "y": 144,
         "w": 12,
         "h": 8
       },
@@ -2576,7 +2685,7 @@
       }
     },
     {
-      "id": 49,
+      "id": 51,
       "type": "timeseries",
       "title": "Bytes per event",
       "description": "The events table and the tag table with their indexes, divided by events (about 1.2 KB at the time of writing).",
@@ -2586,7 +2695,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 140,
+        "y": 152,
         "w": 12,
         "h": 8
       },

@@ -9,7 +9,7 @@ import { defineEvent } from "../../src/Event.ts";
 import { all, defineModel } from "../../src/Model.ts";
 import { afterLoad } from "./barrier.ts";
 
-// ---- START GUIDE ----
+// #region guide
 export const CourseDefined = defineEvent("CourseDefined", {
   schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Number }),
   tags: (d) => ({ course_id: d.courseId })
@@ -73,7 +73,7 @@ export const Subscribe = defineCommand({
   model: (c) => all({ course: CourseModel.of({ id: c.courseId }), student: StudentModel.of({ id: c.studentId }) }),
   decide
 });
-// ---- END GUIDE ----
+// #endregion guide
 
 // Test-only variant with a barrier after the model has loaded (see support/barrier.ts).
 export const subscribeWith = (opts: { wait: Effect.Effect<void>; retries?: number }) =>

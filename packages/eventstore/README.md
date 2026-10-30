@@ -18,7 +18,7 @@ framework sits on top of this package.
 - **`AppendContext`** - what the store records about an append besides its events ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)):
   `withCorrelationId(uuid)`, `causedBy(storedEvent)` (only a stored event can be a cause) and `withMetadata(object)`, each around the appends of an
   effect. An event's own metadata is `AppendEvent.metadata`; a read returns it as `StoredEvent.metadata`.
-- **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition`, `Cursor` and `Marker`, each its own import (`@crablet/eventstore/Query`, ...).
+- **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition`, `Cursor`, `Marker`, `AppendResult` (what an append returns) and `AppendErrors` (`Conflict`, `Duplicate`, `AppendTooLarge`), each its own import (`@crablet/eventstore/Query`, ...).
   A query item targets events by type and/or tags; one with neither is refused. A tag's key and value may hold any characters (the key is encoded
   when stored), and a tag repeated on an event is stored once. One append takes at most `maxAppendEvents` events (`EventStoreConfig`, default 50).
   An append is not refused for events its own transaction appended earlier: if your next decision depends on what you just wrote, read again, or
@@ -33,7 +33,7 @@ framework sits on top of this package.
 
 ## Internal
 
-`CorrelationContext`, `Listen` (the reconnecting LISTEN), `NotifyPayload` (the wake-up payload), `TagCodec` (how a tag is stored: `key=value` with the key's `%` and `=` encoded, ADR-0049) and `ReadSnapshot` (what a read could see: the snapshot
+`CorrelationContext`, `Listen` (the reconnecting LISTEN), `NotifyPayload` (the wake-up payload), `ServerSettings` (the Postgres settings the processors read, such as `idle_in_transaction_session_timeout`), `TagCodec` (how a tag is stored: `key=value` with the key's `%` and `=` encoded, ADR-0049) and `ReadSnapshot` (what a read could see: the snapshot
 `project` returns as `seen`, which the commands combine and put in `AppendCondition.seen`, so an event the read saw is not a conflict,
 [ADR-0048](../../docs/adr/0048-a-conflict-is-what-the-read-did-not-see.md)) are plumbing for the sibling packages. They are listed under `crablet.internal` in
 [`package.json`](./package.json), applications and the documents do not import them, and they can change without notice ([the boundary](../../docs/reference/README.md#public-api-and-plumbing)).

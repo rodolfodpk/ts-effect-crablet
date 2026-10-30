@@ -27,7 +27,7 @@ exporter, so wire one in your application ([See it on a dashboard](../guides/ope
 | `crablet.eventstore.wakeups_recorded`, `_sent`, `_saved` | wake-up notifications recorded per committed transaction, sent to Postgres, and saved by merging ([ADR-0021](../adr/0021-wakeups-after-commit-and-coalesced.md)) |
 | `crablet.storage.table_bytes`, `crablet.storage.table_rows`, `crablet.storage.bytes_per_event` | the size of the log and of each library table, and bytes per event ([ADR-0019](../adr/0019-storage-visibility-and-the-tag-table.md)) |
 
-## Pollers (views, automations, outbox)
+## Processors (views, automations, outbox, deadlines)
 
 | Metric | What it counts or measures |
 |---|---|
@@ -41,8 +41,10 @@ exporter, so wire one in your application ([See it on a dashboard](../guides/ope
 | `crablet.view.events_projected`, `crablet.view.project.successes`, `.failures`, `.duration` | a view's projector |
 | `crablet.automation.events_processed`, `crablet.automation.decide.successes`, `.failures`, `.duration` | an automation |
 | `crablet.outbox.events_published`, `crablet.outbox.publish.successes`, `.failures`, `.duration` | an outbox publisher |
+| `crablet.deadlines.fired` | deadlines fired, tagged `outcome`: `appended` (the command appended), `noop` (it had nothing to do), `failed` (it failed with something other than a domain error, timed out, or could not be run) |
 
-The lag, cursor and status gauges are kept current by `monitorProcessors()` (`@crablet/event-poller/MonitorProcessors`); the storage gauges by
+The lag, cursor and status gauges are kept current by `monitorProcessors()` (`@crablet/event-poller/MonitorProcessors`). For the deadlines processor the
+lag gauges count something else: the deadlines that are due and not fired, read from `crablet_deadlines`, and how late the oldest is. The storage gauges are kept current by
 `monitorStorage()` (`@crablet/eventstore/Storage`).
 
 ## Reads
