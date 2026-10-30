@@ -80,5 +80,7 @@ Each module has a management service (`ViewManagementService`, `AutomationManage
 `ProcessorManagementService`. For a view, its progress details give the status, the instance holding it, the last position, the error count and the last error; the
 poller service can pause, resume and reset a processor. They are plain Effect services. To reach them over HTTP, mount [`@crablet/processors-http`](../../../packages/processors-http/README.md): a list with status, failures, cursor and
 backlog, and pause, resume and reset, behind an authorization you provide ([ADR-0020](../../adr/0020-processors-admin-api.md)). Reset clears the error count and restarts the processor; it does not move its cursor.
+The same package has the **event log API** (`GET /admin/events`), to look at the events themselves: by types and tags, page by page, with the fields marked
+`personal(...)` redacted ([ADR-0050](../../adr/0050-the-event-store-used-directly.md)). The [admin page](../../../tools/processors-admin-ui/README.md) shows both.
 
 Delivery guarantees to keep in mind while reading these numbers: [views and delivery](../../concepts/views-and-delivery.md).

@@ -154,4 +154,21 @@ describe("the wallet's admin API", () => {
     assert.match((await kind.json() as { detail: string }).detail, /No processors of kind "nope"/);
     assert.strictEqual((await admin("POST", "/admin/processors/views/nope/reset")).status, 404);
   });
+
+  it("the event log: a wallet's events, page by page, with the owner (marked personal) redacted; behind the same token", async () => {
+    const walletId = `w-log-${crypto.randomUUID().slice(0, 8)}`;
+    assert.strictEqual((await post("open_wallet", { walletId, owner: "Ada Lovelace", initialBalance: 10 })).status, 201);
+    assert.strictEqual((await post("deposit", { depositId: `d-${walletId}`, walletId, amount: 5, description: "logged" })).status, 201);
+    assert.strictEqual((await admin("GET", "/admin/events", null)).status, 401);
+    type Page = { events: Array<{ type: string; data: Record<string, unknown> | null; dataShown: boolean; tags: Array<{ key: string; value: string }> }>; cursor: string; more: boolean };
+    const tag = `wallet_id=${encodeURIComponent(walletId)}`;
+    const first = (await (await admin("GET", `/admin/events?tag=${tag}&limit=1`)).json()) as Page;
+    assert.deepStrictEqual([first.events.map((e) => e.type), first.more], [["WalletOpened"], true]);
+    assert.strictEqual(first.events[0]!.data!["owner"], "[redacted]", "the owner is personal data");
+    assert.strictEqual(first.events[0]!.dataShown, true);
+    const rest = (await (await admin("GET", `/admin/events?tag=${tag}&after=${encodeURIComponent(first.cursor)}`)).json()) as Page;
+    assert.ok(rest.events.some((e) => e.type === "DepositMade"), `the deposit follows: ${rest.events.map((e) => e.type)}`);
+    assert.strictEqual((await admin("GET", "/admin/events?limit=0")).status, 400);
+  });
 });
+

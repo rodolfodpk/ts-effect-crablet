@@ -1,9 +1,11 @@
 # processors-admin-ui
 
 A small web page, written with [Foldkit](https://foldkit.dev), for the **processors admin API** ([`@crablet/processors-http`](../../packages/processors-http/README.md), [ADR-0020](../../docs/adr/0020-processors-admin-api.md)):
-a table of an application's background processors (views, automations, outbox publishers) with their status, last error, cursor and how much waits for each, and **Pause**, **Resume** and **Reset** buttons.
+a table of an application's background processors (views, automations, outbox publishers) with their status, last error, cursor and how much waits for each, and **Pause**, **Resume** and **Reset** buttons;
+and an **Events** tab that browses the event log (`eventsGroup`, [ADR-0050](../../docs/adr/0050-the-event-store-used-directly.md)): filter by types and tags, read on page by page with **More**, and open
+a payload, which the application shows with its personal fields redacted.
 
-It is **not tied to an application**. Its client is derived from the API's own definition (`processorsGroup`), so it knows the routes, the response Schemas and the problems and nothing about wallets or courses: it works against any
+It is **not tied to an application**. Its client is derived from the API's own definition (`processorsGroup`, `eventsGroup`), so it knows the routes, the response Schemas and the problems and nothing about wallets or courses: it works against any
 application that mounts the group. `kind` and `id` are shown as the application named them. Like the [course page](../../examples/course-enrolment-ui/README.md) it has no cast: a problem the API gains and the page does not handle stops it compiling.
 
 ## Run it

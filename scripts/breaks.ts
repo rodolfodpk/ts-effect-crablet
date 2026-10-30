@@ -74,6 +74,14 @@ export const breaks: ReadonlyArray<Break> = [
     why: "an item with neither types nor tags would reach the SQL: a read would skip it and a condition would match every event (ADR-0049)"
   },
   {
+    id: "event-log-unmasked",
+    file: "packages/processors-http/src/EventsApiLive.ts",
+    find: "  const shown = mask(e.type, e.data);",
+    replace: "  const shown = e.data;",
+    tests: ["examples/wallet-example-app/test/integration/admin-api-e2e.test.ts"],
+    why: "the event log API would show personal data (a wallet's owner) to whoever holds the admin token (ADR-0050)"
+  },
+  {
     id: "page-unsettled",
     file: SQL,
     find: "`FROM crablet_events${whereSql === \"\" ? ` WHERE ${settled}` : `${whereSql} AND ${settled}`} ` +",

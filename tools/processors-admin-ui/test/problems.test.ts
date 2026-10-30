@@ -45,6 +45,6 @@ describe("problemFromError", () => {
   });
 
   test("the derived client is typed by the group: its endpoints are the ones the server serves", () => {
-    expect(Object.keys(adminApi.groups)).toEqual(["processors"]);
+    expect(Object.keys(adminApi.groups)).toEqual(["processors", "events"]);
   });
 });

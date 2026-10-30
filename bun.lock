@@ -180,9 +180,11 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
         "effect": "4.0.6",
       },
       "devDependencies": {
+        "@crablet/commands": "workspace:*",
         "@effect/platform-node": "4.0.6",
       },
     },

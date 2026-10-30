@@ -47,11 +47,22 @@ building the Decision Model"*, and a query that *"represent[s] a query that matc
 6. **No retry helper.** A direct decision retries a `Conflict` with `Effect.retry`; reading, deciding, retrying, recognising a repeat and auditing
    together is what a command is.
 
+7. **Where the framework uses them.** The command framework, the pollers and the views keep their own paths: a model folds without keeping
+   the events (`project`), a command's condition combines several reads, and a poller selects by tag key alone, keeps its cursor in a progress
+   table and commits a batch with its cursor. Two places walk many events and use `stream`:
+   - `verifyEvents({ all: true })`, which paged by position and so could skip an event that committed late; it now walks each type with
+     `stream`, and a window (`fromPosition`, `toPosition`) is a filter over it;
+   - the **event log API** (`eventsGroup` in `@crablet/processors-http`, `GET /admin/events`), behind the processors' authorization: a page of
+     `read` for types and tags, with the `cursor` to read on from. A payload is shown only through the application's mask,
+     `eventPayloadMask(definitions)` (`@crablet/commands/Personal`): the fields marked `personal(...)` redacted and the keys a definition does not
+     know dropped; a type with no definition, or no mask at all, shows no payload. The admin page (`tools/processors-admin-ui`) has an Events tab
+     over it. This is the "event log API" `personal(...)` was documented as masking for.
+
 ## Consequences
 
 - Direct use has the specification's model, read, decide, append after, with the conflict commands have.
 - `stream` ends when it has caught up with the finished events; following the log as it grows is a processor's job.
-- Breaks (`scripts/breaks.ts`): `page-unsettled`, `decision-position-without-snapshot`, `query-all-dropped`, `union-drops-all`.
+- Breaks (`scripts/breaks.ts`): `page-unsettled`, `decision-position-without-snapshot`, `query-all-dropped`, `union-drops-all`, `event-log-unmasked`.
 - Tests: the conformance suite (pages, the stream, `Query.all()`, `readToDecide` with `failIfEventsMatch`) on Postgres and in memory; a page
   under a transaction-id inversion (`read-page.test.ts`); a direct decision under an open transaction (`decide-direct.test.ts`); a command whose
   lookup reads every event (`query-all-postgres.test.ts`); `transaction` and its wake-ups (`wakeups.test.ts`); the guide's code, with a race

@@ -5,7 +5,10 @@ import * as AsyncData from "foldkit/asyncData";
 import { Scene, Story } from "foldkit/test";
 import {
   ActOnProcessor,
+  FetchEvents,
   FetchProcessors,
+  formatTags,
+  splitList,
   Message,
   Processors,
   actionsFor,
@@ -268,5 +271,66 @@ describe("the page as a person uses it", () => {
       (Scene.expect(Scene.role("button", { name: "Resume wallet-balance-view" })) as any).toExist(),
       (Scene.expect(Scene.role("button", { name: "Pause wallet-balance-view" })) as any).not.toExist()
     );
+  });
+});
+
+describe("the event log tab", () => {
+  const event = (position: string, over: Record<string, unknown> = {}) => ({
+    eventId: `e${position}`, type: "WalletOpened", tags: [{ key: "wallet_id", value: "w1" }], position, transactionId: "9", occurredAt: "2026-10-30T10:00:00.000Z",
+    correlationId: null, causationId: null, data: { owner: "[redacted]" }, dataShown: true, ...over
+  });
+
+  test("opening the tab reads the first page; the filter is sent as types and tags; More reads on from the cursor and appends", () => {
+    Story.story(
+      update,
+      Story.given<Model>(connected([])),
+      Story.message(Message.ChangedTypes({ value: "WalletOpened, DepositMade" })),
+      Story.message(Message.ChangedTags({ value: "wallet_id=w1" })),
+      Story.message(Message.ClickedTab({ tab: "events" })),
+      Story.model((m: Model) => {
+        expect(m.tab).toBe("events");
+        expect(AsyncData.isLoading(m.events)).toBe(true);
+      }),
+      Story.Command.expectExact(FetchEvents({ token: "t0ken", types: ["WalletOpened", "DepositMade"], tags: ["wallet_id=w1"], after: null })),
+      Story.Command.resolve(FetchEvents, Message.SucceededEvents({ page: { events: [event("1")], cursor: "9/1", more: true }, appended: false })),
+      Story.message(Message.ClickedMoreEvents()),
+      Story.Command.expectExact(FetchEvents({ token: "t0ken", types: ["WalletOpened", "DepositMade"], tags: ["wallet_id=w1"], after: "9/1" })),
+      Story.Command.resolve(FetchEvents, Message.SucceededEvents({ page: { events: [event("2")], cursor: "9/2", more: false }, appended: true })),
+      Story.model((m: Model) => {
+        expect(AsyncData.isSuccess(m.events) ? m.events.data.events.map((e) => e.position) : []).toEqual(["1", "2"]);
+        expect(m.loadingMore).toBe(false);
+      })
+    );
+  });
+
+  test("a refused token on the event log ends the session", () => {
+    Story.story(
+      update,
+      Story.given<Model>(connected([], { tab: "events" })),
+      Story.message(Message.FailedEvents({ problem: { _tag: "Unauthorized" } })),
+      Story.model((m: Model) => {
+        expect(m.token).toBeNull();
+        expect(m.tab).toBe("processors");
+      })
+    );
+  });
+
+  test("as a person uses it: the Events tab lists the log, a payload behind a disclosure, a withheld one said so", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given<Model>(connected([])),
+      Scene.click(Scene.role("button", { name: "Events" })),
+      Scene.Command.resolve(
+        FetchEvents,
+        Message.SucceededEvents({ page: { events: [event("1"), event("2", { type: "Legacy", data: null, dataShown: false })], cursor: "9/2", more: false }, appended: false })
+      ),
+      (Scene.expect(Scene.text("WalletOpened")) as any).toExist(),
+      (Scene.expect(Scene.text("wallet_id=w1")) as any).toExist(),
+      (Scene.expect(Scene.text("withheld: no definition of this type was given to the API")) as any).toExist(),
+      (Scene.expect(Scene.text("2 events: no more finished events now.")) as any).toExist()
+    );
+    expect(formatTags([{ key: "a", value: "1" }, { key: "b", value: "2" }])).toBe("a=1, b=2");
+    expect(splitList(" A, ,B ")).toEqual(["A", "B"]);
+    expect(describeProblem({ _tag: "BadRequest", detail: "a tag is key=value" })).toBe("a tag is key=value");
   });
 });
