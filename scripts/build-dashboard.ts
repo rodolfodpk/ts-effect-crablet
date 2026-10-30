@@ -7,7 +7,7 @@
 // (docs/history/plans/dashboard.md, step 2). scripts/dashboard.test.ts derives those names from @crablet/metrics-otel and fails when a panel or an alert
 // queries one that does not exist, or when a metric has neither a panel nor a stated reason for having none.
 import { resolve } from "node:path";
-import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
+import { AUTOMATIONS_LOCK_KEY, DEADLINES_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
 
 type Target = { readonly expr: string; readonly legend?: string; readonly instant?: boolean; readonly format?: "table" };
 type Panel = Record<string, unknown>;
@@ -15,11 +15,11 @@ type Panel = Record<string, unknown>;
 const DS = { type: "prometheus", uid: "${ds}" };
 const P = 'processor=~"$processor"';
 
-// LEADERSHIP is per MODULE, not per processor: one advisory lock for all the views, one for the automations, one for the outbox publishers
-// (packages/eventstore/src/Leader.ts), so `crablet.poller.leadership` is tagged `lock_key` and `instance_id`. The lock keys are named here as modules.
+// LEADERSHIP is per MODULE, not per processor: one advisory lock for all the views, one for the automations, one for the outbox publishers, one for
+// the deadlines (packages/eventstore/src/Leader.ts), so `crablet.poller.leadership` is tagged `lock_key` and `instance_id`. The lock keys are named here as modules.
 // A crashed leader never reports 0: its series stays at 1 until Prometheus drops it (about five minutes), but it stops being re-sent, so its sample gets old.
 // A leader is therefore a series at 1 that was written in the last `FRESH_SECONDS` (more than the export interval; the example exports every 5 s, the default is 60 s).
-export const MODULE_LOCKS: Readonly<Record<string, bigint>> = { outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY };
+export const MODULE_LOCKS: Readonly<Record<string, bigint>> = { outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY, deadlines: DEADLINES_LOCK_KEY };
 export const FRESH_SECONDS = 120;
 const LEAD = "crablet_poller_leadership_ratio";
 const leadersNow = `(${LEAD} == 1 and (time() - timestamp(${LEAD}) < ${FRESH_SECONDS}))`;
@@ -97,7 +97,7 @@ const panels = (): ReadonlyArray<Panel> => {
   out.push(stat("Failed processors", "Processors whose status is FAILED: they stopped after too many errors and need a person (see Run it in production). Reported by every instance; counted once per processor.",
     `count(max by (processor) (${fresh(`crablet_poller_status_ratio{status="FAILED",${P}} == 1`)})) or vector(0)`, 1));
   out.push(stat("Paused processors", "Processors an operator paused.", `count(max by (processor) (${fresh(`crablet_poller_status_ratio{status="PAUSED",${P}} == 1`)})) or vector(0)`));
-  out.push(stat("Modules without a leader", "Modules (views, automations, outbox) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
+  out.push(stat("Modules without a leader", "Modules (views, automations, outbox, deadlines) that have reported but whose leader has stopped reporting: no instance is running their processors. Leadership is per module, one advisory lock for all of a module's processors. A crashed leader never reports 0, so it is recognised by its series going quiet for two minutes. It also shows 1 when no leadership data is reported at all (a total outage: five minutes after the last instance stopped, its series are gone and there is nothing left to count).",
     `(count(count by (lock_key) (${LEAD}) unless count by (lock_key) (${leadersNow})) or vector(0)) + (absent(${LEAD}) or vector(0))`, 1));
   out.push(stat("Processors reporting", "Processors known to the instances that are reporting. Zero means nothing is reporting at all.", `count(max by (processor) (${fresh(`crablet_poller_status_ratio{${P}}`)}))`));
   // WHO LEADS, now and over time. A tile per module names the pod (red "NO LEADER" when none reports); the timeline under them is the history: one bar per pod and module, from when it took the lock to when it lost it.
@@ -152,6 +152,9 @@ const panels = (): ReadonlyArray<Panel> => {
   out.push(series("Automation and outbox failures", "Failures per second: automations decide, outbox publishers publish (to something outside the process).", "ops", [
     { expr: `sum by (automation) (${rate("crablet_automation_decide_failures")})`, legend: "automation {{automation}}" },
     { expr: `sum by (publisher) (${rate("crablet_outbox_publish_failures")})`, legend: "publisher {{publisher}}" }
+  ]));
+  out.push(series("Deadlines fired", "Deadlines fired per second, by outcome: appended (the command appended), noop (it had nothing to do), failed (it failed with something other than a domain error, timed out, or could not be run). A failed one is retried; repeated failures mark the deadlines processor FAILED (ADR-0043).", "ops", [
+    { expr: `sum by (outcome) (${rate("crablet_deadlines_fired")})`, legend: "{{outcome}}" }
   ]));
   out.push(series("View projection time (p95)", "95th percentile of one projection call, by view.", "ms",
     [{ expr: `histogram_quantile(0.95, sum by (le, view) (${rate("crablet_view_project_duration_milliseconds_bucket", `{${V}}`)}))`, legend: "{{view}}" }]));

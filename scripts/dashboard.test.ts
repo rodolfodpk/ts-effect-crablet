@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dashboard, dashboardPath, FRESH_SECONDS, MODULE_LOCKS, render } from "./build-dashboard.ts";
-import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
+import { AUTOMATIONS_LOCK_KEY, DEADLINES_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
 import * as CommandMetrics from "../packages/metrics-otel/src/CommandMetrics.ts";
 import * as PeriodMetrics from "../packages/metrics-otel/src/PeriodMetrics.ts";
 import * as EventStoreMetrics from "../packages/metrics-otel/src/EventStoreMetrics.ts";
@@ -15,6 +15,7 @@ import * as StorageMetrics from "../packages/metrics-otel/src/StorageMetrics.ts"
 import * as ViewMetrics from "../packages/metrics-otel/src/ViewMetrics.ts";
 import * as OutboxMetrics from "../packages/metrics-otel/src/OutboxMetrics.ts";
 import * as AutomationMetrics from "../packages/metrics-otel/src/AutomationMetrics.ts";
+import * as DeadlineMetrics from "../packages/metrics-otel/src/DeadlineMetrics.ts";
 
 const alertsPath = resolve(import.meta.dir, "../ops/grafana/alerts.yaml");
 
@@ -25,7 +26,7 @@ const isMetric = (v: unknown): v is Described => typeof v === "object" && v !== 
 // (docs/history/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
 const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
   const out = new Map<string, ReadonlyArray<string>>();
-  const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics];
+  const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics, DeadlineMetrics];
   for (const mod of modules) {
     for (const [key, value] of Object.entries(mod)) {
       if (key === "observe") continue;
@@ -61,6 +62,7 @@ const NO_PANEL: Record<string, string> = {
 // its metric does not carry gets one merged series and still "has data", which is how `by (processor)` on the leadership gauge went unnoticed until a crash test: the gauge is
 // per MODULE lock, tagged `lock_key`. Every metric must be listed, so adding one means saying what its labels are.
 const LABELS: Record<string, ReadonlyArray<string>> = {
+  "crablet.deadlines.fired": ["outcome"],
   "crablet.poller.leadership": ["lock_key", "instance_id"],
   "crablet.poller.processing_cycles": ["processor", "instance_id"],
   "crablet.poller.events_fetched": ["processor", "instance_id"],
@@ -138,13 +140,13 @@ describe("the labels the queries use", () => {
 
 describe("leadership is per module", () => {
   test("the module names in the dashboard are the lock keys in the code", () => {
-    expect(MODULE_LOCKS).toEqual({ outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY });
+    expect(MODULE_LOCKS).toEqual({ outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY, deadlines: DEADLINES_LOCK_KEY });
   });
 
   test("the alert names the same keys, and the same freshness window, as the dashboard", async () => {
     const text = await Bun.file(alertsPath).text();
     const pairs = [...text.matchAll(/"module", "([a-z]+)", "lock_key", "(\d+)"/g)].map((m) => [m[1]!, BigInt(m[2]!)] as const);
-    expect(Object.fromEntries(pairs)).toEqual({ outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY });
+    expect(Object.fromEntries(pairs)).toEqual({ outbox: OUTBOX_LOCK_KEY, views: VIEWS_LOCK_KEY, automations: AUTOMATIONS_LOCK_KEY, deadlines: DEADLINES_LOCK_KEY });
     expect([...text.matchAll(/timestamp\(crablet_poller_leadership_ratio\) < (\d+)/g)].map((m) => Number(m[1]))).toEqual([FRESH_SECONDS]);
   });
 });
