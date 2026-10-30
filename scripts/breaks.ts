@@ -82,6 +82,14 @@ export const breaks: ReadonlyArray<Break> = [
     why: "a paged read would move its cursor past an event still being written at a lower (transaction id, position), and never read it (ADR-0050)"
   },
   {
+    id: "decision-position-without-snapshot",
+    file: "packages/eventstore/src/AppendCondition.ts",
+    find: "  ...(options.after?.seen === undefined ? {} : { seen: options.after.seen })",
+    replace: "",
+    tests: [es("decide-direct")],
+    why: "a direct decision would conflict on events its read saw while any transaction is open elsewhere (ADR-0048, ADR-0050)"
+  },
+  {
     id: "query-all-dropped",
     file: SQL,
     find: "  if (query.all === true) return JSON.stringify([{ types: [], tags: [] }]);\n",

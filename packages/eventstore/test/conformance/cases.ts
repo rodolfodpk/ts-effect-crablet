@@ -8,7 +8,7 @@
 // store, so each isolates itself with unique tag values / event types (`unique()`).
 import assert from "node:assert/strict";
 import { Cause, Clock, Effect, Exit, Stream } from "effect";
-import { EventStore, stream, type StoredEvent } from "../../src/EventStore.ts";
+import { EventStore, readToDecide, stream, type StoredEvent } from "../../src/EventStore.ts";
 import * as Cursor from "../../src/Cursor.ts";
 import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
@@ -294,6 +294,26 @@ export const cases: ReadonlyArray<ConformanceCase> = [
         assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), `${what}: expected a defect`);
       }
       assert.ok((await h.run(Effect.flatMap(EventStore, (es) => es.read(Query.all(), { limit: 1 })))).events.length <= 1, "Query.all() is read");
+    }
+  },
+  {
+    name: "readToDecide and failIfEventsMatch: nothing new passes; a new matching event is a conflict; without `after`, any matching event is (ADR-0050)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.forEventAndTag(`ConfDecide${id}`, "d", id);
+      await append(h, [ev(`ConfDecide${id}`, [["d", id]], { n: 1 })]);
+      const decided = await h.run(readToDecide(q));
+      assert.equal(decided.events.length, 1);
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`)], AppendCondition.failIfEventsMatch(q, { after: decided.position })), "ok", "nothing new");
+      const again = await h.run(readToDecide(q));
+      await append(h, [ev(`ConfDecide${id}`, [["d", id]], { n: 2 })]); // after the read
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`)], AppendCondition.failIfEventsMatch(q, { after: again.position })), "conflict", "a new matching event");
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`)], AppendCondition.failIfEventsMatch(q)), "conflict", "no after: any matching event");
+      const idem = Query.forEventAndTag(`ConfDecideDone${id}`, "d", id);
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`, [["d", id]])], AppendCondition.failIfEventsMatch(Query.forEvent(`Nothing${id}`), { idempotency: idem })), "ok");
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`, [["d", id]])], AppendCondition.failIfEventsMatch(Query.forEvent(`Nothing${id}`), { idempotency: idem })), "duplicate", "idempotency");
+      const exit = await h.run(Effect.exit(readToDecide(Query.of([]))));
+      assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "a query with no items is refused");
     }
   },
   {

@@ -372,3 +372,21 @@ export const stream = (query: Query, options: { readonly after?: Cursor.Cursor; 
       )
     )
   );
+
+// The events `query` matches, every one visible now (settled or not), and the position to append after: the read a decision is made on (ADR-0050).
+// Pass `position` to AppendCondition.failIfEventsMatch: the append is then refused only for a matching event this read could not see. No page size:
+// for a decision's boundary (an entity, a few), not the whole log; to go through many events, use `read` or `stream`.
+export const readToDecide = (
+  query: Query
+): Effect.Effect<{ readonly events: ReadonlyArray<StoredEvent>; readonly position: AppendConditionNS.DecisionPosition }, SqlError | EventDecodingError, EventStore> =>
+  refusingNoItems(
+    query,
+    Effect.flatMap(Effect.service(EventStore), (es) =>
+      Effect.map(
+        es.project(query, LogPositionNS.zero(), [
+          { eventTypes: [], initialState: [] as ReadonlyArray<StoredEvent>, transition: (events: ReadonlyArray<StoredEvent>, e: StoredEvent) => [...events, e] }
+        ]),
+        (r) => ({ events: r.state, position: AppendConditionNS.decisionPositionOf(r.logPosition, r.seen) })
+      )
+    )
+  );
