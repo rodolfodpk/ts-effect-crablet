@@ -122,6 +122,11 @@ export interface EventStoreService {
   // false` means no more finished events now: one still being written shows up in a later read, and an open transaction anywhere holds the page
   // back to before it, as for the processors (ADR-0050). A query with no items is refused: every event is `Query.all()`.
   readonly read: (query: Query, options?: ReadOptions) => Effect.Effect<ReadPage, SqlError>;
+
+  // Runs `effect` in one database transaction and sends the wake-ups of what it appended once it has committed (withWakeups around
+  // sql.withTransaction, in the right order). A failure rolls everything back and announces nothing (ADR-0050). In memory: the store's own
+  // transaction, which undoes the appends of a failed effect.
+  readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>;
 }
 
 export interface ReadOptions {
@@ -351,7 +356,8 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
       ).pipe(Effect.withSpan("crablet.eventstore.read", { attributes: { "crablet.read.limit": limit } }));
     };
 
-    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups, read };
+    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups, read,
+      transaction: (effect) => withWakeups(sql.withTransaction(effect)) };
 
     return service;
   })

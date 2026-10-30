@@ -179,15 +179,6 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
     );
   };
 
-  const service: EventStoreService = {
-    read,
-    append,
-    project: ((query, after, projectors) => refusingEmptyItems(query, project(query, after, projectors))) as EventStoreService["project"],
-    exists: (query) => refusingEmptyItems(query, Effect.sync(() => log.some((event) => queryMatches(query, event)))),
-    findDuplicate: (query) => refusingEmptyItems(query, Effect.sync(() => duplicateOf(query))),
-    withWakeups: (effect) => effect // nothing to wake in memory
-  };
-
   const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     lock.withPermits(1)(
       Effect.suspend(() => {
@@ -205,6 +196,16 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
         );
       })
     );
+
+  const service: EventStoreService = {
+    read,
+    transaction,
+    append,
+    project: ((query, after, projectors) => refusingEmptyItems(query, project(query, after, projectors))) as EventStoreService["project"],
+    exists: (query) => refusingEmptyItems(query, Effect.sync(() => log.some((event) => queryMatches(query, event)))),
+    findDuplicate: (query) => refusingEmptyItems(query, Effect.sync(() => duplicateOf(query))),
+    withWakeups: (effect) => effect // nothing to wake in memory
+  };
 
   return {
     service,
