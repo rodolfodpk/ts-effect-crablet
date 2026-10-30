@@ -272,44 +272,80 @@ one of its types AND that carries all of its tags. What this framework does with
 ### Compatibility with the specification
 
 Evaluated against [`docs/specification.md`](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) of dcb-events at
-commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. **compatible** means as written; **encoded differently** means the
-requirement holds through another representation; **differs** means it does not, for the reason in the notes; **not yet** means planned.
+commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. The specification says names and representations are free as long as the
+functionality is the same, so each row says two things: the **status** (how the requirement is met) and whether the **result** is the one the
+specification asks for. **compatible** means as written; **another form** means the requirement holds through a different representation, with the
+same result; **differs** means the result is not the same in some case, said in the note; **not offered** and **not yet** speak for themselves.
 
-| Requirement (the specification's words) | Status | Evidence |
-|---|---|---|
-| Read: *MUST* filter events by type and/or tag | compatible | `read`, `readToDecide`, `stream`; the [conformance suite](../../packages/eventstore/test/conformance/cases.ts) on Postgres and in memory |
-| Read: *SHOULD* read from a given Sequence Position | compatible | `read(query, { after })` from a `Cursor` |
-| Read: *MAY* limit the number of events, order them, return a stream | compatible | `read(query, { limit })` returns a page in log order; `stream(query)` pages for you; a page holds only finished events, so a cursor never skips one ([ADR-0050](../adr/0050-the-event-store-used-directly.md)) |
-| Query: items combined with **OR**; an item matches **one** of its types **and all** of its tags | compatible | `spec/Spec.ts`, the conformance suite |
-| Query: *"or represent a query that matches all Events"* (`Query.all()`) | compatible | `Query.all()`, in a read and in a condition ([ADR-0050](../adr/0050-the-event-store-used-directly.md)) |
-| Query Item: *"target Events by their Type and/or Tags"* | compatible | an item with neither is refused (`Query.queryItemOf`, and by both stores for one built by hand): it is outside what the specification defines ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
-| Tag: its form *"is irrelevant to the Event Store"* | compatible | stored as `key=value` with the key encoded (`TagCodec`): any key and value make the round trip exactly ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
-| Tags: *SHOULD* not contain the same tag twice | compatible | a repeated tag is stored once |
-| Append: *MUST* atomically persist one or more events | compatible, with a limit | up to `maxAppendEvents` per append (default 50, configurable): note 1 |
-| Append: the condition is optional, with a `failIfEventsMatch` query | compatible | `append(events)`, `append(events, condition)` |
-| Append: `after`, *"the highest position the client was aware of"* | encoded differently | the `DecisionPosition` `readToDecide` returns, for `AppendCondition.failIfEventsMatch(query, { after })`: a `(transaction_id, position)` cursor and the read's snapshot: note 2 |
-| Append: *MUST* fail if any event matches the condition | differs | the transaction's own earlier appends are not a conflict for it: note 3 |
-| Sequence Position: *MUST* be unique; *MAY* contain gaps | compatible | `position` is the primary key; a rolled-back append leaves a gap |
-| Sequence Position: *MUST* resolve to a well-defined **static** order | differs | the order is deterministic but not static: note 4 |
-| Event: a type, data and tags, all tags exposed | compatible | `StoredEvent` |
-| Event: *MAY* carry metadata defined by the client | not offered | the store adds its own (`correlationId`, `causationId`), not the client's |
-| Event Data: an opaque payload | encoded differently | stored as JSONB (normalised, so not byte-exact); the store reads one reserved type, `crablet.DeadlineScheduled` |
+| Requirement (the specification's words) | Status | Same result? | Evidence |
+|---|---|---|---|
+| Read: *MUST* filter events by type and/or tag | compatible | yes | `read`, `readToDecide`, `stream`; the [conformance suite](../../packages/eventstore/test/conformance/cases.ts) on Postgres and in memory |
+| Read: *SHOULD* read from a given Sequence Position | compatible | yes | `read(query, { after })` from a `Cursor` |
+| Read: *MAY* limit the number of events, order them, return a stream | compatible | yes | `read(query, { limit })` returns a page in log order; `stream(query)` pages for you ([ADR-0050](../adr/0050-the-event-store-used-directly.md)); what a page holds: note 4 |
+| Query: items combined with **OR**; an item matches **one** of its types **and all** of its tags | compatible | yes | `spec/Spec.ts`, the conformance suite |
+| Query: *"or represent a query that matches all Events"* (`Query.all()`) | compatible | yes | `Query.all()`, in a read and in a condition ([ADR-0050](../adr/0050-the-event-store-used-directly.md)) |
+| Query Item: *"target Events by their Type and/or Tags"* | compatible | yes | an item with neither is refused: it is outside what the specification defines ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
+| Tag: its form *"is irrelevant to the Event Store"* | another form | yes | note 5 |
+| Tags: *SHOULD* not contain the same tag twice | compatible | yes | a repeated tag is stored once |
+| Append: *MUST* atomically persist one or more events | compatible, with a limit | yes, up to the limit | note 1 |
+| Append: the condition is optional, with a `failIfEventsMatch` query | compatible | yes | `append(events)`, `append(events, condition)` |
+| Append: `after`, *"the highest position the client was aware of"* | another form | yes | note 2 |
+| Append: *MUST* fail if any event matches the condition | differs | no, in one case | note 3 |
+| Sequence Position: *MUST* be unique; *MAY* contain gaps | compatible | yes | `position` is the primary key; a rolled-back append leaves a gap |
+| Sequence Position: *MUST* resolve to a well-defined **static** order | differs | no, in one case | note 4 |
+| Event: a type, data and tags, all tags exposed | compatible | yes | `StoredEvent` |
+| Event: *MAY* carry metadata defined by the client | not offered | — | note 6 |
+| Event Data: an opaque payload | another form | yes, as JSON | note 7 |
 
-1. **The append limit.** One append is one transaction that holds the writer locks and sends one wake-up, so a large batch holds every other writer
-   back for as long as it takes. `maxAppendEvents` in `EventStoreConfig` (or `makeInMemoryEventStore({ maxAppendEvents })`) raises it for those who
-   accept that cost; more is refused with `AppendTooLarge` before any SQL runs ([keep an append small](../guides/operate/run-in-production.md#keep-an-append-small)).
-2. **`after`.** A sequence value and a transaction id are taken in opposite orders, so a bare position can miss an event that commits later with a
-   lower position ([ADR-0012](../adr/0012-transaction-position-cursors.md)); and an event the read saw is not a conflict, however recent
-   ([ADR-0048](../adr/0048-a-conflict-is-what-the-read-did-not-see.md)). It is the specification's intent: what the client was aware of is ignored.
-3. **The transaction's own appends.** An append is not refused for an event its own transaction appended earlier. What the transaction wrote, it
-   knows; without this, writing, reading and writing again under a condition in one transaction would always fail, and a read's snapshot cannot
-   tell the transaction's own events apart (ADR-0049). The risk: read, then write, then append under a condition on the *earlier* read, and the append
-   passes though its decision did not see the write. A command never does this: its append must be its transaction's first write (CRB01,
-   [ADR-0033](../adr/0033-delivery-order-is-causal-order.md)). Code that uses the event store directly can ask for the same with
-   `AppendCondition.firstWrite(condition)`, or read again after writing.
-4. **The order.** Events are ordered by `(transaction_id, position)`. A transaction with a lower id that commits later puts its events in the middle
-   of a history already read, so the order of the visible events is not static. No reader misses one: every cursor advances only over events whose
-   transaction had finished ([ADR-0012](../adr/0012-transaction-position-cursors.md)).
+1. **The append limit.**
+   - *The specification:* a way to persist one or more events atomically.
+   - *Crablet:* up to `maxAppendEvents` per append, 50 unless configured (`EventStoreConfig`, `makeInMemoryEventStore({ maxAppendEvents })`); more is
+     refused with `AppendTooLarge` before any SQL runs. One append is one transaction that holds the writer locks and sends one wake-up, so a large
+     batch holds every other writer back for as long as it takes ([keep an append small](../guides/operate/run-in-production.md#keep-an-append-small)).
+   - *The result:* the same for any batch up to the limit, which the application sets.
+2. **`after`.**
+   - *The specification:* `after` is the highest position the client was aware of; the store ignores the events up to it, and any matching event
+     after it is a conflict. That assumes events become visible in position order.
+   - *Why one number is not enough here:* a position is taken from a sequence when the event is inserted, and becomes visible when its transaction
+     commits, and transactions commit in any order. T1 inserts and gets position 10; T2 inserts and gets 11 and commits; the client reads and sees
+     11 (10 is not visible yet); T1 commits and 10 appears. An append with `after = 11` would ignore 10, an event the client never saw: a lost
+     conflict, a decision accepted on a stale state.
+   - *Crablet:* `after` is the `DecisionPosition` `readToDecide` returns, for `AppendCondition.failIfEventsMatch(query, { after })`. It holds a
+     `(transaction_id, position)` cursor, the last event whose transaction had finished when the client read, so any event that can still appear
+     sorts after it and is checked ([ADR-0012](../adr/0012-transaction-position-cursors.md)); and the read's snapshot, so an event the client did read
+     is not a conflict however recent ([ADR-0048](../adr/0048-a-conflict-is-what-the-read-did-not-see.md)).
+   - *The result:* the same: the append fails exactly for a matching event the client was not aware of. Only the form differs: where commit order
+     is not position order, "what the client was aware of" is not one number, so it is a cursor and a snapshot.
+3. **The transaction's own appends.**
+   - *The specification:* the append fails if any event matches the condition.
+   - *Crablet:* an append is not refused for an event its own transaction appended earlier. What the transaction wrote, it knows; without this,
+     writing, reading and writing again under a condition in one transaction would always fail, and a read's snapshot cannot tell the
+     transaction's own events apart (ADR-0049).
+   - *The result:* the same, except in one case: read, then write, then append under a condition on the *earlier* read. The append passes though its
+     decision did not see the write; the specification would refuse it. A command never does this, since its append must be its transaction's first
+     write (CRB01, [ADR-0033](../adr/0033-delivery-order-is-causal-order.md)); direct use can ask for the same with
+     `AppendCondition.firstWrite(condition)`, or read again after writing.
+4. **The order.**
+   - *The specification:* positions resolve to a well-defined, static order.
+   - *Crablet:* events are ordered by `(transaction_id, position)`, which is deterministic. A transaction with a lower id that commits after one with
+     a higher id puts its events in the middle of what was already visible, so the order of the visible events can change (note 2's example).
+   - *The result:* the same for every reader that follows a cursor: `read`, `stream`, the processors and the append condition only move over events
+     whose transaction had finished, so none of them misses an event or sees the order change behind it ([ADR-0012](../adr/0012-transaction-position-cursors.md)).
+     It differs in one case: a reader that reads everything visible, including events not yet settled (`project`, `readToDecide`), and later reads
+     the same range again can find an event in the middle. Such a reader decides and appends under a condition, and that condition catches the event.
+5. **Tags.**
+   - *The specification:* a tag may be a key/value pair; its form is irrelevant to the store.
+   - *Crablet:* a tag is a key and a value, stored as the text `key=value` with `%` and `=` encoded in the key (`TagCodec`), so the first `=` is
+     always the separator ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)). The constructors (`Tag.of`)
+     lower-case the key, a convention of this repository; the store writes what it is given.
+   - *The result:* the same: any key and value make the round trip exactly, and a query finds exactly the tag it names.
+6. **Client metadata.** The specification allows an event to carry metadata the client defines. The store adds its own (`correlationId`,
+   `causationId`, the request fingerprint) but takes none from the client: what the client needs goes in the payload.
+7. **Event data.**
+   - *The specification:* an opaque payload.
+   - *Crablet:* stored as JSONB: it must be JSON, and it comes back as the same JSON value, not the same bytes (key order and spacing are
+     normalised). The store reads one reserved type's payload, `crablet.DeadlineScheduled`, to index the deadline.
+   - *The result:* the same for a JSON payload; a payload that is not JSON, or one whose exact bytes matter, does not fit.
 
 What this framework does beyond the specification (idempotency, writer locks, deadlines, periods, the first-write rule for commands) is in the list
 above and in the [architecture](./architecture.md).
