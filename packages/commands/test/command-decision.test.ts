@@ -22,4 +22,8 @@ describe("CommandDecision", () => {
       "Lifecycle guard query must not include appended event types: A, B"
     );
   });
+
+  test("a lifecycle guard on every event (Query.all) is refused: it includes the types the command appends", () => {
+    expect(() => withLifecycleGuard([ev("A")], Query.all(), LogPosition.zero())).toThrow(/cannot be Query.all\(\)/);
+  });
 });

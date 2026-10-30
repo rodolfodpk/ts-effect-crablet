@@ -26,7 +26,10 @@ export const itemMatches = (item: QueryItem, event: SpecEvent): boolean =>
 // A query matches an event when ANY item does. A query with no items (`Query.of([])`) matches EVERYTHING when used to read. An item with neither
 // types nor tags is not a query item at all (it targets events by type and/or tags): both stores refuse it (Query.emptyItemIn, ADR-0049).
 export const queryMatches = (query: Query, event: SpecEvent): boolean =>
-  query.items.length === 0 || query.items.some((i) => itemMatches(i, event));
+  query.all === true || query.items.length === 0 || query.items.some((i) => itemMatches(i, event));
+
+// What a condition's query checks: `all()` every event, else its items (none: no check).
+const conditionMatches = (query: Query, event: SpecEvent): boolean => query.all === true || query.items.some((i) => itemMatches(i, event));
 
 // What a conditional append decides.
 //   "duplicate" - the idempotency query matches an existing event (at ANY position)
@@ -45,15 +48,10 @@ const isAfterCursor = (e: SpecEvent, cursor: LogPosition): boolean =>
       (BigInt(e.transactionId) === BigInt(cursor.transactionId) && e.position > cursor.position);
 
 export const checkAppend = (log: ReadonlyArray<SpecEvent>, condition: AppendCondition): Verdict => {
-  const idempotency = condition.idempotencyQuery.items;
-  if (idempotency.length > 0 && log.some((e) => idempotency.some((i) => itemMatches(i, e)))) {
+  if (log.some((e) => conditionMatches(condition.idempotencyQuery, e))) {
     return "duplicate";
   }
-  const concurrency = condition.concurrencyQuery.items;
-  if (
-    concurrency.length > 0 &&
-    log.some((e) => isAfterCursor(e, condition.afterPosition) && concurrency.some((i) => itemMatches(i, e)))
-  ) {
+  if (log.some((e) => isAfterCursor(e, condition.afterPosition) && conditionMatches(condition.concurrencyQuery, e))) {
     return "conflict";
   }
   return "ok";

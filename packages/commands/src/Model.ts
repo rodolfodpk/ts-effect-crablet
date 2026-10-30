@@ -225,7 +225,7 @@ export interface PeriodModel<S> {
   readonly lifecycleQuery: (id: string) => Query.Query;
 }
 
-const unionOf = (...queries: ReadonlyArray<Query.Query>): Query.Query => Query.of(queries.flatMap((q) => q.items));
+const unionOf = (...queries: ReadonlyArray<Query.Query>): Query.Query => Query.union(...queries);
 
 const periodModel = <S, F extends PeriodFields, OD, CD>(
   declared: ReadonlyArray<OnEntry<S>>,
@@ -461,7 +461,7 @@ export const defineModel = <S, const By extends string, Scope extends object = {
 export const all = <M extends Record<string, ModelInstance<any>>>(
   members: M
 ): ModelInstance<{ readonly [K in keyof M]: M[K] extends ModelInstance<infer S> ? S : never }> => {
-  const query = Query.of(Object.values(members).flatMap((m) => m.query.items));
+  const query = Query.union(...Object.values(members).map((m) => m.query));
   return {
     query,
     load: (eventStore) =>

@@ -57,6 +57,8 @@ const APPEND_EVENTS_IF_SQL = `
 // (any-of types) AND (all tags) and ORs the results. A query with no items is no condition to check (null). An item with neither types nor tags never
 // gets here: the store refuses it (Query.emptyItemIn, ADR-0049).
 const conditionItemsJson = (query: Query): string | null => {
+  // `all()`: one item with neither types nor tags, which the SQL matches with every event and locks with the global key exclusively (V2).
+  if (query.all === true) return JSON.stringify([{ types: [], tags: [] }]);
   const items = query.items.map((i) => ({ types: i.eventTypes, tags: flatTagStrings(i.tags) }));
   return items.length > 0 ? JSON.stringify(items) : null;
 };

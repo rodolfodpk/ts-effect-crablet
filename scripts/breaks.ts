@@ -74,6 +74,22 @@ export const breaks: ReadonlyArray<Break> = [
     why: "an item with neither types nor tags would reach the SQL: a read would skip it and a condition would match every event (ADR-0049)"
   },
   {
+    id: "query-all-dropped",
+    file: SQL,
+    find: "  if (query.all === true) return JSON.stringify([{ types: [], tags: [] }]);\n",
+    replace: "",
+    tests: [es("conformance-postgres")],
+    why: "a condition on every event (Query.all) would check nothing (ADR-0050)"
+  },
+  {
+    id: "union-drops-all",
+    file: QUERY,
+    find: "export const union = (...queries: ReadonlyArray<Query>): Query => (queries.some(isAll) ? all() : of(queries.flatMap((q) => q.items)));",
+    replace: "export const union = (...queries: ReadonlyArray<Query>): Query => of(queries.flatMap((q) => q.items));",
+    tests: [cmd("query-all-postgres")],
+    why: "a command that read every event would not have the whole log in its condition (ADR-0050)"
+  },
+  {
     id: "first-write-ignored",
     file: SQL,
     find: " || condition.firstWrite === true;",

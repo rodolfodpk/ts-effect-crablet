@@ -260,6 +260,21 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     }
   },
   {
+    name: "Query.all() reads every event, and as a condition is a conflict with any event after the position, or any at all without one (ADR-0050)",
+    run: async (h) => {
+      const id = uid();
+      const start = await headPosition(h);
+      await append(h, [ev(`ConfAllA${id}`, [["k", id]]), ev(`ConfAllB${id}`)]);
+      assert.equal((await read(h, Query.all(), start)).state.length, 2, "a read");
+      assert.equal(await existsQuery(h, Query.all()), true, "exists");
+      const head = await headPosition(h);
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(head, Query.all())), "ok", "nothing after the head");
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(head, Query.all())), "conflict", "the attempt above is after it");
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(LogPosition.zero(), Query.all())), "conflict", "from the start: any event");
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.idempotentFromQuery(Query.all())), "duplicate", "as an idempotency query: any event");
+    }
+  },
+  {
     name: "a tag repeated on an event is stored once, in the order of its first appearance (ADR-0049)",
     run: async (h) => {
       const id = uid();
