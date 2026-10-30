@@ -6,13 +6,17 @@
   "exports": {
     ".": "./src/ProcessorsApi.ts",
     "./ProcessorsApiLive": "./src/ProcessorsApiLive.ts",
-    "./Authorization": "./src/Authorization.ts"
+    "./Authorization": "./src/Authorization.ts",
+    "./EventsApi": "./src/EventsApi.ts",
+    "./EventsApiLive": "./src/EventsApiLive.ts"
   },
   "dependencies": {
     "effect": "4.0.6",
-    "@crablet/event-poller": "workspace:*"
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/eventstore": "workspace:*"
   },
   "devDependencies": {
+    "@crablet/commands": "workspace:*",
     "@effect/platform-node": "4.0.6"
   }
 }

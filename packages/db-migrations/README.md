@@ -15,6 +15,7 @@ The SQL schema, as a plain file bundle. This repository owns the schema; applica
   | `V4__crablet_processor_progress.sql` | the cursors and status of the views, automations and outbox publishers |
   | `V5__crablet_deadlines.sql` | the pending deadlines and the deadlines processor's status |
   | `V6__crablet_append_sees_the_read.sql` | `append_events_if` and `crablet_items_match_any` again, taking the read's snapshot: an event the read could see is not a conflict ([ADR-0048](../../docs/adr/0048-a-conflict-is-what-the-read-did-not-see.md)) |
+  | `V7__crablet_event_metadata.sql` | the client's metadata on an event (`crablet_events.metadata`), and `append_events_if` and `append_events_batch` again, taking it ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)) |
 
 - **`sqlDir`** - the directory holding the `.sql` files.
 

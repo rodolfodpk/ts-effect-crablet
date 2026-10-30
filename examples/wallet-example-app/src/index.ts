@@ -72,7 +72,7 @@ async function main(): Promise<void> {
     // The admin API (list, pause, resume and reset the processors) exists only when WALLET_ADMIN_TOKEN is set, and is behind that bearer token.
     const adminToken = process.env["WALLET_ADMIN_TOKEN"];
     const admin = adminToken === undefined || adminToken === "" ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
-    if (admin !== Layer.empty) yield* Effect.log("admin API mounted at /admin/processors (bearer token from WALLET_ADMIN_TOKEN)");
+    if (admin !== Layer.empty) yield* Effect.log("admin API mounted at /admin/processors and /admin/events (bearer token from WALLET_ADMIN_TOKEN)");
     const sql = yield* SqlClient.SqlClient;
     yield* Layer.launch(
       HttpRouter.serve(Layer.mergeAll(makeWalletApiLayer({ basePath: "/api/commands" }), admin, apiHealthRoutes(sql`SELECT 1`, undefined, status))).pipe(

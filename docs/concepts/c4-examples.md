@@ -190,7 +190,7 @@ C4Container
   System_Boundary(sys, "Wallet service") {
     Container(api, "wallet-api, two or more pods", "WALLET_ROLES=api", "The HTTP API, the reads and the admin API. Scales with load; holds no leader lock and no LISTEN for events")
     Container(workers, "wallet-workers, two or more pods", "WALLET_ROLES=views,automations,outbox", "Each module leads in one pod at a time, by an advisory lock per module; the others are warm standbys")
-    Container(job, "Schema job", "Flyway, run before a deploy", "The only thing that applies migrations: V1 to V6 (the framework) and V100 and up (the wallet), in one history")
+    Container(job, "Schema job", "Flyway, run before a deploy", "The only thing that applies migrations: V1 to V7 (the framework) and V100 and up (the wallet), in one history")
     ContainerDb(db, "PostgreSQL", "wallet_db", "The event log, the view tables, the processors' progress and the leader locks")
   }
 

@@ -7,12 +7,14 @@
 // Framework-neutral on purpose: a case is a plain async function using node:assert. Cases share one
 // store, so each isolates itself with unique tag values / event types (`unique()`).
 import assert from "node:assert/strict";
-import { Cause, Clock, Effect, Exit } from "effect";
-import { EventStore, type StoredEvent } from "../../src/EventStore.ts";
+import { Cause, Clock, Effect, Exit, Stream } from "effect";
+import { EventStore, readToDecide, stream, type StoredEvent } from "../../src/EventStore.ts";
+import * as Cursor from "../../src/Cursor.ts";
 import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { Duplicate } from "../../src/AppendErrors.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
+import * as AppendContext from "../../src/AppendContext.ts";
 import * as CorrelationContext from "../../src/CorrelationContext.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
 import * as Query from "../../src/Query.ts";
@@ -257,6 +259,107 @@ export const cases: ReadonlyArray<ConformanceCase> = [
       }
       // the ambiguity a stored `a=b=c...` would have: the tag (a=b, c) is not the tag (a, b=c)
       assert.equal((await read(h, Query.forEventAndTag(`ConfTagChars${id}`, "a", `b=c${id}`))).state.length, 0);
+    }
+  },
+  {
+    name: "read: a page of the matching events in log order, resumed from its cursor without repeating or skipping one, until a page is not full (ADR-0050)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.of(item([], [["r", id]]));
+      await append(h, Array.from({ length: 5 }, (_, i) => ev(`ConfRead${i}`, [["r", id]], { i })));
+      await append(h, [ev("ConfReadOther", [["other", id]])]);
+      const page = (after?: Cursor.Cursor) => h.run(Effect.flatMap(EventStore, (es) => es.read(q, { limit: 2, ...(after === undefined ? {} : { after }) })));
+      const pages = [await page()];
+      while (pages[pages.length - 1]!.more) pages.push(await page(pages[pages.length - 1]!.cursor));
+      assert.deepEqual(pages.map((p) => p.events.map((e) => (e.data as { i: number }).i)), [[0, 1], [2, 3], [4]]);
+      assert.deepEqual(pages.map((p) => p.more), [true, true, false]);
+      // nothing after the last page: the same cursor back
+      const after = await page(pages[2]!.cursor);
+      assert.deepEqual([after.events.length, after.cursor, after.more], [0, pages[2]!.cursor, false]);
+      // a cursor kept as text resumes the same way
+      assert.deepEqual((await page(Cursor.fromString(Cursor.toString(pages[0]!.cursor)))).events.map((e) => (e.data as { i: number }).i), [2, 3]);
+      // the whole stream is every page together
+      const streamed = await h.run(Stream.runCollect(stream(q, { batchSize: 2 })));
+      assert.deepEqual(streamed.map((e) => (e.data as { i: number }).i), [0, 1, 2, 3, 4]);
+    }
+  },
+  {
+    name: "read: a query with no items and a page size that is not a whole number of at least 1 are refused, as defects (ADR-0050)",
+    run: async (h) => {
+      for (const [what, effect] of [
+        ["no items", Effect.flatMap(EventStore, (es) => es.read(Query.of([])))],
+        ["limit 0", Effect.flatMap(EventStore, (es) => es.read(Query.forEvent("X"), { limit: 0 }))],
+        ["limit 1.5", Effect.flatMap(EventStore, (es) => es.read(Query.forEvent("X"), { limit: 1.5 }))]
+      ] as const) {
+        const exit = await h.run(Effect.exit(effect));
+        assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), `${what}: expected a defect`);
+      }
+      assert.ok((await h.run(Effect.flatMap(EventStore, (es) => es.read(Query.all(), { limit: 1 })))).events.length <= 1, "Query.all() is read");
+    }
+  },
+  {
+    name: "readToDecide and failIfEventsMatch: nothing new passes; a new matching event is a conflict; without `after`, any matching event is (ADR-0050)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.forEventAndTag(`ConfDecide${id}`, "d", id);
+      await append(h, [ev(`ConfDecide${id}`, [["d", id]], { n: 1 })]);
+      const decided = await h.run(readToDecide(q));
+      assert.equal(decided.events.length, 1);
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`)], AppendCondition.failIfEventsMatch(q, { after: decided.position })), "ok", "nothing new");
+      const again = await h.run(readToDecide(q));
+      await append(h, [ev(`ConfDecide${id}`, [["d", id]], { n: 2 })]); // after the read
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`)], AppendCondition.failIfEventsMatch(q, { after: again.position })), "conflict", "a new matching event");
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`)], AppendCondition.failIfEventsMatch(q)), "conflict", "no after: any matching event");
+      const idem = Query.forEventAndTag(`ConfDecideDone${id}`, "d", id);
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`, [["d", id]])], AppendCondition.failIfEventsMatch(Query.forEvent(`Nothing${id}`), { idempotency: idem })), "ok");
+      assert.equal(await append(h, [ev(`ConfDecideDone${id}`, [["d", id]])], AppendCondition.failIfEventsMatch(Query.forEvent(`Nothing${id}`), { idempotency: idem })), "duplicate", "idempotency");
+      const exit = await h.run(Effect.exit(readToDecide(Query.of([]))));
+      assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "a query with no items is refused");
+    }
+  },
+  {
+    name: "Query.all() reads every event, and as a condition is a conflict with any event after the position, or any at all without one (ADR-0050)",
+    run: async (h) => {
+      const id = uid();
+      const start = await headPosition(h);
+      await append(h, [ev(`ConfAllA${id}`, [["k", id]]), ev(`ConfAllB${id}`)]);
+      assert.equal((await read(h, Query.all(), start)).state.length, 2, "a read");
+      assert.equal(await existsQuery(h, Query.all()), true, "exists");
+      const head = await headPosition(h);
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(head, Query.all())), "ok", "nothing after the head");
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(head, Query.all())), "conflict", "the attempt above is after it");
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(LogPosition.zero(), Query.all())), "conflict", "from the start: any event");
+      assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.idempotentFromQuery(Query.all())), "duplicate", "as an idempotency query: any event");
+    }
+  },
+  {
+    name: "metadata: an event's own, what withMetadata sets around the append (the event's keys win), or none; anything but an object is refused (ADR-0051)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.of(item([], [["meta", id]]));
+      const withOwn = AppendEvent.builder(`ConfMetaA${id}`).tag("meta", id).metadata({ actor: "own", n: 1 }).data({ n: 1 }).build();
+      const without = ev(`ConfMetaB${id}`, [["meta", id]]);
+      await h.run(AppendContext.withMetadata({ actor: "context", source: "import" })(Effect.flatMap(EventStore, (es) => es.append([withOwn, without]))));
+      await append(h, [ev(`ConfMetaC${id}`, [["meta", id]])]);
+      const stored = (await read(h, q)).state;
+      assert.deepEqual(stored.map((e) => e.metadata ?? null), [{ actor: "own", source: "import", n: 1 }, { actor: "context", source: "import" }, null]);
+      const bad = { type: `ConfMetaD${id}`, tags: [], eventData: {}, metadata: [1, 2] as unknown as Record<string, unknown> };
+      const exit = await h.run(Effect.exit(Effect.flatMap(EventStore, (es) => es.append([bad]))));
+      assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "an array is not metadata");
+    }
+  },
+  {
+    name: "correlation and causation set around an append: withCorrelationId (a uuid) and causedBy(event), which takes the cause's correlation (ADR-0051)",
+    run: async (h) => {
+      const id = uid();
+      const correlation = crypto.randomUUID();
+      await h.run(AppendContext.withCorrelationId(correlation)(Effect.flatMap(EventStore, (es) => es.append([ev(`ConfCause${id}`, [["c", id]])]))));
+      const [cause] = (await read(h, Query.forEventAndTag(`ConfCause${id}`, "c", id))).state;
+      assert.equal(cause!.correlationId, correlation);
+      await h.run(AppendContext.causedBy(cause!)(Effect.flatMap(EventStore, (es) => es.append([ev(`ConfEffect${id}`, [["c", id]])]))));
+      const [effect] = (await read(h, Query.forEventAndTag(`ConfEffect${id}`, "c", id))).state;
+      assert.deepEqual([effect!.causationId, effect!.correlationId], [cause!.position, correlation]);
+      assert.throws(() => AppendContext.withCorrelationId("not-a-uuid"), /a correlation id is a uuid/);
     }
   },
   {

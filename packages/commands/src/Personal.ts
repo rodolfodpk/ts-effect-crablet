@@ -128,6 +128,51 @@ export const redact = (schema: Schema.Top, value: unknown, replacement: string =
   return go(astOf(schema), value);
 };
 
+// `value` as the event log may show it (ADR-0050): the fields marked personal redacted, and every key the schema does not know dropped, since such a
+// key (a field an older version had) could hold personal data no current mark covers. A record (index signature) keeps its keys. In a union, the
+// object member that keeps the most keys applies. The input is never mutated.
+export const exposed = (schema: Schema.Top, value: unknown): unknown => {
+  const keep = (ast: AstLike, v: unknown): unknown => {
+    if (v === null || v === undefined || typeof v !== "object") return v;
+    switch (ast._tag) {
+      case "Objects": {
+        if (!isRecord(v)) return v;
+        const { propertySignatures, indexSignatures } = ast as ObjectsAst;
+        const out: Record<string, unknown> = {};
+        for (const p of propertySignatures) if (String(p.name) in v) out[String(p.name)] = keep(p.type, v[String(p.name)]);
+        const index = indexSignatures[0];
+        if (index !== undefined) for (const key of Object.keys(v)) if (!(key in out)) out[key] = keep(index.type, v[key]);
+        return out;
+      }
+      case "Arrays": {
+        if (!Array.isArray(v)) return v;
+        const { elements } = ast as ArraysAst;
+        const rest = (ast as ArraysAst).rest[0];
+        return v.map((item, n) => (n < elements.length ? keep(elements[n]!, item) : rest !== undefined ? keep(rest, item) : item));
+      }
+      case "Union": {
+        const kept = (ast as UnionAst).types.map((member) => keep(member, v));
+        const size = (x: unknown) => (isRecord(x) ? Object.keys(x).length : Array.isArray(x) ? x.length : -1);
+        return kept.reduce((best, x) => (size(x) > size(best) ? x : best), kept[0] ?? v);
+      }
+      default:
+        return v;
+    }
+  };
+  return keep(astOf(schema), redact(schema, value));
+};
+
+// For the event log API (processors-http's eventsGroup): what to show of an event's payload, from the application's event definitions
+// (`defineEvent(...)` values). A type with a definition shows its payload `exposed`; a type with none shows nothing (undefined), since nothing
+// says which of its fields are personal.
+export const eventPayloadMask = (definitions: ReadonlyArray<{ readonly type: string; readonly schema: unknown }>) => {
+  const byType = new Map(definitions.map((d) => [d.type, d.schema as Schema.Top] as const));
+  return (type: string, data: unknown): unknown => {
+    const schema = byType.get(type);
+    return schema === undefined ? undefined : exposed(schema, data);
+  };
+};
+
 // Every string / number found at the marked paths of `value`, normalised for comparison (trimmed, lower-cased). A marked
 // object or array contributes every string and number inside it. Used by the tag guard (see Event.ts).
 export const personalValues = (schema: Schema.Top, value: unknown): ReadonlyArray<string> => {

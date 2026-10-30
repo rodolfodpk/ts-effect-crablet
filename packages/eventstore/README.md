@@ -9,7 +9,16 @@ framework sits on top of this package.
   and read or project the events a query selects. `EventStoreLive` is its layer. An idempotency condition that matches fails with `Duplicate`, which says what it
   matched (the latest event and the requests behind the matches); `findDuplicate` asks the same before appending ([ADR-0034](../../docs/adr/0034-a-repeat-must-be-the-same-request.md)).
   Every stored event has a stable `eventId`, its public identity, not an order ([ADR-0036](../../docs/adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
-- **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition` and `Marker`, each its own import (`@crablet/eventstore/Query`, ...).
+- **Used directly** ([the guide](../../docs/guides/build/use-the-event-store-directly.md), [ADR-0050](../../docs/adr/0050-the-event-store-used-directly.md)):
+  `readToDecide(query)` reads what a decision depends on and returns the position to append after; `append(events,
+  AppendCondition.failIfEventsMatch(query, { after: position }))` is refused with `Conflict` only for a matching event that read could not see.
+  `read(query, { after, limit })` returns a page of finished events and the `Cursor` to resume from; `stream(query)` pages for you;
+  `Query.all()` is every event. `transaction(effect)` runs one transaction and wakes the processors after it commits. `project`, `exists`,
+  `findDuplicate` and `withWakeups` are what the command framework builds on.
+- **`AppendContext`** - what the store records about an append besides its events ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)):
+  `withCorrelationId(uuid)`, `causedBy(storedEvent)` (only a stored event can be a cause) and `withMetadata(object)`, each around the appends of an
+  effect. An event's own metadata is `AppendEvent.metadata`; a read returns it as `StoredEvent.metadata`.
+- **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition`, `Cursor` and `Marker`, each its own import (`@crablet/eventstore/Query`, ...).
   A query item targets events by type and/or tags; one with neither is refused. A tag's key and value may hold any characters (the key is encoded
   when stored), and a tag repeated on an event is stored once. One append takes at most `maxAppendEvents` events (`EventStoreConfig`, default 50).
   An append is not refused for events its own transaction appended earlier: if your next decision depends on what you just wrote, read again, or

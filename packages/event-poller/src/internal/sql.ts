@@ -70,7 +70,7 @@ const pushSelectionClauses = (selection: EventSelection, clauses: Array<string>,
 
 // What a fetch selects from `crablet_events e`, in the shape `parseStoredEventRow` reads.
 export const STORED_EVENT_COLUMNS =
-  "e.event_id::text AS event_id, e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id";
+  "e.event_id::text AS event_id, e.type, e.tags, e.data, e.transaction_id::text AS transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id, e.metadata";
 
 export const buildEventSelectionQuery = (
   selection: EventSelection,
@@ -203,6 +203,7 @@ export interface StoredEventRow {
   readonly occurred_at: Date;
   readonly correlation_id: string | null;
   readonly causation_id: string | null;
+  readonly metadata: Readonly<Record<string, unknown>> | null;
 }
 
 // Duplicated from packages/eventstore/src/EventStore.ts's private parseRow - not re-exported
@@ -219,6 +220,7 @@ export const parseStoredEventRow = (row: StoredEventRow): StoredEvent => {
     position: BigInt(row.position),
     occurredAt: row.occurred_at,
     correlationId: row.correlation_id,
-    causationId: row.causation_id === null ? null : BigInt(row.causation_id)
+    causationId: row.causation_id === null ? null : BigInt(row.causation_id),
+    ...(row.metadata === null || row.metadata === undefined ? {} : { metadata: row.metadata })
   };
 };

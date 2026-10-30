@@ -11,6 +11,27 @@ export const refusingEmptyItems = <A, E, R>(query: Query.Query, effect: Effect.E
   return refused === null ? effect : Effect.die(new Error(refused));
 };
 
+// The reads made for direct use (`read`, `stream`, `readToDecide`) take a real query: no items is ambiguous there (no condition, or every event?),
+// so it is refused; every event is `Query.all()` (ADR-0050).
+export const refusingNoItems = <A, E, R>(query: Query.Query, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Query.isEmpty(query) ? Effect.die(new Error("a read takes a query with items, or Query.all() for every event (ADR-0050)")) : refusingEmptyItems(query, effect);
+
+// How many events one page holds: a whole number of at least 1, else a defect.
+export const DEFAULT_PAGE_SIZE = 1000;
+export const pageSizeOf = (limit: number | undefined): number | string => {
+  const size = limit ?? DEFAULT_PAGE_SIZE;
+  return Number.isInteger(size) && size >= 1 ? size : `a page size must be a whole number of at least 1, got ${String(limit)}`;
+};
+
+// An event's metadata is a JSON object (ADR-0051): anything else is refused, as a defect, naming the event.
+export const metadataProblem = (events: ReadonlyArray<AppendEvent>): string | null => {
+  for (const e of events) {
+    const m = e.metadata;
+    if (m !== undefined && (typeof m !== "object" || m === null || Array.isArray(m))) return `the metadata of a ${e.type} event must be a JSON object (ADR-0051)`;
+  }
+  return null;
+};
+
 // Each event with its tags once each: a repeated tag (same key, same value) is written once (the specification: tags SHOULD not repeat).
 export const withDistinctTags = (events: ReadonlyArray<AppendEvent>): ReadonlyArray<AppendEvent> =>
   events.map((e) => {

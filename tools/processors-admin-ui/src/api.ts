@@ -7,10 +7,11 @@ import { Effect, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { HttpApi, HttpApiClient } from "effect/http-api";
 import { ProcessorInfo, processorsGroup } from "@crablet/processors-http";
+import { EventPage, LoggedEvent, eventsGroup } from "@crablet/processors-http/EventsApi";
 
-export { ProcessorInfo };
+export { EventPage, LoggedEvent, ProcessorInfo };
 
-export const adminApi = HttpApi.make("processorsAdmin").add(processorsGroup);
+export const adminApi = HttpApi.make("processorsAdmin").add(processorsGroup).add(eventsGroup);
 
 // #region client
 // Where the API is. Unset: relative URLs, which works when the page and the API share an origin (the Vite dev proxy does that). With VITE_API_URL set the page calls that origin
@@ -48,6 +49,25 @@ export const actCall = (token: string, action: Action, kind: string, id: string)
         return yield* client.processors.resetProcessor(params);
     }
   });
+
+// One page of the event log (ADR-0050): the types (any of them) and the tags `key=value` (all of them) to filter by, none for every event, and the
+// cursor of the previous page to read on from.
+export interface EventFilter {
+  readonly types: ReadonlyArray<string>;
+  readonly tags: ReadonlyArray<string>;
+}
+export const eventsCall = (token: string, filter: EventFilter, after: string | null, limit = 50) =>
+  Effect.gen(function* () {
+    const client = yield* makeClient(token);
+    return yield* client.events.listEvents({
+      query: {
+        ...(filter.types.length === 0 ? {} : { types: filter.types.join(",") }),
+        ...(filter.tags.length === 0 ? {} : { tag: [...filter.tags] }),
+        ...(after === null ? {} : { after }),
+        limit: String(limit)
+      }
+    });
+  });
 // #endregion calls
 
 // PROBLEMS: what a call can fail with, as the page understands it.
@@ -58,21 +78,24 @@ export const Problem = Schema.Union([
   Schema.TaggedStruct("Unauthorized", {}),
   // 404: the application has no such kind or processor (it may have been renamed or removed since the list was read).
   Schema.TaggedStruct("NotFound", { detail: Schema.String }),
+  // 400: a filter the event log API refused (a tag that is not key=value, say).
+  Schema.TaggedStruct("BadRequest", { detail: Schema.String }),
   // The derived client checks the answer against the API's own Schema; a failure names the field.
   Schema.TaggedStruct("Mismatch", { detail: Schema.String }),
   Schema.TaggedStruct("Unreachable", {})
 ]);
 export type Problem = typeof Problem.Type;
 
-export type CallError = Effect.Error<ReturnType<typeof listCall>> | Effect.Error<ReturnType<typeof actCall>>;
+export type CallError = Effect.Error<ReturnType<typeof listCall>> | Effect.Error<ReturnType<typeof actCall>> | Effect.Error<ReturnType<typeof eventsCall>>;
 
 export const problemFromError = (error: CallError): Problem => {
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
-  // The only answers with a status are the two problems the API declares (401 from the authorization, 404 from an action); a third one added to the API
-  // would not compile here: `error` would not be `never` after these two.
+  // The only answers with a status are the problems the API declares (401 from the authorization, 404 from an action, 400 from the event log); another
+  // one added to the API would not compile here: `error` would not be `never` after these.
   if ("status" in error) {
     if (error.status === 401) return { _tag: "Unauthorized" };
     if (error.status === 404) return { _tag: "NotFound", detail: error.detail };
+    if (error.status === 400) return { _tag: "BadRequest", detail: error.detail };
     const unhandled: never = error;
     return unhandled;
   }

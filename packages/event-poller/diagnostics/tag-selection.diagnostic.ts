@@ -197,7 +197,7 @@ describe("DIAG", () => {
       line(`E9e ${label}: writer ${(written / SECONDS).toFixed(0)} events/s; ${READERS} pollers made ${all.length} fetches, latency p50 ${pct(all, 50).toFixed(1)} ms, p95 ${pct(all, 95).toFixed(1)} ms, p99 ${pct(all, 99).toFixed(1)} ms`);
     };
     await phase("shipped (key table written, pollers use it)", "table", 50_000_000);
-    const def = (await q<{ d: string }>("SELECT pg_get_functiondef('append_events_batch(text[], text[], jsonb[], timestamptz, uuid, bigint, bytea)'::regprocedure) AS d"))[0]!.d;
+    const def = (await q<{ d: string }>("SELECT pg_get_functiondef('append_events_batch(text[], text[], jsonb[], timestamptz, uuid, bigint, bytea, jsonb[])'::regprocedure) AS d"))[0]!.d;
     const stripped = def.replace(/,\s*tagged AS \([\s\S]*?WHERE tag LIKE '%=%'\)/u, "");
     if (stripped === def) { line("E9e could not strip the tag-row insert from the append function; skipping the second phase"); return; }
     await q(stripped);

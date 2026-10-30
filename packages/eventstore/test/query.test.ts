@@ -48,3 +48,16 @@ describe("Query: an item targets events by type and/or tags (ADR-0049)", () => {
     expect(Query.emptyItemIn(Query.noCondition())).toBeNull();
   });
 });
+
+describe("Query.all: every event (ADR-0050)", () => {
+  test("is its own variant: not empty, matches every event, and survives a union", () => {
+    expect(Query.isAll(Query.all())).toBe(true);
+    expect(Query.isEmpty(Query.all())).toBe(false);
+    expect(Query.isEmpty(Query.noCondition())).toBe(true);
+    expect(queryMatches(Query.all(), event("Anything", [["k", "1"]]))).toBe(true);
+    expect(Query.isAll(Query.union(Query.forEvent("A"), Query.all()))).toBe(true);
+    expect(Query.union(Query.forEvent("A"), Query.forEvent("B"))).toEqual(Query.of([Query.queryItemOfType("A"), Query.queryItemOfType("B")]));
+    expect(Query.union()).toEqual(Query.noCondition());
+  });
+});
+

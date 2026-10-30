@@ -172,3 +172,14 @@ describe("InMemoryEventStore: firstWrite", () => {
     expect(store.log).toHaveLength(2);
   });
 });
+
+describe("InMemoryEventStore: the service's transaction", () => {
+  test("a failed effect's appends are undone", async () => {
+    const store = makeInMemoryEventStore();
+    await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => Effect.exit(es.transaction(Effect.andThen(es.append([ev("E", "k", "1")]), Effect.fail("boom")))))));
+    expect(store.log).toHaveLength(0);
+    await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => es.transaction(es.append([ev("E", "k", "2")])))));
+    expect(store.log).toHaveLength(1);
+  });
+});
+

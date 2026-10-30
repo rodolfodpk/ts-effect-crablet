@@ -7,6 +7,9 @@ export interface AppendEvent {
   readonly type: string;
   readonly tags: ReadonlyArray<TagType>;
   readonly eventData: unknown;
+  // The client's metadata (ADR-0051): a JSON object stored apart from the payload, or none. What `withMetadata` sets around the append is added to it
+  // (this event's keys win). Not queried by: what is to be selected by goes in a tag.
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 // PATTERN PRIMER - when to reach for a class instead of the namespace-module style (see Tag.ts's
@@ -23,6 +26,7 @@ export class AppendEventBuilder {
   private readonly _type: string;
   private _tags: Array<TagType> = [];
   private _eventData: unknown;
+  private _metadata: Readonly<Record<string, unknown>> | undefined;
 
   constructor(type: string) {
     this._type = type;
@@ -39,6 +43,11 @@ export class AppendEventBuilder {
     return this;
   }
 
+  metadata(metadata: Readonly<Record<string, unknown>>): this {
+    this._metadata = metadata;
+    return this;
+  }
+
   data(eventData: unknown): this {
     this._eventData = eventData;
     return this;
@@ -48,7 +57,7 @@ export class AppendEventBuilder {
     if (this._eventData === undefined || this._eventData === null) {
       throw new Error("Event data cannot be null");
     }
-    return { type: this._type, tags: [...this._tags], eventData: this._eventData };
+    return { type: this._type, tags: [...this._tags], eventData: this._eventData, ...(this._metadata === undefined ? {} : { metadata: this._metadata }) };
   }
 }
 

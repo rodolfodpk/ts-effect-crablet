@@ -27,7 +27,7 @@ function flatTagStrings(tags: ReadonlyArray<Tag>): ReadonlyArray<string> {
   return tags.map(TagCodec.encode);
 }
 
-// append_events_if takes 15 positional params. Uses sql.unsafe rather than the tagged template so
+// append_events_if takes 16 positional params. Uses sql.unsafe rather than the tagged template so
 // the param binding order is explicit.
 //
 // PATTERN NOTE - effect/sql gives two ways to run a query, both used in this codebase:
@@ -49,7 +49,8 @@ const APPEND_EVENTS_IF_SQL = `
     $10::text, $11::text,
     $12::xid8, $13::boolean,
     decode($14::text, 'hex'),
-    $15::pg_snapshot
+    $15::pg_snapshot,
+    $16::jsonb[]
   ) AS result
 `;
 
@@ -57,6 +58,8 @@ const APPEND_EVENTS_IF_SQL = `
 // (any-of types) AND (all tags) and ORs the results. A query with no items is no condition to check (null). An item with neither types nor tags never
 // gets here: the store refuses it (Query.emptyItemIn, ADR-0049).
 const conditionItemsJson = (query: Query): string | null => {
+  // `all()`: one item with neither types nor tags, which the SQL matches with every event and locks with the global key exclusively (V2).
+  if (query.all === true) return JSON.stringify([{ types: [], tags: [] }]);
   const items = query.items.map((i) => ({ types: i.eventTypes, tags: flatTagStrings(i.tags) }));
   return items.length > 0 ? JSON.stringify(items) : null;
 };
@@ -120,6 +123,7 @@ export const appendEventsIf = (
     // A command's transaction (the executor's flag), or a condition that asks for it (AppendCondition.firstWrite).
     const requireFresh = (yield* CorrelationContext.requiresFreshTransaction) || condition.firstWrite === true;
     const fingerprint = yield* CorrelationContext.requestFingerprint;
+    const metadata = CorrelationContext.metadataOf(events, yield* CorrelationContext.metadata);
     // The events' occurred_at: the Effect Clock, the one a command's `now` comes from, so a test clock fixes both.
     const occurredAt = new Date(yield* Clock.currentTimeMillis);
 
@@ -142,7 +146,9 @@ export const appendEventsIf = (
       requireFresh,
       fingerprint,
       // What the read could see: with it, only an event the read could not see is a conflict (ADR-0048).
-      concurrencyItems === null ? null : (condition.seen ?? null)
+      concurrencyItems === null ? null : (condition.seen ?? null),
+      // The client's metadata of each event (ADR-0051), with what `withMetadata` set around the append; none when no event has any.
+      metadata.some((m) => m !== null) ? metadata.map((m) => (m === null ? null : JSON.stringify(m))) : null
     ]).pipe(
       // CRB01: a command ran in a transaction that had already written (ADR-0033). A programming error, not a condition a caller can handle.
       Effect.catchTag("SqlError", (error) =>
@@ -183,6 +189,7 @@ export interface StoredEventRow {
   readonly occurred_at: Date;
   readonly correlation_id: string | null;
   readonly causation_id: string | null;
+  readonly metadata: Readonly<Record<string, unknown>> | null;
   // True when the event's transaction had finished before this read's snapshot (xid below its xmin): every
   // event that becomes visible later sorts AFTER the last settled one in (transaction_id, position) order.
   readonly settled?: boolean;
@@ -249,10 +256,29 @@ export const queryEvents = (
     const sqlText =
       // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
       // ORDER BY uses the qualified column so it sorts by the real xid8, not the text alias.
-      "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, " +
+      "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, metadata, " +
       "(transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled " +
       `FROM crablet_events${whereSql} ORDER BY crablet_events.transaction_id, position ASC`;
     return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
+  });
+
+// One page of the events matching a query after a cursor, for a paged read (ADR-0050): only events whose transaction had finished (below the
+// snapshot's xmin), in (transaction_id, position) order, at most `limit`. An event that becomes visible later has an xid at or above that xmin, so it
+// sorts after every event of the page: a reader that resumes from the page's last event never skips one. The pollers fetch the same way.
+export const queryPage = (
+  sql: SqlClient.SqlClient,
+  query: Query,
+  after: LogPosition,
+  limit: number
+): Effect.Effect<ReadonlyArray<StoredEventRow>, SqlError> =>
+  Effect.gen(function* () {
+    const { whereSql, params } = whereOf(query, after);
+    const settled = "crablet_events.transaction_id < pg_snapshot_xmin(pg_current_snapshot())";
+    const sqlText =
+      "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, metadata " +
+      `FROM crablet_events${whereSql === "" ? ` WHERE ${settled}` : `${whereSql} AND ${settled}`} ` +
+      `ORDER BY crablet_events.transaction_id, position ASC LIMIT $${params.length + 1}`;
+    return (yield* sql.unsafe<StoredEventRow>(sqlText, [...params, limit])) as ReadonlyArray<StoredEventRow>;
   });
 
 // The current snapshot: which transactions had finished (below its xmin, and those between xmin and xmax not listed as running). Its xmin is the

@@ -24,6 +24,11 @@ import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet
 import { processorsGroup } from "@crablet/processors-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import { makeProcessorsApiGroupLive, type ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
+import { eventsGroup } from "@crablet/processors-http/EventsApi";
+import { makeEventsApiGroupLive } from "@crablet/processors-http/EventsApiLive";
+import { eventPayloadMask } from "@crablet/commands/Personal";
+import * as M from "./domain/WalletModel.ts";
+import { WelcomeNotificationSent } from "./domain/notification/WelcomeNotificationSent.ts";
 import { serveApi } from "@crablet/commands-http/ServeApi";
 import { walletViewOverrides, walletViews } from "./views/WalletViewConfig.ts";
 import { allRoles, type Role, type Roles } from "./roles.ts";
@@ -141,12 +146,16 @@ export const monitorBackgroundProcessors = (
   });
 // #endregion monitor-processors
 
-// The admin API over the three modules' processors (list, pause, resume, reset), behind a bearer token. It is a separate API from the wallet's, mounted
+// The admin API over the three modules' processors (list, pause, resume, reset) and the event log (browse it page by page, payloads masked from the
+// wallet's event definitions: personal fields redacted, unknown keys dropped, ADR-0050), behind a bearer token. It is a separate API from the wallet's, mounted
 // only when the application is given a token (index.ts: WALLET_ADMIN_TOKEN): there is no admin API without one, and the server does not start a
 // mounted one without an authorization. The token is compared in constant time; a real application would check its own identity provider instead.
+// Every event the wallet defines: what the event log API may show the payload of.
+const walletEventDefinitions = [M.WalletOpened, M.WalletClosed, M.WalletStatementOpened, M.WalletStatementClosed, M.DepositMade, M.WithdrawalMade, M.MoneyTransferred, WelcomeNotificationSent];
+
 // #region admin-api
 export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>, token: Redacted.Redacted<string>) => {
-  const adminApi = HttpApi.make("walletAdmin").add(processorsGroup);
+  const adminApi = HttpApi.make("walletAdmin").add(processorsGroup).add(eventsGroup);
   const expected = Buffer.from(Redacted.value(token));
   const authorization = authorizationFrom((presented) =>
     Effect.sync(() => {
@@ -154,7 +163,11 @@ export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>,
       return got.length === expected.length && timingSafeEqual(got, expected);
     })
   );
-  return HttpApiBuilder.layer(adminApi).pipe(Layer.provide(makeProcessorsApiGroupLive(adminApi, sources)), Layer.provide(authorization));
+  return HttpApiBuilder.layer(adminApi).pipe(
+    Layer.provide(makeProcessorsApiGroupLive(adminApi, sources)),
+    Layer.provide(makeEventsApiGroupLive(adminApi, { mask: eventPayloadMask(walletEventDefinitions) })),
+    Layer.provide(authorization)
+  );
 };
 // #endregion admin-api
 

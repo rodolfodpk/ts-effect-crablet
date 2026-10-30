@@ -108,6 +108,26 @@ describe("wake-ups after the commit, coalesced (ADR-0021)", () => {
     assert.deepStrictEqual(heard.filter((b) => b.types.includes(type)), []);
   });
 
+  it("eventStore.transaction: the notification arrives after the commit; a failure rolls back and announces nothing (ADR-0050)", { timeout: 30_000 }, async () => {
+    const ok = `Txn${crypto.randomUUID().slice(0, 8)}`;
+    const failed = `TxnFailed${crypto.randomUUID().slice(0, 8)}`;
+    const { heard, stored } = await run({ wakeupMode: "coalesced" }, Effect.gen(function* () {
+      const store = yield* EventStore;
+      const l = yield* listen(committed);
+      yield* store.transaction(Effect.andThen(store.append([AppendEvent.of(ok, "k", "v", {})]), Effect.sleep("500 millis")));
+      yield* Effect.exit(store.transaction(Effect.andThen(store.append([AppendEvent.of(failed, "k", "v", {})]), Effect.fail("boom"))));
+      yield* Effect.sleep("400 millis");
+      const h = yield* l.heard;
+      yield* l.stop;
+      return { heard: h, stored: yield* committed(failed) };
+    }));
+    const mine = heard.filter((b) => b.types.includes(ok));
+    assert.ok(mine.length >= 1, "it was announced");
+    for (const b of mine) assert.strictEqual(b.committed[ok], 1, "and the event was committed by then");
+    assert.deepStrictEqual(heard.filter((b) => b.types.includes(failed)), [], "the failed one announced nothing");
+    assert.strictEqual(stored, 0, "and stored nothing");
+  });
+
   it("an append outside any transaction announces itself when it returns; after an idle spell it is at once", { timeout: 30_000 }, async () => {
     const type = `Plain${crypto.randomUUID().slice(0, 8)}`;
     const heard = await run({ wakeupMode: "coalesced", wakeupWindowMs: 50 }, Effect.gen(function* () {

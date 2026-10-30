@@ -318,7 +318,7 @@ export const defineCommand = <
       // What `resolve` read joins the condition the way `all(...)` joins its members: the queries are added, and the cursor is the earliest read horizon (Model.ts, `all`).
       const consistency = def.consistency?.(input, { resolved }) ?? (model !== null ? strict() : concurrent());
       const events = [...(loaded?.prefix ?? []), ...own];
-      const readQuery = reads.length > 0 ? Query.of(reads.flatMap((r) => r.query.items)) : null;
+      const readQuery = reads.length > 0 ? Query.union(...reads.map((r) => r.query)) : null;
       const cursorFrom = (base: LogPosition | null): LogPosition =>
         reads.reduce<LogPosition | null>((c, r) => (c === null ? r.horizon : LogPositionNS.earliest(c, r.horizon)), base) ?? LogPositionNS.zero();
       // The cursor of a condition over the model and the lookups: the model's own position when nothing was looked up (as before), else the earliest horizon of all reads.
@@ -327,20 +327,21 @@ export const defineCommand = <
       const seen = ReadSnapshot.intersectAll([...(loaded !== null ? [loaded.seen] : []), ...reads.map((r) => r.seen)]);
       // A lookup cannot be a guard over an event this command appends (concurrent runs would refuse each other): then the condition is strict.
       const appended = new Set(events.map((e) => e.type));
-      const lookupOverlapsAppend = readQuery !== null && readQuery.items.some((item) => item.eventTypes.some((t) => appended.has(t)));
+      // (`Query.all()` reads every type, the appended ones too.)
+      const lookupOverlapsAppend = readQuery !== null && (Query.isAll(readQuery) || readQuery.items.some((item) => item.eventTypes.some((t) => appended.has(t))));
       let append: CD.Append;
       if (consistency._tag === "Strict" || (loaded?.prefix?.length ?? 0) > 0 || lookupOverlapsAppend) {
         // Turning a period reads more than a commuting command declares (the old period, the entity's periods): the append is strict over everything that was read.
         if (loaded === null && readQuery === null) {
           return yield* Effect.die(new Error(`command "${def.name}": strict consistency needs a model`));
         }
-        const boundary = Query.of([...(loaded !== null ? (loaded.boundary ?? model!.query).items : []), ...(readQuery?.items ?? [])]);
+        const boundary = Query.union(...(loaded !== null ? [loaded.boundary ?? model!.query] : []), ...(readQuery !== null ? [readQuery] : []));
         append = CD.nonCommutative(events, boundary, cursor(), seen);
       } else if (consistency.guard !== null || loaded?.guard !== undefined || readQuery !== null) {
         if (loaded === null && readQuery === null) {
           return yield* Effect.die(new Error(`command "${def.name}": a consistency guard needs a model (for its position)`));
         }
-        const guard = Query.of([...(consistency.guard?.items ?? []), ...(loaded?.guard?.items ?? []), ...(readQuery?.items ?? [])]);
+        const guard = Query.union(...[consistency.guard, loaded?.guard, readQuery].filter((q): q is QueryType => q !== null && q !== undefined));
         // Throws if the guard includes an event type this command appends (see withLifecycleGuard in CommandDecision.ts).
         append = CD.withLifecycleGuard(events, guard, loaded === null ? cursorFrom(null) : cursor(), seen);
       } else {

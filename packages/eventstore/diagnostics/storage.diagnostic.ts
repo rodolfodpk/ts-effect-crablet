@@ -87,7 +87,7 @@ describe("DIAG", () => {
       return M / secs;
     };
     const withTags = await rate("with the tag rows (as built)", 10_000_000);
-    const def = (await q<{ d: string }>("SELECT pg_get_functiondef('append_events_batch(text[], text[], jsonb[], timestamptz, uuid, bigint, bytea)'::regprocedure) AS d"))[0]!.d;
+    const def = (await q<{ d: string }>("SELECT pg_get_functiondef('append_events_batch(text[], text[], jsonb[], timestamptz, uuid, bigint, bytea, jsonb[])'::regprocedure) AS d"))[0]!.d;
     const stripped = def.replace(/,\s*tagged AS \([\s\S]*?WHERE tag LIKE '%=%'\)/u, "");
     if (stripped === def) { console.log("DIAG E9c could not strip the tagged CTE from the function; skipping the comparison"); return; }
     await q(stripped);

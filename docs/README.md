@@ -44,6 +44,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | React to an event by issuing a command | [Add an automation](./guides/build/add-an-automation.md) |
 | Act once several events have happened, in any order (the EIP Aggregator) | [Aggregate events](./guides/build/aggregate-events.md) |
 | Run a command once a time has passed (a hold that expires, an unpaid subscription released) | [Set a deadline](./guides/build/set-a-deadline.md) |
+| Read, decide and append without a command (a script, an import, an export) | [Use the event store directly](./guides/build/use-the-event-store-directly.md) |
 | Call a command over HTTP, with a generated OpenAPI description | [Expose a command over HTTP](./guides/build/expose-a-command-over-http.md) |
 | Test a command's decisions without a database | [Test a command](./guides/build/test-a-command.md) |
 | Decide on something the input does not name (a card number names a member) | [Look something up before deciding](./guides/build/look-something-up-first.md) |
@@ -92,7 +93,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | [`examples/course-enrolment-app`](../examples/course-enrolment-app/README.md), [`examples/course-enrolment-ui`](../examples/course-enrolment-ui/README.md) | What the tutorial builds. |
 | [`examples/wallet-example-app`](../examples/wallet-example-app/README.md) | The framework at full size: five commands, four views, an automation, an outbox. |
 | [`tools/chaos-ui`](../tools/chaos-ui/README.md) | A page for the kind lab: break the wallet's pods and watch who takes over. |
-| [`tools/processors-admin-ui`](../tools/processors-admin-ui/README.md) | A page to list, pause, resume and reset the background processors. |
+| [`tools/processors-admin-ui`](../tools/processors-admin-ui/README.md) | A page to list, pause, resume and reset the background processors, and to browse the event log (personal data masked). |
 
 ## Decisions and history
 

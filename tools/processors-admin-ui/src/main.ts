@@ -1,4 +1,4 @@
-// The processors page: list the background processors of a Crablet application and pause, resume or reset one.
+// The admin page: list the background processors of a Crablet application and pause, resume or reset one; and browse its event log (ADR-0050).
 //
 // It is not tied to any application. The wire format (routes, response Schemas, the problems) comes from @crablet/processors-http through ./api.ts, and a processor's `kind`
 // and `id` are shown as the application named them. `import type` for types: Node strips types but does not drop imports, and the tests and the end-to-end check
@@ -10,11 +10,16 @@ import * as AsyncData from "foldkit/asyncData";
 import * as Command from "foldkit/command";
 import type { Document, HtmlBuilder } from "foldkit/html";
 import { defineMessageUnion } from "foldkit/message";
-import { Problem, ProcessorInfo, actCall, listCall, problemFromError } from "./api.ts";
+import { LoggedEvent, Problem, ProcessorInfo, actCall, eventsCall, listCall, problemFromError } from "./api.ts";
 
 // MODEL
 
 export const Processors = AsyncData.Schema(Schema.Array(ProcessorInfo), Problem);
+
+// The event log as read so far: the pages read, joined, and where to read on from.
+export const EventsRead = Schema.Struct({ events: Schema.Array(LoggedEvent), cursor: Schema.String, more: Schema.Boolean });
+export const Events = AsyncData.Schema(EventsRead, Problem);
+const Tab = Schema.Literals(["processors", "events"]);
 
 const Target = Schema.Struct({ kind: Schema.String, id: Schema.String });
 const ActionName = Schema.Literals(["pause", "resume", "reset"]);
@@ -31,7 +36,14 @@ export const Model = Schema.Struct({
   confirmingReset: Schema.NullOr(Target),
   // What the last action did, until the next one.
   notice: Schema.NullOr(Notice),
-  autoRefresh: Schema.Boolean
+  autoRefresh: Schema.Boolean,
+  tab: Tab,
+  // The event log's filter as typed: types comma-separated, tags `key=value` comma-separated.
+  typesInput: Schema.String,
+  tagsInput: Schema.String,
+  events: Events.schema,
+  // A next page asked for and not answered.
+  loadingMore: Schema.Boolean
 });
 export type Model = typeof Model.Type;
 
@@ -53,7 +65,15 @@ export const Message = defineMessageUnion({
   ConfirmedReset: {},
   CancelledReset: {},
   SucceededAction: { action: ActionName, kind: Schema.String, id: Schema.String, status: Schema.String },
-  FailedAction: { action: ActionName, kind: Schema.String, id: Schema.String, problem: Problem }
+  FailedAction: { action: ActionName, kind: Schema.String, id: Schema.String, problem: Problem },
+
+  ClickedTab: { tab: Tab },
+  ChangedTypes: { value: Schema.String },
+  ChangedTags: { value: Schema.String },
+  SubmittedEventFilter: {},
+  ClickedMoreEvents: {},
+  SucceededEvents: { page: EventsRead, appended: Schema.Boolean },
+  FailedEvents: { problem: Problem }
 });
 export type Message = typeof Message.Type;
 
@@ -69,6 +89,21 @@ export const FetchProcessors = Command.define("FetchProcessors", {
       Effect.provide(Http.layer)
     )
 });
+
+// A page of the event log: the first one (replacing what is shown) or the next one (appended to it).
+export const FetchEvents = Command.define("FetchEvents", {
+  args: { token: Schema.String, types: Schema.Array(Schema.String), tags: Schema.Array(Schema.String), after: Schema.NullOr(Schema.String) },
+  messages: [Message.SucceededEvents, Message.FailedEvents],
+  execute: ({ token, types, tags, after }) =>
+    eventsCall(token, { types, tags }, after).pipe(
+      Effect.map((page) => Message.SucceededEvents({ page, appended: after !== null })),
+      Effect.catch((error) => Effect.succeed(Message.FailedEvents({ problem: problemFromError(error) }))),
+      Effect.provide(Http.layer)
+    )
+});
+
+// "A, B" -> ["A", "B"]; blanks dropped.
+export const splitList = (input: string): ReadonlyArray<string> => input.split(",").map((x) => x.trim()).filter((x) => x.length > 0);
 
 // #region command
 export const ActOnProcessor = Command.define("ActOnProcessor", {
@@ -108,7 +143,7 @@ export const update = (model: Model, message: Message) =>
       isBlank(model.tokenInput)
         ? { model }
         : {
-            model: { ...model, token: model.tokenInput.trim(), tokenInput: "", processors: AsyncData.Loading(), notice: null, confirmingReset: null, acting: null },
+            model: { ...model, token: model.tokenInput.trim(), tokenInput: "", processors: AsyncData.Loading(), notice: null, confirmingReset: null, acting: null, events: AsyncData.Idle(), tab: "processors" as const },
             commands: [FetchProcessors({ token: model.tokenInput.trim() })]
           },
     ClickedRefresh: () => (model.token === null ? { model } : { model, commands: [FetchProcessors({ token: model.token })] }),
@@ -117,7 +152,7 @@ export const update = (model: Model, message: Message) =>
     SucceededList: ({ processors }) => ({ model: { ...model, processors: Processors.Success({ data: processors }) } }),
     // A refused token ends the session: the page asks for another instead of retrying with one the application said no to.
     FailedList: ({ problem }) => ({
-      model: problem._tag === "Unauthorized" ? { ...model, token: null, processors: AsyncData.Idle(), notice: null, confirmingReset: null } : { ...model, processors: Processors.Failure({ error: problem }) }
+      model: problem._tag === "Unauthorized" ? { ...model, token: null, processors: AsyncData.Idle(), events: AsyncData.Idle(), notice: null, confirmingReset: null } : { ...model, processors: Processors.Failure({ error: problem }) }
     }),
 
     ClickedPause: ({ kind, id }) => act(model, "pause", kind, id),
@@ -135,8 +170,40 @@ export const update = (model: Model, message: Message) =>
         : {
             model: { ...model, acting: null, notice: { ok: false, text: `Could not ${action} ${id}: ${describeProblem(problem)}` } },
             commands: model.token === null ? [] : [FetchProcessors({ token: model.token })]
-          }
+          },
+
+    // The event log is read when its tab is first opened, and again for each filter; a next page is read on from the last cursor.
+    ClickedTab: ({ tab }) =>
+      tab === "events" && model.token !== null && AsyncData.isIdle(model.events)
+        ? { model: { ...model, tab, events: AsyncData.Loading() }, commands: [fetchEvents(model.token, model, null)] }
+        : { model: { ...model, tab } },
+    ChangedTypes: ({ value }) => ({ model: { ...model, typesInput: value } }),
+    ChangedTags: ({ value }) => ({ model: { ...model, tagsInput: value } }),
+    SubmittedEventFilter: () =>
+      model.token === null ? { model } : { model: { ...model, events: AsyncData.Loading(), loadingMore: false }, commands: [fetchEvents(model.token, model, null)] },
+    ClickedMoreEvents: () => {
+      if (model.token === null || model.loadingMore || !AsyncData.isSuccess(model.events) || !model.events.data.more) return { model };
+      return { model: { ...model, loadingMore: true }, commands: [fetchEvents(model.token, model, model.events.data.cursor)] };
+    },
+    SucceededEvents: ({ page, appended }) => ({
+      model: {
+        ...model,
+        loadingMore: false,
+        events: Events.Success({
+          data: appended && AsyncData.isSuccess(model.events) ? { events: [...model.events.data.events, ...page.events], cursor: page.cursor, more: page.more } : page
+        })
+      }
+    }),
+    FailedEvents: ({ problem }) => ({
+      model:
+        problem._tag === "Unauthorized"
+          ? { ...model, token: null, processors: AsyncData.Idle(), events: AsyncData.Idle(), loadingMore: false, tab: "processors" as const }
+          : { ...model, loadingMore: false, events: Events.Failure({ error: problem }) }
+    })
   });
+
+const fetchEvents = (token: string, model: Model, after: string | null) =>
+  FetchEvents({ token, types: [...splitList(model.typesInput)], tags: [...splitList(model.tagsInput)], after });
 
 function act(model: Model, action: "pause" | "resume" | "reset", kind: string, id: string): Update.Return<Model, Message> {
   if (model.token === null || model.acting !== null) return { model };
@@ -146,7 +213,20 @@ function act(model: Model, action: "pause" | "resume" | "reset", kind: string, i
 // INIT
 
 export const init: Runtime.ApplicationInit<Model, Message> = () => ({
-  model: { tokenInput: "", token: null, processors: AsyncData.Idle(), acting: null, confirmingReset: null, notice: null, autoRefresh: true }
+  model: {
+    tokenInput: "",
+    token: null,
+    processors: AsyncData.Idle(),
+    acting: null,
+    confirmingReset: null,
+    notice: null,
+    autoRefresh: true,
+    tab: "processors",
+    typesInput: "",
+    tagsInput: "",
+    events: AsyncData.Idle(),
+    loadingMore: false
+  }
 });
 
 // SUBSCRIPTIONS
@@ -158,7 +238,7 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
   refresh: entry(
     { enabled: Schema.Boolean },
     {
-      modelToDependencies: (model) => ({ enabled: model.token !== null && model.autoRefresh }),
+      modelToDependencies: (model) => ({ enabled: model.token !== null && model.autoRefresh && model.tab === "processors" }),
       dependenciesToStream: ({ enabled }) => (enabled ? Stream.tick(refreshEvery).pipe(Stream.map((): Message => Message.Ticked())) : Stream.empty)
     }
   )
@@ -172,6 +252,7 @@ export const describeProblem = (problem: Problem): string => {
     case "Unauthorized":
       return "The application refused this token.";
     case "NotFound":
+    case "BadRequest":
       return problem.detail;
     case "Mismatch":
       return `That does not match the API definition: ${problem.detail.replaceAll("\n", " ")}`;
@@ -270,15 +351,99 @@ const listView = (model: Model, h: HtmlBuilder<Message>) =>
     onSuccess: (data) => table(data, model, h)
   });
 
+// THE EVENT LOG
+
+// "k=v, k2=v2" as the tags of an event are shown.
+export const formatTags = (tags: ReadonlyArray<{ readonly key: string; readonly value: string }>): string => tags.map((t) => `${t.key}=${t.value}`).join(", ");
+
+const eventRow = (e: LoggedEvent, h: HtmlBuilder<Message>) =>
+  h.tr(
+    [],
+    [
+      h.td([h.Class("num")], [e.position]),
+      h.td([], [h.div([h.Class("kind")], [e.type]), h.div([h.Class("muted")], [e.occurredAt])]),
+      h.td([], [formatTags(e.tags)]),
+      h.td(
+        [],
+        [
+          e.dataShown
+            ? h.details([], [h.summary([], ["payload"]), h.pre([], [h.code([], [JSON.stringify(e.data, null, 2)])])])
+            : h.span([h.Class("muted")], ["withheld: no definition of this type was given to the API"]),
+          ...(e.metadata !== null
+            ? [h.details([], [h.summary([], ["metadata"]), h.pre([], [h.code([], [JSON.stringify(e.metadata, null, 2)])])])]
+            : e.metadataShown
+              ? []
+              : [h.div([h.Class("muted")], ["metadata withheld: the application shows none"])])
+        ]
+      )
+    ]
+  );
+
+const eventsTable = (read: typeof EventsRead.Type, model: Model, h: HtmlBuilder<Message>) =>
+  read.events.length === 0
+    ? h.p([h.Class("muted")], ["No events match."])
+    : h.div(
+        [],
+        [
+          h.div(
+            [h.Class("card")],
+            [
+              h.table(
+                [h.Class("events"), h.AriaLabel("Events")],
+                [h.thead([], [h.tr([], ["Position", "Event", "Tags", "Payload"].map((title) => h.th([h.Scope("col")], [title])))]), h.tbody([], read.events.map((e) => eventRow(e, h)))]
+              )
+            ]
+          ),
+          ...(read.more
+            ? [h.button([h.OnClick(Message.ClickedMoreEvents()), ...(model.loadingMore ? [h.Disabled(true)] : [])], [model.loadingMore ? "Loading..." : "More"])]
+            : [h.p([h.Class("muted")], [`${read.events.length} events: no more finished events now.`])])
+        ]
+      );
+
+const eventsView = (model: Model, h: HtmlBuilder<Message>) =>
+  h.div(
+    [],
+    [
+      h.form(
+        [h.OnSubmit(Message.SubmittedEventFilter()), h.AriaLabel("Event filter")],
+        [
+          h.input([h.AriaLabel("Event types"), h.Placeholder("Types, comma-separated (any of them)"), h.Value(model.typesInput), h.OnInput((value) => Message.ChangedTypes({ value }))]),
+          h.input([h.AriaLabel("Tags"), h.Placeholder("Tags key=value, comma-separated (all of them)"), h.Value(model.tagsInput), h.OnInput((value) => Message.ChangedTags({ value }))]),
+          h.button([h.Type("submit"), h.Class("primary")], ["Search"])
+        ]
+      ),
+      AsyncData.match(model.events, {
+        onIdle: () => h.p([h.Class("muted")], [""]),
+        onLoading: () => h.p([h.Class("muted")], ["Loading events..."]),
+        onRefreshing: (data) => eventsTable(data, model, h),
+        onFailure: (problem) => h.p([h.Class("result error"), h.Role("alert")], [describeProblem(problem)]),
+        onStale: ({ data }) => eventsTable(data, model, h),
+        onSuccess: (data) => eventsTable(data, model, h)
+      }),
+      h.p(
+        [h.Class("field-note")],
+        ["The log in order, page by page: only events whose transaction has finished. Fields marked personal are redacted, and keys the application's definition does not know are left out."]
+      )
+    ]
+  );
+
+const tabs = (model: Model, h: HtmlBuilder<Message>) =>
+  h.nav(
+    [h.Class("tabs"), h.AriaLabel("Sections")],
+    (["processors", "events"] as const).map((tab) =>
+      h.button([h.Class(model.tab === tab ? "tab current" : "tab"), h.AriaPressed(model.tab === tab ? "true" : "false"), h.OnClick(Message.ClickedTab({ tab }))], [tab === "processors" ? "Processors" : "Events"])
+    )
+  );
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
-  title: "Processors",
+  title: model.tab === "events" ? "Events" : "Processors",
   body: h.main(
     [],
     [
-      h.h1([], ["Processors"]),
+      h.h1([], [model.tab === "events" ? "Events" : "Processors"]),
       h.p(
         [h.Class("muted")],
-        ["The background processors of a Crablet application: what each is doing, and pause, resume or reset one. The token is kept in this page's memory only."]
+        ["The background processors of a Crablet application: what each is doing, and pause, resume or reset one; and its event log. The token is kept in this page's memory only."]
       ),
 
       ...(model.token === null
@@ -291,7 +456,10 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
               ]
             )
           ]
-        : [
+        : model.tab === "events"
+          ? [tabs(model, h), eventsView(model, h)]
+          : [
+            tabs(model, h),
             h.div(
               [h.Class("toolbar")],
               [

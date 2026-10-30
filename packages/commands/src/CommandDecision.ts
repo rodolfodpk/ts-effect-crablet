@@ -78,6 +78,7 @@ export const withLifecycleGuard = (
   seen?: ReadSnapshot
 ): Append => {
   const list = eventList(events);
+  if (Query.isAll(guardQuery)) throw new Error("A lifecycle guard cannot be Query.all(): every event includes the event types this command appends");
   const appendedTypes = new Set(list.map((e) => e.type));
   const overlapping = guardQuery.items.flatMap((i) => i.eventTypes).filter((t) => appendedTypes.has(t));
   if (overlapping.length > 0) {

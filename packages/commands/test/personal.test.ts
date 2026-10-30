@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
-import { REDACTED, hasPersonalData, personal, personalPaths, personalValues, redact } from "../src/Personal.ts";
+import { REDACTED, eventPayloadMask, exposed, hasPersonalData, personal, personalPaths, personalValues, redact } from "../src/Personal.ts";
 import * as Tag from "@crablet/eventstore/Tag";
 import { defineEvent } from "../src/Event.ts";
 
@@ -222,5 +222,29 @@ describe("the tag guard in defineEvent", () => {
   test("a value DERIVED from a personal field (an opaque id, a hash) is what a tag should use, and is accepted", () => {
     const Good = defineEvent("Good", { schema: Data, tags: (d) => ({ user_id: d.userId, email_key: `h-${d.email.length}` }) });
     expect(Good({ userId: "u1", email: "ann@example.com", plan: "pro" }).tags.map((t) => t.key).sort()).toEqual(["email_key", "user_id"]);
+  });
+});
+
+describe("exposed and eventPayloadMask: what the event log API shows of a payload (ADR-0050)", () => {
+  const S = Schema.Struct({
+    id: Schema.String,
+    email: personal(Schema.String),
+    address: Schema.Struct({ city: Schema.String, street: personal(Schema.String) }),
+    notes: Schema.Record(Schema.String, Schema.String),
+    items: Schema.Array(Schema.Struct({ sku: Schema.String }))
+  });
+  test("redacts the marked fields and drops the keys the schema does not know, at every depth; a record keeps its keys", () => {
+    const stored = { id: "1", email: "a@b.c", phone: "555", address: { city: "X", street: "Main 1", zip: "9" }, notes: { a: "1", b: "2" }, items: [{ sku: "k", price: 3 }] };
+    expect(exposed(S, stored)).toEqual({ id: "1", email: REDACTED, address: { city: "X", street: REDACTED }, notes: { a: "1", b: "2" }, items: [{ sku: "k" }] });
+    expect(stored.phone).toBe("555"); // not mutated
+  });
+  test("a union keeps the member that knows the most keys", () => {
+    const U = Schema.Union([Schema.Struct({ kind: Schema.String }), Schema.Struct({ kind: Schema.String, amount: Schema.Number })]);
+    expect(exposed(U, { kind: "x", amount: 2, other: 1 })).toEqual({ kind: "x", amount: 2 });
+  });
+  test("eventPayloadMask: a type with a definition is exposed; one without is withheld", () => {
+    const mask = eventPayloadMask([{ type: "A", schema: S }]);
+    expect(mask("A", { id: "1", email: "x", address: { city: "c", street: "s" }, notes: {}, items: [] })).toMatchObject({ email: REDACTED });
+    expect(mask("B", { anything: true })).toBeUndefined();
   });
 });

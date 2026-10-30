@@ -82,7 +82,7 @@ environment variable.
 | `WALLET_BACKOFF_MAX_SECONDS` | `10` | The most an idle processor waits between polls. |
 | `WALLET_WAKEUPS` | `coalesced` | `coalesced` or `off` (see `eventStore.wakeupMode`). |
 | `WALLET_PERIOD` | `month` | The statement period: `month`, or `minutes:N` (1 to 1440) for the kind lab. Choose it for a new database. |
-| `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the processors admin API at `/admin/processors` (on the `api` role), behind this bearer token. |
+| `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the admin API at `/admin/processors` and the event log at `/admin/events` (on the `api` role), behind this bearer token. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | Exports metrics, spans and logs over OTLP ([See it on a dashboard](../guides/operate/dashboard.md)). |
 
 ## The wallet's health endpoints

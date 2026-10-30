@@ -30,6 +30,28 @@ const RequestFingerprint = Context.Reference<string | null>("crablet/RequestFing
   defaultValue: () => null
 });
 
+// Set around appends with `withMetadata` (AppendContext.ts): the client's metadata added to every event appended inside (ADR-0051).
+const Metadata = Context.Reference<Readonly<Record<string, unknown>> | null>("crablet/Metadata", {
+  defaultValue: () => null
+});
+
+export const metadata: Effect.Effect<Readonly<Record<string, unknown>> | null> = Effect.gen(function* () {
+  return yield* Metadata;
+});
+
+// Within `effect`, `extra` is added to the metadata of every event appended (keys set closer in win: an inner `withMetadata`, then the event's own).
+export const withMetadata =
+  (extra: Readonly<Record<string, unknown>>) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.flatMap(metadata, (outer) => Effect.provideService(effect, Metadata, { ...(outer ?? {}), ...extra }));
+
+// Each event's metadata as stored: the context's, then the event's own; null when neither has any.
+export const metadataOf = (
+  events: ReadonlyArray<{ readonly metadata?: Readonly<Record<string, unknown>> }>,
+  context: Readonly<Record<string, unknown>> | null
+): ReadonlyArray<Readonly<Record<string, unknown>> | null> =>
+  events.map((e) => (context === null && e.metadata === undefined ? null : { ...(context ?? {}), ...(e.metadata ?? {}) }));
+
 export const correlationId: Effect.Effect<string | null> = Effect.gen(function* () {
   return yield* CorrelationId;
 });

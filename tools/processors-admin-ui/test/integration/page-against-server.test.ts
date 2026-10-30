@@ -131,4 +131,22 @@ describe("the processors page against a real application", () => {
     assert.deepStrictEqual(model.notice, { ok: false, text: 'Could not pause gone: No processor "gone" of kind "views".' });
     assert.strictEqual(model.token, TOKEN, "the session goes on");
   });
+
+  it("the Events tab: a wallet's events, the owner redacted, filtered by tag and read on page by page", async () => {
+    const walletId = `w-page-${crypto.randomUUID().slice(0, 8)}`;
+    for (const [command, body] of [["open_wallet", { walletId, owner: "Grace Hopper", initialBalance: 10 }], ["deposit", { depositId: `d1-${walletId}`, walletId, amount: 1, description: "a" }], ["deposit", { depositId: `d2-${walletId}`, walletId, amount: 2, description: "b" }]] as const) {
+      const res = await fetch(`${app.baseUrl}/api/commands/${command}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      assert.strictEqual(res.status, 201, command);
+    }
+    const connected = await connect(TOKEN);
+    const filtered = await drive(connected, Message.ChangedTags({ value: `wallet_id=${walletId}` }), Message.ClickedTab({ tab: "events" }));
+    assert.ok(AsyncData.isSuccess(filtered.events), `the events are shown, not ${filtered.events._tag}`);
+    const first = filtered.events.data;
+    assert.strictEqual(first.events[0]!.type, "WalletOpened");
+    assert.strictEqual((first.events[0]!.data as Record<string, unknown>)["owner"], "[redacted]");
+    assert.ok(first.events.filter((e) => e.type === "DepositMade").length === 2, `both deposits: ${first.events.map((e) => e.type)}`);
+    const refused = await drive(filtered, Message.ChangedTags({ value: "not-a-tag" }), Message.SubmittedEventFilter());
+    assert.ok(AsyncData.isFailure(refused.events) && refused.events.error._tag === "BadRequest", "a malformed tag is a refusal, not a crash");
+  });
 });
+

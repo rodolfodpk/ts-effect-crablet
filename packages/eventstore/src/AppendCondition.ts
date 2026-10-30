@@ -25,6 +25,33 @@ export interface AppendCondition {
 
 export const firstWrite = (condition: AppendCondition): AppendCondition => ({ ...condition, firstWrite: true });
 
+// What a read made to decide could see (`readToDecide`): the specification's `after`, "the highest position the client was aware of while building
+// the Decision Model". Opaque: it holds the read's cursor and its snapshot, and only goes to `failIfEventsMatch`, where it makes an event the read
+// saw not a conflict, however recent (ADR-0048, ADR-0050).
+declare const decisionBrand: unique symbol;
+export interface DecisionPosition {
+  readonly [decisionBrand]: "DecisionPosition";
+  readonly logPosition: LogPositionType;
+  readonly seen?: ReadSnapshot;
+}
+
+// For the event store: the position a read made to decide reports.
+export const decisionPositionOf = (logPosition: LogPositionType, seen: ReadSnapshot | undefined): DecisionPosition =>
+  // Stryker disable next-line ObjectLiteral,ConditionalExpression: `seen: undefined` and no `seen` mean the same to failIfEventsMatch.
+  ({ logPosition, ...(seen === undefined ? {} : { seen }) }) as DecisionPosition;
+
+// The DCB specification's condition: fail if any event matching `query` was appended after `after` (any at all without it), and, with `idempotency`,
+// if anything matching it exists. `query` is typically the one the decision read; Query.all() is every event (ADR-0050).
+export const failIfEventsMatch = (
+  query: QueryType,
+  options: { readonly after?: DecisionPosition; readonly idempotency?: QueryType } = {}
+): AppendCondition => ({
+  afterPosition: options.after?.logPosition ?? LogPosition.zero(),
+  concurrencyQuery: query,
+  idempotencyQuery: options.idempotency ?? Query.noCondition(),
+  ...(options.after?.seen === undefined ? {} : { seen: options.after.seen })
+});
+
 export const of = (
   afterPosition: LogPositionType,
   concurrencyQuery: QueryType,
