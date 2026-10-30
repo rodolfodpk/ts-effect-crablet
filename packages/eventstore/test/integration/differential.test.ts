@@ -81,12 +81,18 @@ const prng = (seed: number) => {
 // A deliberately SMALL vocabulary so that random events, queries and conditions collide often.
 const TYPES = ["A", "B", "C"] as const;
 const TAGS: ReadonlyArray<readonly [string, string]> = [
-  ["k", "x"], ["k", "y"], ["j", "x"], ["j", "z"], ["k", "a,b"], ["j", 'q"r']
+  ["k", "x"], ["k", "y"], ["j", "x"], ["j", "z"], ["k", "a,b"], ["j", 'q"r'],
+  // keys with '=', '%' and ':' (ADR-0049): the pair (a=b, c) and (a, b=c) would be one stored text without the key's encoding
+  ["a=b", "c"], ["a", "b=c"], ["p%", "1"], ["x:y", "1"]
 ];
 
 type Rng = ReturnType<typeof prng>;
-const randomItem = (r: Rng) =>
-  Query.queryItemOf(r.subset(TYPES, 2), r.subset(TAGS, 2).map(([k, v]) => Tag.of(k, v)));
+// An item targets events by type and/or tags (ADR-0049): one that drew neither gets a type.
+const randomItem = (r: Rng) => {
+  const types = r.subset(TYPES, 2);
+  const tags = r.subset(TAGS, 2).map(([k, v]) => Tag.of(k, v));
+  return Query.queryItemOf(types.length === 0 && tags.length === 0 ? [TYPES[r.int(TYPES.length)]!] : types, tags);
+};
 const randomQuery = (r: Rng) => Query.of(Array.from({ length: r.int(4) }, () => randomItem(r)));
 
 // What the random histories actually exercised, so the test cannot pass vacuously.

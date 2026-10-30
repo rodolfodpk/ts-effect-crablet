@@ -1,10 +1,11 @@
-import type { Tag } from "./Tag.ts";
+import * as Tag from "./Tag.ts";
+import type { Tag as TagType } from "./Tag.ts";
 
 // An event to append. Event data is serialized (JSON.stringify) by the
 // EventStore implementation - callers pass a plain object, not a pre-serialized string.
 export interface AppendEvent {
   readonly type: string;
-  readonly tags: ReadonlyArray<Tag>;
+  readonly tags: ReadonlyArray<TagType>;
   readonly eventData: unknown;
 }
 
@@ -20,21 +21,21 @@ export interface AppendEvent {
 // alive.
 export class AppendEventBuilder {
   private readonly _type: string;
-  private _tags: Array<Tag> = [];
+  private _tags: Array<TagType> = [];
   private _eventData: unknown;
 
   constructor(type: string) {
     this._type = type;
   }
 
-  tags(moreTags: ReadonlyArray<Tag>): this {
+  tags(moreTags: ReadonlyArray<TagType>): this {
     this._tags.push(...moreTags);
     return this;
   }
 
   tag(key: string, value: string | number | null | undefined): this {
     if (value === null || value === undefined) return this;
-    this._tags.push({ key: key.toLowerCase(), value: String(value) });
+    this._tags.push(Tag.of(key, String(value)));
     return this;
   }
 

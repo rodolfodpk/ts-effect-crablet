@@ -113,9 +113,11 @@ What these numbers do not say: the loads are light (2 and 20 commands a second, 
 
 ### Keep an append small
 
-One append is one transaction that takes the writer lock and sends one wake-up, so a very large batch holds every other writer back for as long as it takes. `append` refuses more than `MAX_APPEND_EVENTS` (50) events
+One append is one transaction that takes the writer lock and sends one wake-up, so a very large batch holds every other writer back for as long as it takes. `append` refuses more than `maxAppendEvents` (50 by default) events
 with a typed `AppendTooLarge` before any SQL runs (over HTTP it is a 500: the batch size is the code's choice, not the caller's). To write more, split it into several appends; each is atomic on its own, so decide
-whether the rule you protect needs them in one command.
+whether the rule you protect needs them in one command. When it does, raise the limit with `eventStore: { maxAppendEvents }` in `Crablet.layer`
+(`makeEventStoreLayer({ maxAppendEvents })`, `makeInMemoryEventStore({ maxAppendEvents })`) and accept that every other writer of the same tags waits
+for the larger append.
 
 ### Wake-ups
 

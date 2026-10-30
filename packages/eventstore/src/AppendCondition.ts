@@ -17,7 +17,13 @@ export interface AppendCondition {
   // that read could not see it: one it saw, committed but not yet settled, is not (ADR-0048). Without it, every matching event after the cursor is.
   // Commands set it; nothing else needs to.
   readonly seen?: ReadSnapshot;
+  // The append must be its transaction's first write (ADR-0033): refused (CRB01, a defect) if the transaction already wrote anything, so no write of
+  // its own can come before the read the decision was made on. Without it, events the same transaction appended earlier are not a conflict for it
+  // (ADR-0049). Commands always run this way; for direct use, set it with `firstWrite(...)`. No effect in the in-memory store, which has no transactions.
+  readonly firstWrite?: true;
 }
+
+export const firstWrite = (condition: AppendCondition): AppendCondition => ({ ...condition, firstWrite: true });
 
 export const of = (
   afterPosition: LogPositionType,

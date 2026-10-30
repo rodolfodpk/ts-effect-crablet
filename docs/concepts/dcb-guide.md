@@ -269,4 +269,49 @@ one of its types AND that carries all of its tags. What this framework does with
   being re-decided or refused as a conflict. A key reused by a different request is refused, and a repeat answers with
   the earlier write's marker ([ADR-0034](../adr/0034-a-repeat-must-be-the-same-request.md)).
 
+### Compatibility with the specification
+
+Evaluated against [`docs/specification.md`](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) of dcb-events at
+commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. **compatible** means as written; **encoded differently** means the
+requirement holds through another representation; **differs** means it does not, for the reason in the notes; **not yet** means planned.
+
+| Requirement (the specification's words) | Status | Evidence |
+|---|---|---|
+| Read: *MUST* filter events by type and/or tag | compatible | `project`, `exists`; the [conformance suite](../../packages/eventstore/test/conformance/cases.ts) on Postgres and in memory |
+| Read: *SHOULD* read from a given Sequence Position | compatible | `project(query, after, …)` |
+| Read: *MAY* limit the number of events, order them, return a stream | not yet | `project` folds every matching event in memory; a paged public read is planned |
+| Query: items combined with **OR**; an item matches **one** of its types **and all** of its tags | compatible | `spec/Spec.ts`, the conformance suite |
+| Query: *"or represent a query that matches all Events"* (`Query.all()`) | not yet | a query with no items reads every event; `Query.all()` comes with the paged read |
+| Query Item: *"target Events by their Type and/or Tags"* | compatible | an item with neither is refused (`Query.queryItemOf`, and by both stores for one built by hand): it is outside what the specification defines ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
+| Tag: its form *"is irrelevant to the Event Store"* | compatible | stored as `key=value` with the key encoded (`TagCodec`): any key and value make the round trip exactly ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
+| Tags: *SHOULD* not contain the same tag twice | compatible | a repeated tag is stored once |
+| Append: *MUST* atomically persist one or more events | compatible, with a limit | up to `maxAppendEvents` per append (default 50, configurable): note 1 |
+| Append: the condition is optional, with a `failIfEventsMatch` query | compatible | `append(events)`, `append(events, condition)` |
+| Append: `after`, *"the highest position the client was aware of"* | encoded differently | a `(transaction_id, position)` cursor and the read's snapshot: note 2 |
+| Append: *MUST* fail if any event matches the condition | differs | the transaction's own earlier appends are not a conflict for it: note 3 |
+| Sequence Position: *MUST* be unique; *MAY* contain gaps | compatible | `position` is the primary key; a rolled-back append leaves a gap |
+| Sequence Position: *MUST* resolve to a well-defined **static** order | differs | the order is deterministic but not static: note 4 |
+| Event: a type, data and tags, all tags exposed | compatible | `StoredEvent` |
+| Event: *MAY* carry metadata defined by the client | not offered | the store adds its own (`correlationId`, `causationId`), not the client's |
+| Event Data: an opaque payload | encoded differently | stored as JSONB (normalised, so not byte-exact); the store reads one reserved type, `crablet.DeadlineScheduled` |
+
+1. **The append limit.** One append is one transaction that holds the writer locks and sends one wake-up, so a large batch holds every other writer
+   back for as long as it takes. `maxAppendEvents` in `EventStoreConfig` (or `makeInMemoryEventStore({ maxAppendEvents })`) raises it for those who
+   accept that cost; more is refused with `AppendTooLarge` before any SQL runs ([keep an append small](../guides/operate/run-in-production.md#keep-an-append-small)).
+2. **`after`.** A sequence value and a transaction id are taken in opposite orders, so a bare position can miss an event that commits later with a
+   lower position ([ADR-0012](../adr/0012-transaction-position-cursors.md)); and an event the read saw is not a conflict, however recent
+   ([ADR-0048](../adr/0048-a-conflict-is-what-the-read-did-not-see.md)). It is the specification's intent: what the client was aware of is ignored.
+3. **The transaction's own appends.** An append is not refused for an event its own transaction appended earlier. What the transaction wrote, it
+   knows; without this, writing, reading and writing again under a condition in one transaction would always fail, and a read's snapshot cannot
+   tell the transaction's own events apart (ADR-0049). The risk: read, then write, then append under a condition on the *earlier* read, and the append
+   passes though its decision did not see the write. A command never does this: its append must be its transaction's first write (CRB01,
+   [ADR-0033](../adr/0033-delivery-order-is-causal-order.md)). Code that uses the event store directly can ask for the same with
+   `AppendCondition.firstWrite(condition)`, or read again after writing.
+4. **The order.** Events are ordered by `(transaction_id, position)`. A transaction with a lower id that commits later puts its events in the middle
+   of a history already read, so the order of the visible events is not static. No reader misses one: every cursor advances only over events whose
+   transaction had finished ([ADR-0012](../adr/0012-transaction-position-cursors.md)).
+
+What this framework does beyond the specification (idempotency, writer locks, deadlines, periods, the first-write rule for commands) is in the list
+above and in the [architecture](./architecture.md).
+
 The ten examples of the DCB website are written in this framework, each with a race on Postgres: see [the dcb.events examples](./dcb-examples.md).

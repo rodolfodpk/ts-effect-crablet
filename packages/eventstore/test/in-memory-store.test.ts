@@ -153,4 +153,22 @@ describe("InMemoryEventStore: batch size limit", () => {
     await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => es.append(batch(MAX_APPEND_EVENTS)))));
     expect(store.log).toHaveLength(MAX_APPEND_EVENTS);
   });
+
+  test("maxAppendEvents sets the limit; one that is not a whole number of at least 1 is refused", async () => {
+    const store = makeInMemoryEventStore({ maxAppendEvents: 3 });
+    const batch = (n: number) => Array.from({ length: n }, (_, i) => ev("E", "k", String(i)));
+    await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => es.append(batch(3)))));
+    const tooMany = await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => Effect.flip(es.append(batch(4))))));
+    expect(tooMany).toMatchObject({ _tag: "AppendTooLarge", count: 4, max: 3 });
+    for (const bad of [0, 1.5, -1]) expect(() => makeInMemoryEventStore({ maxAppendEvents: bad })).toThrow(/maxAppendEvents must be a whole number of at least 1/);
+  });
+});
+
+describe("InMemoryEventStore: firstWrite", () => {
+  test("has no effect in memory, where there are no transactions", async () => {
+    const store = makeInMemoryEventStore();
+    const condition = AppendCondition.firstWrite(AppendCondition.of(LogPosition.zero(), Query.forEvent("Nothing")));
+    await Effect.runPromise(provide(store, Effect.flatMap(EventStore, (es) => Effect.andThen(es.append([ev("E", "k", "1")]), es.append([ev("E", "k", "2")], condition)))));
+    expect(store.log).toHaveLength(2);
+  });
 });

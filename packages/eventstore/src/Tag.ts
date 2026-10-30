@@ -20,6 +20,11 @@ export interface Tag {
 
 export const of = (key: string, value: string): Tag => ({ key: key.toLowerCase(), value });
 
+// The tags with each repeated one (same key, same value) kept once, in the order they first appear. The store writes an event's tags this way (the
+// DCB specification: tags SHOULD not repeat, ADR-0049). The same key with different values stays: a list tag.
+export const distinct = (tags: ReadonlyArray<Tag>): ReadonlyArray<Tag> =>
+  tags.filter((t, i) => tags.findIndex((u) => u.key === t.key && u.value === t.value) === i);
+
 // Alternating key/value pairs, a variadic form of Tag.of.
 export const ofPairs = (...keyValuePairs: ReadonlyArray<string>): ReadonlyArray<Tag> => {
   if (keyValuePairs.length % 2 !== 0) {

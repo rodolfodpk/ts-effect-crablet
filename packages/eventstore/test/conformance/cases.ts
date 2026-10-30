@@ -12,7 +12,7 @@ import { EventStore, type StoredEvent } from "../../src/EventStore.ts";
 import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecoding.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { Duplicate } from "../../src/AppendErrors.ts";
-import type * as AppendEvent from "../../src/AppendEvent.ts";
+import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as CorrelationContext from "../../src/CorrelationContext.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
 import * as Query from "../../src/Query.ts";
@@ -134,17 +134,15 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     }
   },
   {
-    name: "an item with no types matches any type; a query with no informative items matches every event",
+    name: "an item with no types matches any type; a query with no items matches every event",
     run: async (h) => {
       const id = uid();
       const start = await headPosition(h);
       await append(h, [ev(`ConfWA${id}`, [["k", id]]), ev(`ConfWB${id}`, [["k", id]]), ev(`ConfWC${id}`, [["other", id]])]);
       const byTag = await read(h, Query.of(item([], [["k", id]])));
       assert.equal(byTag.state.length, 2);
-      // no informative item (an empty item, or none at all): reading matches everything after `start`
-      for (const q of [Query.of([]), Query.of(item([], []))]) {
-        assert.equal((await read(h, q, start)).state.length, 3);
-      }
+      // no items: reading matches everything after `start`
+      assert.equal((await read(h, Query.of([]), start)).state.length, 3);
     }
   },
   {
@@ -158,7 +156,7 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     }
   },
   {
-    name: "exists agrees with reading: by type alone, by tag alone, with items OR-ed, and with no informative item",
+    name: "exists agrees with reading: by type alone, by tag alone, with items OR-ed, and with no items",
     run: async (h) => {
       const id = uid();
       const a = `ConfXA${id}`;
@@ -171,8 +169,8 @@ export const cases: ReadonlyArray<ConformanceCase> = [
       assert.equal(await existsQuery(h, Query.of(item([], [["k", id]]))), true, "tag only");
       assert.equal(await existsQuery(h, Query.of(item([a], [["j", id]]))), false, "one item's type with another item's tag matches nothing");
       assert.equal(await existsQuery(h, Query.of([item([a], [["j", id]]), item([b], [["j", id]])])), true, "items are OR-ed");
-      // reading a query with no informative item matches every event, and so does exists (the log has events now)
-      for (const q of [Query.of([]), Query.of(item([], []))]) assert.equal(await existsQuery(h, q), true);
+      // reading a query with no items matches every event, and so does exists (the log has events now)
+      assert.equal(await existsQuery(h, Query.of([])), true);
     }
   },
   {
@@ -214,13 +212,60 @@ export const cases: ReadonlyArray<ConformanceCase> = [
     }
   },
   {
-    name: "concurrency: a condition whose query has no informative item performs no check",
+    name: "concurrency: a condition whose query has no items performs no check",
     run: async (h) => {
       const id = uid();
       await append(h, [ev("ConfE", [["k", id]])]);
-      for (const q of [Query.of([]), Query.of(item([], []))]) {
-        assert.equal(await append(h, [ev("ConfAttempt", [["k", id]])], AppendCondition.of(LogPosition.zero(), q)), "ok");
+      assert.equal(await append(h, [ev("ConfAttempt", [["k", id]])], AppendCondition.of(LogPosition.zero(), Query.of([]))), "ok");
+    }
+  },
+  {
+    name: "an item with neither types nor tags is refused, as a defect, in a read, exists, a concurrency and an idempotency condition (ADR-0049)",
+    run: async (h) => {
+      assert.throws(() => item([], []), /targets events by type and\/or tags/);
+      const empty = Query.of([{ eventTypes: [], tags: [] }]); // built without queryItemOf
+      const withOther = Query.of([item(["ConfX"]), { eventTypes: [], tags: [] }]);
+      const isDefect = async (effect: Effect.Effect<unknown, unknown, EventStore>, what: string) => {
+        const exit = await h.run(Effect.exit(effect));
+        assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), `${what}: expected a defect`);
+        assert.match(String(exit.cause.reasons.find(Cause.isDieReason)?.defect), /targets events by type and\/or tags/, what);
+      };
+      for (const q of [empty, withOther]) {
+        await isDefect(Effect.flatMap(EventStore, (es) => es.project(q, LogPosition.zero(), [{ eventTypes: [], initialState: 0, transition: (n: number) => n }])), "read");
+        await isDefect(Effect.flatMap(EventStore, (es) => es.exists(q)), "exists");
+        await isDefect(Effect.flatMap(EventStore, (es) => es.findDuplicate(q)), "findDuplicate");
+        await isDefect(Effect.flatMap(EventStore, (es) => es.append([ev("ConfEmptyItem")], AppendCondition.of(LogPosition.zero(), q))), "concurrency condition");
+        await isDefect(Effect.flatMap(EventStore, (es) => es.append([ev("ConfEmptyItem")], AppendCondition.idempotentFromQuery(q))), "idempotency condition");
       }
+      assert.equal(await existsQuery(h, Query.forEvent("ConfEmptyItem")), false, "nothing was appended");
+    }
+  },
+  {
+    name: "a tag key or value with any characters makes the round trip exactly, and is found by exactly itself (ADR-0049)",
+    run: async (h) => {
+      const id = uid();
+      const pairs: ReadonlyArray<readonly [string, string]> = [["a=b", `c${id}`], ["50%", `v${id}`], ["%3d", `w${id}`], ["a=b=c", `x${id}`], ["product:123", `y${id}`], ["k", `x=y${id}`]];
+      for (const [key, value] of pairs) {
+        const type = `ConfTagChars${id}`;
+        await append(h, [ev(type, [[key, value]], { key })]);
+        const found = await read(h, Query.forEventAndTag(type, key, value));
+        assert.equal(found.state.length, 1, `${key}=${value}: found by its own tag`);
+        assert.deepEqual(found.state[0]!.tags.map((t) => [t.key, t.value]), [[key, value]], `${key}=${value}: read back as it was written`);
+        assert.equal(await existsQuery(h, Query.forEventAndTag(type, key, value)), true, `${key}=${value}: exists`);
+        // a condition on it sees it after the position before it
+        assert.equal(await append(h, [ev(`ConfTagCharsAttempt${id}`)], AppendCondition.of(LogPosition.zero(), Query.forEventAndTag(type, key, value))), "conflict", `${key}=${value}: a condition`);
+      }
+      // the ambiguity a stored `a=b=c...` would have: the tag (a=b, c) is not the tag (a, b=c)
+      assert.equal((await read(h, Query.forEventAndTag(`ConfTagChars${id}`, "a", `b=c${id}`))).state.length, 0);
+    }
+  },
+  {
+    name: "a tag repeated on an event is stored once, in the order of its first appearance (ADR-0049)",
+    run: async (h) => {
+      const id = uid();
+      await append(h, [AppendEvent.builder(`ConfRepeat${id}`).tag("k", "1").tag("k", "2").tag("k", "1").data({ n: 1 }).build()]);
+      const found = await read(h, Query.forEventAndTag(`ConfRepeat${id}`, "k", "1"));
+      assert.deepEqual(found.state[0]!.tags.map((t) => [t.key, t.value]), [["k", "1"], ["k", "2"]]);
     }
   },
   {

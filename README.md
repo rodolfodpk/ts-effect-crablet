@@ -15,7 +15,7 @@ the two has to own "subscribe", and the other rule is patched with a saga, a pro
 
 Here there are no aggregates and no streams. Events go into one log, tagged with what they are about. A command declares the events its decision
 depends on, and its append succeeds only if none of them changed since it read them. So both rules are checked in one atomic decision, and two
-commands conflict only when one changes something the other relied on. This is an implementation of the open [DCB specification](https://dcb.events/specification/); all ten of its
+commands conflict only when one changes something the other relied on. This is an implementation of the open [DCB specification](https://dcb.events/specification/) ([how compatible, requirement by requirement](./docs/concepts/dcb-guide.md#compatibility-with-the-specification)); all ten of its
 [examples](./docs/concepts/dcb-examples.md) are written here, each raced on Postgres.
 
 > **Status: experimental, pre-release.** The API changes often, there is no stability promise yet, and the packages are not on npm. To try it today, clone this repository

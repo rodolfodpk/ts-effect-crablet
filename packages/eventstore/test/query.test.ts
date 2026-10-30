@@ -32,3 +32,19 @@ describe("Query: the query builders", () => {
     expect(Query.isEmpty(Query.forEvent("A"))).toBe(false);
   });
 });
+
+describe("Query: an item targets events by type and/or tags (ADR-0049)", () => {
+  test("an item with neither is refused; one with only types or only tags is not", () => {
+    expect(() => Query.queryItemOf([], [])).toThrow(/targets events by type and\/or tags/);
+    expect(() => Query.forEventsAndTags([], [])).toThrow(/targets events by type and\/or tags/);
+    expect(Query.queryItemOf(["A"], [])).toEqual({ eventTypes: ["A"], tags: [] });
+    expect(Query.queryItemOf([], [t])).toEqual({ eventTypes: [], tags: [t] });
+  });
+
+  test("emptyItemIn names the problem of a query with such an item, built without queryItemOf", () => {
+    expect(Query.emptyItemIn(Query.of([{ eventTypes: [], tags: [] }]))).toMatch(/targets events by type and\/or tags/);
+    expect(Query.emptyItemIn(Query.of([Query.queryItemOfType("A"), { eventTypes: [], tags: [] }]))).not.toBeNull();
+    expect(Query.emptyItemIn(Query.forEvent("A"))).toBeNull();
+    expect(Query.emptyItemIn(Query.noCondition())).toBeNull();
+  });
+});

@@ -13,9 +13,11 @@ import type { Query } from "./Query.ts";
 import * as LogPositionNS from "./LogPosition.ts";
 import type { LogPosition } from "./LogPosition.ts";
 import * as ReadSnapshot from "./ReadSnapshot.ts";
-import { AppendTooLarge, Conflict, Duplicate, MAX_APPEND_EVENTS } from "./AppendErrors.ts";
+import * as TagCodec from "./TagCodec.ts";
+import { AppendTooLarge, Conflict, Duplicate, maxAppendEventsOf } from "./AppendErrors.ts";
 import * as Sql from "./internal/sql.ts";
 import { makeWakeupNotifier, PendingWakeups } from "./internal/WakeupNotifier.ts";
+import { refusingEmptyItems, withDistinctTags } from "./internal/guards.ts";
 
 // The fixed channel every append notifies
 // on and every LISTEN/NOTIFY-based consumer (event-poller's wakeupStream) subscribes to.
@@ -123,6 +125,9 @@ export interface EventStoreConfig {
   readonly wakeupMode?: "coalesced" | "off";
   // The coalescing window (default 50). 0 sends after each commit without waiting.
   readonly wakeupWindowMs?: number;
+  // The most events one append takes (default 50, DEFAULT_MAX_APPEND_EVENTS); more are refused with AppendTooLarge before any SQL runs. One append is
+  // one transaction that holds the writer locks and sends one wake-up, so a larger batch holds every other writer back for longer (ADR-0049).
+  readonly maxAppendEvents?: number;
 }
 
 // PATTERN PRIMER - `Context.Service` + `Layer.effect`, the Effect equivalent of a Spring `@Service`
@@ -147,10 +152,7 @@ export interface EventStoreConfig {
 export class EventStore extends Context.Service<EventStore, EventStoreService>()("EventStore") {}
 
 function parseRow(row: Sql.StoredEventRow): StoredEvent {
-  const tags: ReadonlyArray<Tag> = row.tags.map((raw) => {
-    const idx = raw.indexOf("=");
-    return idx < 0 ? { key: raw, value: "" } : { key: raw.slice(0, idx), value: raw.slice(idx + 1) };
-  });
+  const tags: ReadonlyArray<Tag> = row.tags.map(TagCodec.decode);
   return {
     eventId: row.event_id,
     type: row.type,
@@ -192,6 +194,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
     const sql = yield* SqlClient.SqlClient;
     const off = config.wakeupMode === "off";
     const windowMs = config.wakeupWindowMs ?? 50;
+    const maxAppendEvents = maxAppendEventsOf(config.maxAppendEvents);
     if (!Number.isFinite(windowMs) || windowMs < 0) return yield* Effect.die(`wakeupWindowMs must be 0 or more, got ${windowMs}`);
     // The notification goes out on its own connection from the pool, never inside whatever transaction the caller happens to be in.
     const notifier = yield* makeWakeupNotifier(
@@ -245,19 +248,22 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
       });
 
     // Asks the database for a yes or no (it stops at the first match) instead of reading every matching event.
-    const exists = (query: Query): Effect.Effect<boolean, SqlError> => Sql.existsEvents(sql, query);
+    const exists = (query: Query): Effect.Effect<boolean, SqlError> => refusingEmptyItems(query, Sql.existsEvents(sql, query));
 
     // Instrumented once here, at the single write primitive.
     const appendWith = (
-      events: ReadonlyArray<AppendEvent>,
+      appendedEvents: ReadonlyArray<AppendEvent>,
       condition: AppendCondition
     ): Effect.Effect<AppendResult, AppendTooLarge | Conflict | Duplicate | SqlError> => {
-      if (events.length === 0) {
+      if (appendedEvents.length === 0) {
         return Effect.die("Cannot append empty events list");
       }
-      if (events.length > MAX_APPEND_EVENTS) {
-        return Effect.fail(new AppendTooLarge({ message: `Cannot append ${events.length} events in one call; the limit is ${MAX_APPEND_EVENTS}. Split them into several appends.`, count: events.length, max: MAX_APPEND_EVENTS }));
+      if (appendedEvents.length > maxAppendEvents) {
+        return Effect.fail(new AppendTooLarge({ message: `Cannot append ${appendedEvents.length} events in one call; the limit is ${maxAppendEvents}. Split them into several appends.`, count: appendedEvents.length, max: maxAppendEvents }));
       }
+      const refused = QueryNS.emptyItemIn(condition.concurrencyQuery) ?? QueryNS.emptyItemIn(condition.idempotencyQuery);
+      if (refused !== null) return Effect.die(new Error(refused));
+      const events = withDistinctTags(appendedEvents);
       const eventTypes = new Set(events.map((e) => e.type));
       const tagKeys = new Set(events.flatMap((e) => e.tags.map((t) => t.key)));
       return EventStoreMetrics.observe(
@@ -299,7 +305,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
 
     // A span around a read, so a slow command can be told apart: how long its boundary took to load, against how long its append took.
     const tracedProject = (<T>(query: Query, after: LogPosition, projectors: ReadonlyArray<StateProjector<T>>) =>
-      project(query, after, projectors).pipe(Effect.withSpan("crablet.eventstore.project", { attributes: { "crablet.project.query_items": query.items.length } }))) as EventStoreService["project"];
+      refusingEmptyItems(query, project(query, after, projectors)).pipe(Effect.withSpan("crablet.eventstore.project", { attributes: { "crablet.project.query_items": query.items.length } }))) as EventStoreService["project"];
 
     const withWakeups = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
       off
@@ -311,7 +317,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
             );
           });
 
-    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => Sql.findDuplicate(sql, query), withWakeups };
+    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups };
 
     return service;
   })

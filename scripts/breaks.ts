@@ -35,6 +35,9 @@ const migration = (name: string) => `packages/db-migrations/sql/${name}.sql`;
 const APPEND = migration("V2__crablet_append");
 const APPEND_IF = migration("V6__crablet_append_sees_the_read");
 const READ_SNAPSHOT = "packages/eventstore/src/ReadSnapshot.ts";
+const QUERY = "packages/eventstore/src/Query.ts";
+const TAG_CODEC = "packages/eventstore/src/TagCodec.ts";
+const GUARDS = "packages/eventstore/src/internal/guards.ts";
 
 export const breaks: ReadonlyArray<Break> = [
   // The append: what the client sends and how it reads the answer (eventstore/src/internal/sql.ts).
@@ -63,12 +66,36 @@ export const breaks: ReadonlyArray<Break> = [
     why: "a tag value with a comma or a quote is stored as other tags"
   },
   {
-    id: "empty-condition-items-kept",
+    id: "empty-item-accepted",
+    file: QUERY,
+    find: "query.items.some((i) => i.eventTypes.length === 0 && i.tags.length === 0) ? EMPTY_ITEM : null;",
+    replace: "null;",
+    tests: [es("conformance-postgres")],
+    why: "an item with neither types nor tags would reach the SQL: a read would skip it and a condition would match every event (ADR-0049)"
+  },
+  {
+    id: "first-write-ignored",
     file: SQL,
-    find: "    .filter((i) => i.eventTypes.length > 0 || i.tags.length > 0)\n",
-    replace: "",
-    tests: [es("conformance-postgres"), es("append-multi-item")],
-    why: "an item with neither types nor tags would match every event: every append would conflict"
+    find: " || condition.firstWrite === true;",
+    replace: ";",
+    tests: [es("append")],
+    why: "an append that asked to be its transaction's first write would pass after an earlier write of its own (ADR-0049)"
+  },
+  {
+    id: "tag-key-not-encoded",
+    file: TAG_CODEC,
+    find: "export const encodeKey = (key: string): string => key.replaceAll(\"%\", \"%25\").replaceAll(\"=\", \"%3D\");",
+    replace: "export const encodeKey = (key: string): string => key;",
+    tests: [es("conformance-postgres")],
+    why: "a tag key with '=' would be read back as another tag, and found by it (ADR-0049)"
+  },
+  {
+    id: "tags-not-deduplicated",
+    file: GUARDS,
+    find: "    const tags = Tag.distinct(e.tags);",
+    replace: "    const tags = e.tags;",
+    tests: [es("conformance-postgres")],
+    why: "an event's repeated tag would be stored twice (the specification: tags SHOULD not repeat, ADR-0049)"
   },
   {
     id: "read-cursor-inclusive",
@@ -174,7 +201,7 @@ export const breaks: ReadonlyArray<Break> = [
     file: APPEND_IF,
     find: "IF p_require_fresh_transaction AND pg_current_xact_id_if_assigned() IS NOT NULL THEN",
     replace: "IF FALSE THEN",
-    tests: [cmd("causal-order-postgres")],
+    tests: [cmd("causal-order-postgres"), es("append")],
     why: "a command could run in a transaction that already wrote, and its events be delivered before what it read (ADR-0033)"
   },
   {
@@ -245,6 +272,14 @@ export const breaks: ReadonlyArray<Break> = [
   },
 
   // The poller's queries (event-poller/src/internal/sql.ts).
+  {
+    id: "poller-key-not-encoded",
+    file: POLLER_SQL,
+    find: "    params.push(TagCodec.encodeKey(key));",
+    replace: "    params.push(key);",
+    tests: [ep("sql-event-fetcher")],
+    why: "a processor selecting by a tag key with '=' or '%' would never see the event (ADR-0049)"
+  },
   {
     id: "poll-unsettled",
     file: POLLER_SQL,

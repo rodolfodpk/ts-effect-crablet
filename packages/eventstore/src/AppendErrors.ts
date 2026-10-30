@@ -44,9 +44,19 @@ export class Duplicate extends Data.TaggedError("Duplicate")<{
   readonly byTrigger: boolean;
 }> {}
 
-// An append of more events than `MAX_APPEND_EVENTS`. One append is one transaction that takes the writer lock and notifies once, so a very large batch holds
-// every other writer back for as long as it takes. It is refused before any SQL runs; split the work into several appends (each is atomic on its own).
-export const MAX_APPEND_EVENTS = 50;
+// An append of more events than the store's limit (`maxAppendEvents` in EventStoreConfig, `DEFAULT_MAX_APPEND_EVENTS` unless set). One append is one
+// transaction that takes the writer lock and notifies once, so a very large batch holds every other writer back for as long as it takes. It is refused
+// before any SQL runs; split the work into several appends (each is atomic on its own), or raise the limit and accept that cost (ADR-0049).
+export const DEFAULT_MAX_APPEND_EVENTS = 50;
+// The default's earlier name.
+export const MAX_APPEND_EVENTS = DEFAULT_MAX_APPEND_EVENTS;
+
+// The configured limit, checked: a positive whole number.
+export const maxAppendEventsOf = (configured: number | undefined): number => {
+  const max = configured ?? DEFAULT_MAX_APPEND_EVENTS;
+  if (!Number.isInteger(max) || max < 1) throw new Error(`maxAppendEvents must be a whole number of at least 1, got ${String(configured)}`);
+  return max;
+};
 
 export class AppendTooLarge extends Data.TaggedError("AppendTooLarge")<{
   readonly message: string;

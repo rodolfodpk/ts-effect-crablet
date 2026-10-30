@@ -4,7 +4,8 @@
 
 The DCB website has [ten examples](https://dcb.events/examples/). Each one is a business rule that crosses entities, with its events, the projections
 its decision reads and its scenarios. All ten are written here against this framework. Each one has its scenarios, run with no database, and at
-least one race on Postgres. In each race the racers are held until all of them have read, so the overlap is forced, not hoped for.
+least one race on Postgres. In each race the racers are held until all of them have read, so the overlap is forced, not hoped for. How the
+framework stands against the specification itself, requirement by requirement, is [its compatibility table](./dcb-guide.md#compatibility-with-the-specification).
 
 - **The code:** [`support/dcb-examples.ts`](../../packages/commands/test/support/dcb-examples.ts), one section per example. Course subscriptions is
   the course enrolment app.

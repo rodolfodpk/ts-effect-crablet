@@ -33,6 +33,9 @@ Start with the defaults: wake-ups `coalesced`, poll every 1 s, back off to at mo
 tens of milliseconds whatever the polling settings; they only matter when a wake-up is lost or turned off
 ([three measured profiles](run-in-production.md#polling-and-wake-ups)).
 
+Keep `eventStore.maxAppendEvents` at its default of 50 unless a rule needs more events in one atomic append; a larger append holds the writer locks
+for longer ([keep an append small](run-in-production.md#keep-an-append-small)).
+
 ## 5. Leader takeover
 
 `leaderElectionRetryIntervalMs` (5 s by default) bounds the takeover after a crash. A silent network partition takes the leader's `serverIdleTimeout`
