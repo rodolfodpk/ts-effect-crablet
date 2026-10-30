@@ -1,4 +1,4 @@
-// The guides (every markdown file under docs/guides, in build/ and operate/) and the README cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
+// The guides (every markdown file under docs/guides, in build/ and operate/), the DCB guide and the README cannot drift from the code they show: every block tagged `<!-- file: path#region -->` must equal that
 // file's `// #region name` ... `// #endregion name` (compared with the common indentation removed), and the files, links and scripts the text mentions must exist.
 // (The tutorial has the same kind of test: examples/course-enrolment-app/test/tutorial-sync.test.ts.)
 import { describe, expect, test } from "bun:test";
@@ -10,7 +10,7 @@ const guides = (readdirSync(path.join(root, "docs/guides"), { recursive: true })
   .filter((f) => f.endsWith(".md"))
   .sort()
   .map((f) => `docs/guides/${f.split(path.sep).join("/")}`)
-  .concat("README.md"); // the README's example is the quick start's code
+  .concat("README.md", "docs/concepts/dcb-guide.md"); // the README's example is the quick start's code; the DCB guide shows the transfer and the enrolment
 
 const dedent = (text: string): string => {
   const lines = text.replace(/\s+$/u, "").split("\n").map((l) => l.replace(/\s+$/u, ""));
