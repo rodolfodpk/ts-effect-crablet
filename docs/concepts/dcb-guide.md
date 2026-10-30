@@ -277,17 +277,17 @@ requirement holds through another representation; **differs** means it does not,
 
 | Requirement (the specification's words) | Status | Evidence |
 |---|---|---|
-| Read: *MUST* filter events by type and/or tag | compatible | `project`, `exists`; the [conformance suite](../../packages/eventstore/test/conformance/cases.ts) on Postgres and in memory |
-| Read: *SHOULD* read from a given Sequence Position | compatible | `project(query, after, …)` |
-| Read: *MAY* limit the number of events, order them, return a stream | not yet | `project` folds every matching event in memory; a paged public read is planned |
+| Read: *MUST* filter events by type and/or tag | compatible | `read`, `readToDecide`, `stream`; the [conformance suite](../../packages/eventstore/test/conformance/cases.ts) on Postgres and in memory |
+| Read: *SHOULD* read from a given Sequence Position | compatible | `read(query, { after })` from a `Cursor` |
+| Read: *MAY* limit the number of events, order them, return a stream | compatible | `read(query, { limit })` returns a page in log order; `stream(query)` pages for you; a page holds only finished events, so a cursor never skips one ([ADR-0050](../adr/0050-the-event-store-used-directly.md)) |
 | Query: items combined with **OR**; an item matches **one** of its types **and all** of its tags | compatible | `spec/Spec.ts`, the conformance suite |
-| Query: *"or represent a query that matches all Events"* (`Query.all()`) | not yet | a query with no items reads every event; `Query.all()` comes with the paged read |
+| Query: *"or represent a query that matches all Events"* (`Query.all()`) | compatible | `Query.all()`, in a read and in a condition ([ADR-0050](../adr/0050-the-event-store-used-directly.md)) |
 | Query Item: *"target Events by their Type and/or Tags"* | compatible | an item with neither is refused (`Query.queryItemOf`, and by both stores for one built by hand): it is outside what the specification defines ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
 | Tag: its form *"is irrelevant to the Event Store"* | compatible | stored as `key=value` with the key encoded (`TagCodec`): any key and value make the round trip exactly ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)) |
 | Tags: *SHOULD* not contain the same tag twice | compatible | a repeated tag is stored once |
 | Append: *MUST* atomically persist one or more events | compatible, with a limit | up to `maxAppendEvents` per append (default 50, configurable): note 1 |
 | Append: the condition is optional, with a `failIfEventsMatch` query | compatible | `append(events)`, `append(events, condition)` |
-| Append: `after`, *"the highest position the client was aware of"* | encoded differently | a `(transaction_id, position)` cursor and the read's snapshot: note 2 |
+| Append: `after`, *"the highest position the client was aware of"* | encoded differently | the `DecisionPosition` `readToDecide` returns, for `AppendCondition.failIfEventsMatch(query, { after })`: a `(transaction_id, position)` cursor and the read's snapshot: note 2 |
 | Append: *MUST* fail if any event matches the condition | differs | the transaction's own earlier appends are not a conflict for it: note 3 |
 | Sequence Position: *MUST* be unique; *MAY* contain gaps | compatible | `position` is the primary key; a rolled-back append leaves a gap |
 | Sequence Position: *MUST* resolve to a well-defined **static** order | differs | the order is deterministic but not static: note 4 |

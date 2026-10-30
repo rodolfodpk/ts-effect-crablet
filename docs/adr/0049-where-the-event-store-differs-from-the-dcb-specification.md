@@ -5,7 +5,7 @@
 **Accepted** (2026-10-29). Built: `Query.queryItemOf` and both stores refuse an item with neither types nor tags; `TagCodec` (the stored form of a
 tag); a repeated tag stored once; `AppendCondition.firstWrite`; `EventStoreConfig.maxAppendEvents` (and `makeInMemoryEventStore({ maxAppendEvents })`).
 The evaluation, requirement by requirement, is the [compatibility table](../concepts/dcb-guide.md#compatibility-with-the-specification) in the DCB
-guide, against the specification at commit `ab2bc5a` of dcb-events.
+guide, against the specification at commit `ab2bc5a` of dcb-events. The paged read and `Query.all()` (decision 1): [ADR-0050](0050-the-event-store-used-directly.md).
 
 ## Context
 
