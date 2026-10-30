@@ -4,6 +4,7 @@ import { NodeHttpServer } from "@effect/platform-node";
 import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter } from "effect/http";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
+import { EventStore } from "@crablet/eventstore";
 import { defineEvent } from "@crablet/commands/Event";
 import { eventPayloadMask, personal } from "@crablet/commands/Personal";
 import { eventsGroup } from "../src/EventsApi.ts";
@@ -96,4 +97,29 @@ describe("the event log API", () => {
     const spec = OpenApi.fromApi(api) as unknown as { paths: Record<string, unknown> };
     expect(Object.keys(spec.paths)).toContain("/admin/events");
   });
+
+  test("metadata is withheld unless a metadata mask is given; an event without metadata says nothing is withheld", async () => {
+    const store = makeInMemoryEventStore();
+    await Effect.runPromise(Effect.provide(Effect.flatMap(EventStore, (es) => es.append([{ type: "PlanUpgraded", tags: [{ key: "user_id", value: "u9" }], eventData: { userId: "u9", plan: "pro" }, metadata: { actor: "admin-7", ip: "10.0.0.1" } }, Upgraded({ userId: "u9", plan: "free" })])), store.layer));
+    const serveWith = (masks: Parameters<typeof makeEventsApiGroupLive>[1]) =>
+      HttpRouter.toWebHandler(
+        HttpApiBuilder.layer(api).pipe(
+          Layer.provide(makeEventsApiGroupLive(api, masks)),
+          Layer.provide(store.layer),
+          Layer.provide(authorizationFrom((token) => Effect.succeed(Redacted.value(token) === TOKEN))),
+          Layer.provide(NodeHttpServer.layerHttpServices)
+        ),
+        { disableLogger: true }
+      );
+    type Page = { events: Array<{ metadata: unknown; metadataShown: boolean }> };
+    const withheld = serveWith({ mask });
+    const w = (await (await get(withheld, "/admin/events")).json()) as Page;
+    expect(w.events.map((e) => [e.metadata, e.metadataShown])).toEqual([[null, false], [null, true]]);
+    await withheld.dispose();
+    const shown = serveWith({ mask, metadataMask: (_type, m) => ({ actor: m["actor"] }) });
+    const s2 = (await (await get(shown, "/admin/events")).json()) as Page;
+    expect(s2.events[0]).toMatchObject({ metadata: { actor: "admin-7" }, metadataShown: true });
+    await shown.dispose();
+  });
 });
+

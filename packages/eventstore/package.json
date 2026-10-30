@@ -17,6 +17,7 @@
     "./AppendErrors": "./src/AppendErrors.ts",
     "./EventDecoding": "./src/EventDecoding.ts",
     "./AppendResult": "./src/AppendResult.ts",
+    "./AppendContext": "./src/AppendContext.ts",
     "./CorrelationContext": "./src/CorrelationContext.ts",
     "./Listen": "./src/Listen.ts",
     "./SessionClients": "./src/SessionClients.ts",

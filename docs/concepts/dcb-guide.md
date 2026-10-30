@@ -294,7 +294,7 @@ same result; **differs** means the result is not the same in some case, said in 
 | Sequence Position: *MUST* be unique; *MAY* contain gaps | compatible | yes | `position` is the primary key; a rolled-back append leaves a gap |
 | Sequence Position: *MUST* resolve to a well-defined **static** order | differs | no, in one case | note 4 |
 | Event: a type, data and tags, all tags exposed | compatible | yes | `StoredEvent` |
-| Event: *MAY* carry metadata defined by the client | not offered | — | note 6 |
+| Event: *MAY* carry metadata defined by the client | compatible | yes | note 6 |
 | Event Data: an opaque payload | another form | yes, as JSON | note 7 |
 
 1. **The append limit.**
@@ -339,8 +339,13 @@ same result; **differs** means the result is not the same in some case, said in 
      always the separator ([ADR-0049](../adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)). The constructors (`Tag.of`)
      lower-case the key, a convention of this repository; the store writes what it is given.
    - *The result:* the same: any key and value make the round trip exactly, and a query finds exactly the tag it names.
-6. **Client metadata.** The specification allows an event to carry metadata the client defines. The store adds its own (`correlationId`,
-   `causationId`, the request fingerprint) but takes none from the client: what the client needs goes in the payload.
+6. **Client metadata.**
+   - *The specification:* an event may carry metadata the client defines.
+   - *Crablet:* `AppendEvent.metadata`, or `withMetadata(object)` around the appends (`@crablet/eventstore/AppendContext`), stored as a JSON object
+     apart from the payload and returned as `StoredEvent.metadata` ([ADR-0051](../adr/0051-client-metadata-correlation-and-causation.md)). The
+     store records its own besides (a correlation id, the causation, the request fingerprint); direct use can set the correlation and, from a
+     stored event, the causation.
+   - *The result:* the same. Metadata is not queried by (what to select by goes in a tag), and the event log shows it only through a mask.
 7. **Event data.**
    - *The specification:* an opaque payload.
    - *Crablet:* stored as JSONB: it must be JSON, and it comes back as the same JSON value, not the same bytes (key order and spacing are

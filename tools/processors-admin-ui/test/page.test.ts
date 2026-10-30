@@ -277,7 +277,7 @@ describe("the page as a person uses it", () => {
 describe("the event log tab", () => {
   const event = (position: string, over: Record<string, unknown> = {}) => ({
     eventId: `e${position}`, type: "WalletOpened", tags: [{ key: "wallet_id", value: "w1" }], position, transactionId: "9", occurredAt: "2026-10-30T10:00:00.000Z",
-    correlationId: null, causationId: null, data: { owner: "[redacted]" }, dataShown: true, ...over
+    correlationId: null, causationId: null, data: { owner: "[redacted]" }, dataShown: true, metadata: null, metadataShown: true, ...over
   });
 
   test("opening the tab reads the first page; the filter is sent as types and tags; More reads on from the cursor and appends", () => {
@@ -322,8 +322,9 @@ describe("the event log tab", () => {
       Scene.click(Scene.role("button", { name: "Events" })),
       Scene.Command.resolve(
         FetchEvents,
-        Message.SucceededEvents({ page: { events: [event("1"), event("2", { type: "Legacy", data: null, dataShown: false })], cursor: "9/2", more: false }, appended: false })
+        Message.SucceededEvents({ page: { events: [event("1"), event("2", { type: "Legacy", data: null, dataShown: false, metadataShown: false })], cursor: "9/2", more: false }, appended: false })
       ),
+      (Scene.expect(Scene.text("metadata withheld: the application shows none")) as any).toExist(),
       (Scene.expect(Scene.text("WalletOpened")) as any).toExist(),
       (Scene.expect(Scene.text("wallet_id=w1")) as any).toExist(),
       (Scene.expect(Scene.text("withheld: no definition of this type was given to the API")) as any).toExist(),

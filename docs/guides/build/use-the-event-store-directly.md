@@ -95,6 +95,25 @@ Within one transaction an append is not refused for events that same transaction
 should read again after writing. To refuse an append that is not its transaction's first write, as commands do, use
 `AppendCondition.firstWrite(condition)` ([the compatibility notes](../../concepts/dcb-guide.md#compatibility-with-the-specification)).
 
+## What the store records besides the events
+
+Each event records a correlation id (what groups everything one request led to), a causation (the position of the event that caused it) and,
+if you give it, metadata: a JSON object of your own, stored apart from the payload ([ADR-0051](../../adr/0051-client-metadata-correlation-and-causation.md)).
+Set them around the appends with `@crablet/eventstore/AppendContext`:
+
+<!-- file: packages/eventstore/test/support/direct-use.ts#context -->
+```ts
+// A lend asked for at the front desk: its events carry the request's correlation id (from the caller's header, say) and metadata saying where it
+// came from. The framework records both; it reads neither.
+export const lendAtTheDesk = (copyId: string, memberId: string, requestId: string) =>
+  lendCopy(copyId, memberId).pipe(AppendContext.withCorrelationId(requestId), AppendContext.withMetadata({ source: "front-desk" }));
+```
+
+`causedBy(event)` makes the appends inside caused by a stored event, and carries its correlation: only an event can be a cause, so a causation
+always names a real position. Commands, automations and deadlines set the correlation and the causation themselves; `withMetadata` and
+`withCorrelationId` around a command's `run` work the same way. Metadata is recorded and never read by the framework: what you select by goes in a
+tag, and personal data does not go in metadata, which the event log shows only through a mask of its own.
+
 ## Limits
 
 - One append takes at most `maxAppendEvents` events, 50 unless configured ([keep an append small](../operate/run-in-production.md#keep-an-append-small)).

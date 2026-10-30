@@ -18,7 +18,7 @@ import * as Cursor from "./Cursor.ts";
 import { AppendTooLarge, Conflict, Duplicate, maxAppendEventsOf } from "./AppendErrors.ts";
 import * as Sql from "./internal/sql.ts";
 import { makeWakeupNotifier, PendingWakeups } from "./internal/WakeupNotifier.ts";
-import { pageSizeOf, refusingEmptyItems, refusingNoItems, withDistinctTags } from "./internal/guards.ts";
+import { metadataProblem, pageSizeOf, refusingEmptyItems, refusingNoItems, withDistinctTags } from "./internal/guards.ts";
 
 // The fixed channel every append notifies
 // on and every LISTEN/NOTIFY-based consumer (event-poller's wakeupStream) subscribes to.
@@ -38,6 +38,8 @@ export interface StoredEvent {
   readonly occurredAt: Date;
   readonly correlationId: string | null;
   readonly causationId: bigint | null;
+  // The client's metadata (ADR-0051): the JSON object the application attached, absent when none. Recorded, never read by the framework.
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 // eventTypes empty = matches all types ("no filter" semantics).
@@ -186,7 +188,8 @@ function parseRow(row: Sql.StoredEventRow): StoredEvent {
     position: BigInt(row.position),
     occurredAt: row.occurred_at,
     correlationId: row.correlation_id,
-    causationId: row.causation_id === null ? null : BigInt(row.causation_id)
+    causationId: row.causation_id === null ? null : BigInt(row.causation_id),
+    ...(row.metadata === null || row.metadata === undefined ? {} : { metadata: row.metadata })
   };
 }
 
@@ -285,7 +288,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
       if (appendedEvents.length > maxAppendEvents) {
         return Effect.fail(new AppendTooLarge({ message: `Cannot append ${appendedEvents.length} events in one call; the limit is ${maxAppendEvents}. Split them into several appends.`, count: appendedEvents.length, max: maxAppendEvents }));
       }
-      const refused = QueryNS.emptyItemIn(condition.concurrencyQuery) ?? QueryNS.emptyItemIn(condition.idempotencyQuery);
+      const refused = QueryNS.emptyItemIn(condition.concurrencyQuery) ?? QueryNS.emptyItemIn(condition.idempotencyQuery) ?? metadataProblem(appendedEvents);
       if (refused !== null) return Effect.die(new Error(refused));
       const events = withDistinctTags(appendedEvents);
       const eventTypes = new Set(events.map((e) => e.type));

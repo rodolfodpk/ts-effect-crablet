@@ -3,6 +3,7 @@
 // Run in memory (test/direct-use.test.ts) and on Postgres (test/integration/direct-use.test.ts).
 import { Data, Effect, Schedule, Stream } from "effect";
 import * as AppendCondition from "../../src/AppendCondition.ts";
+import * as AppendContext from "../../src/AppendContext.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import { Conflict } from "../../src/AppendErrors.ts";
 import { EventStore, readToDecide, stream } from "../../src/EventStore.ts";
@@ -56,6 +57,13 @@ export const loansOf = (memberId: string) =>
 // The same as a stream, which asks for the pages itself.
 export const loanCount = (memberId: string) => Stream.runCount(stream(Query.forEventAndTag("CopyLent", "member_id", memberId), { batchSize: 100 }));
 // #endregion read
+
+// #region context
+// A lend asked for at the front desk: its events carry the request's correlation id (from the caller's header, say) and metadata saying where it
+// came from. The framework records both; it reads neither.
+export const lendAtTheDesk = (copyId: string, memberId: string, requestId: string) =>
+  lendCopy(copyId, memberId).pipe(AppendContext.withCorrelationId(requestId), AppendContext.withMetadata({ source: "front-desk" }));
+// #endregion context
 
 // #region transaction
 // Two appends that stand or fall together: one transaction, and the processors are woken once it has committed.

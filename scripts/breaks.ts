@@ -34,6 +34,8 @@ const migration = (name: string) => `packages/db-migrations/sql/${name}.sql`;
 // is no longer what runs). A break's text must occur once in its file, so it names enough of its function to be unique.
 const APPEND = migration("V2__crablet_append");
 const APPEND_IF = migration("V6__crablet_append_sees_the_read");
+// append_events_if and append_events_batch again, with the client's metadata (ADR-0051): their breaks edit V7; crablet_items_match_any's stay in V6.
+const APPEND_V7 = migration("V7__crablet_event_metadata");
 const READ_SNAPSHOT = "packages/eventstore/src/ReadSnapshot.ts";
 const QUERY = "packages/eventstore/src/Query.ts";
 const TAG_CODEC = "packages/eventstore/src/TagCodec.ts";
@@ -76,7 +78,7 @@ export const breaks: ReadonlyArray<Break> = [
   {
     id: "event-log-unmasked",
     file: "packages/processors-http/src/EventsApiLive.ts",
-    find: "  const shown = mask(e.type, e.data);",
+    find: "  const shown = (masks.mask ?? withholdAll)(e.type, e.data);",
     replace: "  const shown = e.data;",
     tests: ["examples/wallet-example-app/test/integration/admin-api-e2e.test.ts"],
     why: "the event log API would show personal data (a wallet's owner) to whoever holds the admin token (ADR-0050)"
@@ -222,7 +224,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "idempotency-not-checked",
-    file: APPEND_IF,
+    file: APPEND_V7,
     find: "v_has_duplicate := crablet_items_match_any(p_idempotency_items, NULL, NULL);",
     replace: "v_has_duplicate := FALSE;",
     tests: [es("conformance-postgres"), cmd("repeat-postgres")],
@@ -230,7 +232,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "writer-lock-shared",
-    file: APPEND_IF,
+    file: APPEND_V7,
     find: "PERFORM pg_advisory_xact_lock(v_lock.k);",
     replace: "PERFORM pg_advisory_xact_lock_shared(v_lock.k);",
     tests: [es("append-writer-locking")],
@@ -238,7 +240,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "fresh-transaction-unchecked",
-    file: APPEND_IF,
+    file: APPEND_V7,
     find: "IF p_require_fresh_transaction AND pg_current_xact_id_if_assigned() IS NOT NULL THEN",
     replace: "IF FALSE THEN",
     tests: [cmd("causal-order-postgres"), es("append")],
@@ -246,7 +248,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "snapshot-not-passed",
-    file: APPEND_IF,
+    file: APPEND_V7,
     find: "p_after_cursor_transaction_id, p_after_snapshot);",
     replace: "p_after_cursor_transaction_id, NULL);",
     tests: [cmd("long-transaction-postgres")],
@@ -269,8 +271,16 @@ export const breaks: ReadonlyArray<Break> = [
     why: "an event of a transaction running when the read was taken, committed after it, would not be a conflict (ADR-0048, ADR-0012)"
   },
   {
+    id: "metadata-not-stored",
+    file: APPEND_V7,
+    find: "                   t.metadata\n",
+    replace: "                   NULL\n",
+    tests: [es("conformance-postgres")],
+    why: "an event's metadata would be dropped on the way in (ADR-0051)"
+  },
+  {
     id: "no-emit-key",
-    file: APPEND,
+    file: APPEND_V7,
     find: "THEN encode(p_request_fingerprint, 'hex') || '/' || t.ord END",
     replace: "THEN NULL END",
     tests: [cmd("trigger-backstop-postgres"), "packages/automations/test/integration/automation-idempotency-postgres.test.ts"],
@@ -278,7 +288,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "no-tag-keys",
-    file: APPEND,
+    file: APPEND_V7,
     find: "WHERE tag LIKE '%=%'),",
     replace: "WHERE FALSE),",
     tests: [ep("tag-key-strategy-equivalence"), ep("event-processor-integration")],
@@ -286,7 +296,7 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "no-deadline-row",
-    file: APPEND,
+    file: APPEND_V7,
     find: "WHERE i.type = 'crablet.DeadlineScheduled')",
     replace: "WHERE FALSE)",
     tests: ["packages/automations/test/integration/deadlines.test.ts"],

@@ -14,6 +14,7 @@ import { EventDecodingError, EventDecodingFailure } from "../../src/EventDecodin
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { Duplicate } from "../../src/AppendErrors.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
+import * as AppendContext from "../../src/AppendContext.ts";
 import * as CorrelationContext from "../../src/CorrelationContext.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
 import * as Query from "../../src/Query.ts";
@@ -329,6 +330,36 @@ export const cases: ReadonlyArray<ConformanceCase> = [
       assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(head, Query.all())), "conflict", "the attempt above is after it");
       assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.of(LogPosition.zero(), Query.all())), "conflict", "from the start: any event");
       assert.equal(await append(h, [ev(`ConfAllAttempt${id}`)], AppendCondition.idempotentFromQuery(Query.all())), "duplicate", "as an idempotency query: any event");
+    }
+  },
+  {
+    name: "metadata: an event's own, what withMetadata sets around the append (the event's keys win), or none; anything but an object is refused (ADR-0051)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.of(item([], [["meta", id]]));
+      const withOwn = AppendEvent.builder(`ConfMetaA${id}`).tag("meta", id).metadata({ actor: "own", n: 1 }).data({ n: 1 }).build();
+      const without = ev(`ConfMetaB${id}`, [["meta", id]]);
+      await h.run(AppendContext.withMetadata({ actor: "context", source: "import" })(Effect.flatMap(EventStore, (es) => es.append([withOwn, without]))));
+      await append(h, [ev(`ConfMetaC${id}`, [["meta", id]])]);
+      const stored = (await read(h, q)).state;
+      assert.deepEqual(stored.map((e) => e.metadata ?? null), [{ actor: "own", source: "import", n: 1 }, { actor: "context", source: "import" }, null]);
+      const bad = { type: `ConfMetaD${id}`, tags: [], eventData: {}, metadata: [1, 2] as unknown as Record<string, unknown> };
+      const exit = await h.run(Effect.exit(Effect.flatMap(EventStore, (es) => es.append([bad]))));
+      assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "an array is not metadata");
+    }
+  },
+  {
+    name: "correlation and causation set around an append: withCorrelationId (a uuid) and causedBy(event), which takes the cause's correlation (ADR-0051)",
+    run: async (h) => {
+      const id = uid();
+      const correlation = crypto.randomUUID();
+      await h.run(AppendContext.withCorrelationId(correlation)(Effect.flatMap(EventStore, (es) => es.append([ev(`ConfCause${id}`, [["c", id]])]))));
+      const [cause] = (await read(h, Query.forEventAndTag(`ConfCause${id}`, "c", id))).state;
+      assert.equal(cause!.correlationId, correlation);
+      await h.run(AppendContext.causedBy(cause!)(Effect.flatMap(EventStore, (es) => es.append([ev(`ConfEffect${id}`, [["c", id]])]))));
+      const [effect] = (await read(h, Query.forEventAndTag(`ConfEffect${id}`, "c", id))).state;
+      assert.deepEqual([effect!.causationId, effect!.correlationId], [cause!.position, correlation]);
+      assert.throws(() => AppendContext.withCorrelationId("not-a-uuid"), /a correlation id is a uuid/);
     }
   },
   {

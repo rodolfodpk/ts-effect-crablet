@@ -23,6 +23,15 @@ export const pageSizeOf = (limit: number | undefined): number | string => {
   return Number.isInteger(size) && size >= 1 ? size : `a page size must be a whole number of at least 1, got ${String(limit)}`;
 };
 
+// An event's metadata is a JSON object (ADR-0051): anything else is refused, as a defect, naming the event.
+export const metadataProblem = (events: ReadonlyArray<AppendEvent>): string | null => {
+  for (const e of events) {
+    const m = e.metadata;
+    if (m !== undefined && (typeof m !== "object" || m === null || Array.isArray(m))) return `the metadata of a ${e.type} event must be a JSON object (ADR-0051)`;
+  }
+  return null;
+};
+
 // Each event with its tags once each: a repeated tag (same key, same value) is written once (the specification: tags SHOULD not repeat).
 export const withDistinctTags = (events: ReadonlyArray<AppendEvent>): ReadonlyArray<AppendEvent> =>
   events.map((e) => {

@@ -5,7 +5,7 @@ import type { AppendEvent } from "../AppendEvent.ts";
 import type { AppendResult } from "../AppendResult.ts";
 import type { AppendCondition } from "../AppendCondition.ts";
 import { AppendTooLarge, Conflict, Duplicate, maxAppendEventsOf } from "../AppendErrors.ts";
-import { pageSizeOf, refusingEmptyItems, refusingNoItems, withDistinctTags } from "../internal/guards.ts";
+import { metadataProblem, pageSizeOf, refusingEmptyItems, refusingNoItems, withDistinctTags } from "../internal/guards.ts";
 import * as Cursor from "../Cursor.ts";
 import * as CorrelationContext from "../CorrelationContext.ts";
 import * as LogPositionNS from "../LogPosition.ts";
@@ -59,10 +59,12 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
     correlationId: string | null,
     causationId: bigint | null,
     fingerprint: string | null = null,
-    occurredAt: Date = new Date()
+    occurredAt: Date = new Date(),
+    metadata: ReadonlyArray<Readonly<Record<string, unknown>> | null> = []
   ): AppendResult => {
     const transactionId = String(++transactionCounter);
-    for (const e of events) {
+    for (const [i, e] of events.entries()) {
+      const meta = metadata[i] ?? null;
       fingerprints.set(BigInt(log.length + 1), fingerprint);
       log.push({
         eventId: crypto.randomUUID(),
@@ -74,7 +76,9 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
         position: BigInt(log.length + 1),
         occurredAt,
         correlationId,
-        causationId
+        causationId,
+        // round-tripped like the payload, as Postgres stores it as JSONB
+        ...(meta === null ? {} : { metadata: JSON.parse(JSON.stringify(meta)) })
       });
     }
     // Stryker disable next-line ConditionalExpression,LogicalOperator: `append` looks a key up only with both set, so a key stored without them is never read.
@@ -107,6 +111,8 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
         return yield* new AppendTooLarge({ message: `Cannot append ${appendedEvents.length} events in one call; the limit is ${maxAppendEvents}. Split them into several appends.`, count: appendedEvents.length, max: maxAppendEvents });
       }
       if (condition) yield* refusingEmptyItems(condition.concurrencyQuery, refusingEmptyItems(condition.idempotencyQuery, Effect.void));
+      const badMetadata = metadataProblem(appendedEvents);
+      if (badMetadata !== null) return yield* Effect.die(new Error(badMetadata));
       const events = withDistinctTags(appendedEvents);
       const verdict = condition ? checkAppend(log, condition) : "ok";
       if (verdict === "duplicate") {
@@ -118,6 +124,7 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
       const correlationId = yield* CorrelationContext.correlationId;
       const causationId = yield* CorrelationContext.causationId;
       const fingerprint = yield* CorrelationContext.requestFingerprint;
+      const metadata = CorrelationContext.metadataOf(events, yield* CorrelationContext.metadata);
       const occurredAt = new Date(yield* Clock.currentTimeMillis);
       // The same trigger appending the same request again: refused like Postgres's unique emit key (ADR-0035).
       const repeated = causationId !== null && fingerprint !== null ? emitKeys.get(`${causationId}/${fingerprint}`) : undefined;
@@ -132,7 +139,7 @@ export const makeInMemoryEventStore = (options: { readonly maxAppendEvents?: num
       }
       // Nothing above suspends, so the check and the insert are one atomic step.
       appended.push({ events, condition: condition ?? null });
-      return store(events, correlationId, causationId, fingerprint, occurredAt);
+      return store(events, correlationId, causationId, fingerprint, occurredAt, metadata);
     })) as EventStoreService["append"];
 
   const project: EventStoreService["project"] = (query, after, projectors) =>

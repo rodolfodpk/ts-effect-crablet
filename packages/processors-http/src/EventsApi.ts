@@ -19,7 +19,11 @@ export const LoggedEvent = Schema.Struct({
   correlationId: Schema.NullOr(Schema.String),
   causationId: Schema.NullOr(Schema.String).annotate({ description: "The position of the event that caused it, if any." } as never),
   data: Schema.NullOr(Schema.Unknown).annotate({ description: "The payload as the application's mask shows it (personal fields redacted); null when withheld." } as never),
-  dataShown: Schema.Boolean.annotate({ description: "False when the payload is withheld: no definition of this type was given to the API." } as never)
+  dataShown: Schema.Boolean.annotate({ description: "False when the payload is withheld: no definition of this type was given to the API." } as never),
+  metadata: Schema.NullOr(Schema.Unknown).annotate({
+    description: "The client's metadata (ADR-0051) as the application's metadata mask shows it; null when the event has none or it is withheld."
+  } as never),
+  metadataShown: Schema.Boolean.annotate({ description: "False when the event has metadata the API does not show: no metadata mask was given." } as never)
 }).annotate({ identifier: "LoggedEvent" } as never);
 export type LoggedEvent = typeof LoggedEvent.Type;
 

@@ -368,7 +368,12 @@ const eventRow = (e: LoggedEvent, h: HtmlBuilder<Message>) =>
         [
           e.dataShown
             ? h.details([], [h.summary([], ["payload"]), h.pre([], [h.code([], [JSON.stringify(e.data, null, 2)])])])
-            : h.span([h.Class("muted")], ["withheld: no definition of this type was given to the API"])
+            : h.span([h.Class("muted")], ["withheld: no definition of this type was given to the API"]),
+          ...(e.metadata !== null
+            ? [h.details([], [h.summary([], ["metadata"]), h.pre([], [h.code([], [JSON.stringify(e.metadata, null, 2)])])])]
+            : e.metadataShown
+              ? []
+              : [h.div([h.Class("muted")], ["metadata withheld: the application shows none"])])
         ]
       )
     ]

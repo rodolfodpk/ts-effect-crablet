@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { Effect } from "effect";
 import type { EventStore } from "../../src/EventStore.ts";
-import { CopyNotAvailable, lendCopy, lendTwo, loanCount, loansOf, returnCopy } from "./direct-use.ts";
+import { CopyNotAvailable, lendAtTheDesk, lendCopy, lendTwo, loanCount, loansOf, returnCopy } from "./direct-use.ts";
 
 export const directUseScenario = (run: <A, E>(effect: Effect.Effect<A, E, EventStore>) => Promise<A>) => async () => {
   const id = crypto.randomUUID().slice(0, 8);
@@ -18,4 +18,10 @@ export const directUseScenario = (run: <A, E>(effect: Effect.Effect<A, E, EventS
   const failed = await run(Effect.flip(lendTwo(b, a, member)));
   assert.ok(failed instanceof CopyNotAvailable);
   assert.strictEqual((await run(loansOf(member))).length, 2, "the transaction rolled back b's loan");
+  // a lend at the desk: the request's correlation and the metadata are on its event
+  const request = crypto.randomUUID();
+  const deskMember = `desk-${id}`;
+  await run(lendAtTheDesk(`c-${id}`, deskMember, request));
+  const [loan] = await run(loansOf(deskMember));
+  assert.deepStrictEqual([loan!.correlationId, loan!.metadata], [request, { source: "front-desk" }]);
 };

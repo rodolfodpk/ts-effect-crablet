@@ -15,6 +15,9 @@ framework sits on top of this package.
   `read(query, { after, limit })` returns a page of finished events and the `Cursor` to resume from; `stream(query)` pages for you;
   `Query.all()` is every event. `transaction(effect)` runs one transaction and wakes the processors after it commits. `project`, `exists`,
   `findDuplicate` and `withWakeups` are what the command framework builds on.
+- **`AppendContext`** - what the store records about an append besides its events ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)):
+  `withCorrelationId(uuid)`, `causedBy(storedEvent)` (only a stored event can be a cause) and `withMetadata(object)`, each around the appends of an
+  effect. An event's own metadata is `AppendEvent.metadata`; a read returns it as `StoredEvent.metadata`.
 - **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition`, `Cursor` and `Marker`, each its own import (`@crablet/eventstore/Query`, ...).
   A query item targets events by type and/or tags; one with neither is refused. A tag's key and value may hold any characters (the key is encoded
   when stored), and a tag repeated on an event is stored once. One append takes at most `maxAppendEvents` events (`EventStoreConfig`, default 50).
