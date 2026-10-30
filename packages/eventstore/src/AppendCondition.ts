@@ -37,6 +37,7 @@ export interface DecisionPosition {
 
 // For the event store: the position a read made to decide reports.
 export const decisionPositionOf = (logPosition: LogPositionType, seen: ReadSnapshot | undefined): DecisionPosition =>
+  // Stryker disable next-line ObjectLiteral,ConditionalExpression: `seen: undefined` and no `seen` mean the same to failIfEventsMatch.
   ({ logPosition, ...(seen === undefined ? {} : { seen }) }) as DecisionPosition;
 
 // The DCB specification's condition: fail if any event matching `query` was appended after `after` (any at all without it), and, with `idempotency`,

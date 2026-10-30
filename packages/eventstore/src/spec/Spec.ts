@@ -25,8 +25,9 @@ export const itemMatches = (item: QueryItem, event: SpecEvent): boolean =>
 
 // A query matches an event when ANY item does. A query with no items (`Query.of([])`) matches EVERYTHING when used to read. An item with neither
 // types nor tags is not a query item at all (it targets events by type and/or tags): both stores refuse it (Query.emptyItemIn, ADR-0049).
+// (`Query.all()` has no items, so it matches everything here too.)
 export const queryMatches = (query: Query, event: SpecEvent): boolean =>
-  query.all === true || query.items.length === 0 || query.items.some((i) => itemMatches(i, event));
+  query.items.length === 0 || query.items.some((i) => itemMatches(i, event));
 
 // What a condition's query checks: `all()` every event, else its items (none: no check).
 const conditionMatches = (query: Query, event: SpecEvent): boolean => query.all === true || query.items.some((i) => itemMatches(i, event));
