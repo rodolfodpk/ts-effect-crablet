@@ -278,6 +278,7 @@ dcb-events repository at commit `ab2bc5a` (2026-10-25). Reevaluate when the spec
 functionality is the same, so each row says two things: the **status** (how the requirement is met) and whether the **result** is the one the
 specification asks for. **compatible** means as written; **another form** means the requirement holds through a different representation, with the
 same result; **differs** means the result is not the same in some case, said in the note; **not offered** and **not yet** speak for themselves.
+The API in the rows, used without commands, is shown in [use the event store directly](../guides/build/use-the-event-store-directly.md).
 
 | Requirement (the specification's words) | Status | Same result? | Evidence |
 |---|---|---|---|
@@ -320,7 +321,8 @@ same result; **differs** means the result is not the same in some case, said in 
      is not position order, "what the client was aware of" is not one number, so it is a cursor and a snapshot.
 3. **The transaction's own appends.**
    - *The specification:* the append fails if any event matches the condition.
-   - *Crablet:* an append is not refused for an event its own transaction appended earlier. What the transaction wrote, it knows; without this,
+   - *Crablet:* on Postgres, an append is not refused for an event its own transaction appended earlier (the in-memory store refuses it, as the
+     specification does). What the transaction wrote, it knows; without this,
      writing, reading and writing again under a condition in one transaction would always fail, and a read's snapshot cannot tell the
      transaction's own events apart (ADR-0049).
    - *The result:* the same, except in one case: read, then write, then append under a condition on the *earlier* read. The append passes though its

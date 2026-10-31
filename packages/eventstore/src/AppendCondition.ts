@@ -19,7 +19,8 @@ export interface AppendCondition {
   readonly seen?: ReadSnapshot;
   // The append must be its transaction's first write (ADR-0033): refused (CRB01, a defect) if the transaction already wrote anything, so no write of
   // its own can come before the read the decision was made on. Without it, events the same transaction appended earlier are not a conflict for it
-  // (ADR-0049). Commands always run this way; for direct use, set it with `firstWrite(...)`. No effect in the in-memory store, which has no transactions.
+  // (ADR-0049). Commands always run this way; for direct use, set it with `firstWrite(...)`. No effect in the in-memory store: its `transaction` only
+  // rolls back, and an append there is refused for events its own transaction appended after the read, as the specification says.
   readonly firstWrite?: true;
 }
 
