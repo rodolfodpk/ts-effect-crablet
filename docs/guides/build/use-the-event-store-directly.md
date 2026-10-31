@@ -8,7 +8,23 @@ audit. This guide is for the other cases: a script, an import, an export, a tool
 [`@crablet/eventstore`](../../../packages/eventstore/README.md) API, which follows the [DCB specification](https://dcb.events/specification/):
 read events, decide, and append with a condition ([how close it is](../../concepts/dcb-guide.md#compatibility-with-the-specification)).
 
-Prefer a command when you would otherwise write its parts yourself: retries, idempotency, an audit, an HTTP endpoint, an automation that issues it.
+## What each layer gives
+
+An application uses both: commands for its decisions, the event store for scripts, imports and exports, all on one log. Prefer a command when you
+would otherwise write its parts yourself.
+
+| | Event store API | Command framework |
+|---|---|---|
+| Read, decide, append under a condition | `readToDecide`, `decision.append` | `defineModel`, `decide`, the executor |
+| Retry a conflict | you write it (`Effect.retry`) | built in |
+| Recognise a repeated request | you write it (`idempotency`) | `idempotentBy`, and a repeat answers with the earlier write |
+| Audit | — | built in |
+| HTTP and OpenAPI | — | generated (`@crablet/commands-http`) |
+| Run from an automation or a deadline | — | built in |
+| Typed state | you fold the events | the model |
+| A boundary other than what was read | `failIfEventsMatch(query, …)` | `consistency` (`strict()`, `concurrent({ guard })`); `resolve`'s reads join the condition |
+| Read the log page by page, or as a stream | `read`, `stream` | — (use the event store API alongside) |
+| Test without a database | the in-memory store | the in-memory store and the Given/When/Then helpers |
 
 ## Set it up
 
@@ -26,10 +42,11 @@ import * as Query from "@crablet/eventstore/Query";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 ```
 
-The code below needs an `EventStore`, which a layer provides: on Postgres, `EventStoreLive` over a connection pool; in a test, the in-memory
-store. The database must have the migrations of [`@crablet/db-migrations`](../../../packages/db-migrations/README.md) applied, by your own tool
-([run it in production](../operate/run-in-production.md)); nothing applies them for you. `Cursor` (`@crablet/eventstore/Cursor`) is needed only to keep
-a cursor as text.
+The code below needs an `EventStore`, which a layer provides: on Postgres, `Postgres.layer(connection)`, the event store over a connection pool
+(it keeps the database clients in its output, for code that needs them too); in a test, `makeInMemoryEventStore().layer`. The database must have
+the migrations of [`@crablet/db-migrations`](../../../packages/db-migrations/README.md) applied, by your own tool
+([run it in production](../operate/run-in-production.md)); nothing applies them for you. `Cursor` (`@crablet/eventstore/Cursor`) is needed only to
+keep a cursor as text.
 
 <!-- file: packages/eventstore/test/support/direct-use.ts#setup -->
 ```ts
@@ -40,16 +57,17 @@ export const runWith = <LE>(layer: Layer.Layer<EventStore, LE>) => <A, E>(progra
   Effect.runPromise(Effect.provide(program, layer));
 ```
 
-`runWith(onPostgres({ host, port, database, username, password: Redacted.make(secret) }))(lendCopy("c-1", "m-7"))` runs the first example below
+`runWith(Postgres.layer({ host, port, database, username, password: Redacted.make(secret) }))(lendCopy("c-1", "m-7"))` runs the first example below
 (`Redacted` is from `effect`). The in-memory store has no database underneath: its `transaction` only rolls back, and where it behaves
 differently, this guide says so.
 
 ## Read, decide, append
 
-A decision reads the events it depends on with `readToDecide`, decides, and appends with `AppendCondition.failIfEventsMatch(query, { after })`.
-The append is refused with `Conflict` if an event matching the query was appended after the read. `after` is the position the read returns: it holds
-what the read could see, so an event the read saw is never a conflict, however recent ([ADR-0048](../../adr/0048-a-conflict-is-what-the-read-did-not-see.md)).
-A refused decision is decided again by reading again; here up to three times, with `Effect.retry`.
+A decision reads the events it depends on with `readToDecide`, decides, and appends with `decision.append(events)`. The append is refused with
+`Conflict` if an event matching the read's query was appended after the read. The decision holds what the read could see, so an event the read saw
+is never a conflict, however recent ([ADR-0048](../../adr/0048-a-conflict-is-what-the-read-did-not-see.md)). A refused decision is decided again by
+reading again; here up to three times, with `Effect.retry`. `Query.match(types, tags)` builds the query, and `AppendEvent.make(type, data, tags)` the
+event ([ADR-0052](../../adr/0052-short-forms-for-direct-use.md)).
 
 <!-- file: packages/eventstore/test/support/direct-use.ts#decide -->
 ```ts
@@ -71,9 +89,10 @@ export const lendCopy = (copyId: string, memberId: string) =>
   );
 ```
 
-Without `after`, the condition refuses the append if *any* matching event exists (a "this must be the first" rule). With `idempotency`, it also
-refuses with `Duplicate` when an event matching that query already exists, checked first. `readToDecide` reads every matching event into memory,
-which is right for what a decision depends on (an entity, a few) and wrong for the whole log: for that, read in pages.
+`decision.append(events, { idempotency })` also refuses with `Duplicate` when an event matching that query already exists, checked first. When the
+condition is not the read's query, build it with `AppendCondition.failIfEventsMatch(query, { after: decision.position })` and `append(events,
+condition)`; without `after`, it refuses the append if *any* matching event exists (a "this must be the first" rule). `readToDecide` reads every
+matching event into memory, which is right for what a decision depends on (an entity, a few) and wrong for the whole log: for that, read in pages.
 
 ## Read in pages, or as a stream
 
@@ -105,8 +124,7 @@ a transaction that has written stays open anywhere in the database, a page stops
 did, and `more: false` means "no more finished events now", not "no more events". A transaction that has only read holds nothing back. Your own
 transaction counts too: inside `transaction`, once it has appended, a page shows neither its own events nor any newer one; read with `readToDecide`
 there, which sees them. (In memory every event has finished, so a page shows them all.) A stream ends when it has caught up; to follow the log
-as it grows, [add a view](add-a-view.md) or an
-[automation](add-an-automation.md), which are woken by new events.
+as it grows, [add a view](add-a-view.md) or an [automation](add-an-automation.md), which are woken by new events.
 
 To read every event, use `Query.all()`; a query with no items is refused by these reads. In a condition, `Query.all()` refuses the append for any
 event at all after the position, and it waits for every other writer: keep it for a rule that really is about the whole log.
@@ -124,8 +142,9 @@ export const lendTwo = (first: string, second: string, memberId: string) => tran
 
 On Postgres, within one transaction an append is not refused for events that same transaction appended earlier: a decision that depends on what you
 just wrote should read again after writing, as `lendTwo` does (each `lendCopy` reads first). To refuse an append that is not its transaction's first
-write, as commands do, use `AppendCondition.firstWrite(condition)` ([note 3 of the compatibility table](../../concepts/dcb-guide.md#compatibility-with-the-specification)).
-The in-memory store has neither the exception nor `firstWrite`: there an append is refused for an event its own transaction appended after the read, and `firstWrite` changes nothing.
+write, as commands do, use `decision.append(events, { firstWrite: true })`, or `AppendCondition.firstWrite(condition)`
+([note 3 of the compatibility table](../../concepts/dcb-guide.md#compatibility-with-the-specification)). The in-memory store has neither the
+exception nor `firstWrite`: there an append is refused for an event its own transaction appended after the read, and `firstWrite` changes nothing.
 
 ## What the store records besides the events
 
@@ -145,15 +164,27 @@ export const lendAtTheDesk = (copyId: string, memberId: string, requestId: strin
 `withCorrelationId` takes a uuid: anything else throws when it is called, before the effect runs. `causedBy(event)` makes the appends inside
 caused by a stored event, and carries its correlation: only an event can be a cause, so a causation always names a real position. Commands,
 automations and deadlines set the correlation and the causation themselves; `withMetadata` and `withCorrelationId` around a command's `run` work
-the same way. Metadata is recorded and never read by the framework: what you select by goes in a
-tag, and personal data does not go in metadata, which the event log shows only through a mask of its own.
+the same way. Metadata is recorded and never read by the framework: what you select by goes in a tag, and personal data does not go in metadata,
+which the event log shows only through a mask of its own.
 
 ## Limits
 
 - One append takes at most `maxAppendEvents` events, 50 unless configured ([keep an append small](../operate/run-in-production.md#keep-an-append-small)).
 - A query item targets events by type and/or tags; one with neither is refused.
 - A tag's key and value may hold any characters, and a tag repeated on an event is stored once.
-- `.tag(key, value)` with a `null` or `undefined` value adds no tag, and says nothing: an optional field gives a tag only when it is there.
+- On an event (`AppendEvent.make`, or the builder's `.tag(key, value)`), a tag whose value is `null` or `undefined` is not added, and nothing is
+  said: an optional field gives a tag only when it is there. In a query (`Query.match`), the same is refused: leaving the tag out would widen what
+  a decision reads.
+
+## The longer forms
+
+The short forms build on others, which stay for what they do not cover:
+
+- **A query** of several items: `Query.union(Query.match(...), Query.match(...))`; one key with several values in an item:
+  `Query.of(Query.queryItemOf(types, tags))`. `Query.forEvent`, `forEventAndTag`, `forEventAndTags` and `forEventsAndTags` build the same items.
+- **An event** with metadata of its own: `AppendEvent.builder(type).tag(...).data(...).metadata(...).build()`.
+- **A condition** that is not the read's query: `AppendCondition.failIfEventsMatch(query, { after: decision.position, idempotency })`.
+- **The service itself**, `yield* EventStore`, whose methods `append`, `read` and `transaction` are what the functions call.
 
 The code of this guide is [`direct-use.ts`](../../../packages/eventstore/test/support/direct-use.ts), run in memory and on Postgres, with two lends of
 one copy raced ([ADR-0050](../../adr/0050-the-event-store-used-directly.md)).
