@@ -1,13 +1,30 @@
 // The event store used directly, without the command framework: the code of docs/guides/build/use-the-event-store-directly.md (its blocks are these
 // regions, checked by guides-sync.test.ts). A library lends copies: lending a copy that is out is refused; returning one makes it available again.
 // Run in memory (test/direct-use.test.ts) and on Postgres (test/integration/direct-use.test.ts).
-import { Data, Effect, Schedule, Stream } from "effect";
-import * as AppendCondition from "../../src/AppendCondition.ts";
-import * as AppendContext from "../../src/AppendContext.ts";
-import * as AppendEvent from "../../src/AppendEvent.ts";
-import { Conflict } from "../../src/AppendErrors.ts";
-import { EventStore, readToDecide, stream } from "../../src/EventStore.ts";
-import * as Query from "../../src/Query.ts";
+// It imports the package by its own name, as an application does.
+// #region imports
+import { Data, Effect, Layer, Schedule, Stream } from "effect";
+import { PgClient } from "@effect/sql-pg";
+import { EventStore, EventStoreLive, readToDecide, stream } from "@crablet/eventstore";
+import * as AppendCondition from "@crablet/eventstore/AppendCondition";
+import * as AppendContext from "@crablet/eventstore/AppendContext";
+import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import { Conflict } from "@crablet/eventstore/AppendErrors";
+import * as Query from "@crablet/eventstore/Query";
+import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
+// #endregion imports
+
+// #region setup
+// On Postgres: the event store over a connection pool, on a database the migrations of @crablet/db-migrations were applied to.
+export const onPostgres = (connection: PgClient.PgClientConfig) => Layer.provideMerge(EventStoreLive, PgClient.layer(connection));
+
+// In a test: the in-memory store, which passes the same conformance suite. A new one per test starts empty.
+export const inMemory = () => makeInMemoryEventStore().layer;
+
+// A program that uses the store needs `EventStore`; the layer provides it.
+export const runWith = <LE>(layer: Layer.Layer<EventStore, LE>) => <A, E>(program: Effect.Effect<A, E, EventStore>) =>
+  Effect.runPromise(Effect.provide(program, layer));
+// #endregion setup
 
 export class CopyNotAvailable extends Data.TaggedError("CopyNotAvailable")<{ readonly copyId: string }> {}
 

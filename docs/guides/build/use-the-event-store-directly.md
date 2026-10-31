@@ -10,6 +10,45 @@ read events, decide, and append with a condition ([how close it is](../../concep
 
 Prefer a command when you would otherwise write its parts yourself: retries, idempotency, an audit, an HTTP endpoint, an automation that issues it.
 
+## Set it up
+
+What this guide uses, and the entry point each comes from:
+
+<!-- file: packages/eventstore/test/support/direct-use.ts#imports -->
+```ts
+import { Data, Effect, Layer, Schedule, Stream } from "effect";
+import { PgClient } from "@effect/sql-pg";
+import { EventStore, EventStoreLive, readToDecide, stream } from "@crablet/eventstore";
+import * as AppendCondition from "@crablet/eventstore/AppendCondition";
+import * as AppendContext from "@crablet/eventstore/AppendContext";
+import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import { Conflict } from "@crablet/eventstore/AppendErrors";
+import * as Query from "@crablet/eventstore/Query";
+import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
+```
+
+The code below needs an `EventStore`, which a layer provides: on Postgres, `EventStoreLive` over a connection pool; in a test, the in-memory
+store. The database must have the migrations of [`@crablet/db-migrations`](../../../packages/db-migrations/README.md) applied, by your own tool
+([run it in production](../operate/run-in-production.md)); nothing applies them for you. `Cursor` (`@crablet/eventstore/Cursor`) is needed only to keep
+a cursor as text.
+
+<!-- file: packages/eventstore/test/support/direct-use.ts#setup -->
+```ts
+// On Postgres: the event store over a connection pool, on a database the migrations of @crablet/db-migrations were applied to.
+export const onPostgres = (connection: PgClient.PgClientConfig) => Layer.provideMerge(EventStoreLive, PgClient.layer(connection));
+
+// In a test: the in-memory store, which passes the same conformance suite. A new one per test starts empty.
+export const inMemory = () => makeInMemoryEventStore().layer;
+
+// A program that uses the store needs `EventStore`; the layer provides it.
+export const runWith = <LE>(layer: Layer.Layer<EventStore, LE>) => <A, E>(program: Effect.Effect<A, E, EventStore>) =>
+  Effect.runPromise(Effect.provide(program, layer));
+```
+
+`runWith(onPostgres({ host, port, database, username, password: Redacted.make(secret) }))(lendCopy("c-1", "m-7"))` runs the first example below
+(`Redacted` is from `effect`). The in-memory store has no database underneath: its `transaction` only rolls back, and where it behaves
+differently, this guide says so.
+
 ## Read, decide, append
 
 A decision reads the events it depends on with `readToDecide`, decides, and appends with `AppendCondition.failIfEventsMatch(query, { after })`.
@@ -72,8 +111,11 @@ export const loanCount = (memberId: string) => Stream.runCount(stream(Query.forE
 ```
 
 A page holds only events whose transaction had finished, so resuming from its cursor never skips one, even one that commits late. The other side: while
-a transaction stays open anywhere in the database, a page stops before the events written after it began, and `more: false` means "no more finished
-events now", not "no more events". A stream ends when it has caught up; to follow the log as it grows, [add a view](add-a-view.md) or an
+a transaction that has written stays open anywhere in the database, a page stops before the events of every transaction that first wrote after it
+did, and `more: false` means "no more finished events now", not "no more events". A transaction that has only read holds nothing back. Your own
+transaction counts too: inside `transaction`, once it has appended, a page shows neither its own events nor any newer one; read with `readToDecide`
+there, which sees them. (In memory every event has finished, so a page shows them all.) A stream ends when it has caught up; to follow the log
+as it grows, [add a view](add-a-view.md) or an
 [automation](add-an-automation.md), which are woken by new events.
 
 To read every event, use `Query.all()`; a query with no items is refused by these reads. In a condition, `Query.all()` refuses the append for any
@@ -91,14 +133,16 @@ export const lendTwo = (first: string, second: string, memberId: string) =>
   Effect.flatMap(Effect.service(EventStore), (es) => es.transaction(Effect.andThen(lendCopy(first, memberId), lendCopy(second, memberId))));
 ```
 
-Within one transaction an append is not refused for events that same transaction appended earlier: a decision that depends on what you just wrote
-should read again after writing. To refuse an append that is not its transaction's first write, as commands do, use
-`AppendCondition.firstWrite(condition)` ([the compatibility notes](../../concepts/dcb-guide.md#compatibility-with-the-specification)).
+On Postgres, within one transaction an append is not refused for events that same transaction appended earlier: a decision that depends on what you
+just wrote should read again after writing, as `lendTwo` does (each `lendCopy` reads first). To refuse an append that is not its transaction's first
+write, as commands do, use `AppendCondition.firstWrite(condition)` ([note 3 of the compatibility table](../../concepts/dcb-guide.md#compatibility-with-the-specification)).
+The in-memory store has neither the exception nor `firstWrite`: there an append is refused for an event its own transaction appended after the read, and `firstWrite` changes nothing.
 
 ## What the store records besides the events
 
-Each event records a correlation id (what groups everything one request led to), a causation (the position of the event that caused it) and,
-if you give it, metadata: a JSON object of your own, stored apart from the payload ([ADR-0051](../../adr/0051-client-metadata-correlation-and-causation.md)).
+An event can record a correlation id (what groups everything one request led to), a causation (the position of the event that caused it) and
+metadata: a JSON object of your own, stored apart from the payload. Each is recorded only when something sets it; an event appended directly with
+nothing around it has none ([ADR-0051](../../adr/0051-client-metadata-correlation-and-causation.md)).
 Set them around the appends with `@crablet/eventstore/AppendContext`:
 
 <!-- file: packages/eventstore/test/support/direct-use.ts#context -->
@@ -109,9 +153,10 @@ export const lendAtTheDesk = (copyId: string, memberId: string, requestId: strin
   lendCopy(copyId, memberId).pipe(AppendContext.withCorrelationId(requestId), AppendContext.withMetadata({ source: "front-desk" }));
 ```
 
-`causedBy(event)` makes the appends inside caused by a stored event, and carries its correlation: only an event can be a cause, so a causation
-always names a real position. Commands, automations and deadlines set the correlation and the causation themselves; `withMetadata` and
-`withCorrelationId` around a command's `run` work the same way. Metadata is recorded and never read by the framework: what you select by goes in a
+`withCorrelationId` takes a uuid: anything else throws when it is called, before the effect runs. `causedBy(event)` makes the appends inside
+caused by a stored event, and carries its correlation: only an event can be a cause, so a causation always names a real position. Commands,
+automations and deadlines set the correlation and the causation themselves; `withMetadata` and `withCorrelationId` around a command's `run` work
+the same way. Metadata is recorded and never read by the framework: what you select by goes in a
 tag, and personal data does not go in metadata, which the event log shows only through a mask of its own.
 
 ## Limits
@@ -119,6 +164,7 @@ tag, and personal data does not go in metadata, which the event log shows only t
 - One append takes at most `maxAppendEvents` events, 50 unless configured ([keep an append small](../operate/run-in-production.md#keep-an-append-small)).
 - A query item targets events by type and/or tags; one with neither is refused.
 - A tag's key and value may hold any characters, and a tag repeated on an event is stored once.
+- `.tag(key, value)` with a `null` or `undefined` value adds no tag, and says nothing: an optional field gives a tag only when it is there.
 
 The code of this guide is [`direct-use.ts`](../../../packages/eventstore/test/support/direct-use.ts), run in memory and on Postgres, with two lends of
 one copy raced ([ADR-0050](../../adr/0050-the-event-store-used-directly.md)).

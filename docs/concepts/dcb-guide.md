@@ -321,7 +321,8 @@ The API in the rows, used without commands, is shown in [use the event store dir
      is not position order, "what the client was aware of" is not one number, so it is a cursor and a snapshot.
 3. **The transaction's own appends.**
    - *The specification:* the append fails if any event matches the condition.
-   - *Crablet:* an append is not refused for an event its own transaction appended earlier. What the transaction wrote, it knows; without this,
+   - *Crablet:* on Postgres, an append is not refused for an event its own transaction appended earlier (the in-memory store refuses it, as the
+     specification does). What the transaction wrote, it knows; without this,
      writing, reading and writing again under a condition in one transaction would always fail, and a read's snapshot cannot tell the
      transaction's own events apart (ADR-0049).
    - *The result:* the same, except in one case: read, then write, then append under a condition on the *earlier* read. The append passes though its
