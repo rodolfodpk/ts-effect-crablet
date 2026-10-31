@@ -67,6 +67,11 @@ export const builder = (type: string): AppendEventBuilder => new AppendEventBuil
 export const of = (type: string, tagKey: string, tagValue: string, eventData: unknown): AppendEvent =>
   builder(type).tag(tagKey, tagValue).data(eventData).build();
 
+// The short form (ADR-0052): `make("CopyLent", { copyId, memberId }, { copy_id: copyId, member_id: memberId })`. A tag whose value is missing (null
+// or undefined) is not added, as in the builder: an optional field gives a tag only when it is there. (`of` already names the one-tag form.)
+export const make = (type: string, eventData: unknown, tags: Readonly<Record<string, string | number | null | undefined>> = {}): AppendEvent =>
+  Object.entries(tags).reduce((b, [key, value]) => b.tag(key, value), builder(type)).data(eventData).build();
+
 // Concise factory for events with no tags (tag is on the decision model, not the event).
 export const ofUntagged = (type: string, eventData: unknown): AppendEvent =>
   builder(type).data(eventData).build();

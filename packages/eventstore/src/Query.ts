@@ -51,6 +51,23 @@ export const forEvent = (eventType: string): Query => of(queryItemOfType(eventTy
 export const forEventsAndTags = (eventTypes: ReadonlyArray<string>, tags: ReadonlyArray<Tag>): Query =>
   of(queryItemOf(eventTypes, tags));
 
+// The short form (ADR-0052): one item, by its types and its tags as an object, `match(["CopyLent", "CopyReturned"], { copy_id: id })`. A tag whose
+// value is missing (null or undefined) is refused: dropping it would widen what the query selects, and a decision would read other entities'
+// events. Several items: `union(match(...), match(...))`; one key with several values: `queryItemOf`.
+export const match = (
+  types: string | ReadonlyArray<string>,
+  tags: Readonly<Record<string, string | number | null | undefined>> = {}
+): Query =>
+  of(
+    queryItemOf(
+      typeof types === "string" ? [types] : types,
+      Object.entries(tags).map(([key, value]) => {
+        if (value === null || value === undefined) throw new Error(`Query.match: the tag "${key}" has no value; a query cannot leave a tag out`);
+        return TagNS.of(key, String(value));
+      })
+    )
+  );
+
 // No items and not `all()`: no query at all.
 export const isEmpty = (query: Query): boolean => query.items.length === 0 && !isAll(query);
 
