@@ -327,7 +327,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
     // With no condition (AppendCondition.empty(): empty concurrency and idempotency queries, which
     // append_events_if() skips without evaluating any check) nothing can be refused, so the narrower
     // `SqlError`-only type of the first overload is a runtime guarantee, not just a convenience.
-    const append = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
+    const appendImpl = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
       appendWith(events, condition ?? AppendConditionNS.empty())) as EventStoreService["append"];
 
     // A span around a read, so a slow command can be told apart: how long its boundary took to load, against how long its append took.
@@ -344,7 +344,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
             );
           });
 
-    const read = (query: Query, options: ReadOptions = {}): Effect.Effect<ReadPage, SqlError> => {
+    const readImpl = (query: Query, options: ReadOptions = {}): Effect.Effect<ReadPage, SqlError> => {
       const limit = pageSizeOf(options.limit);
       if (typeof limit === "string") return Effect.die(new Error(limit));
       const after = options.after ?? Cursor.start;
@@ -359,7 +359,7 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
       ).pipe(Effect.withSpan("crablet.eventstore.read", { attributes: { "crablet.read.limit": limit } }));
     };
 
-    const service: EventStoreService = { append, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups, read,
+    const service: EventStoreService = { append: appendImpl, project: tracedProject, exists, findDuplicate: (query) => refusingEmptyItems(query, Sql.findDuplicate(sql, query)), withWakeups, read: readImpl,
       transaction: (effect) => withWakeups(sql.withTransaction(effect)) };
 
     return service;
@@ -382,12 +382,24 @@ export const stream = (query: Query, options: { readonly after?: Cursor.Cursor; 
     )
   );
 
+// What a read made to decide returns (`readToDecide`): the events, the position to append after, and `append`, which appends under the condition
+// that read implies (ADR-0052).
+export interface Decision {
+  readonly events: ReadonlyArray<StoredEvent>;
+  readonly position: AppendConditionNS.DecisionPosition;
+  // `failIfEventsMatch(query, { after: position, idempotency })`: refused only for an event matching the read's query that the read could not see.
+  // `firstWrite`: refused (CRB01) if its transaction has already written, on Postgres (ADR-0049). Another condition: `failIfEventsMatch` and `append`.
+  // It appends through the `EventStore` in the context when it runs, like `append`, and keeps no store of its own.
+  readonly append: (
+    events: ReadonlyArray<AppendEvent>,
+    options?: { readonly idempotency?: Query; readonly firstWrite?: boolean }
+  ) => Effect.Effect<AppendResult, AppendTooLarge | Conflict | Duplicate | SqlError, EventStore>;
+}
+
 // The events `query` matches, every one visible now (settled or not), and the position to append after: the read a decision is made on (ADR-0050).
-// Pass `position` to AppendCondition.failIfEventsMatch: the append is then refused only for a matching event this read could not see. No page size:
-// for a decision's boundary (an entity, a few), not the whole log; to go through many events, use `read` or `stream`.
-export const readToDecide = (
-  query: Query
-): Effect.Effect<{ readonly events: ReadonlyArray<StoredEvent>; readonly position: AppendConditionNS.DecisionPosition }, SqlError | EventDecodingError, EventStore> =>
+// `decision.append(events)` is refused only for a matching event this read could not see (or pass `position` to failIfEventsMatch). No page
+// size: for a decision's boundary (an entity, a few), not the whole log; to go through many events, use `read` or `stream`.
+export const readToDecide = (query: Query): Effect.Effect<Decision, SqlError | EventDecodingError, EventStore> =>
   refusingNoItems(
     query,
     Effect.flatMap(Effect.service(EventStore), (es) =>
@@ -395,7 +407,31 @@ export const readToDecide = (
         es.project(query, LogPositionNS.zero(), [
           { eventTypes: [], initialState: [] as ReadonlyArray<StoredEvent>, transition: (events: ReadonlyArray<StoredEvent>, e: StoredEvent) => [...events, e] }
         ]),
-        (r) => ({ events: r.state, position: AppendConditionNS.decisionPositionOf(r.logPosition, r.seen) })
+        (r): Decision => {
+          const position = AppendConditionNS.decisionPositionOf(r.logPosition, r.seen);
+          return {
+            events: r.state,
+            position,
+            append: (events, options = {}) => {
+              const condition = AppendConditionNS.failIfEventsMatch(query, { after: position, ...(options.idempotency === undefined ? {} : { idempotency: options.idempotency }) });
+              return append(events, options.firstWrite === true ? AppendConditionNS.firstWrite(condition) : condition);
+            }
+          };
+        }
       )
     )
   );
+
+// The service's primitives as functions over the `EventStore` in the context, like `stream` and `readToDecide` (ADR-0052): `append(events)`
+// instead of `(yield* EventStore).append(events)`. The framework's methods (`project`, `exists`, `findDuplicate`, `withWakeups`) have none.
+export const append: {
+  (events: ReadonlyArray<AppendEvent>): Effect.Effect<AppendResult, AppendTooLarge | SqlError, EventStore>;
+  (events: ReadonlyArray<AppendEvent>, condition: AppendCondition): Effect.Effect<AppendResult, AppendTooLarge | Conflict | Duplicate | SqlError, EventStore>;
+} = ((events: ReadonlyArray<AppendEvent>, condition?: AppendCondition) =>
+  Effect.flatMap(Effect.service(EventStore), (es) => (condition === undefined ? es.append(events) : es.append(events, condition)))) as typeof append;
+
+export const read = (query: Query, options?: ReadOptions): Effect.Effect<ReadPage, SqlError, EventStore> =>
+  Effect.flatMap(Effect.service(EventStore), (es) => es.read(query, options));
+
+export const transaction = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | SqlError, R | EventStore> =>
+  Effect.flatMap(Effect.service(EventStore), (es) => es.transaction(effect));

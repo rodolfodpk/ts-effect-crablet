@@ -6,7 +6,7 @@ import { Cause, Effect, Exit, Fiber, Layer, Queue, Redacted, Stream } from "effe
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector, makeEventStoreLayer } from "../../src/EventStore.ts";
+import { EventStore, EventStoreLive, EVENTS_CHANNEL, existsProjector, makeEventStoreLayer, readToDecide } from "../../src/EventStore.ts";
 import { CommandAuditStore, CommandAuditStoreLive } from "../../src/CommandAuditStore.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as Query from "../../src/Query.ts";
@@ -358,5 +358,24 @@ describe("AppendCondition.firstWrite (ADR-0049)", () => {
       )
     );
     assert.strictEqual(typeof result.transactionId, "string");
+  });
+
+  it("decision.append passes it on (ADR-0052): after a write in the same transaction, refused (CRB01)", async () => {
+    const id = crypto.randomUUID();
+    const exit = await run(
+      Effect.exit(
+        Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql.withTransaction(
+            Effect.gen(function* () {
+              const store = yield* EventStore;
+              const decision = yield* readToDecide(Query.match("FirstWriteOther", { fw: id }));
+              yield* store.append([AppendEvent.of("FirstWriteX", "fw", id, {})]);
+              return yield* decision.append([AppendEvent.of("FirstWriteY", "fw", id, {})], { firstWrite: true });
+            })
+          )
+        )
+      )
+    );
+    assert.ok(isCrb01Defect(exit), `expected the CRB01 defect, got ${String(exit)}`);
   });
 });

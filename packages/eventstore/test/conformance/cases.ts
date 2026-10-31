@@ -19,7 +19,7 @@ import * as CorrelationContext from "../../src/CorrelationContext.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
 import * as Query from "../../src/Query.ts";
 import * as Tag from "../../src/Tag.ts";
-import { append, ev, existsQuery, headPosition, item, positionOf, read, tagStrings, uid, type Harness } from "./ops.ts";
+import { append, ev, existsQuery, headPosition, item, outcomeOf, positionOf, read, tagStrings, uid, type Harness } from "./ops.ts";
 
 export type { Harness } from "./ops.ts";
 export interface ConformanceCase {
@@ -315,6 +315,23 @@ export const cases: ReadonlyArray<ConformanceCase> = [
       assert.equal(await append(h, [ev(`ConfDecideDone${id}`, [["d", id]])], AppendCondition.failIfEventsMatch(Query.forEvent(`Nothing${id}`), { idempotency: idem })), "duplicate", "idempotency");
       const exit = await h.run(Effect.exit(readToDecide(Query.of([]))));
       assert.ok(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason), "a query with no items is refused");
+    }
+  },
+  {
+    name: "decision.append: an event the read saw is no conflict, a new matching event is, and idempotency refuses a repeat (ADR-0052)",
+    run: async (h) => {
+      const id = uid();
+      const q = Query.match(`ConfShort${id}`, { d: id });
+      await append(h, [ev(`ConfShort${id}`, [["d", id]])]); // in the boundary, before the read: the read sees it
+      const decided = await h.run(readToDecide(q));
+      assert.equal(await outcomeOf(h, decided.append([ev(`ConfShortDone${id}`)])), "ok", "nothing new since the read");
+      const again = await h.run(readToDecide(q));
+      await append(h, [ev(`ConfShort${id}`, [["d", id]])]); // after the read
+      assert.equal(await outcomeOf(h, again.append([ev(`ConfShortDone${id}`)])), "conflict", "a new matching event");
+      const idempotency = Query.match(`ConfShortOnce${id}`, { d: id });
+      const fresh = await h.run(readToDecide(Query.match(`Nothing${id}`)));
+      assert.equal(await outcomeOf(h, fresh.append([ev(`ConfShortOnce${id}`, [["d", id]])], { idempotency })), "ok");
+      assert.equal(await outcomeOf(h, fresh.append([ev(`ConfShortOnce${id}`, [["d", id]])], { idempotency })), "duplicate", "a repeat");
     }
   },
   {

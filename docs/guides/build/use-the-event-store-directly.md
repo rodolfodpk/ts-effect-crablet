@@ -17,12 +17,11 @@ What this guide uses, and the entry point each comes from:
 <!-- file: packages/eventstore/test/support/direct-use.ts#imports -->
 ```ts
 import { Data, Effect, Layer, Schedule, Stream } from "effect";
-import { PgClient } from "@effect/sql-pg";
-import { EventStore, EventStoreLive, readToDecide, stream } from "@crablet/eventstore";
-import * as AppendCondition from "@crablet/eventstore/AppendCondition";
+import { append, EventStore, read, readToDecide, stream, transaction } from "@crablet/eventstore";
 import * as AppendContext from "@crablet/eventstore/AppendContext";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { Conflict } from "@crablet/eventstore/AppendErrors";
+import * as Postgres from "@crablet/eventstore/Postgres";
 import * as Query from "@crablet/eventstore/Query";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 ```
@@ -34,13 +33,9 @@ a cursor as text.
 
 <!-- file: packages/eventstore/test/support/direct-use.ts#setup -->
 ```ts
-// On Postgres: the event store over a connection pool, on a database the migrations of @crablet/db-migrations were applied to.
-export const onPostgres = (connection: PgClient.PgClientConfig) => Layer.provideMerge(EventStoreLive, PgClient.layer(connection));
-
-// In a test: the in-memory store, which passes the same conformance suite. A new one per test starts empty.
-export const inMemory = () => makeInMemoryEventStore().layer;
-
-// A program that uses the store needs `EventStore`; the layer provides it.
+// A program that uses the store needs `EventStore`; a layer provides it:
+//   on Postgres, `Postgres.layer({ host, port, database, username, password })`, on a database the migrations of @crablet/db-migrations were
+//   applied to; in a test, `makeInMemoryEventStore().layer`, which passes the same conformance suite.
 export const runWith = <LE>(layer: Layer.Layer<EventStore, LE>) => <A, E>(program: Effect.Effect<A, E, EventStore>) =>
   Effect.runPromise(Effect.provide(program, layer));
 ```
@@ -59,21 +54,17 @@ A refused decision is decided again by reading again; here up to three times, wi
 <!-- file: packages/eventstore/test/support/direct-use.ts#decide -->
 ```ts
 // What a lend depends on: the copy's loans and returns.
-const copyEvents = (copyId: string) => Query.of(Query.queryItemOf(["CopyLent", "CopyReturned"], [{ key: "copy_id", value: copyId }]));
+const copyEvents = (copyId: string) => Query.match(["CopyLent", "CopyReturned"], { copy_id: copyId });
 
 export const lendCopy = (copyId: string, memberId: string) =>
   Effect.gen(function* () {
-    const es = yield* EventStore;
-    // 1. Read what the decision depends on, and where the read stopped.
-    const { events, position } = yield* readToDecide(copyEvents(copyId));
+    // 1. Read what the decision depends on.
+    const decision = yield* readToDecide(copyEvents(copyId));
     // 2. Decide.
-    const lent = events.filter((e) => e.type === "CopyLent").length > events.filter((e) => e.type === "CopyReturned").length;
+    const lent = decision.events.filter((e) => e.type === "CopyLent").length > decision.events.filter((e) => e.type === "CopyReturned").length;
     if (lent) return yield* new CopyNotAvailable({ copyId });
     // 3. Append, refused if anything the decision depends on was appended after the read.
-    return yield* es.append(
-      [AppendEvent.builder("CopyLent").tag("copy_id", copyId).tag("member_id", memberId).data({ copyId, memberId }).build()],
-      AppendCondition.failIfEventsMatch(copyEvents(copyId), { after: position })
-    );
+    return yield* decision.append([AppendEvent.make("CopyLent", { copyId, memberId }, { copy_id: copyId, member_id: memberId })]);
   }).pipe(
     // A refused append means the decision was made on a state that has changed: read and decide again, a few times.
     Effect.retry({ while: (error) => error instanceof Conflict, schedule: Schedule.recurs(3) })
@@ -95,19 +86,18 @@ Resume from the cursor until `more` is false. `stream(query)` asks for the pages
 // Every loan of a member, page by page: resume from `cursor` until `more` is false.
 export const loansOf = (memberId: string) =>
   Effect.gen(function* () {
-    const es = yield* EventStore;
-    const query = Query.forEventAndTag("CopyLent", "member_id", memberId);
-    let page = yield* es.read(query, { limit: 100 });
+    const query = Query.match("CopyLent", { member_id: memberId });
+    let page = yield* read(query, { limit: 100 });
     const loans = [...page.events];
     while (page.more) {
-      page = yield* es.read(query, { after: page.cursor, limit: 100 });
+      page = yield* read(query, { after: page.cursor, limit: 100 });
       loans.push(...page.events);
     }
     return loans;
   });
 
 // The same as a stream, which asks for the pages itself.
-export const loanCount = (memberId: string) => Stream.runCount(stream(Query.forEventAndTag("CopyLent", "member_id", memberId), { batchSize: 100 }));
+export const loanCount = (memberId: string) => Stream.runCount(stream(Query.match("CopyLent", { member_id: memberId }), { batchSize: 100 }));
 ```
 
 A page holds only events whose transaction had finished, so resuming from its cursor never skips one, even one that commits late. The other side: while
@@ -129,8 +119,7 @@ appended is stored and nothing is announced.
 <!-- file: packages/eventstore/test/support/direct-use.ts#transaction -->
 ```ts
 // Two appends that stand or fall together: one transaction, and the processors are woken once it has committed.
-export const lendTwo = (first: string, second: string, memberId: string) =>
-  Effect.flatMap(Effect.service(EventStore), (es) => es.transaction(Effect.andThen(lendCopy(first, memberId), lendCopy(second, memberId))));
+export const lendTwo = (first: string, second: string, memberId: string) => transaction(Effect.andThen(lendCopy(first, memberId), lendCopy(second, memberId)));
 ```
 
 On Postgres, within one transaction an append is not refused for events that same transaction appended earlier: a decision that depends on what you
@@ -147,8 +136,8 @@ Set them around the appends with `@crablet/eventstore/AppendContext`:
 
 <!-- file: packages/eventstore/test/support/direct-use.ts#context -->
 ```ts
-// A lend asked for at the front desk: its events carry the request's correlation id (from the caller's header, say) and metadata saying where it
-// came from. The framework records both; it reads neither.
+// A lend asked for at the front desk: its events carry the request's correlation id (a uuid, from the caller's header, say) and metadata saying
+// where it came from. The framework records both; it reads neither.
 export const lendAtTheDesk = (copyId: string, memberId: string, requestId: string) =>
   lendCopy(copyId, memberId).pipe(AppendContext.withCorrelationId(requestId), AppendContext.withMetadata({ source: "front-desk" }));
 ```
