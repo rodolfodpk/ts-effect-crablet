@@ -278,6 +278,7 @@ dcb-events repository at commit `ab2bc5a` (2026-10-25). Reevaluate when the spec
 functionality is the same, so each row says two things: the **status** (how the requirement is met) and whether the **result** is the one the
 specification asks for. **compatible** means as written; **another form** means the requirement holds through a different representation, with the
 same result; **differs** means the result is not the same in some case, said in the note; **not offered** and **not yet** speak for themselves.
+The API in the rows, used without commands, is shown in [use the event store directly](../guides/build/use-the-event-store-directly.md).
 
 | Requirement (the specification's words) | Status | Same result? | Evidence |
 |---|---|---|---|

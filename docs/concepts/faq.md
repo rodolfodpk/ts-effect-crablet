@@ -45,7 +45,13 @@ long-lived boundaries small. See [events over time](./events-over-time.md#growth
 Yes, one part at a time, because it lives in your PostgreSQL database next to your own tables. A reasonable first step is one new feature whose rules
 span several things, with its own events and a view your existing code can read as an ordinary table. Commands, views and the HTTP layer are separate
 packages, so you take only what you use. There is no tool that turns existing tables into events; if you need the history of existing data, you
-write the events that describe its current state yourself.
+write the events that describe its current state yourself, with the event store's own API ([use the event store directly](../guides/build/use-the-event-store-directly.md)).
+
+## Can I use only the event store, without commands?
+
+Yes. `@crablet/eventstore` has the specification's API on its own: read a page or a stream of events, read to decide, and append with
+`failIfEventsMatch` after the position the read returned, with the same conflict check commands have. What a command adds (retries, a repeat
+recognised, the audit, the HTTP endpoint) you then write yourself. See [use the event store directly](../guides/build/use-the-event-store-directly.md).
 
 ## Does it support several tenants?
 

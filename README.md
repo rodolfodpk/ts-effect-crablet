@@ -205,6 +205,7 @@ How the pieces fit (views, automations, the outbox, deadlines, leadership), in d
 | Learn it | [The tutorial](./docs/tutorial/README.md): in memory, Postgres, HTTP and OpenAPI, reading your own writes, a web page |
 | Decide if it fits | [Why not something else?](./docs/concepts/why-not.md), [questions adopters ask](./docs/concepts/faq.md), [guarantees and evidence](./docs/evidence.md), [the dcb.events examples](./docs/concepts/dcb-examples.md) |
 | Understand it | [Consistency boundaries](./docs/concepts/dcb-guide.md) and the [architecture](./docs/concepts/architecture.md) |
+| Use only the event store, without commands (a script, an import, an export) | [Use the event store directly](./docs/guides/build/use-the-event-store-directly.md): read, decide and append with the specification's condition |
 | Find anything else | [The documentation map](./docs/README.md): guides for building and operating, the reference, the decisions |
 
 Build and test: `bun install`, `bun run typecheck`, `bun run test:unit`, `bun run test:integration` (Docker). Details in the [reference](./docs/reference/README.md#build--test).

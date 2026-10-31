@@ -32,7 +32,7 @@ promote one to the API, remove it from the list and document it; to demote one, 
 |---|---|
 | [`packages/db-migrations`](../../packages/db-migrations/README.md) | The SQL migrations V1 to V7 (V1 to V5 one file per part of the schema: the event log and its tag-key table, the conditional append, the command audit, the processors' progress, the deadlines; then one file per change), as a plain file bundle |
 | [`packages/test-support`](../../packages/test-support/README.md) | A throwaway Postgres (Testcontainers) for integration tests |
-| [`packages/eventstore`](../../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests |
+| [`packages/eventstore`](../../packages/eventstore/README.md) | The event store: conditional append, tag queries, LISTEN/NOTIFY, leader election, a storage report; plus the spec and an in-memory store for tests; used on its own: [the guide](../guides/build/use-the-event-store-directly.md) |
 | [`packages/commands`](../../packages/commands/README.md) | The authoring API: `defineEvent`, `defineModel`, `defineCommand`, the `CommandExecutor`, `Crablet.layer`, and Given/When/Then test helpers |
 | [`packages/event-poller`](../../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, automations and deadlines modules build on |
 | [`packages/views`](../../packages/views/README.md) | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
