@@ -273,7 +273,8 @@ one of its types AND that carries all of its tags. What this framework does with
 
 ### Compatibility with the specification
 
-Evaluated against [the specification's source](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) in the
+Compatibility is measured on the event store API; the command framework is built on it
+([what each layer gives](../guides/build/use-the-event-store-directly.md#what-each-layer-gives)). Evaluated against [the specification's source](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) in the
 dcb-events repository at commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. The specification says names and representations are free as long as the
 functionality is the same, so each row says two things: the **status** (how the requirement is met) and whether the **result** is the one the
 specification asks for. **compatible** means as written; **another form** means the requirement holds through a different representation, with the

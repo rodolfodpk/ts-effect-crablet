@@ -7,9 +7,44 @@ each design, follow the links to the [decision records](../adr/README.md); for t
 
 The two example applications also have [C4 models](./c4-examples.md) (context, containers, components).
 
-Contents: [the mental model](#the-mental-model) · [the whole system](#the-whole-system) · [a command, from request to append](#a-command-from-request-to-append) · [two commands that conflict](#two-commands-that-conflict) ·
+Contents: [two APIs, one log](#two-apis-one-log) · [the mental model](#the-mental-model) · [the whole system](#the-whole-system) · [a command, from request to append](#a-command-from-request-to-append) · [two commands that conflict](#two-commands-that-conflict) ·
 [from event to view](#from-event-to-view) · [a read that includes your write](#a-read-that-includes-your-write) · [a deadline, from setting it to firing it](#a-deadline-from-setting-it-to-firing-it) · [one lock per module, one leader per lock](#one-lock-per-module-one-leader-per-lock) ·
 [changing an event](#changing-an-event) · [what is in the database](#what-is-in-the-database)
+
+## Two APIs, one log
+
+Two APIs write to the log, one on the other. The **event store API** (`@crablet/eventstore`) is what the DCB specification describes: read, read to
+decide, append under a condition, in a transaction. The **command framework** (`@crablet/commands`) is built on it: a model, a typed decision,
+retries, repeats recognised, the audit, and an HTTP API over it. An application uses both, commands for its decisions and the event store for
+scripts, imports and exports; what each gives is in [a table](../guides/build/use-the-event-store-directly.md#what-each-layer-gives). The
+processors read the same log, whichever API wrote an event. The diagrams after this one follow a command, the usual way in; a direct append is the
+last step of one, the same conditional append.
+
+```mermaid
+flowchart TB
+  app["<b>Your application</b>"]
+  http["<b>@crablet/commands-http</b><br/>a REST API and its OpenAPI description, over commands"]
+  cmd["<b>@crablet/commands</b> · the command framework<br/>defineModel · defineCommand · CommandExecutor<br/>retries, repeats recognised, the audit"]
+  es["<b>@crablet/eventstore</b> · the event store API<br/>read · stream · readToDecide · append · transaction<br/>the DCB specification's operations"]
+  log[("<b>Event log</b><br/>PostgreSQL")]
+
+  subgraph proc["Processors, on @crablet/event-poller: each reads the log"]
+    direction LR
+    vw["<b>@crablet/views</b><br/>tables you read"]
+    au["<b>@crablet/automations</b><br/>automations and deadlines"]
+    ob["<b>@crablet/outbox</b><br/>topics to brokers"]
+  end
+
+  app -- "the usual way: commands" --> cmd
+  app -- "directly: scripts, imports, exports" --> es
+  http -- "runs" --> cmd
+  cmd -- "built on" --> es
+  es -- "conditional append, reads" --> log
+  log -.-> vw
+  log -.-> au
+  log -.-> ob
+  au -- "runs a command" --> cmd
+```
 
 ## The mental model
 
@@ -24,13 +59,15 @@ flowchart TB
     mo -- "model: (input) => Model.of({ id })" --> co
   end
 
-  subgraph fw["What the framework does: CommandExecutor.run, one transaction"]
+  subgraph fw["What the command framework does, on the event store API: CommandExecutor.run, one transaction"]
     direction LR
     load["1. load<br/>query the events with the model's tags,<br/>fold them into state"]
     dec["2. decide(state, input)<br/>emit · fail · noop<br/>emit may include deadline(Command, input, { at })"]
     app["3. append, only if nothing new<br/>arrived in the boundary;<br/>otherwise re-run on fresh state"]
     load --> dec --> app
   end
+
+  direct["<b>Or your code, directly</b> · the event store API<br/>readToDecide(query) → decision.append(events)<br/>a script, an import, an export"]
 
   log[("<b>Event log</b><br/>one table: events and their tags<br/>no streams, no aggregates")]
 
@@ -45,6 +82,8 @@ flowchart TB
   co --> load
   log -. "the boundary" .-> load
   app -- "conditional append" --> log
+  log -. "what it reads" .-> direct
+  direct -- "conditional append" --> log
   log -.-> vw
   log -.-> au
   log -.-> ob
@@ -55,7 +94,9 @@ flowchart TB
 
 You write three pure declarations. The **model** is the key one: the same `.on(...)` handlers give `decide` its state and give the command its
 **consistency boundary**, the events whose arrival would change the answer. The executor loads that boundary, calls `decide`, and appends only if
-nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log. A decision
+nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log. Under the
+commands is the event store's own API, the DCB specification's read and conditional append, which you can also use directly
+([the guide](../guides/build/use-the-event-store-directly.md)). A decision
 can also set a **deadline**: a command to run once a time has passed, stored as an event in the same append; the deadlines processor runs it when
 it is due ([a deadline, from setting it to firing it](#a-deadline-from-setting-it-to-firing-it)).
 

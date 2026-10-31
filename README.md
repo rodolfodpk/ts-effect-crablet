@@ -35,13 +35,15 @@ flowchart TB
     mo -- "model: (input) => Model.of({ id })" --> co
   end
 
-  subgraph fw["What the framework does: CommandExecutor.run, one transaction"]
+  subgraph fw["What the command framework does, on the event store API: CommandExecutor.run, one transaction"]
     direction LR
     load["1. load<br/>query the events with the model's tags,<br/>fold them into state"]
     dec["2. decide(state, input)<br/>emit · fail · noop"]
     app["3. append, only if nothing new<br/>arrived in the boundary;<br/>otherwise re-run on fresh state"]
     load --> dec --> app
   end
+
+  direct["<b>Or your code, directly</b> · the event store API<br/>readToDecide(query) → decision.append(events)<br/>a script, an import, an export"]
 
   log[("<b>Event log</b><br/>one table: events and their tags<br/>no streams, no aggregates")]
 
@@ -56,6 +58,8 @@ flowchart TB
   co --> load
   log -. "the boundary" .-> load
   app -- "conditional append" --> log
+  log -. "what it reads" .-> direct
+  direct -- "conditional append" --> log
   log -.-> vw
   log -.-> au
   log -.-> ob
@@ -66,7 +70,9 @@ flowchart TB
 
 You write three pure declarations. The **model** is the key one: the same `.on(...)` handlers give `decide` its state and give the command its
 **consistency boundary**, the events whose arrival would change the answer. The executor loads that boundary, calls `decide`, and appends only if
-nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log. More diagrams: [architecture](./docs/concepts/architecture.md).
+nothing new arrived in it, so commands with different boundaries never wait for each other. Everything downstream reads the same log. Under the
+commands is the event store's own API, the DCB specification's read and conditional append, which you can also use directly
+([the guide](./docs/guides/build/use-the-event-store-directly.md)). More diagrams: [architecture](./docs/concepts/architecture.md).
 
 ## Both rules, one command
 
