@@ -49,8 +49,8 @@ write the events that describe its current state yourself, with the event store'
 
 ## Can I use only the event store, without commands?
 
-Yes. `@crablet/eventstore` has the specification's API on its own: read a page or a stream of events, read to decide, and append with
-`failIfEventsMatch` after the position the read returned, with the same conflict check commands have. What a command adds (retries, a repeat
+Yes. `@crablet/eventstore` has the specification's API on its own: read a page or a stream of events, read to decide, and append after that
+read (`decision.append`), with the same conflict check commands have. What a command adds (retries, a repeat
 recognised, the audit, the HTTP endpoint) you then write yourself. See [use the event store directly](../guides/build/use-the-event-store-directly.md).
 
 ## Does it support several tenants?

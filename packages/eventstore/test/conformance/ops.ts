@@ -24,16 +24,18 @@ export const item = (types: ReadonlyArray<string>, tags: ReadonlyArray<readonly 
   Query.queryItemOf(types, tags.map(([k, v]) => Tag.of(k, v)));
 
 export type Outcome = "ok" | "conflict" | "duplicate";
-export const append = (h: Harness, events: ReadonlyArray<AppendEvent.AppendEvent>, condition?: AppendCondition.AppendCondition): Promise<Outcome> =>
+// What an append, however it is made, came to.
+export const outcomeOf = <E extends { readonly _tag: string }, R>(h: Harness, appended: Effect.Effect<unknown, E, R>): Promise<Outcome> =>
   h.run(
-    Effect.flatMap(EventStore, (es) =>
-      (condition === undefined ? es.append(events) : es.append(events, condition)).pipe(
-        Effect.map((): Outcome => "ok"),
-        Effect.catchTag("Conflict", () => Effect.succeed("conflict" as const)),
-        Effect.catchTag("Duplicate", () => Effect.succeed("duplicate" as const))
-      )
+    (appended as Effect.Effect<unknown, { readonly _tag: string }, EventStore>).pipe(
+      Effect.map((): Outcome => "ok"),
+      Effect.catchIf((e) => e._tag === "Conflict", () => Effect.succeed("conflict" as const)),
+      Effect.catchIf((e) => e._tag === "Duplicate", () => Effect.succeed("duplicate" as const))
     )
   );
+
+export const append = (h: Harness, events: ReadonlyArray<AppendEvent.AppendEvent>, condition?: AppendCondition.AppendCondition): Promise<Outcome> =>
+  outcomeOf(h, Effect.flatMap(EventStore, (es) => (condition === undefined ? es.append(events) : es.append(events, condition))));
 
 // Every event a query matches after `after`, in the order `project` yields them, plus the final position.
 export const read = (h: Harness, query: Query.Query, after: LogPositionType = LogPosition.zero()) =>

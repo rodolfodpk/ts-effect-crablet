@@ -11,6 +11,7 @@
     "./Query": "./src/Query.ts",
     "./LogPosition": "./src/LogPosition.ts",
     "./Cursor": "./src/Cursor.ts",
+    "./Postgres": "./src/Postgres.ts",
     "./Marker": "./src/Marker.ts",
     "./AppendEvent": "./src/AppendEvent.ts",
     "./AppendCondition": "./src/AppendCondition.ts",

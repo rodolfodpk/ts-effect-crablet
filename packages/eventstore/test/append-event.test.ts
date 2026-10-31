@@ -13,6 +13,14 @@ describe("AppendEvent", () => {
     expect(AppendEvent.builder("Paid").data(0).build().eventData).toBe(0);
   });
 
+  test("make (ADR-0052): the builder's event, its tags given as an object, a missing value adding no tag", () => {
+    expect(AppendEvent.make("Paid", { amount: 1 }, { Account_ID: "a1", note: null, other: undefined, n: 3 })).toEqual(
+      AppendEvent.builder("Paid").tag("Account_ID", "a1").tag("n", 3).data({ amount: 1 }).build()
+    );
+    expect(AppendEvent.make("Paid", { amount: 1 }).tags).toEqual([]);
+    expect(() => AppendEvent.make("Paid", null)).toThrow("Event data cannot be null");
+  });
+
   test("of and ofUntagged: one tag, or none", () => {
     expect(AppendEvent.of("Paid", "Account_ID", "a1", {}).tags).toEqual([{ key: "account_id", value: "a1" }]);
     expect(AppendEvent.ofUntagged("Paid", {}).tags).toEqual([]);

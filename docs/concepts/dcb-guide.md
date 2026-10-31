@@ -273,7 +273,8 @@ one of its types AND that carries all of its tags. What this framework does with
 
 ### Compatibility with the specification
 
-Evaluated against [the specification's source](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) in the
+Compatibility is measured on the event store API; the command framework is built on it
+([what each layer gives](../guides/build/use-the-event-store-directly.md#what-each-layer-gives)). Evaluated against [the specification's source](https://github.com/dcb-events/dcb-events.github.io/blob/ab2bc5a/docs/specification.md) in the
 dcb-events repository at commit `ab2bc5a` (2026-10-25). Reevaluate when the specification changes. The specification says names and representations are free as long as the
 functionality is the same, so each row says two things: the **status** (how the requirement is met) and whether the **result** is the one the
 specification asks for. **compatible** means as written; **another form** means the requirement holds through a different representation, with the
@@ -313,7 +314,8 @@ The API in the rows, used without commands, is shown in [use the event store dir
      commits, and transactions commit in any order. T1 inserts and gets position 10; T2 inserts and gets 11 and commits; the client reads and sees
      11 (10 is not visible yet); T1 commits and 10 appears. An append with `after = 11` would ignore 10, an event the client never saw: a lost
      conflict, a decision accepted on a stale state.
-   - *Crablet:* `after` is the `DecisionPosition` `readToDecide` returns, for `AppendCondition.failIfEventsMatch(query, { after })`. It holds a
+   - *Crablet:* `after` is the `DecisionPosition` `readToDecide` returns, for `AppendCondition.failIfEventsMatch(query, { after })`
+     (`decision.append(events)` does both, for the read's query). It holds a
      `(transaction_id, position)` cursor, the last event whose transaction had finished when the client read, so any event that can still appear
      sorts after it and is checked ([ADR-0012](../adr/0012-transaction-position-cursors.md)); and the read's snapshot, so an event the client did read
      is not a conflict however recent ([ADR-0048](../adr/0048-a-conflict-is-what-the-read-did-not-see.md)).

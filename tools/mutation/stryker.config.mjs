@@ -26,6 +26,7 @@ export default {
       "event-poller/src/internal/sql.ts",
       "eventstore/src/CommandAuditStore.ts",
       "eventstore/src/EventStore.ts",
+      "eventstore/src/Postgres.ts",
       "eventstore/src/Storage.ts",
       "eventstore/src/internal/sql.ts"
     ].map((f) => `!packages/${f}`)

@@ -6,23 +6,32 @@ framework sits on top of this package.
 ## What it gives you
 
 - **`EventStore`** (`@crablet/eventstore`) - the service: append events with an append condition ("only if nothing matching this query is newer than this position"),
-  and read or project the events a query selects. `EventStoreLive` is its layer. An idempotency condition that matches fails with `Duplicate`, which says what it
+  and read or project the events a query selects. `EventStoreLive` is its layer; **`Postgres.layer(connection)`** (`@crablet/eventstore/Postgres`) is the
+  same over a connection pool, in one layer ([ADR-0052](../../docs/adr/0052-short-forms-for-direct-use.md)). An idempotency condition that matches fails with `Duplicate`, which says what it
   matched (the latest event and the requests behind the matches); `findDuplicate` asks the same before appending ([ADR-0034](../../docs/adr/0034-a-repeat-must-be-the-same-request.md)).
   Every stored event has a stable `eventId`, its public identity, not an order ([ADR-0036](../../docs/adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)).
-- **Used directly** ([the guide](../../docs/guides/build/use-the-event-store-directly.md), [ADR-0050](../../docs/adr/0050-the-event-store-used-directly.md)):
-  `readToDecide(query)` reads what a decision depends on and returns the position to append after; `append(events,
-  AppendCondition.failIfEventsMatch(query, { after: position }))` is refused with `Conflict` only for a matching event that read could not see.
+- **Used directly** ([the guide](../../docs/guides/build/use-the-event-store-directly.md), [ADR-0050](../../docs/adr/0050-the-event-store-used-directly.md),
+  [ADR-0052](../../docs/adr/0052-short-forms-for-direct-use.md)): `readToDecide(query)` reads what a decision depends on, and `decision.append(events)`
+  is refused with `Conflict` only for a matching event that read could not see:
+
+  ```ts
+  const decision = yield* readToDecide(Query.match(["CopyLent", "CopyReturned"], { copy_id: copyId }));
+  // decide on decision.events; to refuse, fail with an error of your own
+  yield* decision.append([AppendEvent.make("CopyLent", { copyId, memberId }, { copy_id: copyId, member_id: memberId })]);
+  ```
+
   `read(query, { after, limit })` returns a page of finished events and the `Cursor` to resume from; `stream(query)` pages for you;
-  `Query.all()` is every event. `transaction(effect)` runs one transaction and wakes the processors after it commits. `project`, `exists`,
-  `findDuplicate` and `withWakeups` are what the command framework builds on.
+  `Query.all()` is every event. `append(events, condition?)` appends, and `transaction(effect)` runs one transaction and wakes the processors after it
+  commits. Each is a function over the `EventStore` in the context. `project`, `exists`, `findDuplicate` and `withWakeups` are what the command
+  framework builds on.
 - **`AppendContext`** - what the store records about an append besides its events ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)):
   `withCorrelationId(uuid)`, `causedBy(storedEvent)` (only a stored event can be a cause) and `withMetadata(object)`, each around the appends of an
   effect. An event's own metadata is `AppendEvent.metadata`; a read returns it as `StoredEvent.metadata`.
-- **Building blocks** - `Tag`, `Query`, `AppendEvent`, `AppendCondition`, `LogPosition`, `Cursor`, `Marker`, `AppendResult` (what an append returns) and `AppendErrors` (`Conflict`, `Duplicate`, `AppendTooLarge`), each its own import (`@crablet/eventstore/Query`, ...).
+- **Building blocks** - `Tag`, `Query` (`Query.match(types, tags)`), `AppendEvent` (`AppendEvent.make(type, data, tags)`), `AppendCondition`, `LogPosition`, `Cursor`, `Marker`, `AppendResult` (what an append returns) and `AppendErrors` (`Conflict`, `Duplicate`, `AppendTooLarge`), each its own import (`@crablet/eventstore/Query`, ...).
   A query item targets events by type and/or tags; one with neither is refused. A tag's key and value may hold any characters (the key is encoded
   when stored), and a tag repeated on an event is stored once. One append takes at most `maxAppendEvents` events (`EventStoreConfig`, default 50).
   An append is not refused for events its own transaction appended earlier: if your next decision depends on what you just wrote, read again, or
-  use `AppendCondition.firstWrite(condition)`, which refuses (CRB01) an append that is not its transaction's first write. Where this differs from
+  use `decision.append(events, { firstWrite: true })` or `AppendCondition.firstWrite(condition)`, which refuses (CRB01) an append that is not its transaction's first write. Where this differs from
   the DCB specification, and why: [the compatibility table](../../docs/concepts/dcb-guide.md#compatibility-with-the-specification)
   ([ADR-0049](../../docs/adr/0049-where-the-event-store-differs-from-the-dcb-specification.md)).
 - **`Leader`** - a session-level advisory lock for "one process runs this"; **`SessionClients`** - an optional direct connection for the leader and LISTEN when the application's connection goes through a pooler in transaction mode ([ADR-0024](../../docs/adr/0024-session-connections-for-leader-and-listen.md)).

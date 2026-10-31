@@ -100,6 +100,14 @@ export const breaks: ReadonlyArray<Break> = [
     why: "a direct decision would conflict on events its read saw while any transaction is open elsewhere (ADR-0048, ADR-0050)"
   },
   {
+    id: "decision-append-without-position",
+    file: "packages/eventstore/src/EventStore.ts",
+    find: "AppendConditionNS.failIfEventsMatch(query, { after: position, ",
+    replace: "AppendConditionNS.failIfEventsMatch(query, { ",
+    tests: [es("conformance-postgres")],
+    why: "decision.append would refuse a decision for every matching event, the ones its read saw too (ADR-0052)"
+  },
+  {
     id: "query-all-dropped",
     file: SQL,
     find: "  if (query.all === true) return JSON.stringify([{ types: [], tags: [] }]);\n",

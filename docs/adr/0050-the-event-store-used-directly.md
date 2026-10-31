@@ -4,7 +4,8 @@
 
 **Accepted** (2026-10-30). Built: `EventStoreService.read` and `transaction`; the functions `stream` and `readToDecide`; `Cursor`;
 `AppendCondition.failIfEventsMatch` and `DecisionPosition`; `Query.all()` and `Query.union`. The guide is
-[use the event store directly](../guides/build/use-the-event-store-directly.md). Completes what ADR-0049 left for later.
+[use the event store directly](../guides/build/use-the-event-store-directly.md). Completes what ADR-0049 left for later. The short forms
+(`Query.match`, `AppendEvent.make`, `decision.append`, the functions, `Postgres.layer`): [ADR-0052](0052-short-forms-for-direct-use.md).
 
 ## Context
 

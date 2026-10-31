@@ -49,6 +49,22 @@ describe("Query: an item targets events by type and/or tags (ADR-0049)", () => {
   });
 });
 
+describe("Query.match: the short form (ADR-0052)", () => {
+  test("one item, by one type or several, its tags given as an object", () => {
+    expect(Query.match("A")).toEqual(Query.of(Query.queryItemOf(["A"], [])));
+    expect(Query.match(["A", "B"], { Copy_ID: "c1", n: 3 })).toEqual(
+      Query.of(Query.queryItemOf(["A", "B"], [{ key: "copy_id", value: "c1" }, { key: "n", value: "3" }]))
+    );
+    expect(Query.match([], { k: "1" })).toEqual(Query.of(Query.queryItemOf([], [t])));
+  });
+
+  test("a tag with no value is refused, and so is an item with neither types nor tags", () => {
+    expect(() => Query.match("A", { k: null })).toThrow(/the tag "k" has no value/);
+    expect(() => Query.match("A", { k: undefined })).toThrow(/the tag "k" has no value/);
+    expect(() => Query.match([])).toThrow(/targets events by type and\/or tags/);
+  });
+});
+
 describe("Query.all: every event (ADR-0050)", () => {
   test("is its own variant: not empty, matches every event, and survives a union", () => {
     expect(Query.isAll(Query.all())).toBe(true);
