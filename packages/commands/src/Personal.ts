@@ -128,12 +128,17 @@ export const redact = (schema: Schema.Top, value: unknown, replacement: string =
   return go(astOf(schema), value);
 };
 
+// The schema kinds no object or array can be.
+const scalars = new Set(["Null", "Undefined", "Void", "Never", "String", "Number", "Boolean", "BigInt", "Symbol", "UniqueSymbol", "Literal", "TemplateLiteral", "Enum"]);
+const canHold = (ast: AstLike, v: unknown): boolean =>
+  ast._tag === "Objects" ? isRecord(v) : ast._tag === "Arrays" ? Array.isArray(v) : !scalars.has(ast._tag);
+
 // `value` as the event log may show it (ADR-0050): the fields marked personal redacted, and every key the schema does not know dropped, since such a
 // key (a field an older version had) could hold personal data no current mark covers. A record (index signature) keeps its keys. In a union, the
-// object member that keeps the most keys applies. The input is never mutated.
+// member of the value's shape that keeps the most keys applies (the first, on a tie). The input is never mutated.
 export const exposed = (schema: Schema.Top, value: unknown): unknown => {
   const keep = (ast: AstLike, v: unknown): unknown => {
-    if (v === null || v === undefined || typeof v !== "object") return v;
+    if (v === null || v === undefined) return v;
     switch (ast._tag) {
       case "Objects": {
         if (!isRecord(v)) return v;
@@ -151,8 +156,9 @@ export const exposed = (schema: Schema.Top, value: unknown): unknown => {
         return v.map((item, n) => (n < elements.length ? keep(elements[n]!, item) : rest !== undefined ? keep(rest, item) : item));
       }
       case "Union": {
-        const kept = (ast as UnionAst).types.map((member) => keep(member, v));
-        const size = (x: unknown) => (isRecord(x) ? Object.keys(x).length : Array.isArray(x) ? x.length : -1);
+        // Only a member that can hold the value applies: `null` in NullOr(Struct), or an array member for an object, would keep the object whole.
+        const kept = (ast as UnionAst).types.filter((member) => canHold(member, v)).map((member) => keep(member, v));
+        const size = (x: unknown) => Object.keys(x as object).length;
         return kept.reduce((best, x) => (size(x) > size(best) ? x : best), kept[0] ?? v);
       }
       default:
