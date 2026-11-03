@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
-import { commutative, withIdempotencyQuery, withLifecycleGuard } from "../src/CommandDecision.ts";
+import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
+import { commutative, nonCommutative, withIdempotencyQuery, withLifecycleGuard } from "../src/CommandDecision.ts";
 
 const ev = (type: string) => AppendEvent.ofUntagged(type, {});
 
@@ -25,5 +26,13 @@ describe("CommandDecision", () => {
 
   test("a lifecycle guard on every event (Query.all) is refused: it includes the types the command appends", () => {
     expect(() => withLifecycleGuard([ev("A")], Query.all(), LogPosition.zero())).toThrow(/cannot be Query.all\(\)/);
+  });
+
+  test("what the reads could see goes into the condition when they carried it, and nothing is added when they did not (ADR-0048)", () => {
+    const seen = ReadSnapshot.fromText("10:40:12");
+    expect(nonCommutative(ev("A"), Query.forEvent("A"), LogPosition.zero(), seen).condition.seen).toBe(seen);
+    expect(withLifecycleGuard(ev("A"), Query.forEvent("Opened"), LogPosition.zero(), seen).condition.seen).toBe(seen);
+    expect("seen" in nonCommutative(ev("A"), Query.forEvent("A"), LogPosition.zero()).condition).toBe(false);
+    expect("seen" in withLifecycleGuard(ev("A"), Query.forEvent("Opened"), LogPosition.zero()).condition).toBe(false);
   });
 });
