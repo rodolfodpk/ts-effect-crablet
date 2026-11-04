@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { defineEvent } from "../src/Event.ts";
 import { all, defineModel } from "../src/Model.ts";
@@ -309,5 +310,30 @@ describe("all: what the whole gives the executor", () => {
     const done = split.complete!(Deposited({ accountId: "a", amount: 1 }));
     expect(done.event.tags.map((t) => `${t.key}=${t.value}`)).toEqual(["account_id=a", "year=2026"]); // the first member's
     expect(done.conflicts).toEqual(["year=2027"]); // and the second's, which wants another year
+  });
+});
+
+// The in-memory store's reads carry no snapshot; Postgres's do (ADR-0048). Here the n-th read carries the n-th of `snapshots`, or none for `undefined`.
+const seeing = (fake: ReturnType<typeof makeInMemoryEventStore>, snapshots: ReadonlyArray<string | undefined>) => {
+  let reads = 0;
+  const service: typeof fake.service = {
+    ...fake.service,
+    project: (query, after, projectors) =>
+      Effect.map(fake.service.project(query, after, projectors), (r) => {
+        const s = snapshots[reads++];
+        return s === undefined ? r : { ...r, seen: ReadSnapshot.fromText(s) };
+      })
+  };
+  return { ...fake, service };
+};
+
+describe("what a model's reads could see (ADR-0048)", () => {
+  test("a model over several entities carries what every member saw, and nothing when one of them carried no snapshot", async () => {
+    const fake = makeInMemoryEventStore();
+    fake.seed(Opened({ accountId: "a", initial: 1 }), Opened({ accountId: "b", initial: 1 }));
+    const both = all({ x: AccountModel.of({ id: "a", year: 1 }), y: AccountModel.of({ id: "b", year: 1 }) });
+    const loaded = await load(seeing(fake, ["10:40:12", "8:30:9"]), both);
+    expect(loaded.seen).toBe(ReadSnapshot.intersect(ReadSnapshot.fromText("10:40:12"), ReadSnapshot.fromText("8:30:9")));
+    expect("seen" in (await load(seeing(fake, ["10:40:12", undefined]), both))).toBe(false);
   });
 });

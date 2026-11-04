@@ -12,6 +12,7 @@ import * as LogPosition from "@crablet/eventstore/LogPosition";
 import { given } from "../src/testing/Scenario.ts";
 import * as Tag from "@crablet/eventstore/Tag";
 import * as Query from "@crablet/eventstore/Query";
+import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import type { Loaded, ModelInstance } from "../src/Model.ts";
 
@@ -464,6 +465,22 @@ describe("a period's load, at its edges", () => {
     expect(loaded.prefix).toBeUndefined();
     expect(loaded.state.period.key).toBe(Period.month.key({ year: 2026, month: 11 }));
     expect(await count()).toBe(before);
+  });
+
+  test("turning a period: the load carries what all of its reads saw, the old period's among them (ADR-0048)", async () => {
+    const store = makeInMemoryEventStore();
+    store.seed(Opened({ id: "a1" }), PeriodOpened({ id: "a1", year: 2026, month: 10, opening: 0 }));
+    const snapshots = ["10:40:", "9:40:15", "8:40:20"].map(ReadSnapshot.fromText);
+    let reads = 0;
+    const seeing: typeof store.service = {
+      ...store.service,
+      project: (query, after, projectors) => Effect.map(store.service.project(query, after, projectors), (r) => ({ ...r, seen: snapshots[reads++]! }))
+    };
+    const loaded = await loadAt(store, Monthly.of({ id: "a1" }), nov, seeing);
+    expect(loaded.prefix!.map((e) => e.type)).toEqual(["PX_PeriodClosed", "PX_PeriodOpened"]);
+    expect(reads).toBe(3);
+    expect(loaded.seen).toBe(ReadSnapshot.intersectAll(snapshots));
+    expect(loaded.seen).not.toBe(ReadSnapshot.intersectAll(snapshots.slice(0, 2))); // the old period's read narrowed it
   });
 
   test("an opening found by the entity's tag but not by its period's tags is a defect, not a guess", async () => {

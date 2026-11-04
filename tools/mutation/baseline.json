@@ -1,8 +1,8 @@
 {
   "tolerancePoints": 0.5,
-  "overall": 92,
+  "overall": 92.3,
   "packages": {
-    "commands": 90.3,
+    "commands": 91,
     "event-poller": 95.7,
     "eventstore": 92.5
   }

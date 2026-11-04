@@ -241,6 +241,44 @@ describe("exposed and eventPayloadMask: what the event log API shows of a payloa
   test("a union keeps the member that knows the most keys", () => {
     const U = Schema.Union([Schema.Struct({ kind: Schema.String }), Schema.Struct({ kind: Schema.String, amount: Schema.Number })]);
     expect(exposed(U, { kind: "x", amount: 2, other: 1 })).toEqual({ kind: "x", amount: 2 });
+    const first = Schema.Union([Schema.Struct({ kind: Schema.String, amount: Schema.Number }), Schema.Struct({ kind: Schema.String })]);
+    expect(exposed(first, { kind: "x", amount: 2, other: 1 })).toEqual({ kind: "x", amount: 2 });
+    const tie = Schema.Union([Schema.Struct({ a: Schema.String }), Schema.Struct({ b: Schema.String })]);
+    expect(exposed(tie, { a: "1", b: "2" })).toEqual({ a: "1" }); // a tie: the first member
+  });
+  test("a nullable or optional object drops the keys it does not know: its null or undefined member does not keep the object whole", () => {
+    const S = Schema.Struct({ x: Schema.NullOr(Schema.Struct({ a: Schema.Number })), y: Schema.optional(Schema.Struct({ a: Schema.Number })) });
+    expect(exposed(S, { x: { a: 1, old: "p" }, y: { a: 2, old: "q" } })).toEqual({ x: { a: 1 }, y: { a: 2 } });
+    expect(exposed(S, { x: null })).toStrictEqual({ x: null });
+    expect(exposed(Schema.Union([Schema.Null, Schema.Array(Schema.Struct({ a: Schema.Number }))]), [{ a: 1, old: "p" }])).toEqual([{ a: 1 }]);
+    expect(exposed(Schema.Struct({ s: Schema.Union([Schema.Unknown, Schema.Any]) }), { s: "ab" })).toEqual({ s: "ab" });
+    const open = Schema.Struct({ m: Schema.Union([Schema.Unknown, Schema.Any]) });
+    expect(exposed(open, { m: null })).toStrictEqual({ m: null });
+    expect(exposed(open, { m: undefined })).toStrictEqual({ m: undefined });
+    const listOrOne = Schema.Union([Schema.Array(Schema.String), Schema.Struct({ a: Schema.String })]);
+    expect(exposed(listOrOne, { a: "1", old: "p" })).toEqual({ a: "1" }); // the array member cannot hold an object
+    const oneOrList = Schema.Union([Schema.Struct({ a: Schema.Number }), Schema.Array(Schema.Struct({ a: Schema.Number }))]);
+    expect(exposed(oneOrList, [{ a: 1, old: "p" }])).toEqual([{ a: 1 }]); // nor the object member an array
+    expect(exposed(Schema.Struct({ meta: Schema.Union([Schema.String, Schema.Unknown]) }), { meta: { any: 1 } })).toEqual({ meta: { any: 1 } });
+  });
+  test("a key the value does not have stays missing", () => {
+    const out = exposed(Schema.Struct({ a: Schema.String, b: Schema.optionalKey(Schema.String) }), { a: "1" });
+    expect(out).toStrictEqual({ a: "1" });
+    expect("b" in (out as object)).toBe(false);
+  });
+  test("a struct with a record keeps its other keys, and a known key keeps its own schema", () => {
+    const S = Schema.StructWithRest(Schema.Struct({ a: Schema.Struct({ x: Schema.String }) }), [Schema.Record(Schema.String, Schema.Unknown)]);
+    expect(exposed(S, { a: { x: "1", old: "p" }, extra: { z: 1 } })).toEqual({ a: { x: "1" }, extra: { z: 1 } });
+  });
+  test("tuples: each element by its own schema, the rest by the rest's, and an element past a tuple without a rest as it is", () => {
+    const A = Schema.Struct({ a: Schema.Number }), B = Schema.Struct({ b: Schema.Number });
+    expect(exposed(Schema.TupleWithRest(Schema.Tuple([A]), [B]), [{ a: 1, z: 0 }, { b: 2, z: 0 }, { b: 3, z: 0 }])).toEqual([{ a: 1 }, { b: 2 }, { b: 3 }]);
+    expect(exposed(Schema.Tuple([A]), [{ a: 1, z: 0 }, { q: 1 }])).toEqual([{ a: 1 }, { q: 1 }]);
+  });
+  test("a value of another shape than its schema, or a schema that says nothing of its shape, is shown as it is", () => {
+    expect(exposed(Schema.Struct({ a: Schema.String }), ["x"])).toEqual(["x"]);
+    expect(exposed(Schema.Array(Schema.Struct({ a: Schema.String })), { a: "1", b: 2 })).toEqual({ a: "1", b: 2 });
+    expect(exposed(Schema.Struct({ meta: Schema.Unknown }), { meta: { x: 1 } })).toEqual({ meta: { x: 1 } });
   });
   test("eventPayloadMask: a type with a definition is exposed; one without is withheld", () => {
     const mask = eventPayloadMask([{ type: "A", schema: S }]);
