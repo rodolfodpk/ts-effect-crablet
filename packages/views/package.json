@@ -23,8 +23,8 @@
     "internal": ["./ViewProgress", "./ViewProjector", "./ViewSubscription"]
   },
   "dependencies": {
-    "effect": "4.0.6",
-    "@effect/sql-pg": "4.0.6",
+    "effect": "4.1.2",
+    "@effect/sql-pg": "4.1.2",
     "@crablet/eventstore": "workspace:*",
     "@crablet/event-poller": "workspace:*",
     "@crablet/metrics-otel": "workspace:*"

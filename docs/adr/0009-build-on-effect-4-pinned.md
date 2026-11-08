@@ -94,3 +94,14 @@ now 8.12.3, which closes its two high denial-of-service advisories; what `bun au
   also removes the documented imprecision of comments inside blocks. With Bun 1.4.4 the gate passes: 99.7 % against a baseline of 99.6 %.
 
 Majors left for later: Node's types 26 (CI runs Node 24), `@readme/openapi-parser` 10, Vite 8. Typecheck clean, 1121 unit and 499 integration tests green.
+
+## Addendum (2026-11-08): moved to 4.1.2
+
+`effect`, `@effect/sql-pg`, `@effect/platform-node` and `@effect/platform-browser` went from `4.0.6` to `4.1.2` (the npm `latest`), Foldkit from 0.169.0 to
+0.170.0 in the three UIs. Foldkit 0.170.0 declares `effect: ~4.1.0` as its peer, so staying on 4.0 would have held the UIs at 0.169. The root
+`package.json` now names `packageManager: bun@1.4.4`, the version CI and the wallet image already use. One change followed:
+
+- **The OpenAPI document gives a JSON-encoded string its `contentSchema`.** A field that is a string holding JSON (`contentMediaType:
+  application/json`) now also describes the shape of that JSON. `docs/api/course-enrolment-openapi.json` was regenerated; the wallet's is unchanged.
+
+Typecheck clean, 1336 unit and 552 integration tests green, coverage at or above its baseline.
