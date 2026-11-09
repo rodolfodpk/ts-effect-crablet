@@ -24,9 +24,9 @@
         "@crablet/eventstore": "workspace:*",
         "@crablet/views": "workspace:*",
         "@crablet/views-http": "workspace:*",
-        "@effect/platform-node": "4.0.6",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/platform-node": "4.1.2",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
         "pg": "8.23.1",
       },
       "devDependencies": {
@@ -37,10 +37,10 @@
       "name": "course-enrolment-ui",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/platform-browser": "4.0.6",
+        "@effect/platform-browser": "4.1.2",
         "course-enrolment-app": "workspace:*",
-        "effect": "4.0.6",
-        "foldkit": "0.169.0",
+        "effect": "4.1.2",
+        "foldkit": "0.170.0",
       },
       "devDependencies": {
         "@crablet/commands-http": "workspace:*",
@@ -54,7 +54,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/commands": "workspace:*",
-        "effect": "4.0.6",
+        "effect": "4.1.2",
       },
     },
     "examples/wallet-example-app": {
@@ -71,9 +71,9 @@
         "@crablet/processors-http": "workspace:*",
         "@crablet/views": "workspace:*",
         "@crablet/views-http": "workspace:*",
-        "@effect/platform-node": "4.0.6",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/platform-node": "4.1.2",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
         "pg": "8.23.1",
       },
       "devDependencies": {
@@ -88,8 +88,8 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
@@ -101,8 +101,8 @@
       "dependencies": {
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
@@ -115,12 +115,12 @@
       "dependencies": {
         "@crablet/commands": "workspace:*",
         "@crablet/eventstore": "workspace:*",
-        "effect": "4.0.6",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
-        "@effect/platform-node": "4.0.6",
-        "@effect/sql-pg": "4.0.6",
+        "@effect/platform-node": "4.1.2",
+        "@effect/sql-pg": "4.1.2",
       },
     },
     "packages/db-migrations": {
@@ -133,8 +133,8 @@
       "dependencies": {
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
@@ -146,8 +146,8 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/metrics-otel": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
@@ -158,7 +158,7 @@
       "name": "@crablet/metrics-otel",
       "version": "0.0.0",
       "dependencies": {
-        "effect": "4.0.6",
+        "effect": "4.1.2",
       },
     },
     "packages/outbox": {
@@ -168,8 +168,8 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
@@ -181,11 +181,11 @@
       "dependencies": {
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
-        "effect": "4.0.6",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/commands": "workspace:*",
-        "@effect/platform-node": "4.0.6",
+        "@effect/platform-node": "4.1.2",
       },
     },
     "packages/test-support": {
@@ -206,8 +206,8 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
-        "effect": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
@@ -223,12 +223,12 @@
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
         "@crablet/views": "workspace:*",
-        "effect": "4.0.6",
+        "effect": "4.1.2",
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
-        "@effect/platform-node": "4.0.6",
-        "@effect/sql-pg": "4.0.6",
+        "@effect/platform-node": "4.1.2",
+        "@effect/sql-pg": "4.1.2",
         "pg": "8.23.1",
       },
     },
@@ -236,9 +236,9 @@
       "name": "chaos-ui",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/platform-browser": "4.0.6",
-        "effect": "4.0.6",
-        "foldkit": "0.169.0",
+        "@effect/platform-browser": "4.1.2",
+        "effect": "4.1.2",
+        "foldkit": "0.170.0",
       },
       "devDependencies": {
         "pg": "8.23.1",
@@ -250,15 +250,15 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/processors-http": "workspace:*",
-        "@effect/platform-browser": "4.0.6",
-        "effect": "4.0.6",
-        "foldkit": "0.169.0",
+        "@effect/platform-browser": "4.1.2",
+        "effect": "4.1.2",
+        "foldkit": "0.170.0",
       },
       "devDependencies": {
         "@crablet/commands": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/test-support": "workspace:*",
-        "@effect/sql-pg": "4.0.6",
+        "@effect/sql-pg": "4.1.2",
         "pg": "8.23.1",
         "vite": "7.3.7",
         "wallet-example-app": "workspace:*",
@@ -300,13 +300,13 @@
 
     "@crablet/views-http": ["@crablet/views-http@workspace:packages/views-http"],
 
-    "@effect/platform-browser": ["@effect/platform-browser@4.0.6", "", { "peerDependencies": { "effect": "^4.0.6" } }, "sha512-i4bf1+FlUnZypqK0pQ5cq46KhroTgqFGktFn2WorwIk+yc+RuZO6qsF+Sk6lY5uHwdHTOLGMlnlXSJ8u1UG42g=="],
+    "@effect/platform-browser": ["@effect/platform-browser@4.1.2", "", { "peerDependencies": { "effect": "^4.1.2" } }, "sha512-O+C5hpnfdphBhSaOndFw8XA3dBG0x4SiF3m3QJzJwZZOlB4nGe+ghCZgknyaLcxigA8NqUtEj73rSsVVwshYFA=="],
 
-    "@effect/platform-node": ["@effect/platform-node@4.0.6", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.6", "undici": "^8.12.2" }, "peerDependencies": { "effect": "^4.0.6", "redis": ">=5.0.0 <7.0.0" } }, "sha512-gXvGHAy0/8PZbWvMMguloDUyeSP+rzYEo3FSEqUuGduxo9ORcGioDxPI+GOLCIFfam7VuNkmSUxBOiRMIrMrBw=="],
+    "@effect/platform-node": ["@effect/platform-node@4.1.2", "", { "dependencies": { "@effect/platform-node-shared": "4.1.2", "undici": "^8.12.3" }, "peerDependencies": { "effect": "^4.1.2", "redis": ">=5.1.0 <7.0.0" } }, "sha512-ye0UjxORdd5Qu3paZ1LljgGOALWHt7muP9VTpjUSCNfcesiB/Hm7wPJIvZeu4gnwpTe5BtEnO1VHngWqjJp8mA=="],
 
-    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.0.6", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.0" }, "peerDependencies": { "effect": "^4.0.6" } }, "sha512-0PhyC4uG30xGtsajnxjkcBWfTjNRzUh4ZKl1Kvo/MNyCTb+W2O+fBzf7wCRCoqt+nLudiq4V7vX40Q8XIBuMaQ=="],
+    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.2", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-wSwl9A/G1hcVvF8nLI+YfB3EyOIDvWS6+lsTZBkmgDnPBL7m8YWZF+1HD+mdEsb52SUGfukip46Q3gRwSdk3QA=="],
 
-    "@effect/sql-pg": ["@effect/sql-pg@4.0.6", "", { "peerDependencies": { "effect": "^4.0.6" } }, "sha512-mh2Z+Hi1/AWtkoGuzub2PPCHN7ZsMAbY8dlv/YbdJ6PoXVdrVAGsr+FeeoeD6f0rdnln4DQm7PvFjv1htAjY9w=="],
+    "@effect/sql-pg": ["@effect/sql-pg@4.1.2", "", { "peerDependencies": { "effect": "^4.1.2" } }, "sha512-0UehR7B5W8dC+dX6fDeWStLbVbBb2M4pk4HBATEeH0cmV4Odl2lckTg0jFmLuadekTLa4OyB+bZQo1yTG1y2Mw=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.28.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ=="],
 
@@ -616,7 +616,7 @@
 
     "eastasianwidth": ["eastasianwidth@0.2.0", "", {}, "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA=="],
 
-    "effect": ["effect@4.0.6", "", {}, "sha512-Tc3mkzuLR6t6P9dhLt0D2GrxYtmU5td4XEJEiXCmILz53IRIfJyHsKZWjTA3xEjiwpNTtXBgI4iqYPxMztBDrw=="],
+    "effect": ["effect@4.1.2", "", {}, "sha512-d3Oah1WyKxFLFh19yWheS5IXIVaITzxZ71JkE1rkUozq/6EcJSU5nPk5bF2QrSygZ3SQoiNQB8TsxFriyMeMaQ=="],
 
     "emoji-regex": ["emoji-regex@8.0.0", "", {}, "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A=="],
 
@@ -642,7 +642,7 @@
 
     "fdir": ["fdir@6.5.0", "", { "peerDependencies": { "picomatch": "^3 || ^4" }, "optionalPeers": ["picomatch"] }, "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg=="],
 
-    "foldkit": ["foldkit@0.169.0", "", { "dependencies": { "parse5": "^8.0.1" }, "peerDependencies": { "@effect/platform-browser": "4.0.0", "effect": "4.0.0" } }, "sha512-7GHWKVJshNM6DLkPfybklfGpSo3wfDHtiywCP3VUmwmVTtpezeLdhwqhd67PtpDid8Ri7aVKtAykjk6m1tK/tw=="],
+    "foldkit": ["foldkit@0.170.0", "", { "dependencies": { "parse5": "^8.0.1" }, "peerDependencies": { "@effect/platform-browser": "~4.1.0", "effect": "~4.1.0" } }, "sha512-H/MRQe/IZ/LqpgPi+Zy1S1OXQ8o12e2S/6U+phQu3WmoHSm7Vase/dEnOvrq9YZfqxK44/oVq6wE9oqXzEIaig=="],
 
     "foreground-child": ["foreground-child@3.3.1", "", { "dependencies": { "cross-spawn": "^7.0.6", "signal-exit": "^4.0.1" } }, "sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw=="],
 
@@ -848,7 +848,7 @@
 
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
 
-    "ws": ["ws@8.22.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg=="],
+    "ws": ["ws@8.22.2", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA=="],
 
     "xtend": ["xtend@4.0.2", "", {}, "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="],
 
@@ -895,10 +895,6 @@
     "docker-modem/readable-stream": ["readable-stream@3.6.2", "", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
 
     "dockerode/tar-fs": ["tar-fs@2.1.5", "", { "dependencies": { "chownr": "^1.1.1", "mkdirp-classic": "^0.5.2", "pump": "^3.0.0", "tar-stream": "^2.1.4" } }, "sha512-OboTd8mmMhZDNPV+UjQcK9yKAatXu2aJ+r1w4im1Otd4M4fl2hwvdoXUxIYHFTHWK/3y3FarBP70v3vwmGlOxw=="],
-
-    "foldkit/@effect/platform-browser": ["@effect/platform-browser@4.0.0", "", { "peerDependencies": { "effect": "^4.0.0" } }, "sha512-OHo7EPpF3RVPiI+mjoU9yd05LdCdKPjzDXqs5wRgF9CsdVvwN76B0zgt54DxPUcvMYri1tVJOtLCVnK0tRkNQQ=="],
-
-    "foldkit/effect": ["effect@4.0.0", "", {}, "sha512-ooc1TG5t+FfzgYnFz2ff6BBKyZ7EwBRVXC7c4RhQUAD6/TZ2gTXXMeb4WX7a19ozQo4J73/QW+S00YAIresoMQ=="],
 
     "foreground-child/signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
 

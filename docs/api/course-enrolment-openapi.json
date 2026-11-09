@@ -745,7 +745,27 @@
                     },
                     "data": {
                       "type": "string",
-                      "contentMediaType": "application/json"
+                      "contentMediaType": "application/json",
+                      "contentSchema": {
+                        "type": "object",
+                        "properties": {
+                          "view": {
+                            "type": "string"
+                          },
+                          "transactionId": {
+                            "type": "string"
+                          },
+                          "position": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "view",
+                          "transactionId",
+                          "position"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
