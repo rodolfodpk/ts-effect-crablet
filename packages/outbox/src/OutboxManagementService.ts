@@ -36,6 +36,10 @@ export interface OutboxManagementService extends ProcessorManagementService<stri
   readonly getAllProgressDetails: Effect.Effect<ReadonlyArray<OutboxProgressDetails>, SqlError>;
 }
 
+// The columns ProgressRow reads, named: SELECT * would also read last_transaction_id, an xid8 the Postgres client has no codec for
+// (since @effect/sql-pg 4.1.4 that fails the row instead of reading it as text).
+const PROGRESS_COLUMNS = "topic, publisher, status, last_position, last_published_at, error_count, last_error, updated_at, leader_instance, leader_since, leader_heartbeat";
+
 interface ProgressRow {
   readonly topic: string;
   readonly publisher: string;
@@ -100,14 +104,14 @@ export const makeOutboxManagementService = (
     ): Effect.Effect<OutboxProgressDetails | null, SqlError> =>
       Effect.map(
         sql.unsafe<ProgressRow>(
-          "SELECT * FROM crablet_outbox_topic_progress WHERE topic = $1 AND publisher = $2",
+          `SELECT ${PROGRESS_COLUMNS} FROM crablet_outbox_topic_progress WHERE topic = $1 AND publisher = $2`,
           [topic, publisher]
         ),
         (rows) => (rows[0] ? toDetails(rows[0]) : null)
       );
 
     const getAllProgressDetails: Effect.Effect<ReadonlyArray<OutboxProgressDetails>, SqlError> = Effect.map(
-      sql.unsafe<ProgressRow>("SELECT * FROM crablet_outbox_topic_progress", []),
+      sql.unsafe<ProgressRow>(`SELECT ${PROGRESS_COLUMNS} FROM crablet_outbox_topic_progress`, []),
       (rows) => rows.map(toDetails)
     );
 
