@@ -28,6 +28,10 @@ export interface AutomationManagementService extends ProcessorManagementService<
   readonly getAllProgressDetails: Effect.Effect<ReadonlyArray<AutomationProgressDetails>, SqlError>;
 }
 
+// The columns ProgressRow reads, named: SELECT * would also read last_transaction_id, an xid8 the Postgres client has no codec for
+// (since @effect/sql-pg 4.1.4 that fails the row instead of reading it as text).
+const PROGRESS_COLUMNS = "automation_name, status, instance_id, last_position, error_count, last_error, last_updated_at";
+
 interface ProgressRow {
   readonly automation_name: string;
   readonly status: ProcessorStatus;
@@ -75,14 +79,14 @@ export const makeAutomationManagementService = (
 
     const getProgressDetails = (automationName: string): Effect.Effect<AutomationProgressDetails | null, SqlError> =>
       Effect.map(
-        sql.unsafe<ProgressRow>("SELECT * FROM crablet_automation_progress WHERE automation_name = $1", [
+        sql.unsafe<ProgressRow>(`SELECT ${PROGRESS_COLUMNS} FROM crablet_automation_progress WHERE automation_name = $1`, [
           automationName
         ]),
         (rows) => (rows[0] ? toDetails(rows[0]) : null)
       );
 
     const getAllProgressDetails: Effect.Effect<ReadonlyArray<AutomationProgressDetails>, SqlError> = Effect.map(
-      sql.unsafe<ProgressRow>("SELECT * FROM crablet_automation_progress", []),
+      sql.unsafe<ProgressRow>(`SELECT ${PROGRESS_COLUMNS} FROM crablet_automation_progress`, []),
       (rows) => rows.map(toDetails)
     );
 

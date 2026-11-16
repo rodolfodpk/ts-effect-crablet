@@ -27,6 +27,10 @@ export interface ViewManagementService extends ProcessorManagementService<string
   readonly getAllProgressDetails: Effect.Effect<ReadonlyArray<ViewProgressDetails>, SqlError>;
 }
 
+// The columns ProgressRow reads, named: SELECT * would also read last_transaction_id, an xid8 the Postgres client has no codec for
+// (since @effect/sql-pg 4.1.4 that fails the row instead of reading it as text).
+const PROGRESS_COLUMNS = "view_name, status, instance_id, last_position, error_count, last_error, last_updated_at";
+
 interface ProgressRow {
   readonly view_name: string;
   readonly status: ProcessorStatus;
@@ -74,12 +78,12 @@ export const makeViewManagementService = (
 
     const getProgressDetails = (viewName: string): Effect.Effect<ViewProgressDetails | null, SqlError> =>
       Effect.map(
-        sql.unsafe<ProgressRow>("SELECT * FROM crablet_view_progress WHERE view_name = $1", [viewName]),
+        sql.unsafe<ProgressRow>(`SELECT ${PROGRESS_COLUMNS} FROM crablet_view_progress WHERE view_name = $1`, [viewName]),
         (rows) => (rows[0] ? toDetails(rows[0]) : null)
       );
 
     const getAllProgressDetails: Effect.Effect<ReadonlyArray<ViewProgressDetails>, SqlError> = Effect.map(
-      sql.unsafe<ProgressRow>("SELECT * FROM crablet_view_progress", []),
+      sql.unsafe<ProgressRow>(`SELECT ${PROGRESS_COLUMNS} FROM crablet_view_progress`, []),
       (rows) => rows.map(toDetails)
     );
 

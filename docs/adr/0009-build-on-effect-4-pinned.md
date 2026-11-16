@@ -105,3 +105,16 @@ Majors left for later: Node's types 26 (CI runs Node 24), `@readme/openapi-parse
   application/json`) now also describes the shape of that JSON. `docs/api/course-enrolment-openapi.json` was regenerated; the wallet's is unchanged.
 
 Typecheck clean, 1336 unit and 552 integration tests green, coverage at or above its baseline.
+
+## Addendum (2026-11-16): moved to 4.1.4
+
+`effect`, `@effect/sql-pg`, `@effect/platform-node` and `@effect/platform-browser` went from `4.1.2` to `4.1.4` (the npm `latest`). Foldkit stays at
+0.170.0, still the latest, whose `~4.1.0` peer range accepts the patch. One change followed:
+
+- **`@effect/sql-pg` fails a row with a column it has no codec for and that is not text.** `xid8` is such a column: read without a cast, it arrives as
+  binary data, which 4.1.2 handed back as a garbled string and 4.1.4 rejects with `PgTypesCodecError` ("Failed to decode row"). Every cursor read already
+  cast `last_transaction_id::text`, but the views', automations' and outbox's management services read their progress rows with `SELECT *`, so
+  `getProgressDetails` and `getAllProgressDetails` failed. They now name the columns their row type reads. Any new query that returns an `xid8` must cast
+  it to text.
+
+Typecheck clean, 1336 unit and 552 integration tests green; both OpenAPI documents unchanged.
