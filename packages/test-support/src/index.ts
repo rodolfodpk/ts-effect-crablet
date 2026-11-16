@@ -61,11 +61,20 @@ async function withContainerStartLock<T>(fn: () => Promise<T>): Promise<T> {
 // Even one start can exceed the fixed 10 s port-bind wait while other test containers are busy;
 // that specific failure is transient, so retry it. (A failed attempt's container is cleaned up by
 // Testcontainers' reaper when the process exits.) Any other error is not retried.
+// A test database is thrown away with its container, so it gives up durability for speed: no
+// fsync, no waiting for the WAL flush at commit, no full-page images, and the data directory (the
+// image's volume, PGDATA is below it) in memory. Visibility, locking and isolation are unchanged,
+// so the tests still see Postgres's real concurrency behaviour. Arguments a caller passes come
+// after these and win on a repeated setting.
+const THROWAWAY_DB_ARGS = ["-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"];
+
 async function startContainerWithRetry(postgresArgs: ReadonlyArray<string> = [], attempts = 3): Promise<StartedPostgreSqlContainer> {
   for (let attempt = 1; ; attempt++) {
     try {
-      const container = new PostgreSqlContainer("postgres:18.6-alpine");
-      return await (postgresArgs.length === 0 ? container : container.withCommand(["postgres", ...postgresArgs])).start();
+      return await new PostgreSqlContainer("postgres:18.6-alpine")
+        .withTmpFs({ "/var/lib/postgresql": "rw" })
+        .withCommand(["postgres", ...THROWAWAY_DB_ARGS, ...postgresArgs])
+        .start();
     } catch (e) {
       const transient = e instanceof Error && e.message.includes("waiting for container ports to be bound");
       if (!transient || attempt >= attempts) throw e;
