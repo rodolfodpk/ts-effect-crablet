@@ -25,7 +25,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  runtime = ManagedRuntime.make(Layer.provide(ViewProgressHubLive, pgLayer) as unknown as Layer.Layer<ViewProgressHub, never>);
+  runtime = ManagedRuntime.make(Layer.provide(ViewProgressHubLive, pgLayer).pipe(Layer.orDie));
   await runtime.runPromise(Effect.flatMap(ViewProgressHub, () => Effect.void)); // build it
 }, { timeout: 60_000 });
 after(async () => {

@@ -30,9 +30,9 @@ after(async () => {
 const make = () =>
   ManagedRuntime.make(
     Layer.provideMerge(
-      Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive),
+      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)),
       PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: "wallet" })
-    ) as unknown as Layer.Layer<CoreServices, never>
+    ).pipe(Layer.orDie)
   );
 
 describe("statements per consistent read", () => {

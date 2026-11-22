@@ -27,7 +27,7 @@ let runtime: ManagedRuntime.ManagedRuntime<Services, never>;
 before(async () => {
   db = await startTestDb();
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive), pgLayer) as unknown as Layer.Layer<Services, never>);
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie));
 }, { timeout: 60_000 });
 
 after(async () => {
@@ -173,9 +173,7 @@ describe("deadlines against Postgres (ADR-0043)", () => {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* EventStore;
       const executor = yield* CommandExecutor;
-      const audit = yield* CommandAuditStore;
-      const execute = (command: never, input: never) =>
-        executor.runDecoded(command, input).pipe(Effect.provideService(EventStore, store), Effect.provideService(CommandAuditStore, audit), Effect.provideService(SqlClient.SqlClient, sql));
+      const execute = (command: never, input: never) => executor.runDecoded(command, input);
       const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute as never, makeRecordFiring(sql, store), 30_000);
       const fetched = (yield* (yield* makeDeadlineFetcher()).fetchEvents(undefined as never, undefined as never, 100)).filter((e: StoredEvent) => e.position.toString() === scheduled.position);
       assert.strictEqual(fetched.length, 1);
@@ -218,11 +216,7 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        const store = yield* EventStore;
-        const audit = yield* CommandAuditStore;
-        const sql = yield* SqlClient.SqlClient;
-        const execute = (command: never, input: never) =>
-          executor.runDecoded(command, input).pipe(Effect.provideService(EventStore, store), Effect.provideService(CommandAuditStore, audit), Effect.provideService(SqlClient.SqlClient, sql));
+        const execute = (command: never, input: never) => executor.runDecoded(command, input);
         const handler = yield* handlerWith(execute, 30_000);
         yield* handler.handle(DEADLINES_PROCESSOR_ID, yield* fetchIt);
       })

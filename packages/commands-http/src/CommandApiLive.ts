@@ -4,9 +4,6 @@ import { HttpApiBuilder } from "effect/http-api";
 import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { CommandExecutor } from "@crablet/commands";
-import type { SqlClient } from "effect/sql";
-import type { EventStore } from "@crablet/eventstore";
-import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { formatMarker } from "@crablet/eventstore/Marker";
 import { checkImplementations, executeEndpointName, listedCommands, makeCommandApi } from "./CommandApi.ts";
@@ -19,8 +16,12 @@ import { defaultBasePath } from "./CommandApiConfig.ts";
 import { kindOf, type InputIssue } from "@crablet/commands/Errors";
 import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, domainProblemOf } from "./ProblemDetail.ts";
 
-// What running a command needs from the environment: the executor plus what `execute` itself uses.
-export type CommandApiRequirements = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient;
+// What running a command needs from the environment. The executor brings its own event store, audit store and SQL client (its layer resolves
+// them), so it is all a command endpoint needs; `requirementsMatchTheHandler` below checks this against the handler's type.
+export type CommandApiRequirements = CommandExecutor;
+
+// True when A and B are the same type (not merely assignable one way).
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 // Duck-typed on the RFC 7807 shape (type/title/status/detail) rather than `instanceof` against a
 // fixed list of known classes: a domain error's problem is a plain object built from its declared
@@ -137,9 +138,18 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       Effect.catchDefect((defect) => Effect.fail(toProblemDetail(defect)))
     );
 
+  // The layer's requirements are declared below through the `as any` group builder, so the compiler cannot see them; this checks them against
+  // what the handler really needs (the request is the router's), so `CommandApiRequirements` cannot drift from the code without a compile error.
+  const requirementsMatchTheHandler: Equal<
+    Exclude<Effect.Services<ReturnType<typeof handleCommand>>, HttpServerRequest.HttpServerRequest>,
+    CommandApiRequirements
+  > = true;
+  void requirementsMatchTheHandler;
+
   // `HttpApiBuilder.group as any`: its signature requires "commands" to be statically known as a
   // member of `Groups`, and the endpoint names are only known at run time (one per contract), so
-  // the whole call is cast. Narrow, deliberate type-erasure at this one dynamic-composition boundary.
+  // the whole call is cast. Narrow, deliberate type-erasure at this one dynamic-composition boundary;
+  // the check above keeps its requirements honest.
   const groupBuilder = HttpApiBuilder.group as any;
   const CommandsLive: Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> = groupBuilder(api, "commands", (handlers: any) =>
     Effect.succeed(

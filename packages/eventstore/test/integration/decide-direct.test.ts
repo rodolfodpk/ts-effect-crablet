@@ -18,7 +18,7 @@ let layer: Layer.Layer<EventStore | SqlClient.SqlClient, never>;
 before(async () => {
   db = await startTestDb();
   const pg = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  layer = Layer.provideMerge(EventStoreLive, pg) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient, never>;
+  layer = Layer.provideMerge(EventStoreLive, pg).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 

@@ -32,7 +32,7 @@ before(async () => {
     password: Redacted.make(db.connInfo.password)
   });
   runtime = ManagedRuntime.make(
-    Layer.provideMerge(EventStoreLive, pgLayer) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>
+    Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie)
   );
   await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("CREATE TABLE IF NOT EXISTS ping_rows (id text primary key)")));
   listener = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });

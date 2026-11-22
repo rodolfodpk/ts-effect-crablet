@@ -25,7 +25,7 @@ before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   const pg = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive), pg) as unknown as Layer.Layer<CoreServices, never>);
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)), pg).pipe(Layer.orDie));
   app = await startWalletAppForTest(runtime, undefined, undefined, { leader: { serverIdleTimeout: "7 seconds" } });
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();

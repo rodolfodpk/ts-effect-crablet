@@ -28,7 +28,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  runtime = ManagedRuntime.make(pgLayer as unknown as Layer.Layer<SqlClient.SqlClient | PgClient.PgClient, never>);
+  runtime = ManagedRuntime.make(pgLayer.pipe(Layer.orDie));
 }, { timeout: 60_000 });
 
 after(async () => {

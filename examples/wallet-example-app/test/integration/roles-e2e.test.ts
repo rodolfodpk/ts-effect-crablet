@@ -40,8 +40,8 @@ const startInstance = async (name: string, roles: string): Promise<Instance> => 
     password: Redacted.make(db.connInfo.password),
     applicationName: `wallet-${name}`
   });
-  const coreLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive);
-  const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer) as unknown as Layer.Layer<CoreServices, never>);
+  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime, [capturing(name)], TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
   const instance = { name, runtime, app };
   instances.set(name, instance);

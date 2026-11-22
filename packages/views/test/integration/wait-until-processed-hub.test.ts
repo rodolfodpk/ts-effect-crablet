@@ -28,7 +28,7 @@ before(async () => {
     password: Redacted.make(db.connInfo.password)
   });
   runtime = ManagedRuntime.make(
-    Layer.provideMerge(EventStoreLive, pgLayer) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>
+    Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie)
   );
 }, { timeout: 60_000 });
 after(async () => {

@@ -17,7 +17,7 @@ after(async () => { await db.stop(); });
 const newKey = () => BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);
 const runtimeWithPool = (maxConnections: number) =>
   ManagedRuntime.make(
-    PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>
+    PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections }).pipe(Layer.orDie)
   );
 
 describe("a leader whose pool has no connection to give", () => {

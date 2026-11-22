@@ -18,7 +18,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  layer = Layer.provide(EventStoreLive, pgLayer) as unknown as Layer.Layer<EventStore, never>;
+  layer = Layer.provide(EventStoreLive, pgLayer).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 
 after(async () => {

@@ -30,7 +30,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const layer = Layer.provide(EventStoreLive, pgLayer) as unknown as Layer.Layer<EventStore, never>;
+  const layer = Layer.provide(EventStoreLive, pgLayer).pipe(Layer.orDie);
   pg = { run: (effect) => Effect.runPromise(Effect.provide(effect, layer)) };
 }, { timeout: 60_000 });
 

@@ -28,7 +28,7 @@ before(async () => {
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }) as unknown as Layer.Layer<SqlClient.SqlClient, never>;
+  }).pipe(Layer.orDie);
   listener = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await listener.connect();
   await listener.query(`LISTEN ${CHANNEL}`);

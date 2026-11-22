@@ -66,7 +66,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer) as unknown as Layer.Layer<Env, never>);
+  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie));
   await runtime.runPromise(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

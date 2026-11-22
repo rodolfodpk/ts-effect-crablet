@@ -45,9 +45,8 @@ export interface CrabletOptions {
 export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<Services, SqlError> =>
   Layer.provideMerge(
     Layer.mergeAll(
-      CommandExecutorLive,
-      makeEventStoreLayer(options.eventStore),
-      CommandAuditStoreLive,
+      // The executor is built from the event store and the audit store, so it is provided with them, not merged beside them.
+      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer(options.eventStore), CommandAuditStoreLive)),
       Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" }),
       options.session === undefined ? Layer.empty : sessionClientsLayer(options.session)
     ),

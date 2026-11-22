@@ -53,8 +53,8 @@ const whoHolds = async () => {
 };
 
 const withApp = async (session: boolean, body: (app: RunningWalletApp) => Promise<void>) => {
-  const appLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive, ...(session ? [sessionClientsLayer({ ...pgConfig("crablet-session"), maxConnections: 10 })] : []));
-  const runtime = ManagedRuntime.make(Layer.provideMerge(appLayers, PgClient.layer({ ...pgConfig("crablet-main"), maxConnections: 10 })) as unknown as Layer.Layer<CoreServices, never>);
+  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ...(session ? [sessionClientsLayer({ ...pgConfig("crablet-session"), maxConnections: 10 })] : [])));
+  const runtime = ManagedRuntime.make(Layer.provideMerge(appLayers, PgClient.layer({ ...pgConfig("crablet-main"), maxConnections: 10 })).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime);
   try {
     // the three roles have taken their locks, and the LISTEN connections are up

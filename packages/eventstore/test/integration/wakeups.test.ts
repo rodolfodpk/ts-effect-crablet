@@ -14,7 +14,7 @@ let db: TestDb;
 let pgLayer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
 before(async () => {
   db = await startTestDb();
-  pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+  pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) }).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 

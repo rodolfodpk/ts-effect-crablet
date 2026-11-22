@@ -25,7 +25,7 @@ let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | Pg
 before(async () => {
   db = await startTestDb();
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>);
+  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie));
 }, { timeout: 60_000 });
 after(async () => { await runtime.dispose(); await db.stop(); });
 const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) => runtime.runPromise(e);
@@ -41,7 +41,7 @@ const start = (label: string, view: string, lockKey: bigint, calls: Array<Call>,
     const progressTracker = yield* makePostgresProgressTracker<string>({ tableName: "crablet_view_progress", idColumn: "view_name" });
     const fetcher = yield* makeSqlEventFetcher();
     const selection = EventSelection.of({ exactTags: new Map([["run_marker", view]]) });
-    const config = processorConfigOf(view, { pollingIntervalMs: o.polling, batchSize: 100, backoffEnabled: o.backoff ?? false, backoffThreshold: 3, backoffMultiplier: 2, backoffMaxSeconds: o.backoffMaxSeconds ?? 120, enabled: true });
+    const config = processorConfigOf(view, { pollingIntervalMs: o.polling, batchSize: 100, backoffEnabled: o.backoff ?? false, backoffThreshold: 3, backoffMultiplier: 2, backoffMaxSeconds: o.backoffMaxSeconds ?? 120 });
     const handler = { handle: (_id: string, events: ReadonlyArray<{ position: bigint }>) => Effect.sync(() => { calls.push({ who: label, at: performance.now(), positions: events.map((e) => e.position) }); return events.length; }) };
     const handle = yield* makeEventProcessor({
       configs: [config], fetcher, handler: handler as never, progressTracker, selectionOf: () => selection,

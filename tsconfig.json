@@ -20,6 +20,10 @@
     "examples/*/src/**/*.ts",
     "examples/*/test/**/*.ts",
     "examples/*/tutorial/**/*.ts",
+    "packages/*/diagnostics/**/*.ts",
+    "examples/*/diagnostics/**/*.ts",
+    "examples/*/scripts/**/*.ts",
+    "examples/*/lab/**/*.ts",
     "scripts/**/*.ts"
   ],
   "exclude": ["examples/course-enrolment-ui", "tools"]

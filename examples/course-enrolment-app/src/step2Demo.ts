@@ -29,7 +29,8 @@ export const runStep2 = (conn: DbConnInfo, log: (line: string) => void = () => {
     username: conn.username,
     password: Redacted.make(conn.password)
   });
-  const run = <A, E>(effect: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(effect, AppLive) as Effect.Effect<A, E, never>);
+  // The program may need only what `Crablet.layer` provides; anything else does not compile here.
+  const run = <A, E>(effect: Effect.Effect<A, E, Crablet.Services>) => Effect.runPromise(Effect.provide(effect, AppLive));
   const id = crypto.randomUUID().slice(0, 8); // so the script can be run again against the same database
 
   const program = Effect.gen(function* () {

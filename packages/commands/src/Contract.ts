@@ -20,9 +20,14 @@ import type { AnyDomainErrorClass } from "./Errors.ts";
 // Always declare a contract as its OWN const, as above. Writing the call inline inside the spread
 // (`defineCommand({ ...defineContract({...}), decide })`) silently loosens the inferred error list, and `decide` could then fail
 // with an error the contract does not declare without a compile error.
+// A command's input schema: one that decodes and encodes with no services. The executor decodes the input, and fingerprints it by encoding it
+// (Repeat.ts), where no services are provided, so a schema that needed one would compile and then fail with "service not found". Most schemas
+// (`Schema.Struct` of primitives, `Schema.DateTimeUtcFromString`...) need none; a schema that does is refused here, at its declaration.
+export type InputSchema = Schema.Constraint & { readonly DecodingServices: never; readonly EncodingServices: never };
+
 export interface CommandContract<
   Name extends string = string,
-  I extends Schema.Constraint = Schema.Constraint,
+  I extends InputSchema = InputSchema,
   Es extends ReadonlyArray<AnyDomainErrorClass> = ReadonlyArray<AnyDomainErrorClass>
 > {
   readonly name: Name;
@@ -34,7 +39,7 @@ export type AnyCommandContract = CommandContract;
 
 export const defineContract = <
   const Name extends string,
-  I extends Schema.Constraint,
+  I extends InputSchema,
   const Es extends ReadonlyArray<AnyDomainErrorClass> = readonly []
 >(def: {
   readonly name: Name;

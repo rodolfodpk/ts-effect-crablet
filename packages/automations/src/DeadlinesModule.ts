@@ -1,7 +1,6 @@
 import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
-import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { DEADLINES_LOCK_KEY, tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { holdSessionOnce, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
@@ -55,7 +54,7 @@ export const makeDeadlinesProcessor = (
 ): Effect.Effect<
   EventProcessorHandle<ProcessorConfig<string>, string>,
   never,
-  SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore
+  SqlClient.SqlClient | CommandExecutor | EventStore
 > =>
   Effect.gen(function* () {
     const commands = checkDeadlineCommands(deps.commands);
@@ -63,15 +62,8 @@ export const makeDeadlinesProcessor = (
     const sessionSql_ = yield* sessionSql;
     const commandExecutor = yield* CommandExecutor;
     const eventStore = yield* EventStore;
-    const commandAuditStore = yield* CommandAuditStore;
 
-    // As in AutomationsModule.ts: the executor's effect still needs its services, provided here once.
-    const executeDecision: ExecuteDecision = (command, input) =>
-      commandExecutor.runDecoded(command, input).pipe(
-        Effect.provideService(EventStore, eventStore),
-        Effect.provideService(CommandAuditStore, commandAuditStore),
-        Effect.provideService(SqlClient.SqlClient, sql)
-      );
+    const executeDecision: ExecuteDecision = (command, input) => commandExecutor.runDecoded(command, input);
 
     const recordFiring = makeRecordFiring(sql, eventStore);
 
@@ -101,5 +93,5 @@ export const makeDeadlinesProcessor = (
 // Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loop and releases the lock.
 export const startDeadlinesProcessor = (
   deps: DeadlinesDeps
-): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
+): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
   Effect.tap(makeDeadlinesProcessor(deps), (handle) => handle.service.startScoped);

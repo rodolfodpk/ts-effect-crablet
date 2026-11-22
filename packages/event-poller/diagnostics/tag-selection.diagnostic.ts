@@ -28,7 +28,7 @@ let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient, nev
 before(async () => {
   db = await startTestDb();
   runtime = ManagedRuntime.make(
-    Layer.provideMerge(EventStoreLive, PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 12 })) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient, never>
+    Layer.provideMerge(EventStoreLive, PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 12 })).pipe(Layer.orDie)
   );
 }, { timeout: 60_000 });
 after(async () => { await runtime.dispose(); await db.stop(); });

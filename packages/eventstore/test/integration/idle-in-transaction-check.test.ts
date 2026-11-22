@@ -15,7 +15,7 @@ const runtimeWith = (startupParameters?: Record<string, string>): Rt =>
   ManagedRuntime.make(PgClient.layer({
     host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password),
     ...(startupParameters === undefined ? {} : { startupParameters })
-  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>);
+  }).pipe(Layer.orDie));
 
 before(async () => {
   db = await startTestDb();

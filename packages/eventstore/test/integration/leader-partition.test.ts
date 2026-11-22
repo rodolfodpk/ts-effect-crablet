@@ -19,7 +19,7 @@ const runtimeTo = (host: string, port: number, maxConnections?: number): Rt =>
   ManagedRuntime.make(PgClient.layer({
     host, port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password),
     ...(maxConnections === undefined ? {} : { maxConnections })
-  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>);
+  }).pipe(Layer.orDie));
 
 before(async () => {
   db = await startTestDb();
