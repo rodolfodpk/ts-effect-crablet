@@ -14,7 +14,7 @@ export const defaultMaxFeedLifetime = Duration.minutes(5);
 // 400 (a typo would otherwise be a silent, never-firing connection).
 export interface CourseFeedOptions {
   readonly views: ReadonlyArray<{ readonly name: string }>;
-  readonly maxLifetime?: Duration.Input;
+  readonly maxLifetime?: Duration.Input | undefined;
 }
 
 // `?views=a,b` -> the names, or null when empty or not all known.

@@ -82,7 +82,7 @@ const withFeed = async (
         yield* Fiber.interrupt(fiber);
         assert.strictEqual(yield* hub.subscriberCount, 0, "the feed's subscription ended with the feed");
       })
-    ) as Effect.Effect<void, never, SqlClient.SqlClient>
+    )
   );
 };
 

@@ -1,10 +1,10 @@
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { EventStore, type StoredEvent } from "@crablet/eventstore";
 import * as Cursor from "@crablet/eventstore/Cursor";
 import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
+import { adminApi } from "./AdminApi.ts";
 import { EventsBadRequest, MAX_PAGE, type EventPage, type LoggedEvent } from "./EventsApi.ts";
 
 export interface EventsQueryParams {
@@ -76,14 +76,7 @@ export const listEvents = (params: EventsQueryParams, masks: Masks = {}): Effect
     return { events: page.events.map((e) => loggedEvent(e, masks)), cursor: Cursor.toString(page.cursor), more: page.more };
   });
 
-// The handler of `eventsGroup` (EventsApi.ts), for an `HttpApi` that contains it. It needs the EventStore; the server also needs
-// `ProcessorsAuthorization`, as for the processors API. `mask` decides what of a payload is shown, `metadataMask` what of the metadata (none without).
-export const makeEventsApiGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
-  api: HttpApi.HttpApi<ApiId, Groups>,
-  options: Masks = {}
-): Layer.Layer<HttpApiGroup.Service<ApiId, "events">, never, EventStore> => {
-  const groupBuilder = HttpApiBuilder.group as any;
-  return groupBuilder(api, "events", (handlers: any) =>
-    Effect.succeed(handlers.handle("listEvents", ({ query }: { query: EventsQueryParams }) => listEvents(query, options)))
-  );
-};
+// The handler of `eventsGroup`, typed by its endpoint (`HttpApiBuilder.handler`): its query, success and error types come from it, and it needs the
+// EventStore. `mask` decides what of a payload is shown, `metadataMask` what of the metadata (none without). `adminApiLayer` (AdminApiLive.ts)
+// registers it; an application that puts the group in an API of its own registers it there.
+export const eventsHandler = (masks: Masks = {}) => HttpApiBuilder.handler(adminApi, "events", "listEvents", ({ query }) => listEvents(query, masks));

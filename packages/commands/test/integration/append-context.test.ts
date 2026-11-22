@@ -20,12 +20,12 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(e: Effect.Effect<A, E, any>) =>
+const run = <A, E>(e: Effect.Effect<A, E, Crablet.Services>) =>
   Effect.runPromise(
     Effect.provide(
       e,
       Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })
-    ) as Effect.Effect<A, E, never>
+    )
   );
 
 const Noted = defineEvent("ContextNoted", { schema: Schema.Struct({ noteId: Schema.String }), tags: (d) => ({ note_id: d.noteId }) });

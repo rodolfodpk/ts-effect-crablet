@@ -19,5 +19,6 @@
     "@crablet/test-support": "workspace:*",
     "pg": "8.23.1",
     "vite": "7.3.7"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 1, "test": 18 } }
 }

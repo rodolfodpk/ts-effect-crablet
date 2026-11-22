@@ -9,5 +9,6 @@
   "dependencies": {
     "effect": "4.1.4",
     "@crablet/commands": "workspace:*"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
 }

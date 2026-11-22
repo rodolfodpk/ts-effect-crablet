@@ -224,7 +224,7 @@ describe("the wallet behind PgBouncer in transaction mode, two instances, leader
       const conflicts = (statuses.get(409) ?? 0) - conflictsBefore;
       const rolledBack = (await rollbacks()) - rolledBackBefore;
       const retriesOf = async (inst: Instance, command: string) =>
-        (await inst.runtime.runPromise(Effect.map(Metric.value(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command })), (m) => (m as unknown as { count: number }).count) as Effect.Effect<number, never, CoreServices>)) as number;
+        (await inst.runtime.runPromise(Effect.map(Metric.value(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command })), (m) => (m as unknown as { count: number }).count))) as number;
       // (the metrics are the process's, shared by both instances: read once)
       const retries = (await retriesOf(a, "withdraw")) + (await retriesOf(a, "transfer_money"));
       console.log(`DIAG pgbouncer e2e contention: 240 debits on ${HOT} wallets, ${WORKERS} at once, took ${contentionMs} ms: ${conflicts} answered 409, ${retries} conflicts were retried, ${rolledBack} transactions rolled back by the database; at most ${maxActive} database sessions in a transaction at once and ${maxWaitingOnLock} waiting on a lock; PgBouncer: at most ${maxSvActive} server connections active, ${maxClWaiting} clients waiting for one`);

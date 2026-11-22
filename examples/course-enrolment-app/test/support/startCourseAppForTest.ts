@@ -1,6 +1,5 @@
 import { createServer } from "node:http";
 import { Context, Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "effect";
-import type { SqlClient } from "effect/sql";
 import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as Crablet from "@crablet/commands/Crablet";
@@ -34,9 +33,9 @@ export const startCourseAppForTest = async (
     Scope.provide(
       Layer.build(
         Layer.provideMerge(HttpRouter.serve(makeCourseApiLayer(config)), NodeHttpServer.layer(createServer, { port: 0, gracefulShutdownTimeout: "1 second" }))
-      ) as Effect.Effect<Context.Context<HttpServer.HttpServer>, never, SqlClient.SqlClient>,
+      ),
       scope
-    ) as Effect.Effect<Context.Context<HttpServer.HttpServer>, never, never>
+    )
   );
   const server = Context.get(context, HttpServer.HttpServer);
   const port = server.address._tag === "UnixPathAddress" ? 0 : server.address.port;

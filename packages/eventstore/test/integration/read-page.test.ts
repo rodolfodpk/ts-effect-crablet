@@ -23,7 +23,7 @@ before(async () => {
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer));
 
 describe("a paged read", () => {
   it("does not return an event while an older transaction is open, and then returns both in order: no event is skipped", { timeout: 60_000 }, async () => {

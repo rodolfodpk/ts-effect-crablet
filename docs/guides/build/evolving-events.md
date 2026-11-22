@@ -205,7 +205,7 @@ const program = verifyEvents({
   ...(types.length > 0 ? { types } : {})
 });
 
-const report = await Effect.runPromise(Effect.provide(program, layer) as Effect.Effect<EventsReport, never, never>);
+const report = await Effect.runPromise(Effect.provide(program, layer));
 console.log(formatEventsReport(report));
 process.exit(report.ok ? 0 : 1);
 ```

@@ -60,8 +60,8 @@ describe("makeOutboxEventHandler", () => {
 
     expect(handled).toBe(2);
     expect(calls.length).toBe(2);
-    expect(calls[0]).toEqual([events[0]]);
-    expect(calls[1]).toEqual([events[1]]);
+    expect(calls[0]).toEqual(events.slice(0, 1));
+    expect(calls[1]).toEqual(events.slice(1, 2));
   });
 
   test("dies on an unregistered publisher name", async () => {

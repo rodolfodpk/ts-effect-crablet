@@ -20,8 +20,8 @@ const Tick = defineCommand({ name: "tick", errors: [], input: Schema.Struct({ en
 let db: TestDb;
 before(async () => { db = await startTestDb(); }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
-const run = <A, E>(e: Effect.Effect<A, E, any>) =>
-  Effect.runPromise(Effect.provide(e, Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })) as Effect.Effect<A, E, never>);
+const run = <A, E>(e: Effect.Effect<A, E, Crablet.Services>) =>
+  Effect.runPromise(Effect.provide(e, Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })));
 const raw = (entity: string, data: string) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ('Ticked', ARRAY['entity_id=' || $1], $2::jsonb, pg_current_xact_id()) RETURNING position::text AS position", [entity, data]));
 const failuresOf = (exit: any): ReadonlyArray<any> => (exit.cause?.reasons ?? []).filter((r: any) => r._tag === "Fail").map((r: any) => r.error);

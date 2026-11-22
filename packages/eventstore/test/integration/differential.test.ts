@@ -9,7 +9,7 @@ import { Effect, Layer, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { EventStore, EventStoreLive } from "../../src/EventStore.ts";
+import { EventStoreLive } from "../../src/EventStore.ts";
 import { makeInMemoryEventStore } from "../../src/testing/InMemoryEventStore.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";

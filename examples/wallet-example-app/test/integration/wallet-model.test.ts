@@ -41,7 +41,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 // The current statement period, computed the same way the period model does (UTC).
 const now = new Date();

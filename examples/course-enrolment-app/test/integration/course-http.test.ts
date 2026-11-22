@@ -121,14 +121,16 @@ describe("tutorial step 3: the HTTP API", () => {
   it("a client derived from the API drives the same flow, and a refusal arrives as its typed problem", async () => {
     const courseId = `typed-${uid()}`;
     const program = Effect.gen(function* () {
-      const client: any = yield* HttpApiClient.make(makeCourseApi(), { baseUrl: app.baseUrl });
-      const defined = yield* client.commands.execute_define_course({ payload: { courseId, capacity: 1 }, query: {} });
-      yield* client.commands.execute_subscribe({ payload: { studentId: `ann-${courseId}`, courseId }, query: {} });
-      const refused = yield* Effect.flip(client.commands.execute_subscribe({ payload: { studentId: `bob-${courseId}`, courseId }, query: {} }));
+      const client = yield* HttpApiClient.make(makeCourseApi(), { baseUrl: app.baseUrl });
+      const defined = yield* client.commands.execute_define_course({ payload: { courseId, capacity: 1 } });
+      yield* client.commands.execute_subscribe({ payload: { studentId: `ann-${courseId}`, courseId } });
+      const refused = yield* Effect.flip(client.commands.execute_subscribe({ payload: { studentId: `bob-${courseId}`, courseId } }));
       return { defined, refused };
     });
-    const { defined, refused } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)) as Effect.Effect<any>);
+    const { defined, refused } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)));
     assert.strictEqual(defined.status, "CREATED");
+    // The refusal is one of the endpoint's declared problems; it is the domain one, with its kind and fields.
+    assert.ok("errorType" in refused, `expected a domain problem, got ${JSON.stringify(refused)}`);
     assert.strictEqual(refused.errorType, "CourseFull");
     assert.deepStrictEqual(refused.fields, { courseId, capacity: 1 });
   });

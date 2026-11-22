@@ -45,7 +45,7 @@ const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<
   while (queue.length > 0) {
     const result = update(model, queue.shift()!);
     model = result.model;
-    for (const command of result.commands ?? []) queue.unshift((await Effect.runPromise(command.effect as Effect.Effect<Message>)) as Message);
+    for (const command of result.commands ?? []) queue.unshift((await Effect.runPromise(command.effect)) as Message);
   }
   return model;
 };
@@ -181,7 +181,7 @@ describe("the page, driven against the real course app", () => {
     assert.strictEqual(model.define.capacity._tag, "Invalid");
 
     // Bypass the form: the Command itself. The client checks the request against the API's own Schema before sending it.
-    const answer = (await Effect.runPromise(DefineCourse({ courseId: `c-${uid()}`, capacity: 0 }).effect as Effect.Effect<Message>)) as {
+    const answer = (await Effect.runPromise(DefineCourse({ courseId: `c-${uid()}`, capacity: 0 }).effect)) as {
       readonly _tag: string;
       readonly problem?: { readonly _tag: string; readonly detail?: string };
     };
@@ -269,7 +269,7 @@ describe("the page, driven against the real course app", () => {
     const fiber = Effect.runFork(
       subscriptions.seatMapFeed.dependenciesToStream({ enabled: true }).pipe(
         Stream.runForEach((message) => Effect.promise(async () => { tabB = await drive(tabB, message as Message); }))
-      ) as Effect.Effect<void>
+      )
     );
     try {
       await defineCourse(init().model, course, 4); // tab A

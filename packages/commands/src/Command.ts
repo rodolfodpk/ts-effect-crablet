@@ -1,7 +1,7 @@
 import { Clock, DateTime, Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/sql/SqlError";
-import { EventStore, existsProjector, type EventStoreService } from "@crablet/eventstore";
+import { EventStore, existsProjector } from "@crablet/eventstore";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import * as LogPositionNS from "@crablet/eventstore/LogPosition";

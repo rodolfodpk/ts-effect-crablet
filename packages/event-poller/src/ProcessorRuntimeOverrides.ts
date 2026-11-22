@@ -7,7 +7,7 @@ import type { PollingConfig } from "./ProcessorConfig.ts";
 // The settings a single processor can override. Derived from `PollingConfig` so a new setting is added in one place (`maxErrors` and the leader retry belong to the
 // module, not to one processor).
 type Overridable = "pollingIntervalMs" | "batchSize" | "backoffEnabled" | "backoffThreshold" | "backoffMultiplier" | "backoffMaxSeconds";
-export type ProcessorRuntimeOverrides = { readonly [K in Overridable]?: PollingConfig[K] | null };
+export type ProcessorRuntimeOverrides = { readonly [K in Overridable]?: PollingConfig[K] | null | undefined };
 
 export const resolveOverride = <T>(override: T | undefined | null, globalDefault: T): T =>
   override ?? globalDefault;

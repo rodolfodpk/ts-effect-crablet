@@ -11,7 +11,7 @@ export interface InMemoryEventHandlerHandle<I> {
 // Fast, in-memory EventHandler double. `failFirstN` lets tests simulate the "handler exception ->
 // recordError -> rethrow" path deterministically.
 export const makeInMemoryEventHandler = <I>(options?: {
-  readonly failFirstN?: number;
+  readonly failFirstN?: number | undefined;
 }): Effect.Effect<InMemoryEventHandlerHandle<I>> =>
   Effect.gen(function* () {
     const batchesRef = yield* Ref.make<ReadonlyArray<ReadonlyArray<StoredEvent>>>([]);

@@ -50,7 +50,7 @@ const AccountModel = defineModel({
   );
 
 const load = <S>(fake: ReturnType<typeof makeInMemoryEventStore>, model: { load: (es: never) => Effect.Effect<S, unknown> }) =>
-  Effect.runPromise(model.load(fake.service as never) as Effect.Effect<S>);
+  Effect.runPromise(model.load(fake.service as never));
 
 describe("defineModel: the boundary query is derived from the handlers", () => {
   test("lifecycle events share one unscoped item; scoped events carry the scope tags; multi-tag events get one item per tag", () => {

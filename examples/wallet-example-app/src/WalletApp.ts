@@ -1,9 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
-import { Duration, Effect, Layer, Redacted, type Scope } from "effect";
-import * as Schema from "effect/Schema";
+import { Effect, Layer, Redacted, type Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { HttpApi, HttpApiBuilder } from "effect/http-api";
+import { HttpApi } from "effect/http-api";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor } from "@crablet/commands";
@@ -21,11 +20,9 @@ import { defineTopic } from "@crablet/outbox/TopicConfig";
 import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
-import { processorsGroup } from "@crablet/processors-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
-import { makeProcessorsApiGroupLive, type ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
-import { eventsGroup } from "@crablet/processors-http/EventsApi";
-import { makeEventsApiGroupLive } from "@crablet/processors-http/EventsApiLive";
+import type { ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
+import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
 import * as M from "./domain/WalletModel.ts";
 import { WelcomeNotificationSent } from "./domain/notification/WelcomeNotificationSent.ts";
@@ -44,11 +41,11 @@ import { TransferMoney } from "./domain/commands/TransferMoneyCommand.ts";
 import { CloseWallet } from "./domain/commands/CloseWalletCommand.ts";
 
 export interface WalletAppConfig {
-  readonly basePath?: string;
-  readonly instanceId?: string;
+  readonly basePath?: string | undefined;
+  readonly instanceId?: string | undefined;
   // Where the OpenAPI document is served (default "/openapi.json"; false = none) and an optional docs page.
-  readonly openApiPath?: string | false;
-  readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string };
+  readonly openApiPath?: string | false | undefined;
+  readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string } | undefined;
 }
 
 // The three processors of the wallet. Every handle exists whatever the roles (the admin API reads status through them); only the modules named in
@@ -62,15 +59,15 @@ export interface BackgroundProcessors {
 }
 
 export interface BackgroundProcessorsOptions {
-  readonly instanceId?: string;
+  readonly instanceId?: string | undefined;
   // Where the outbox publishes. Default: the log publisher the real app uses; outbox-e2e.test.ts passes a capturing one.
-  readonly outboxPublishers?: ReadonlyArray<OutboxPublisher>;
+  readonly outboxPublishers?: ReadonlyArray<OutboxPublisher> | undefined;
   // The roles to start (ADR-0022). Default: all of them, one process.
-  readonly roles?: Roles;
+  readonly roles?: Roles | undefined;
   // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
-  readonly polling?: Polling;
+  readonly polling?: Polling | undefined;
   // The leaders' settings, for every module: the heartbeat and the server's idle timeout of a silent leader's session (ADR-0045). Default: the defaults.
-  readonly leader?: LeaderOptions;
+  readonly leader?: LeaderOptions | undefined;
 }
 
 // Builds the three background processors (views, automations, outbox) and starts those of the roles, owned by the Scope: closing it stops them
@@ -155,7 +152,6 @@ const walletEventDefinitions = [M.WalletOpened, M.WalletClosed, M.WalletStatemen
 
 // #region admin-api
 export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>, token: Redacted.Redacted<string>) => {
-  const adminApi = HttpApi.make("walletAdmin").add(processorsGroup).add(eventsGroup);
   const expected = Buffer.from(Redacted.value(token));
   const authorization = authorizationFrom((presented) =>
     Effect.sync(() => {
@@ -163,11 +159,7 @@ export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>,
       return got.length === expected.length && timingSafeEqual(got, expected);
     })
   );
-  return HttpApiBuilder.layer(adminApi).pipe(
-    Layer.provide(makeProcessorsApiGroupLive(adminApi, sources)),
-    Layer.provide(makeEventsApiGroupLive(adminApi, { mask: eventPayloadMask(walletEventDefinitions) })),
-    Layer.provide(authorization)
-  );
+  return adminApiLayer({ sources, masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization));
 };
 // #endregion admin-api
 

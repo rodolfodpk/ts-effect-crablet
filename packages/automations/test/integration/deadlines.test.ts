@@ -279,10 +279,10 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     const service = await run(makeDeadlinesManagementService(handle));
     await exec(Hold, { seatId: seat(), forMs: 0 });
     await new Promise((r) => setTimeout(r, 1_100));
-    const backlog = (await run(service.getBacklog(DEADLINES_PROCESSOR_ID) as Effect.Effect<NonNullable<unknown>, unknown, never>)) as { pendingEvents: number; oldestPendingSeconds: number | null };
+    const backlog = (await run(service.getBacklog(DEADLINES_PROCESSOR_ID))) as { pendingEvents: number; oldestPendingSeconds: number | null };
     assert.ok(backlog.pendingEvents >= 1);
     assert.ok(backlog.oldestPendingSeconds !== null && backlog.oldestPendingSeconds >= 1);
-    assert.strictEqual(await run(service.getLag(DEADLINES_PROCESSOR_ID) as Effect.Effect<unknown, unknown, never>), null);
+    assert.strictEqual(await run(service.getLag(DEADLINES_PROCESSOR_ID)), null);
   });
 
   // Last: it leaves the processor FAILED until reset.
@@ -302,7 +302,7 @@ describe("deadlines against Postgres (ADR-0043)", () => {
       assert.match(failed[0]!.last_error ?? "", /dlp_other/);
 
       await query("DELETE FROM crablet_deadlines WHERE deadline_position IN (SELECT position FROM crablet_events WHERE type = 'crablet.DeadlineScheduled' AND data ->> 'command' = 'dlp_other')");
-      await run(service.reset(DEADLINES_PROCESSOR_ID) as Effect.Effect<boolean, unknown, never>);
+      await run(service.reset(DEADLINES_PROCESSOR_ID));
       const id = seat();
       await exec(Hold, { seatId: id, forMs: 0 });
       await until(() => eventsOf(id), (es) => es.some((e) => e.type === "DlpReleased"), "deadlines to fire again after the reset");

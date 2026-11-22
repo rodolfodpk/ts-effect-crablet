@@ -30,8 +30,8 @@ const AppLive = (audit?: { payload: AuditPayload }) =>
     { host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) },
     audit ? { audit } : {}
   );
-const run = <A, E>(e: Effect.Effect<A, E, any>, audit?: { payload: AuditPayload }) =>
-  Effect.runPromise(Effect.provide(e, AppLive(audit)) as Effect.Effect<A, E, never>);
+const run = <A, E>(e: Effect.Effect<A, E, Crablet.Services>, audit?: { payload: AuditPayload }) =>
+  Effect.runPromise(Effect.provide(e, AppLive(audit)));
 
 const uid = () => crypto.randomUUID().slice(0, 8);
 const Registered = defineEvent("AuditRegistered", {

@@ -1,7 +1,6 @@
 // The live-update feed: what the page does with a ping, and the reconnecting stream (backoff, reset) against fake connections.
 import { describe, expect, test } from "bun:test";
 import { Duration, Effect, Stream } from "effect";
-import * as AsyncData from "foldkit/asyncData";
 import { Scene, Story } from "foldkit/test";
 import { reconnectDelay, reconnecting } from "../src/api.ts";
 import { FetchCourse, FetchCourses, Lookup, Message, feedNote, init, update, view, type Model } from "../src/main.ts";

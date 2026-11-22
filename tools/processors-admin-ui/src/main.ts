@@ -121,7 +121,6 @@ export const ActOnProcessor = Command.define("ActOnProcessor", {
 // UPDATE
 
 const isBlank = (value: string): boolean => value.trim() === "";
-const same = (a: { readonly kind: string; readonly id: string }, b: { readonly kind: string; readonly id: string }): boolean => a.kind === b.kind && a.id === b.id;
 
 // What an action did, in the page's words.
 export const describeAction = (action: "pause" | "resume" | "reset", id: string, status: string): string => {

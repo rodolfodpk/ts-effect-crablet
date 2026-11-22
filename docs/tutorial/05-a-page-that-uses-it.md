@@ -259,7 +259,7 @@ const drive = async (from: Model, ...messages: ReadonlyArray<Message>): Promise<
   while (queue.length > 0) {
     const result = update(model, queue.shift()!);
     model = result.model;
-    for (const command of result.commands ?? []) queue.unshift((await Effect.runPromise(command.effect as Effect.Effect<Message>)) as Message);
+    for (const command of result.commands ?? []) queue.unshift((await Effect.runPromise(command.effect)) as Message);
   }
   return model;
 };

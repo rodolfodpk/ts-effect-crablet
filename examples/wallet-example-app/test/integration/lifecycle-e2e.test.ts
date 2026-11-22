@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { HttpApiClient } from "effect/http-api";
 import { FetchHttpClient } from "effect/http";
-import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
@@ -176,7 +175,7 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
   it("a client DERIVED from the API (no codegen, no hand-written request code) drives the same flows, typed", async () => {
     const walletId = `wallet-${crypto.randomUUID()}`;
     const program = Effect.gen(function* () {
-      const client: any = yield* HttpApiClient.make(makeWalletApi("/api/commands"), { baseUrl: app.baseUrl });
+      const client = yield* HttpApiClient.make(makeWalletApi("/api/commands"), { baseUrl: app.baseUrl });
 
       const opened = yield* client.commands.execute_open_wallet({ payload: { walletId, owner: "Eve", initialBalance: 5 } });
       const deposited = yield* client.commands.execute_deposit({ payload: { depositId: crypto.randomUUID(), walletId, amount: 20, description: "typed" } });
@@ -188,13 +187,15 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
       );
       return { opened, deposited, wallet, missing };
     });
-    const { opened, deposited, wallet, missing } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)) as Effect.Effect<any>);
+    const { opened, deposited, wallet, missing } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)));
 
     assert.strictEqual(opened.status, "CREATED");
     assert.strictEqual(deposited.status, "CREATED");
     assert.match(deposited.marker, /^\d+:\d+$/, "the write's marker");
     assert.strictEqual(wallet.body.balance, 25, "one read, already includes the deposit");
     assert.deepStrictEqual(wallet.headers, {}, "and it is not marked stale");
+    // The refusal is one of the endpoint's declared problems; it is the domain one, with its kind and fields.
+    assert.ok("errorType" in missing, `expected a domain problem, got ${JSON.stringify(missing)}`);
     assert.strictEqual(missing.errorType, "WalletNotFound");
     assert.deepStrictEqual(missing.fields, { walletId: `ghost-${walletId}` });
   });

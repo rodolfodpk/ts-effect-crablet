@@ -110,12 +110,12 @@ const scenario = async (body: (s: Scenario) => Promise<void>, options: { readonl
               Effect.asVoid(sql.unsafe("UPDATE crablet_view_progress SET last_position = $2, last_transaction_id = $3::xid8 WHERE view_name = $1", [viewName, to.position.toString(), to.transactionId]))
             ),
           setStatus: (status) => Effect.runPromise(Effect.asVoid(sql.unsafe("UPDATE crablet_view_progress SET status = $2 WHERE view_name = $1", [viewName, status]))),
-          wait: (opts) => Effect.runPromise(waitEffect(opts) as Effect.Effect<void>),
-          waitExit: (opts) => Effect.runPromise(Effect.flip(waitEffect(opts)) as Effect.Effect<unknown>)
+          wait: (opts) => Effect.runPromise(waitEffect(opts)),
+          waitExit: (opts) => Effect.runPromise(Effect.flip(waitEffect(opts)))
         };
         yield* Effect.promise(() => body(scenarioValue));
       })
-    ) as Effect.Effect<void, never, EventStore | SqlClient.SqlClient>
+    )
   );
 };
 
@@ -286,7 +286,7 @@ describe("waitUntilProcessed without a hub, or with one that is not connected", 
           yield* sql.unsafe("UPDATE crablet_view_progress SET last_position = $2, last_transaction_id = $3::xid8 WHERE view_name = $1", [`down-${id}`, lastPosition.toString(), transactionId]);
           yield* Effect.timeout(Fiber.join(fiber), "2 seconds"); // it found the move by polling
         })
-      ) as Effect.Effect<void, unknown, EventStore | SqlClient.SqlClient>
+      )
     );
   });
 });

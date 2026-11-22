@@ -2,14 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { Effect, Exit, Layer, Redacted } from "effect";
 import { NodeHttpServer } from "@effect/platform-node";
-import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
+import { OpenApi } from "effect/http-api";
 import { HttpRouter } from "effect/http";
 import type { Backlog, ProcessorDetails, ProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
-import { processorsGroup } from "../src/ProcessorsApi.ts";
 import { authorizationFrom } from "../src/Authorization.ts";
-import { actOnProcessor, listProcessors, makeProcessorsApiGroupLive, type ProcessorSource } from "../src/ProcessorsApiLive.ts";
+import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
+import { adminApi } from "../src/AdminApi.ts";
+import { adminApiLayer } from "../src/AdminApiLive.ts";
+import { actOnProcessor, listProcessors, processorsHandlers, type ProcessorSource } from "../src/ProcessorsApiLive.ts";
 
 const TOKEN = "s3cret";
 
@@ -53,10 +55,11 @@ const makeSources = () => {
   return { views, outbox, sources };
 };
 
-const api = HttpApi.make("test").add(processorsGroup);
+const api = adminApi;
+// The processors groups are served with the rest of the admin API, whose event log needs an EventStore: an empty one here.
+const adminLayerOf = (sources: ReadonlyArray<ProcessorSource>) => adminApiLayer({ sources }).pipe(Layer.provide(makeInMemoryEventStore().layer));
 const serveWith = (sources: ReadonlyArray<ProcessorSource>, check: (token: string) => Effect.Effect<boolean, unknown> = (t) => Effect.succeed(t === TOKEN)) => {
-  const layer = HttpApiBuilder.layer(api).pipe(
-    Layer.provide(makeProcessorsApiGroupLive(api, sources)),
+  const layer = adminLayerOf(sources).pipe(
     Layer.provide(authorizationFrom((token) => check(Redacted.value(token)))),
     Layer.provide(NodeHttpServer.layerHttpServices)
   );
@@ -89,14 +92,19 @@ describe("the admin API: who may call it", () => {
     await dying.dispose();
   });
 
-  test("the API cannot be mounted without an authorization: a server built without one fails to start, naming the missing service (a start-up error, not a compile error: the layer's type does not show it)", async () => {
-    const layer = HttpApiBuilder.layer(api).pipe(Layer.provide(makeProcessorsApiGroupLive(api, [])), Layer.provide(NodeHttpServer.layerHttpServices));
+  // The API cannot be mounted without an authorization. Since the admin API is served from one concrete definition (adminApiLayer), the layer's type says
+  // so: a server built without one does not compile (the @ts-expect-error lines). It is still refused at run time, for code that gets past the compiler.
+  test("the API cannot be mounted without an authorization: it does not compile, and a server built anyway fails to start, naming the missing service", async () => {
+    const layer = adminLayerOf([]).pipe(Layer.provide(NodeHttpServer.layerHttpServices));
     const served = HttpRouter.serve(layer).pipe(Layer.provide(NodeHttpServer.layer(createServer, { port: 0 })));
+    // @ts-expect-error the server still requires ProcessorsAuthorization, so it cannot be run
     const exit = await Effect.runPromiseExit(Effect.scoped(Layer.build(served)).pipe(Effect.timeout("5 seconds")));
     expect(Exit.isFailure(exit)).toBe(true);
     expect(String(exit)).toContain("ProcessorsAuthorization");
     // and through the web handler, the first request is refused for the same reason rather than answered
+    // @ts-expect-error a web handler cannot be made from a layer that still requires ProcessorsAuthorization
     const app = HttpRouter.toWebHandler(layer, { disableLogger: true });
+    // @ts-expect-error a web handler with a service missing asks for it with each request
     await expect(app.handler(new Request("http://localhost/admin/processors", { headers: { Authorization: `Bearer ${TOKEN}` } }))).rejects.toThrow("ProcessorsAuthorization");
   });
 
@@ -185,6 +193,6 @@ describe("the admin API: pause, resume, reset", () => {
 describe("the sources", () => {
   test("two sources of the same kind are refused when the layer is built", () => {
     const { views } = makeSources();
-    expect(() => makeProcessorsApiGroupLive(api, [{ kind: "views", service: views }, { kind: "views", service: views }])).toThrow('processor kind "views"');
+    expect(() => processorsHandlers([{ kind: "views", service: views }, { kind: "views", service: views }])).toThrow('processor kind "views"');
   });
 });

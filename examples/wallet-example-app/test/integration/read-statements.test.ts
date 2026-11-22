@@ -10,7 +10,7 @@ import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices } from "../support/startWalletAppForTest.ts";
+import { startWalletAppForTest } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;

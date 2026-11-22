@@ -35,7 +35,7 @@ export interface ServeApiOptions<C extends ReadonlyArray<AnyCommandContract>, G 
   readonly openApiPath?: CommandApiConfig["openApiPath"];
   readonly docs?: CommandApiConfig["docs"];
   // CORS for a page served from another origin. Off unless set (see Cors.ts).
-  readonly cors?: CorsConfig;
+  readonly cors?: CorsConfig | undefined;
 }
 
 export const serveApi = <

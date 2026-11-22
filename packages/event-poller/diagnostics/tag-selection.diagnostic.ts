@@ -19,7 +19,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { hasPendingSelectedEvents, makeSqlEventFetcher } from "../src/SqlEventFetcher.ts";
 import * as EventSelection from "../src/EventSelection.ts";
 import * as ProgressCursorNS from "../src/ProgressCursor.ts";
-import { buildEventSelectionQuery, buildPendingSelectionQuery, buildReadCheckQuery, type TagKeyStrategy } from "../src/internal/sql.ts";
+import { buildPendingSelectionQuery, buildReadCheckQuery, type TagKeyStrategy } from "../src/internal/sql.ts";
 
 const N = Number(process.env["N"] ?? 1_000_000);
 const WALLETS = Math.max(1_000, Math.floor(N / 10));
@@ -33,7 +33,7 @@ before(async () => {
 }, { timeout: 60_000 });
 after(async () => { await runtime.dispose(); await db.stop(); });
 
-const q = <A>(text: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<A & object>(text, params as never)) as Effect.Effect<ReadonlyArray<A>, never, SqlClient.SqlClient>) as Promise<ReadonlyArray<A>>;
+const q = <A>(text: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<A & object>(text, params as never))) as Promise<ReadonlyArray<A>>;
 const pct = (a: number[], p: number) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor((p / 100) * a.length))]!;
 const line = (text: string) => console.log(`DIAG ${text}`);
 const MONTHS = 12;

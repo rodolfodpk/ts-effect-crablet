@@ -1,17 +1,16 @@
 // The page's view of the processors admin API: the calls it makes, and what can go wrong with each.
 //
-// Everything about the wire format comes from @crablet/processors-http (the same group a server mounts): the routes, the response Schemas and the problems. The derived client
+// Everything about the wire format comes from @crablet/processors-http (the same `adminApi` a server mounts): the routes, the response Schemas and the problems. The derived client
 // is typed by it, so this file keeps no copy of any of it, and it knows nothing about any application: the page works against anything that mounts the group.
 // It imports no foldkit, so tests and the end-to-end check can use it.
 import { Effect, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
-import { HttpApi, HttpApiClient } from "effect/http-api";
-import { ProcessorInfo, processorsGroup } from "@crablet/processors-http";
-import { EventPage, LoggedEvent, eventsGroup } from "@crablet/processors-http/EventsApi";
+import { HttpApiClient } from "effect/http-api";
+import { ProcessorInfo } from "@crablet/processors-http";
+import { adminApi } from "@crablet/processors-http/AdminApi";
+import { EventPage, LoggedEvent } from "@crablet/processors-http/EventsApi";
 
-export { EventPage, LoggedEvent, ProcessorInfo };
-
-export const adminApi = HttpApi.make("processorsAdmin").add(processorsGroup).add(eventsGroup);
+export { adminApi, EventPage, LoggedEvent, ProcessorInfo };
 
 // #region client
 // Where the API is. Unset: relative URLs, which works when the page and the API share an origin (the Vite dev proxy does that). With VITE_API_URL set the page calls that origin

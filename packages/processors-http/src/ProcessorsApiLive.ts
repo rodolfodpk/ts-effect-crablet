@@ -1,7 +1,7 @@
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import type { HttpApi, HttpApiGroup } from "effect/http-api";
 import { isBackedOff, type ProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
+import { adminApi } from "./AdminApi.ts";
 import { ProcessorNotFound, type ProcessorInfo } from "./ProcessorsApi.ts";
 
 // One module's processors, as the application names them. `kind` is the word a client sees (views, automations, outbox, or anything else);
@@ -62,25 +62,18 @@ export const actOnProcessor = (
     return { kind, id, status };
   });
 
-// The handlers of `processorsGroup` (ProcessorsApi.ts) over these sources, for an `HttpApi` that contains the group. The layer builds with no requirements, but the
-// server needs `ProcessorsAuthorization` (provide `authorizationFrom(...)`, Authorization.ts, or your own) or it fails to start; the type does not say so.
-// Same `any`-cast composability boundary as commands-http's makeCommandApiGroupLive: `HttpApiBuilder.group`'s signature cannot prove that an arbitrary caller-supplied
-// `Groups` contains this literal group name.
-export const makeProcessorsApiGroupLive = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
-  api: HttpApi.HttpApi<ApiId, Groups>,
-  sources: ReadonlyArray<ProcessorSource>
-): Layer.Layer<HttpApiGroup.Service<ApiId, "processors">> => {
+// The handlers of `processorsGroup` over these sources, typed by the endpoints (`HttpApiBuilder.handler`): a handler that returned the wrong shape, read a
+// parameter the endpoint does not have, or needed a service would not compile. `adminApiLayer` (AdminApiLive.ts) registers them; an application that puts the
+// group in an API of its own registers them in its `HttpApiBuilder.group(api, "processors", ...)`, which its concrete API types in full. Two sources of
+// the same kind are refused.
+export const processorsHandlers = (sources: ReadonlyArray<ProcessorSource>) => {
   const kinds = sources.map((s) => s.kind);
   const duplicate = kinds.find((k, i) => kinds.indexOf(k) !== i);
   if (duplicate !== undefined) throw new Error(`processor kind "${duplicate}" is used by more than one source`);
-  const groupBuilder = HttpApiBuilder.group as any;
-  return groupBuilder(api, "processors", (handlers: any) =>
-    Effect.succeed(
-      handlers
-        .handle("listProcessors", () => Effect.map(listProcessors(sources), (processors) => ({ processors })))
-        .handle("pauseProcessor", ({ params }: { params: { kind: string; id: string } }) => actOnProcessor(sources, "pause", params.kind, params.id))
-        .handle("resumeProcessor", ({ params }: { params: { kind: string; id: string } }) => actOnProcessor(sources, "resume", params.kind, params.id))
-        .handle("resetProcessor", ({ params }: { params: { kind: string; id: string } }) => actOnProcessor(sources, "reset", params.kind, params.id))
-    )
-  );
+  return {
+    listProcessors: HttpApiBuilder.handler(adminApi, "processors", "listProcessors", () => Effect.map(listProcessors(sources), (processors) => ({ processors }))),
+    pauseProcessor: HttpApiBuilder.handler(adminApi, "processors", "pauseProcessor", ({ params }) => actOnProcessor(sources, "pause", params.kind, params.id)),
+    resumeProcessor: HttpApiBuilder.handler(adminApi, "processors", "resumeProcessor", ({ params }) => actOnProcessor(sources, "resume", params.kind, params.id)),
+    resetProcessor: HttpApiBuilder.handler(adminApi, "processors", "resetProcessor", ({ params }) => actOnProcessor(sources, "reset", params.kind, params.id))
+  };
 };

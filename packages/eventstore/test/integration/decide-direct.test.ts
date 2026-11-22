@@ -22,7 +22,7 @@ before(async () => {
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer));
 
 describe("a decision made directly on the event store", () => {
   it("with an unrelated transaction open, an append after readToDecide is not a conflict on events the read saw", { timeout: 60_000 }, async () => {

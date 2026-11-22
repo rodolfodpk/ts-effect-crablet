@@ -45,7 +45,7 @@ after(async () => {
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient>
-) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+) => Effect.runPromise(Effect.provide(effect, layer));
 
 const openWallet = (walletId: string, owner = "Alice", initialBalance = 0) =>
   run(

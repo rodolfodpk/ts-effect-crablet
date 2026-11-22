@@ -14,7 +14,7 @@ import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices } from "../test/support/startWalletAppForTest.ts";
+import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 
 let db: TestDb;

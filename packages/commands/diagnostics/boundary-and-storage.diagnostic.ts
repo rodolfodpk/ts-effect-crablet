@@ -57,7 +57,7 @@ describe("DIAG", () => {
     const time = async (f: () => Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return pct(xs, 50); };
     const model = CountModel.of({ id: "prof" });
     const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
-    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e);
     // 1. fetch + driver + row parsing, nothing applied to the rows
     const fetchOnly = await time(() => run(Effect.flatMap(EventStore, (es) => es.project(model.query, LogPosition.zero(), [noop]))));
     // 2. the same plus decoding every payload with the schema and folding (what a command does to load its state)
@@ -78,7 +78,7 @@ describe("DIAG", () => {
 
   it("E5c: reading only the events after a cursor (what a snapshot would leave to read) in a boundary of 100,000, with and without 400,000 other events in the log", { timeout: 600_000 }, async () => {
     const reps = 15;
-    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e);
     const model = CountModel.of({ id: "tail" });
     const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
     const measure = async (label: string) => {
@@ -103,7 +103,7 @@ describe("DIAG", () => {
 
   it("E5f: what reading fewer columns saves on a model load (100,000 events in one boundary, tiny and realistic payloads)", { timeout: 600_000 }, async () => {
     const N = 100_000, reps = 15;
-    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e);
     const time = async (f: () => Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return pct(xs, 50); };
     const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
     // a realistic event: three tags, about 400 bytes of payload, correlation and causation ids set
@@ -143,7 +143,7 @@ describe("DIAG", () => {
 
   it("E5h: where the time between the raw fetch and `project` goes (realistic events, 100,000 in a boundary): parseRow's parts, in memory", { timeout: 600_000 }, async () => {
     const N = 100_000, reps = 20;
-    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e);
     const spread = (xs: number[]) => `p50 ${pct(xs, 50).toFixed(0)} ms (min ${Math.min(...xs).toFixed(0)}, max ${Math.max(...xs).toFixed(0)})`;
     const timed = async (f: () => unknown | Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return xs; };
     const realistic = JSON.stringify({ entityId: "parsebig", reference: "ref-0000000000000000", note: "x".repeat(250), amount: 1250, currency: "EUR", counterparty: { id: "c-1", name: "Counterparty Name" } });
@@ -183,7 +183,7 @@ describe("DIAG", () => {
 
   it("E5g: `exists` (the idempotency pre-check) against the number of events its query matches: the old read-everything path (project + existsProjector) and the SELECT EXISTS now used", { timeout: 600_000 }, async () => {
     const reps = 15;
-    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e);
     const time = async (f: () => Promise<unknown>) => { const xs: number[] = []; await f(); for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); } return pct(xs, 50); };
     let have = 0;
     for (const n of [1, 1_000, 100_000]) {
@@ -198,7 +198,7 @@ describe("DIAG", () => {
 
   it("E5d: a transfer (a model over TWO accounts, `all`) when one of them has 100,000 events", { timeout: 600_000 }, async () => {
     const { Transfer, AccountOpened } = await import("../test/support/transfer.ts");
-    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e as Effect.Effect<A, never, never>);
+    const run = <A>(e: Effect.Effect<A, any, any>) => runtime.runPromise(e);
     const big = `big-${crypto.randomUUID().slice(0, 6)}`, small = `small-${crypto.randomUUID().slice(0, 6)}`;
     await run(Effect.flatMap(EventStore, (es) => es.append([AccountOpened({ accountId: big, balance: 1_000_000_000 }), AccountOpened({ accountId: small, balance: 0 })])));
     // 100,000 deposits on `big`, written raw like the other experiments (the tag the model reads is account_id)

@@ -13,7 +13,7 @@ import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
+import { startWalletAppForTest, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;

@@ -193,6 +193,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@crablet/db-migrations": "workspace:*",
+        "effect": "4.1.4",
         "pg": "8.23.1",
       },
       "devDependencies": {

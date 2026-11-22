@@ -25,6 +25,7 @@
     "@crablet/test-support": "workspace:*"
   },
   "crablet": {
+    "typeEscapes": { "src": 0, "test": 11 },
     "internal": ["./AutomationDecision"]
   }
 }

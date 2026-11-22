@@ -50,7 +50,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
 const notifying = { tableName: "crablet_view_progress", idColumn: "view_name", notifyChannel: CHANNEL } as const;

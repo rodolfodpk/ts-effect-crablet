@@ -33,8 +33,8 @@ const measure = async (label: string, config: EventStoreConfig) => {
         yield* store.withWakeups(sql.withTransaction(store.append([AppendEvent.of("Deposited", "wallet_id", `${label}-${c}-${i}-${Math.random()}`, {})])));
         latencies.push(performance.now() - t0);
       }
-    }) as Effect.Effect<void>, { concurrency: CLIENTS, discard: true });
-  }) as Effect.Effect<void>);
+    }), { concurrency: CLIENTS, discard: true });
+  }));
   await runtime.dispose();
   latencies.sort((a, b) => a - b);
   const p = (q: number) => latencies[Math.min(latencies.length - 1, Math.floor(q * latencies.length))]!.toFixed(1);

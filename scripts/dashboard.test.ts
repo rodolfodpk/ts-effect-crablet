@@ -212,9 +212,9 @@ describe("the alert rules", () => {
       expect(["Alerting", "OK", "NoData"], r.title).toContain(r.noDataState);
       expect(r.annotations?.summary, r.title).toBeTruthy();
       // Every alert says what to do: its runbook is a section of the runbooks page that exists.
-      const [file, anchor] = String(r.annotations?.runbook ?? "").split("#");
+      const [file = "", anchor = ""] = String(r.annotations?.runbook ?? "").split("#");
       expect(file, r.title).toBe("docs/guides/operate/runbooks.md");
-      const headings = readFileSync(resolve(import.meta.dir, "..", file!), "utf8").split("\n").filter((l) => l.startsWith("## "))
+      const headings = readFileSync(resolve(import.meta.dir, "..", file), "utf8").split("\n").filter((l) => l.startsWith("## "))
         .map((l) => l.slice(3).toLowerCase().replace(/[^\w\s-]/gu, "").replace(/\s/gu, "-"));
       expect(headings, r.title).toContain(anchor);
     }

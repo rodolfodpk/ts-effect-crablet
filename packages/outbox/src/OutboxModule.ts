@@ -6,8 +6,8 @@ import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY, type LeaderOptions } from "@cr
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
-import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
-import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
+import { resolvePollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import type { TopicConfig } from "./TopicConfig.ts";
@@ -19,13 +19,13 @@ import * as TopicPublisherPair from "./TopicPublisherPair.ts";
 
 export interface OutboxDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
-  readonly config?: OutboxConfig;
+  readonly config?: OutboxConfig | undefined;
   // The topics, each built with `defineTopic(...)`. The publishers are theirs: the processor runs the publishers its topics name.
   readonly topics: ReadonlyArray<TopicConfig>;
-  readonly instanceId?: string;
+  readonly instanceId?: string | undefined;
   // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
   // defaults of `LeaderOptions`.
-  readonly leader?: LeaderOptions;
+  readonly leader?: LeaderOptions | undefined;
 }
 
 // Outbox-module-specific wiring only. Leadership is a single module-wide lock (OUTBOX_LOCK_KEY)
@@ -34,7 +34,7 @@ export interface OutboxDeps {
 export const makeOutboxProcessor = (
   deps: OutboxDeps
 ): Effect.Effect<
-  EventProcessorHandle<ProcessorConfig<string>, string>,
+  ProcessorHandle,
   never,
   SqlClient.SqlClient | PgClient.PgClient
 > =>

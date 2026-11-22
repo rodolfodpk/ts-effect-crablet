@@ -30,7 +30,9 @@ CI runs exactly these three (typecheck, unit with coverage, integration) on ever
 style of the file you are in.
 
 **The types must tell the truth.** No cast to an Effect type (`Effect`, `Layer`, `Stream`, `ManagedRuntime`), honest error channels, requirements derived from the code,
-and every `.ts` file under `tsc`: the rules are in [CLAUDE.md](CLAUDE.md#type-safe), and `scripts/effect-casts.test.ts` checks the first one.
+and every `.ts` file under `tsc`: the rules are in [CLAUDE.md](CLAUDE.md#type-safe). The unit tests check them: `scripts/effect-casts.test.ts` (no cast to an Effect
+type), `scripts/typecheck-coverage.test.ts` (every file in a tsconfig) and `scripts/type-escapes.test.ts` (each workspace's `crablet.typeEscapes` may not grow; lower it
+with `bun run type-escapes:baseline` after removing escapes). To run an Effect in a test, use `runWith(layer)` from `@crablet/test-support/RunWith`.
 
 **SOLID, and who decides.** A change follows SRP, OCP, LSP, ISP and DIP. A violation, new or found, is reported with its options and decided by the maintainer,
 never accepted silently ([CLAUDE.md](CLAUDE.md#solid)).

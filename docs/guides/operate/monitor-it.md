@@ -13,7 +13,7 @@ A one-off report, read from the catalog without scanning a table:
 
 <!-- file: examples/wallet-example-app/scripts/report-storage.ts#report -->
 ```ts
-const report = await Effect.runPromise(Effect.provide(storageReport({ exact: process.argv.includes("--exact") }), layer) as Effect.Effect<StorageReport, never, never>);
+const report = await Effect.runPromise(Effect.provide(storageReport({ exact: process.argv.includes("--exact") }), layer));
 console.log(formatStorageReport(report));
 ```
 

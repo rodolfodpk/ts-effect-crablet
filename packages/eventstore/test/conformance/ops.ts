@@ -25,9 +25,9 @@ export const item = (types: ReadonlyArray<string>, tags: ReadonlyArray<readonly 
 
 export type Outcome = "ok" | "conflict" | "duplicate";
 // What an append, however it is made, came to.
-export const outcomeOf = <E extends { readonly _tag: string }, R>(h: Harness, appended: Effect.Effect<unknown, E, R>): Promise<Outcome> =>
+export const outcomeOf = <E extends { readonly _tag: string }>(h: Harness, appended: Effect.Effect<unknown, E, EventStore>): Promise<Outcome> =>
   h.run(
-    (appended as Effect.Effect<unknown, { readonly _tag: string }, EventStore>).pipe(
+    appended.pipe(
       Effect.map((): Outcome => "ok"),
       Effect.catchIf((e) => e._tag === "Conflict", () => Effect.succeed("conflict" as const)),
       Effect.catchIf((e) => e._tag === "Duplicate", () => Effect.succeed("duplicate" as const))

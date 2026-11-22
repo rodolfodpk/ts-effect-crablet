@@ -7,31 +7,31 @@ import { ProcessorsAuthorization } from "./Authorization.ts";
 // A payload is shown only through the application's mask: the fields marked personal(...) redacted and the keys the definition does not know dropped;
 // a type the application has no definition for shows no payload. Evolution rules as for the processors API: fields are added, never removed or retyped.
 
-export const EventTag = Schema.Struct({ key: Schema.String, value: Schema.String }).annotate({ identifier: "EventTag" } as never);
+export const EventTag = Schema.Struct({ key: Schema.String, value: Schema.String }).annotate({ identifier: "EventTag" });
 
 export const LoggedEvent = Schema.Struct({
-  eventId: Schema.String.annotate({ description: "The event's stable public id (a uuidv7). Not an order." } as never),
+  eventId: Schema.String.annotate({ description: "The event's stable public id (a uuidv7). Not an order." }),
   type: Schema.String,
   tags: Schema.Array(EventTag),
-  position: Schema.String.annotate({ description: "Its sequence position, as a string (a bigint). Events are ordered by (transactionId, position)." } as never),
+  position: Schema.String.annotate({ description: "Its sequence position, as a string (a bigint). Events are ordered by (transactionId, position)." }),
   transactionId: Schema.String,
-  occurredAt: Schema.String.annotate({ description: "When it was appended, ISO 8601." } as never),
+  occurredAt: Schema.String.annotate({ description: "When it was appended, ISO 8601." }),
   correlationId: Schema.NullOr(Schema.String),
-  causationId: Schema.NullOr(Schema.String).annotate({ description: "The position of the event that caused it, if any." } as never),
-  data: Schema.NullOr(Schema.Unknown).annotate({ description: "The payload as the application's mask shows it (personal fields redacted); null when withheld." } as never),
-  dataShown: Schema.Boolean.annotate({ description: "False when the payload is withheld: no definition of this type was given to the API." } as never),
+  causationId: Schema.NullOr(Schema.String).annotate({ description: "The position of the event that caused it, if any." }),
+  data: Schema.NullOr(Schema.Unknown).annotate({ description: "The payload as the application's mask shows it (personal fields redacted); null when withheld." }),
+  dataShown: Schema.Boolean.annotate({ description: "False when the payload is withheld: no definition of this type was given to the API." }),
   metadata: Schema.NullOr(Schema.Unknown).annotate({
     description: "The client's metadata (ADR-0051) as the application's metadata mask shows it; null when the event has none or it is withheld."
-  } as never),
-  metadataShown: Schema.Boolean.annotate({ description: "False when the event has metadata the API does not show: no metadata mask was given." } as never)
-}).annotate({ identifier: "LoggedEvent" } as never);
+  }),
+  metadataShown: Schema.Boolean.annotate({ description: "False when the event has metadata the API does not show: no metadata mask was given." })
+}).annotate({ identifier: "LoggedEvent" });
 export type LoggedEvent = typeof LoggedEvent.Type;
 
 export const EventPage = Schema.Struct({
   events: Schema.Array(LoggedEvent),
-  cursor: Schema.String.annotate({ description: "Where the page stopped: pass it as `after` for the next page." } as never),
-  more: Schema.Boolean.annotate({ description: "True when the page is full: read on from `cursor`. False: no more finished events now." } as never)
-}).annotate({ identifier: "EventPage" } as never);
+  cursor: Schema.String.annotate({ description: "Where the page stopped: pass it as `after` for the next page." }),
+  more: Schema.Boolean.annotate({ description: "True when the page is full: read on from `cursor`. False: no more finished events now." })
+}).annotate({ identifier: "EventPage" });
 export type EventPage = typeof EventPage.Type;
 
 export const EventsBadRequestType = "urn:crablet:problem:events-api:bad-request";
@@ -59,14 +59,14 @@ export const eventsGroup = HttpApiGroup.make("events")
   .add(
     HttpApiEndpoint.get("listEvents", eventsPath, {
       query: {
-        types: Schema.optionalKey(Schema.String.annotate({ description: "Event types, comma-separated: an event of any of them." } as never)),
+        types: Schema.optionalKey(Schema.String.annotate({ description: "Event types, comma-separated: an event of any of them." })),
         tag: Schema.optionalKey(
           Schema.Union([Schema.String, Schema.Array(Schema.String)]).annotate({
             description: "A tag `key=value` (split at the first `=`), repeatable: an event carrying all of them. With neither `types` nor `tag`, every event."
-          } as never)
+          })
         ),
-        after: Schema.optionalKey(Schema.String.annotate({ description: "The `cursor` of the previous page." } as never)),
-        limit: Schema.optionalKey(Schema.String.annotate({ description: `Events per page, 1 to ${MAX_PAGE} (default 100).` } as never))
+        after: Schema.optionalKey(Schema.String.annotate({ description: "The `cursor` of the previous page." })),
+        limit: Schema.optionalKey(Schema.String.annotate({ description: `Events per page, 1 to ${MAX_PAGE} (default 100).` }))
       },
       success: EventPage,
       error: BadRequestProblem

@@ -7,6 +7,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import { Conflict } from "@crablet/eventstore/AppendErrors";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { AccountModel, AccountOpened, InsufficientFunds, Transfer, transferWith } from "../support/transfer.ts";
 
@@ -26,7 +27,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 
 const barrier = (parties: number) =>
   Effect.gen(function* () {
