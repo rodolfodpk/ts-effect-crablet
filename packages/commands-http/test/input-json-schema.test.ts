@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { defineCommand, noop } from "@crablet/commands/Command";
+import type { InputSchema } from "@crablet/commands/Contract";
 import { inputJsonSchema, inputJsonSchemaProblems } from "../src/InputJsonSchema.ts";
 
-const commandWith = <S extends Schema.Constraint>(input: S) => defineCommand({ name: "probe", input, decide: () => noop() });
+const commandWith = <S extends InputSchema>(input: S) => defineCommand({ name: "probe", input, decide: () => noop() });
 
 describe("a command's input as JSON Schema", () => {
   test("keeps the checks of Finite and Int, a literal's values, and required fields", () => {

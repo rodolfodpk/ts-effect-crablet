@@ -29,6 +29,12 @@ Coverage of both suites, merged into one report (`coverage/lcov.info`; takes abo
 CI runs exactly these three (typecheck, unit with coverage, integration) on every push and pull request to `main`. There is no linter or formatter configured; match the
 style of the file you are in.
 
+**The types must tell the truth.** No cast to an Effect type (`Effect`, `Layer`, `Stream`, `ManagedRuntime`), honest error channels, requirements derived from the code,
+and every `.ts` file under `tsc`: the rules are in [CLAUDE.md](CLAUDE.md#type-safe), and `scripts/effect-casts.test.ts` checks the first one.
+
+**SOLID, and who decides.** A change follows SRP, OCP, LSP, ISP and DIP. A violation, new or found, is reported with its options and decided by the maintainer,
+never accepted silently ([CLAUDE.md](CLAUDE.md#solid)).
+
 Mutation testing runs apart from that ([the plan](docs/history/plans/mutation-testing.md)): the `mutation.yml` workflow runs every Monday and on demand. Locally,
 `bun run mutation` runs Stryker over the tier 1 code and `bun run mutation:check` compares its score with the committed baseline, which may not go down;
 `bun run breaks` applies the deliberate breaks of the database-bound code (`scripts/breaks.ts`) one at a time and checks that the integration tests catch each

@@ -6,7 +6,6 @@ import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { type AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
-import type * as Schema from "effect/Schema";
 import type { Command, RawInput } from "./Command.ts";
 import { recordCommand } from "./CommandAudit.ts";
 import type * as CD from "./CommandDecision.ts";
@@ -14,12 +13,17 @@ import { IdempotencyMismatch, type InvalidInput } from "./Errors.ts";
 import { isSameRequest } from "./Repeat.ts";
 import * as ExecutionResultNS from "./ExecutionResult.ts";
 import type { ExecutionResult } from "./ExecutionResult.ts";
+import type { InputSchema } from "./Contract.ts";
 
 // A command handler turns a command into a decision ("append these events under this condition", or
 // "nothing to do"). The event store is ambient (via Effect's context), not an explicit parameter.
 export type CommandHandler<T, E = never> = (command: T) => Effect.Effect<CD.CommandDecision, E, EventStore>;
 
 // Commands are always run explicitly - there is no command-type auto-discovery (ADR-0008).
+//
+// `run` and `runDecoded` need nothing from their caller: the executor resolves its event store, audit store and SQL client when its layer is
+// built, as `EventStore` and `CommandAuditStore` resolve theirs. What a call still reads from the caller's context are the references with a
+// default (the correlation and causation ids, the actor, the audit setting), which are per request, not dependencies.
 export interface CommandExecutorService {
   // Run a defined command (see Command.ts). `run` takes the input before decoding (`RawInput`, typed from the command's schema, so a
   // misspelt field does not compile) and still validates it at run time (`InvalidInput`): checks such as `isGreaterThanOrEqualTo` are not types. `runDecoded` takes input that is already the command's
@@ -30,22 +34,14 @@ export interface CommandExecutorService {
   // this run loaded it); `decide` is pure and the transaction rolled back, so retrying is safe. Only a
   // `Conflict` is retried, and the last one is reported if the retries run out. A repeat that
   // `idempotentBy` finds is an idempotent success.
-  readonly run: <In, Err, I extends Schema.Constraint>(
+  readonly run: <In, Err, I extends InputSchema>(
     command: Command<In, Err, I>,
     input: RawInput<I>
-  ) => Effect.Effect<
-    ExecutionResult,
-    Err | InvalidInput | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
-    EventStore | CommandAuditStore | SqlClient.SqlClient
-  >;
+  ) => Effect.Effect<ExecutionResult, Err | InvalidInput | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError>;
   readonly runDecoded: <In, Err>(
     command: Command<In, Err>,
     input: In
-  ) => Effect.Effect<
-    ExecutionResult,
-    Err | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
-    EventStore | CommandAuditStore | SqlClient.SqlClient
-  >;
+  ) => Effect.Effect<ExecutionResult, Err | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError>;
 }
 
 export class CommandExecutor extends Context.Service<CommandExecutor, CommandExecutorService>()("CommandExecutor") {}
@@ -149,26 +145,34 @@ const isDeadlock = (error: unknown): boolean =>
   ((error as SqlError).reason.cause as { code?: string } | null | undefined)?.code === "40P01";
 const deadlockConflict = new Conflict({ message: "Deadlock detected between concurrent commands; the transaction was rolled back", kind: "boundary" });
 
+// Needs the `EventStore` and the `CommandAuditStore` when it is built (and the `SqlClient` they share), so it is provided WITH them, not merged
+// beside them: `Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(eventStoreLayer, CommandAuditStoreLive))`, as `Crablet.layer` does.
 export const CommandExecutorLive = Layer.effect(
   CommandExecutor,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const eventStore = yield* EventStore;
+    const commandAuditStore = yield* CommandAuditStore;
+
+    // What the handler (it reads through `EventStore`) and the audit record need, from the layer instead of from the caller.
+    const withServices = <A, E>(effect: Effect.Effect<A, E, EventStore | CommandAuditStore | SqlClient.SqlClient>): Effect.Effect<A, E> =>
+      effect.pipe(
+        Effect.provideService(EventStore, eventStore),
+        Effect.provideService(CommandAuditStore, commandAuditStore),
+        Effect.provideService(SqlClient.SqlClient, sql)
+      );
 
     // One attempt: the handler and its append inside one transaction.
     const execute = <T, E>(
       definition: Command<T, E>,
       command: T,
       handler: CommandHandler<T, E>
-    ): Effect.Effect<
-      ExecutionResult,
-      E | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
-      EventStore | CommandAuditStore | SqlClient.SqlClient
-    > =>
+    ): Effect.Effect<ExecutionResult, E | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError> =>
       // sql.withTransaction(effect) runs `effect` inside one Postgres transaction, committing on
-      // success and rolling back on any failure (including interruption). Because effect/sql makes the
-      // "current" SqlClient ambient, the `EventStore`/`CommandAuditStore` obtained via `yield*`
-      // *inside* this block automatically use the transaction-scoped connection, so one EventStore
-      // implementation serves both standalone and transactional use (ADR-0002).
+      // success and rolling back on any failure (including interruption). The transaction is carried in
+      // the fiber's context (`sql.transactionService`), not in which SqlClient value is used, so the event
+      // store and the audit store captured above, which hold the same `sql`, write on the transaction's
+      // connection: one EventStore implementation serves both standalone and transactional use (ADR-0002).
       //
       // Wrapped with CommandMetrics.observe for the handle.duration/successes/failures triplet, plus a
       // dedicated idempotentDuplicates increment when the result comes back idempotent.
@@ -176,7 +180,7 @@ export const CommandExecutorLive = Layer.effect(
         CommandMetrics.handle,
         // The wake-up for what the attempt appended goes out only after this transaction has committed (ADR-0021).
         // `requireFreshTransaction`: the append must be this transaction's first write, so its events sort after everything the command read (ADR-0033).
-        Effect.flatMap(EventStore, (eventStore) => eventStore.withWakeups(sql.withTransaction(CorrelationContext.requireFreshTransaction(
+        withServices(eventStore.withWakeups(sql.withTransaction(CorrelationContext.requireFreshTransaction(
           Effect.gen(function* () {
             const result = yield* runHandler(handler, command, definition.name);
             // An idempotent result (a repeat, or a decision that does nothing) has done nothing, so nothing of this attempt may stay: roll the transaction back. A command cannot append
@@ -219,13 +223,9 @@ export const CommandExecutorLive = Layer.effect(
         // One span for the whole execution, retries included: the attempts and the appends inside it are its children, and its failure is the command's outcome.
         Effect.withSpan("crablet.command", { attributes: { "crablet.command.name": command.name, "crablet.command.max_retries": command.retries } }),
         Effect.annotateLogs({ command: command.name })
-      ) as Effect.Effect<
-        ExecutionResult,
-        Err | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError,
-        EventStore | CommandAuditStore | SqlClient.SqlClient
-      >;
+      );
 
-    const run = <In, Err, I extends Schema.Constraint>(command: Command<In, Err, I>, input: RawInput<I>) =>
+    const run = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: RawInput<I>) =>
       Effect.flatMap(command.decodeInput(input), (decoded) => runDecoded(command, decoded));
 
     const service: CommandExecutorService = { run, runDecoded };

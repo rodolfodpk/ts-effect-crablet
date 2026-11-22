@@ -44,3 +44,15 @@ defineCommand({
   decide: (_state, c) => fail(new NoSuchSeat({ seatId: c.seatId }))
 });
 defineCommand({ ...OneDeclared, decide: (_state, c) => fail(new SeatTaken({ seatId: c.seatId })) });
+
+// An input schema that needs a service to decode or to encode is refused where it is declared: the executor decodes and fingerprints the
+// input where no service is provided, so it would compile and then fail with "service not found" (InputSchema, Contract.ts).
+interface Geocoder { readonly _: unique symbol }
+declare const DecodesWithAService: Schema.Codec<string, string, Geocoder, never>;
+declare const EncodesWithAService: Schema.Codec<string, string, never, Geocoder>;
+// @ts-expect-error decoding needs a Geocoder
+defineContract({ name: "needs-decoding-service", input: DecodesWithAService });
+// @ts-expect-error encoding needs a Geocoder
+defineContract({ name: "needs-encoding-service", input: EncodesWithAService });
+// @ts-expect-error decoding needs a Geocoder
+defineCommand({ name: "needs-decoding-service", input: DecodesWithAService, decide: () => emit(SeatBooked({ seatId: "s" })) });

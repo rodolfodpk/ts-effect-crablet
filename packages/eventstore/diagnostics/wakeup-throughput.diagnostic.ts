@@ -20,7 +20,7 @@ after(async () => { await db.stop(); });
 
 const measure = async (label: string, config: EventStoreConfig) => {
   const runtime = ManagedRuntime.make(
-    Layer.provideMerge(makeEventStoreLayer(config), PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: CLIENTS + 4 })) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient, never>
+    Layer.provideMerge(makeEventStoreLayer(config), PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: CLIENTS + 4 })).pipe(Layer.orDie)
   );
   const latencies: number[] = [];
   const end = Date.now() + SECONDS * 1000;

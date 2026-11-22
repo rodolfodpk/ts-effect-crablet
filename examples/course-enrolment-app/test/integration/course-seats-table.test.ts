@@ -18,7 +18,7 @@ before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   runtime = ManagedRuntime.make(
-    Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) }) as unknown as Layer.Layer<SqlClient.SqlClient | PgClient.PgClient, never>
+    Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) }).pipe(Layer.orDie)
   );
 }, { timeout: 60_000 });
 after(async () => {

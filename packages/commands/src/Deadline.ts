@@ -12,6 +12,7 @@ import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { formatMarker } from "@crablet/eventstore/Marker";
 import type { Command } from "./Command.ts";
+import type { InputSchema } from "./Contract.ts";
 import { IdempotencyMismatch, kindOf } from "./Errors.ts";
 import { defineEvent, Instant } from "./Event.ts";
 import type { ExecutionResult } from "./ExecutionResult.ts";
@@ -76,7 +77,7 @@ export const checkDeadlineCommands = (commands: ReadonlyArray<Command<any, any>>
 };
 
 // A deadline to append with the decision: `command` runs with `input` at or after `at`. The input is typed by the command's schema.
-export const deadline = <In, Err, I extends Schema.Constraint>(command: Command<In, Err, I>, input: In, options: { readonly at: DateTime.Utc }): AppendEvent => {
+export const deadline = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: In, options: { readonly at: DateTime.Utc }): AppendEvent => {
   const problem = refusal(command);
   if (problem !== undefined) throw new Error(problem);
   const encoded = Schema.encodeUnknownSync(command.input as unknown as Schema.Codec<unknown, unknown>)(input);

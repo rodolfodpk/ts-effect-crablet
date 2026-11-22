@@ -45,7 +45,7 @@ const run = async (profileName: string, loadName: string, wakeups: boolean) => {
   const rate = loads[loadName]!;
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: "wallet" });
   const eventStore = makeEventStoreLayer(wakeups ? {} : { wakeupMode: "off" });
-  const runtime = ManagedRuntime.make(Layer.provideMerge(Layer.mergeAll(CommandExecutorLive, eventStore, CommandAuditStoreLive), pgLayer) as unknown as Layer.Layer<CoreServices, never>);
+  const runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(eventStore, CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime, undefined, undefined, { polling });
   const post = (walletId: string) =>
     fetch(`${app.baseUrl}/api/commands/open_wallet`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ walletId, owner: "x", initialBalance: 1 }) });

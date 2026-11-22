@@ -29,10 +29,7 @@ before(async () => {
   });
   // provideMerge (not provide) so SqlClient itself stays in the output - needed by the
   // transaction_id test, which uses sql.withTransaction directly.
-  layer = Layer.provideMerge(Layer.merge(EventStoreLive, CommandAuditStoreLive), pgLayer) as unknown as Layer.Layer<
-    EventStore | CommandAuditStore | SqlClient.SqlClient,
-    never
-  >;
+  layer = Layer.provideMerge(Layer.merge(EventStoreLive, CommandAuditStoreLive), pgLayer).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 
 after(async () => {
@@ -305,7 +302,7 @@ describe("append size limit", () => {
 describe("maxAppendEvents (ADR-0049)", () => {
   it("sets the limit of one append: 3 pass, 4 are refused with AppendTooLarge carrying the limit", async () => {
     const pg = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-    const small = Layer.provide(makeEventStoreLayer({ maxAppendEvents: 3 }), pg) as unknown as Layer.Layer<EventStore, never>;
+    const small = Layer.provide(makeEventStoreLayer({ maxAppendEvents: 3 }), pg).pipe(Layer.orDie);
     const batch = (n: number) => Array.from({ length: n }, (_, i) => AppendEvent.of("SmallLimitEvent", "batch", `b${i}`, {}));
     const go = <A, E>(effect: Effect.Effect<A, E, EventStore>) => Effect.runPromise(Effect.provide(effect, small) as Effect.Effect<A, E, never>);
     await go(Effect.flatMap(EventStore, (store) => store.append(batch(3))));

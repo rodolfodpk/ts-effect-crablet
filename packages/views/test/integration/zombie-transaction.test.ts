@@ -34,7 +34,7 @@ const runtimeTo = (port: number, startupParameters?: Record<string, string>): Rt
         password: Redacted.make(db.connInfo.password),
         ...(startupParameters === undefined ? {} : { startupParameters })
       })
-    ) as unknown as Layer.Layer<Services, never>
+    ).pipe(Layer.orDie)
   );
 
 before(async () => {

@@ -47,7 +47,7 @@ const client = async (port: number) => {
   return c;
 };
 const runtimeOn = (port: number) =>
-  ManagedRuntime.make(PgClient.layer({ host: "127.0.0.1", port, database: "postgres", username: "postgres", password: Redacted.make(PASSWORD) }) as unknown as Layer.Layer<SqlClient.SqlClient, never>);
+  ManagedRuntime.make(PgClient.layer({ host: "127.0.0.1", port, database: "postgres", username: "postgres", password: Redacted.make(PASSWORD) }).pipe(Layer.orDie));
 const fast = { heartbeat: "200 millis", verifyTimeout: "500 millis", failuresBeforeLost: 2 } as const;
 
 describe("a leader leads only on a primary (ADR-0045)", () => {

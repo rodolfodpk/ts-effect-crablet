@@ -54,8 +54,8 @@ const holders = async () => {
 
 const run = async (label: string, withSession: boolean) => {
   const pgcfg = (host: string, port: number) => ({ host, port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  const appLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive, ...(withSession ? [sessionClientsLayer({ ...pgcfg(db.connInfo.host, db.connInfo.port), maxConnections: 10 })] : []));
-  const runtime = ManagedRuntime.make(Layer.provideMerge(appLayers, PgClient.layer({ ...pgcfg("127.0.0.1", bouncer.port), maxConnections: 10 })) as unknown as Layer.Layer<CoreServices, never>);
+  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ...(withSession ? [sessionClientsLayer({ ...pgcfg(db.connInfo.host, db.connInfo.port), maxConnections: 10 })] : [])));
+  const runtime = ManagedRuntime.make(Layer.provideMerge(appLayers, PgClient.layer({ ...pgcfg("127.0.0.1", bouncer.port), maxConnections: 10 })).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime);
   try {
     await sleep(1500);

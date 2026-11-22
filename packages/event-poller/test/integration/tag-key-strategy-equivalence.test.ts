@@ -23,7 +23,7 @@ before(async () => {
   layer = Layer.provideMerge(
     EventStoreLive,
     PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })
-  ) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient, never>;
+  ).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(e, layer) as Effect.Effect<A, E, never>);

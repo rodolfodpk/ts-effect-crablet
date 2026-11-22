@@ -1,8 +1,6 @@
 import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import { EventStore } from "@crablet/eventstore";
-import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
@@ -39,23 +37,14 @@ export interface AutomationsDeps {
 // same single-module-wide-leader model views/outbox already use (AUTOMATIONS_LOCK_KEY is one lock
 // for the whole module, not one per automation).
 //
-// Differs from ViewsModule.ts/OutboxModule.ts in one load-bearing way: makeEventProcessor requires
-// `handler: EventHandler<I, unknown, never>` (R discharged to never), but
-// CommandExecutorService.execute's returned Effect still requires `EventStore | CommandAuditStore |
-// SqlClient.SqlClient` in its R - merely holding the CommandExecutor tag's *value* doesn't remove
-// that requirement, since CommandExecutorLive's own implementation does `yield* EventStore`
-// internally whenever the returned effect actually runs. So this function yields all four ambient
-// services once, then builds `executeDecision` as a closure that discharges that R via
-// Effect.provideService before handing the resulting EventHandler off to makeEventProcessor - the
-// same "capture ambient deps once, pass concrete values onward" pattern
-// ViewProjector.ts's makeTransactionalViewProjector already established for `sql` alone, just
-// across three services here instead of one. No event-poller engine changes needed either way.
+// The automations run their commands through the `CommandExecutor`, whose `runDecoded` needs nothing from its caller (its layer resolved its
+// services), so `executeDecision` is that call as it is: an `EventHandler<I, unknown, never>`, as makeEventProcessor requires.
 export const makeAutomationsProcessor = (
   deps: AutomationsDeps
 ): Effect.Effect<
   EventProcessorHandle<ProcessorConfig<string>, string>,
   never,
-  SqlClient.SqlClient | PgClient.PgClient | CommandExecutor | EventStore | CommandAuditStore
+  SqlClient.SqlClient | PgClient.PgClient | CommandExecutor
 > =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -63,16 +52,9 @@ export const makeAutomationsProcessor = (
     const sessionSql_ = yield* sessionSql;
     const sessionPg_ = yield* sessionPg;
     const commandExecutor = yield* CommandExecutor;
-    const eventStore = yield* EventStore;
-    const commandAuditStore = yield* CommandAuditStore;
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
-    const executeDecision: ExecuteDecision = (command, input) =>
-      commandExecutor.runDecoded(command, input).pipe(
-        Effect.provideService(EventStore, eventStore),
-        Effect.provideService(CommandAuditStore, commandAuditStore),
-        Effect.provideService(SqlClient.SqlClient, sql)
-      );
+    const executeDecision: ExecuteDecision = (command, input) => commandExecutor.runDecoded(command, input);
 
     const progressTracker = yield* makePostgresProgressTracker<string>({
       tableName: "crablet_automation_progress",
@@ -105,5 +87,5 @@ export const makeAutomationsProcessor = (
 
 // Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loops and releases the
 // leader lock. What an application uses. `makeAutomationsProcessor` builds without starting (a handle for status, a test that drives `start`/`stop` itself).
-export const startAutomationsProcessor = (deps: AutomationsDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
+export const startAutomationsProcessor = (deps: AutomationsDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | CommandExecutor | Scope.Scope> =>
   Effect.tap(makeAutomationsProcessor(deps), (handle) => handle.service.startScoped);

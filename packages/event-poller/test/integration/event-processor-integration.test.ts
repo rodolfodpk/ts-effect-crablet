@@ -40,10 +40,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const layer = Layer.provideMerge(EventStoreLive, pgLayer) as unknown as Layer.Layer<
-    EventStore | SqlClient.SqlClient | PgClient.PgClient,
-    never
-  >;
+  const layer = Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
 }, { timeout: 60_000 });
 

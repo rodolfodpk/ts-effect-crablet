@@ -40,11 +40,8 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const appLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive);
-  const layer = Layer.provideMerge(appLayers, pgLayer) as unknown as Layer.Layer<
-    CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient,
-    never
-  >;
+  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const layer = Layer.provideMerge(appLayers, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
 }, { timeout: 60_000 });
 

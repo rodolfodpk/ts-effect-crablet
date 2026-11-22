@@ -15,6 +15,7 @@ import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { IdempotencyMismatch, InvalidInput, inputIssuesOf, type AnyDomainErrorClass, type KindedError } from "./Errors.ts";
 import { fingerprintOf, isSameRequest } from "./Repeat.ts";
 import type { ModelInstance } from "./Model.ts";
+import type { InputSchema } from "./Contract.ts";
 
 // A command is one declaration of "what happens when this request arrives":
 //
@@ -146,7 +147,7 @@ type ByModelRule<IB> = [IB] extends [ByModel]
 export interface Command<
   In,
   Err,
-  I extends Schema.Constraint = Schema.Constraint,
+  I extends InputSchema = InputSchema,
   Es extends ReadonlyArray<AnyDomainErrorClass> = ReadonlyArray<AnyDomainErrorClass>
 > {
   readonly name: string;
@@ -170,12 +171,12 @@ export interface Command<
 // The input a caller hands to `run` (or a test to `when`): the input before the schema decodes it, so a misspelt or missing field is a compile
 // error. For most schemas it is the decoded type; a field read through a transformation (a date from a string) is given in its encoded form.
 // `unknown` for a command whose schema type is erased (`Command<In, Err>`), as a transport has it.
-export type RawInput<I extends Schema.Constraint> = Schema.Codec.Encoded<I>;
+export type RawInput<I extends InputSchema> = Schema.Codec.Encoded<I>;
 
 export const defaultRetries = 3;
 
 export const defineCommand = <
-  I extends Schema.Constraint,
+  I extends InputSchema,
   S = undefined,
   D extends Decision<any> = Decision<never>,
   R = undefined,

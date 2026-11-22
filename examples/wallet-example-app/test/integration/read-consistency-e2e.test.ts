@@ -27,8 +27,8 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const coreLayers = Layer.mergeAll(CommandExecutorLive, EventStoreLive, CommandAuditStoreLive);
-  runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer) as unknown as Layer.Layer<CoreServices, never>);
+  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie));
   app = await startWalletAppForTest(runtime);
 }, { timeout: 60_000 });
 

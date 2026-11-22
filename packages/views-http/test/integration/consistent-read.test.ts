@@ -110,7 +110,7 @@ before(async () => {
   });
   const core = Layer.provideMerge(EventStoreLive, pgLayer);
   const server = Layer.provideMerge(HttpRouter.serve(HttpApiBuilder.layer(Api).pipe(Layer.provide(GroupLive))), NodeHttpServer.layer(createServer, { port: 0 }));
-  runtime = ManagedRuntime.make(Layer.provideMerge(server, core) as unknown as Layer.Layer<EventStore | SqlClient.SqlClient | PgClient.PgClient | HttpServer.HttpServer, never>);
+  runtime = ManagedRuntime.make(Layer.provideMerge(server, core).pipe(Layer.orDie));
 
   const projectors = await runtime.runPromise(
     Effect.gen(function* () {

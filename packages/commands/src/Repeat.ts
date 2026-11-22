@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { Duplicate } from "@crablet/eventstore/AppendErrors";
+import type { InputSchema } from "./Contract.ts";
 
 // How a repeat of a request is told from a different request under the same key (ADR-0034). Internal: the command handler and the executor
 // use it; applications see its outcome as an idempotent result or `IdempotencyMismatch`.
@@ -17,9 +18,9 @@ const canonicalJson = (value: unknown): string =>
 
 // The fingerprint of a request: SHA-256 (hex) of the command's name and its input, ENCODED by the command's own input schema, so two inputs
 // that decode to the same value fingerprint the same. Web Crypto, so it runs in Node, Bun and a browser alike.
-export const fingerprintOf = (name: string, inputSchema: Schema.Constraint, input: unknown): Effect.Effect<string> =>
+export const fingerprintOf = (name: string, inputSchema: InputSchema, input: unknown): Effect.Effect<string> =>
   Effect.gen(function* () {
-    const encoded = yield* Effect.orDie(Schema.encodeUnknownEffect(inputSchema)(input) as Effect.Effect<unknown, Schema.SchemaError>);
+    const encoded = yield* Effect.orDie(Schema.encodeUnknownEffect(inputSchema)(input));
     const bytes = new TextEncoder().encode(`${name}\u0000${canonicalJson(encoded)}`);
     const digest = yield* Effect.promise(() => crypto.subtle.digest("SHA-256", bytes));
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");

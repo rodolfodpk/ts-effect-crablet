@@ -21,7 +21,7 @@ before(async () => {
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }) as unknown as Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+  }).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 
 after(async () => {

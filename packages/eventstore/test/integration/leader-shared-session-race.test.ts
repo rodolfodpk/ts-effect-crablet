@@ -17,7 +17,7 @@ let probe: Rt;
 const runtime = (name: string): Rt =>
   ManagedRuntime.make(PgClient.layer({
     host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: name
-  }) as unknown as Layer.Layer<SqlClient.SqlClient, never>);
+  }).pipe(Layer.orDie));
 
 before(async () => {
   db = await startTestDb();
