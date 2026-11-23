@@ -4,6 +4,8 @@
 
 **Accepted** (2026-10-25). Built in the wallet. Proposed on 2026-10-08; every check in "Before accepting" exists and passes, the `outbox` role last (see "Progress"). The context below was written before anything was built, from the code, the measurements and the AWS documentation it cites. What stays unverified is what only AWS can show (RDS Multi-AZ failover, RDS Proxy, the node loss with the RDS keepalives); it is listed under "Not verified".
 
+**Amended** (2026-11-23) by [ADR-0054](0054-the-modules-declared-once-run-or-listed.md): decision 4's open question is answered. A module's handle is built without starting it (no connection, no loop), so a process that runs no module serves the admin API for all of them (`Crablet.catalog`), and the samplers run for the modules a process runs (`Crablet.processors`).
+
 ## Context
 
 Everything runs in one process today. The wallet's entry point (`index.ts`) starts the three processor modules (`startBackgroundProcessors` returns the views, automations and outbox handles together), serves the HTTP API (the write commands and the read endpoints composed in one `HttpApi`), optionally mounts the admin API, and runs the metric samplers. That is right for development and tests and for a small deployment. It does not fit the deployment this project is being designed for: N web instances that scale with load, one active (and one standby) instance of each background module, on Kubernetes and RDS.

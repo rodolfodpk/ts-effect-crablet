@@ -64,6 +64,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0024: The leader lock and LISTEN can use a connection of their own, so the rest can go through a pooler](0024-session-connections-for-leader-and-listen.md) - **accepted**: built; tested on PgBouncer in Docker, not on RDS Proxy
 - [ADR-0045: The leader's lease is its session: Postgres ends a lock session the leader stopped talking on](0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md) - **accepted** (not run on AWS): built and tested on Postgres; `idle_session_timeout` on the lock session and a primary check; a silent partition's takeover bounded near 20 s instead of the keepalives' 388 s on RDS; the kind lab, a replica and AWS still to run
 - [ADR-0046: One lock session and one LISTEN connection per process](0046-one-lock-session-per-process.md) - **accepted**: the locks of every module a process leads on one session with one heartbeat, and every `LISTEN` on one connection beside the pool (a leader of three modules holds 2 connections for good, not 7; a follower 1, not 4); an attempt's statements bounded; tested on Postgres and in the kind lab
+- [ADR-0054: The modules declared once, run or only listed by each process](0054-the-modules-declared-once-run-or-listed.md) - **accepted**: each module describes itself (`Views.module`); `@crablet/app` declares them once and runs some (`Crablet.processors`) or none (`Crablet.catalog`), both as the same `Processors` service; building needs only the SQL client
 
 ## Storage and operation
 
