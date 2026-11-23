@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { PollingSettings } from "../src/ProcessorConfig.ts";
 import { pollingOver, withProcessSettings } from "../src/ProcessSettings.ts";
 
 describe("pollingOver: the process's polling default with a module's own settings over it", () => {
@@ -17,7 +18,9 @@ describe("pollingOver: the process's polling default with a module's own setting
 
 describe("withProcessSettings", () => {
   test("gives a module the process's instance id and leader settings, and keeps the module's own other settings", () => {
-    const deps = withProcessSettings({ views: [], config: { pollingIntervalMs: undefined, publishTimeoutMs: 5 } }, { instanceId: "pod-1", polling: { pollingIntervalMs: 100 } });
+    // a module's config: the polling settings and its own (the outbox's publish timeout)
+    const config: PollingSettings & { readonly publishTimeoutMs: number } = { pollingIntervalMs: undefined, publishTimeoutMs: 5 };
+    const deps = withProcessSettings({ views: [], config }, { instanceId: "pod-1", polling: { pollingIntervalMs: 100 } });
     expect(deps).toEqual({ views: [], config: { pollingIntervalMs: 100, publishTimeoutMs: 5 }, instanceId: "pod-1", leader: undefined });
   });
 });
