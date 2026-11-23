@@ -4,7 +4,7 @@
 //     emit(StudentSubscribed(c), deadline(ReleaseUnpaidSubscription, { courseId, studentId }, { at: DateTime.add(now, { days: 3 }) }))
 //
 // A deadline is an event in the log (`crablet.DeadlineScheduled`), and so is its firing (`crablet.DeadlineFired`). The append that stores one also
-// writes it into `crablet_deadlines`, which the deadlines processor (`@crablet/automations/Deadlines`) reads by time; a test fires what is due with
+// writes it into `crablet_deadlines`, which the deadlines processor (`@crablet/deadlines`) reads by time; a test fires what is due with
 // `Scenario.fireDue`. A deadline always fires: its command's `decide` reads the model and answers `noop` when it no longer matters.
 import type { DateTime } from "effect";
 import * as Schema from "effect/Schema";

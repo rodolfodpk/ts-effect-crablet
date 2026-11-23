@@ -3,9 +3,9 @@ import type { StoredEvent } from "@crablet/eventstore";
 import { HandledPrefix, type EventHandler } from "@crablet/event-poller/EventHandler";
 import type { Command } from "@crablet/commands/Command";
 import { DeadlineScheduled, outcomeOfFailure, outcomeOfResult, type Firing } from "@crablet/commands/Deadline";
-import type { ExecutionResult } from "@crablet/commands/ExecutionResult";
 import * as DeadlineMetrics from "@crablet/metrics-otel/DeadlineMetrics";
-import { withEventContext, type ExecuteDecision } from "./AutomationEventHandler.ts";
+import type { CommandExecutorService } from "@crablet/commands";
+import { withEventContext } from "./EventContext.ts";
 
 // Records that a deadline fired, in one transaction with its row's removal; returns whether it did (false: another processor fired it first).
 export type RecordFiring = (deadline: StoredEvent, firing: Firing) => Effect.Effect<boolean, unknown>;
@@ -21,7 +21,8 @@ export class DeadlineFireTimedOut extends Data.TaggedError("DeadlineFireTimedOut
 // batch as a `HandledPrefix`: the deadlines before it stay fired, and the engine retries from this one, marking the processor FAILED after `maxErrors`.
 export const makeDeadlineEventHandler = (
   commands: ReadonlyMap<string, Command<any, any>>,
-  executeDecision: ExecuteDecision,
+  // The executor's `runDecoded`, taken from the executor the module was given: a deadline's input was decoded when it was scheduled.
+  runDecoded: CommandExecutorService["runDecoded"],
   recordFiring: RecordFiring,
   fireTimeoutMs: number
 ): EventHandler<string, unknown, never> => {
@@ -35,14 +36,13 @@ export const makeDeadlineEventHandler = (
         );
       }
       const input = yield* command.decodeInput(scheduled.input);
-      const outcome = yield* withEventContext(deadline, executeDecision(command, input)).pipe(
+      const outcome = yield* withEventContext(deadline, runDecoded(command, input)).pipe(
         Effect.timeoutOrElse({
           duration: Duration.millis(fireTimeoutMs),
           orElse: () =>
             Effect.fail(new DeadlineFireTimedOut({ message: `deadline at position ${deadline.position}: command "${command.name}" took longer than ${fireTimeoutMs} ms` }))
         }),
-        // The executor's result, typed `unknown` by ExecuteDecision (an automation ignores it).
-        Effect.map((result) => outcomeOfResult(result as ExecutionResult)),
+        Effect.map(outcomeOfResult),
         Effect.catch((error) => {
           const failed = outcomeOfFailure(error);
           return failed === undefined ? Effect.fail(error) : Effect.succeed(failed);

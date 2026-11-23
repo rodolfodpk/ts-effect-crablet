@@ -9,8 +9,8 @@ import type { IdempotencyMismatch } from "@crablet/commands/Errors";
 import * as AutomationMetrics from "@crablet/metrics-otel/AutomationMetrics";
 import type { AutomationHandler } from "../AutomationHandler.ts";
 
-// Same withEventContext primer as ViewProjector.ts - duplicated locally rather than shared, same
-// precedent as outbox/views never sharing code with each other. The deadlines handler (DeadlineEventHandler.ts) uses it too.
+// Same withEventContext primer as ViewProjector.ts and @crablet/deadlines - duplicated locally rather than shared, same
+// precedent as outbox/views never sharing code with each other.
 export const withEventContext = <A, E, R>(event: StoredEvent, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
   const withCausation = CorrelationContext.withCausationId(event.position)(effect);
   return event.correlationId !== null

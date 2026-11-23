@@ -5,6 +5,7 @@
   "overall": 99.6,
   "packages": {
     "automations": 100,
+    "deadlines": 100,
     "commands": 99.4,
     "commands-http": 100,
     "db-migrations": 95.2,

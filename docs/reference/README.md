@@ -55,7 +55,8 @@ Reading the log in the background.
 |---|---|
 | [`packages/event-poller`](../../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, automations and deadlines modules build on |
 | [`packages/views`](../../packages/views/README.md) | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
-| [`packages/automations`](../../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command; and deadlines: run a command once a time has passed ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)) |
+| [`packages/automations`](../../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command |
+| [`packages/deadlines`](../../packages/deadlines/README.md) | Deadlines: run a command once a time has passed ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)) |
 | [`packages/outbox`](../../packages/outbox/README.md) | Transactional outbox: per-topic publishers fed from the event stream by the poller |
 
 ### HTTP

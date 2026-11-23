@@ -11,7 +11,6 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
 import type { Command } from "@crablet/commands/Command";
 import { checkDeadlineCommands, DeadlineScheduled } from "@crablet/commands/Deadline";
-import type { ExecuteDecision } from "./internal/AutomationEventHandler.ts";
 import { makeDeadlineEventHandler } from "./internal/DeadlineEventHandler.ts";
 import { makeDeadlineFetcher, makeDeadlineProgressTracker, makeRecordFiring } from "./internal/DeadlineStore.ts";
 
@@ -63,8 +62,6 @@ export const makeDeadlinesProcessor = (
     const commandExecutor = yield* CommandExecutor;
     const eventStore = yield* EventStore;
 
-    const executeDecision: ExecuteDecision = (command, input) => commandExecutor.runDecoded(command, input);
-
     const recordFiring = makeRecordFiring(sql, eventStore);
 
     const { fireTimeoutMs, ...pollingConfig } = deps.config ?? {};
@@ -80,7 +77,7 @@ export const makeDeadlinesProcessor = (
       configs: [config],
       leaderRetryIntervalMs: resolvePollingConfig(pollingConfig).leaderElectionRetryIntervalMs,
       fetcher: yield* makeDeadlineFetcher(),
-      handler: makeDeadlineEventHandler(commands, executeDecision, recordFiring, fireTimeoutMs ?? defaultDeadlineFireTimeoutMs),
+      handler: makeDeadlineEventHandler(commands, (command, input) => commandExecutor.runDecoded(command, input), recordFiring, fireTimeoutMs ?? defaultDeadlineFireTimeoutMs),
       progressTracker: yield* makeDeadlineProgressTracker(),
       selectionOf: () => selection,
       instanceId: deps.instanceId ?? defaultInstanceId(),

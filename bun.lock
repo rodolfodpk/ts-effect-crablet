@@ -20,6 +20,7 @@
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
         "@crablet/db-migrations": "workspace:*",
+        "@crablet/deadlines": "workspace:*",
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/views": "workspace:*",
@@ -128,6 +129,22 @@
     "packages/db-migrations": {
       "name": "@crablet/db-migrations",
       "version": "0.0.0",
+    },
+    "packages/deadlines": {
+      "name": "@crablet/deadlines",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/commands": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
+        "@effect/sql-pg": "4.1.4",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+      },
     },
     "packages/event-poller": {
       "name": "@crablet/event-poller",
@@ -296,6 +313,8 @@
     "@crablet/commands-http": ["@crablet/commands-http@workspace:packages/commands-http"],
 
     "@crablet/db-migrations": ["@crablet/db-migrations@workspace:packages/db-migrations"],
+
+    "@crablet/deadlines": ["@crablet/deadlines@workspace:packages/deadlines"],
 
     "@crablet/event-poller": ["@crablet/event-poller@workspace:packages/event-poller"],
 

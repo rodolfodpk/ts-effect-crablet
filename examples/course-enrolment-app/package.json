@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@crablet/automations": "workspace:*",
+    "@crablet/deadlines": "workspace:*",
     "@crablet/commands": "workspace:*",
     "@crablet/commands-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",

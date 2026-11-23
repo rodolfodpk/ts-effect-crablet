@@ -1,0 +1,23 @@
+{
+  "name": "@crablet/deadlines",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/DeadlinesModule.ts",
+    "./DeadlinesManagementService": "./src/DeadlinesManagementService.ts"
+  },
+  "dependencies": {
+    "effect": "4.1.4",
+    "@effect/sql-pg": "4.1.4",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/modules": "workspace:*",
+    "@crablet/commands": "workspace:*",
+    "@crablet/metrics-otel": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*"
+  },
+  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
+}

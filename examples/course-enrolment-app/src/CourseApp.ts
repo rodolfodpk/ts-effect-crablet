@@ -6,7 +6,7 @@ import { serveApi } from "@crablet/commands-http/ServeApi";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import { startViewsProcessor, type RunnableView } from "@crablet/views";
-import { startDeadlinesProcessor } from "@crablet/automations/Deadlines";
+import { startDeadlinesProcessor } from "@crablet/deadlines";
 import type { CommandExecutor } from "@crablet/commands";
 import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";

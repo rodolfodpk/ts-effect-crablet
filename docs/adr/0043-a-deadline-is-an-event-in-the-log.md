@@ -3,7 +3,7 @@
 ## Status
 
 **Accepted** (2026-10-25). Built: `deadline(...)` and the two framework events (`@crablet/commands/Deadline`), migration
-`V19__crablet_deadlines.sql`, the deadlines processor (`@crablet/automations/Deadlines`), `Scenario.fireDue`, and the course app's payment window as
+`V19__crablet_deadlines.sql`, the deadlines processor (`@crablet/automations/Deadlines`; since 2026-11-23 its own package, `@crablet/deadlines`), `Scenario.fireDue`, and the course app's payment window as
 the first use ([Set a deadline](../guides/build/set-a-deadline.md)). Proposed on 2026-10-24 (revised the same day to fire deadlines on the event-poller
 engine). It answers the gap the [Aggregate events](../guides/build/aggregate-events.md) guide named, an Aggregator's expiry, and records why the state
 stays in the log rather than in Effect's workflow engine. Where the implementation differs from the text below, "Result of the implementation" says so.
@@ -229,7 +229,7 @@ The two open questions, answered:
   it decodes; `Scenario.fireDue` records it the same way and returns it on each `FiredDeadline`. With it, something that sees a firing (an operator, a
   test, a later process) can wait until a view shows the deadline's effect with `waitUntilProcessed`.
 
-Measured in `packages/automations/test/integration/deadlines.test.ts` (Postgres): the row is written with the append and not by one rolled back; a
+Measured in `packages/deadlines/test/integration/deadlines.test.ts` (Postgres): the row is written with the append and not by one rolled back; a
 deadline does not fire before its time and fires after it, caused by it; `appended`, `noop` and `failed` outcomes, the processor going on after a
 domain error; a deadline due while no processor ran fires once; two instances hold one lock and the follower takes over; the rebuild query reproduces
 the table; a deadline for a command not given makes the processor `FAILED` after `maxErrors`, and a reset brings it back. End to end in the course app

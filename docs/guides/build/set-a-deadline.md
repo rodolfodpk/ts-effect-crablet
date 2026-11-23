@@ -116,7 +116,7 @@ export const startCourseDeadlines = (
   startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
 ```
 
-`startDeadlinesProcessor` (`@crablet/automations/Deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in
+`startDeadlinesProcessor` (`@crablet/deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in
 due order with the deadline as its cause, and records how it ended. It has a leader lock of its own, so one instance fires and the others wait; it belongs
 with the automations role. `makeDeadlinesManagementService` gives the admin API its status, pause, resume and reset, and its backlog: how many deadlines are
 due and how long ago the oldest fell due.
