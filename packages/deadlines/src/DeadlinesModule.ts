@@ -11,7 +11,7 @@ import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
 import type { Command } from "@crablet/commands/Command";
 import { checkDeadlineCommands, DeadlineScheduled } from "@crablet/commands/Deadline";
-import { makeDeadlineEventHandler } from "./internal/DeadlineEventHandler.ts";
+import { makeDeadlineEventHandler, type FireCommand, type RecordFiring } from "./internal/DeadlineEventHandler.ts";
 import { makeDeadlineFetcher, makeDeadlineProgressTracker, makeRecordFiring } from "./internal/DeadlineStore.ts";
 
 // The deadlines processor (ADR-0043): it runs each deadline's command once its due time has passed. Deadlines are set by `decide` with `deadline(...)`
@@ -47,22 +47,21 @@ export interface DeadlinesDeps {
   readonly leader?: LeaderOptions | undefined;
 }
 
+// What running the deadlines processor needs, given where it starts (decision V1): the executor its commands go through, and the event store its firings are
+// appended to. Building it needs only the SQL client: a handle that is not running is read and controlled through the database.
+export type DeadlinesRunRequirements = CommandExecutor | EventStore;
+
 // Builds the deadlines processor without starting it (a handle for status and the admin API, or a test that drives `start` and `stop` itself).
 export const makeDeadlinesProcessor = (
   deps: DeadlinesDeps
-): Effect.Effect<
-  ProcessorHandle,
-  never,
-  SqlClient.SqlClient | CommandExecutor | EventStore
-> =>
+): Effect.Effect<ProcessorHandle<DeadlinesRunRequirements>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const commands = checkDeadlineCommands(deps.commands);
     const sql = yield* SqlClient.SqlClient;
     const sessionSql_ = yield* sessionSql;
-    const commandExecutor = yield* CommandExecutor;
-    const eventStore = yield* EventStore;
 
-    const recordFiring = makeRecordFiring(sql, eventStore);
+    const recordFiring: RecordFiring<DeadlinesRunRequirements> = makeRecordFiring(sql);
+    const fire: FireCommand<DeadlinesRunRequirements> = (command, input) => Effect.flatMap(CommandExecutor, (executor) => executor.runDecoded(command, input));
 
     const { fireTimeoutMs, ...pollingConfig } = deps.config ?? {};
     const config = processorConfigOf(DEADLINES_PROCESSOR_ID, {
@@ -77,7 +76,7 @@ export const makeDeadlinesProcessor = (
       configs: [config],
       leaderRetryIntervalMs: resolvePollingConfig(pollingConfig).leaderElectionRetryIntervalMs,
       fetcher: yield* makeDeadlineFetcher(),
-      handler: makeDeadlineEventHandler(commands, (command, input) => commandExecutor.runDecoded(command, input), recordFiring, fireTimeoutMs ?? defaultDeadlineFireTimeoutMs),
+      handler: makeDeadlineEventHandler(commands, fire, recordFiring, fireTimeoutMs ?? defaultDeadlineFireTimeoutMs),
       progressTracker: yield* makeDeadlineProgressTracker(),
       selectionOf: () => selection,
       instanceId: deps.instanceId ?? defaultInstanceId(),
@@ -90,5 +89,5 @@ export const makeDeadlinesProcessor = (
 // Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loop and releases the lock.
 export const startDeadlinesProcessor = (
   deps: DeadlinesDeps
-): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
+): Effect.Effect<ProcessorHandle<DeadlinesRunRequirements>, never, SqlClient.SqlClient | DeadlinesRunRequirements | Scope.Scope> =>
   Effect.tap(makeDeadlinesProcessor(deps), (handle) => handle.service.startScoped);

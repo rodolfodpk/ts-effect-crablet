@@ -18,15 +18,12 @@ export const withEventContext = <A, E, R>(event: StoredEvent, effect: Effect.Eff
     : withCausation;
 };
 
-// A pre-built, R=never-discharged closure over CommandExecutor + its own ambient dependencies
-// (EventStore/CommandAuditStore/SqlClient) - built once by AutomationsModule.ts's
-// makeAutomationsProcessor (see that file's primer on why capturing the CommandExecutor tag value
-// alone does not discharge its R), and threaded through here so this dispatcher itself never
-// touches ambient services directly.
-export type ExecuteDecision = <T, HE>(
+// Runs one decision's command. `R` is what that needs (the module's: the `CommandExecutor`, read where the processor runs, not where it is built), and
+// it becomes the handler's, then the processor's run requirement.
+export type ExecuteDecision<R = never> = <T, HE>(
   command: Command<T, HE>,
   input: T
-) => Effect.Effect<unknown, HE | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError, never>;
+) => Effect.Effect<unknown, HE | AppendTooLarge | Conflict | IdempotencyMismatch | SqlError, R>;
 
 // Routes handle(automationName, events) to the
 // registered AutomationHandler for that name; dies loudly on an unregistered automation (mirrors
@@ -37,18 +34,18 @@ export type ExecuteDecision = <T, HE>(
 // state and issues no writes of its own). The trigger event counts as processed once regardless of
 // how many decisions it produced - the return value is `events.length`, not a decision tally,
 // matching at-least-once redelivery semantics the same way ViewEventHandler/OutboxEventHandler do.
-export const makeAutomationEventHandler = (
+export const makeAutomationEventHandler = <R = never>(
   // `AutomationHandler<any, any, any>` - see AutomationsDeps.automations (AutomationsModule.ts) on why this
   // registry is type-erased at the internal-wiring boundary, never in the public API.
   handlers: ReadonlyArray<AutomationHandler<any, any, any>>,
-  executeDecision: ExecuteDecision
-): EventHandler<string, unknown, never> => {
+  executeDecision: ExecuteDecision<R>
+): EventHandler<string, unknown, R> => {
   const byName = new Map(handlers.map((h) => [h.automationName, h] as const));
 
   const handle = (
     automationName: string,
     events: ReadonlyArray<StoredEvent>
-  ): Effect.Effect<number, unknown, never> => {
+  ): Effect.Effect<number, unknown, R> => {
     const automation = byName.get(automationName);
     if (!automation) return Effect.die(new Error(`Unknown automation: ${automationName}`));
 

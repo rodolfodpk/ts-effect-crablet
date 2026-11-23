@@ -53,9 +53,9 @@ export interface WalletAppConfig {
 export interface BackgroundProcessors {
   // The roles this process runs.
   readonly roles: Roles;
-  readonly viewsHandle: ProcessorHandle;
-  readonly automationsHandle: ProcessorHandle;
-  readonly outboxHandle: ProcessorHandle;
+  readonly viewsHandle: ProcessorHandle<unknown>;
+  readonly automationsHandle: ProcessorHandle<unknown>;
+  readonly outboxHandle: ProcessorHandle<unknown>;
 }
 
 export interface BackgroundProcessorsOptions {

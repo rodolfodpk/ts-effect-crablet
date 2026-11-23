@@ -69,7 +69,7 @@ const toDetails = (row: ProgressRow): OutboxProgressDetails => ({
 // refresh leader_instance/leader_heartbeat the way getCursor does (see internal/OutboxProgressTracker.ts), so
 // monitoring never writes.
 export const makeOutboxManagementService = (
-  handle: ProcessorHandle,
+  handle: ProcessorHandle<unknown>,
   instanceId = "outbox-management-service"
 ): Effect.Effect<OutboxManagementService, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {

@@ -9,7 +9,6 @@ import { startViewsProcessor, type RunnableView } from "@crablet/views";
 import { startDeadlinesProcessor } from "@crablet/deadlines";
 import type { CommandExecutor } from "@crablet/commands";
 import type { EventStore } from "@crablet/eventstore";
-import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
@@ -76,7 +75,7 @@ export interface CourseViewsOptions {
 export const startCourseViews = (
   instanceId: string = defaultInstanceId(),
   options: CourseViewsOptions = {}
-): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> => {
+): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> => {
   const delayMs = options.viewDelayMs ?? 0;
   const delayed = (view: RunnableView): RunnableView =>
     delayMs > 0
@@ -92,6 +91,6 @@ export const startCourseViews = (
 // feature lists its own). One instance fires, the others wait on its lock.
 export const startCourseDeadlines = (
   instanceId: string = defaultInstanceId()
-): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
+): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
   startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
 // #endregion deadlines

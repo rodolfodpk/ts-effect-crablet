@@ -13,6 +13,7 @@ import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
 import { withOverridesByName, type ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
+import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import type { AutomationHandler } from "./AutomationHandler.ts";
 import type { AutomationsConfig } from "./AutomationsConfig.ts";
 import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/AutomationEventHandler.ts";
@@ -37,24 +38,21 @@ export interface AutomationsDeps {
 // same single-module-wide-leader model views/outbox already use (AUTOMATIONS_LOCK_KEY is one lock
 // for the whole module, not one per automation).
 //
-// The automations run their commands through the `CommandExecutor`, whose `runDecoded` needs nothing from its caller (its layer resolved its
-// services), so `executeDecision` is that call as it is: an `EventHandler<I, unknown, never>`, as makeEventProcessor requires.
+// Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. What running needs (the
+// `CommandExecutor` its commands go through, the `PgClient` its wake-ups LISTEN on) is the handle's run requirement, given where it starts.
+export type AutomationsRunRequirements = CommandExecutor | PgClient.PgClient;
+
 export const makeAutomationsProcessor = (
   deps: AutomationsDeps
-): Effect.Effect<
-  ProcessorHandle,
-  never,
-  SqlClient.SqlClient | PgClient.PgClient | CommandExecutor
-> =>
+): Effect.Effect<ProcessorHandle<AutomationsRunRequirements>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
     const sessionSql_ = yield* sessionSql;
-    const sessionPg_ = yield* sessionPg;
-    const commandExecutor = yield* CommandExecutor;
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
-    const executeDecision: ExecuteDecision = (command, input) => commandExecutor.runDecoded(command, input);
+    const executeDecision: ExecuteDecision<CommandExecutor> = (command, input) =>
+      Effect.flatMap(CommandExecutor, (executor) => executor.runDecoded(command, input));
 
     const progressTracker = yield* makePostgresProgressTracker<string>({
       tableName: "crablet_automation_progress",
@@ -62,7 +60,7 @@ export const makeAutomationsProcessor = (
     });
     const fetcher = yield* makeSqlEventFetcher();
     const automations = withOverridesByName("automations", deps.automations, (a) => a.automationName, deps.overrides ?? {});
-    const handler = makeAutomationEventHandler(automations, executeDecision);
+    const handler: EventHandler<string, unknown, AutomationsRunRequirements> = makeAutomationEventHandler(automations, executeDecision);
     const configs = makeAutomationProcessorConfigs(deps.config, automations);
     const handlerByName = new Map(automations.map((h) => [h.automationName, h] as const));
 
@@ -81,11 +79,13 @@ export const makeAutomationsProcessor = (
       instanceId,
       // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
       acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, AUTOMATIONS_LOCK_KEY, deps.leader)),
-      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: wakeups === "off" ? Stream.never : Stream.unwrap(Effect.map(sessionPg, (pg) => wakeupStream(pg, EVENTS_CHANNEL)))
     });
   });
 
 // Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loops and releases the
 // leader lock. What an application uses. `makeAutomationsProcessor` builds without starting (a handle for status, a test that drives `start`/`stop` itself).
-export const startAutomationsProcessor = (deps: AutomationsDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | CommandExecutor | Scope.Scope> =>
+export const startAutomationsProcessor = (
+  deps: AutomationsDeps
+): Effect.Effect<ProcessorHandle<AutomationsRunRequirements>, never, SqlClient.SqlClient | AutomationsRunRequirements | Scope.Scope> =>
   Effect.tap(makeAutomationsProcessor(deps), (handle) => handle.service.startScoped);

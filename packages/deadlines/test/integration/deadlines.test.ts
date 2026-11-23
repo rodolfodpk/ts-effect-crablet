@@ -177,10 +177,9 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     // The handler the processor runs, driven by hand twice over the same fetched deadline.
     const handleTwice = Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      const store = yield* EventStore;
       const executor = yield* CommandExecutor;
       const execute: CommandExecutorService["runDecoded"] = (command, input) => executor.runDecoded(command, input);
-      const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute, makeRecordFiring(sql, store), 30_000);
+      const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute, makeRecordFiring(sql), 30_000);
       const fetched = (yield* (yield* makeDeadlineFetcher()).fetchEvents(anySelection, ProgressCursor.zero, 100)).filter((e: StoredEvent) => e.position.toString() === scheduled.position);
       assert.strictEqual(fetched.length, 1);
       yield* handler.handle(DEADLINES_PROCESSOR_ID, fetched);
@@ -201,8 +200,7 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     const handlerWith = (execute: CommandExecutorService["runDecoded"], fireTimeoutMs: number) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        const store = yield* EventStore;
-        return makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute, makeRecordFiring(sql, store), fireTimeoutMs);
+        return makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute, makeRecordFiring(sql), fireTimeoutMs);
       });
     // A command that never ends (a lock it waits on, a remote call that hangs).
     const stuck = Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
-import { PgClient } from "@effect/sql-pg";
+import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
@@ -31,18 +31,17 @@ export interface OutboxDeps {
 // Outbox-module-specific wiring only. Leadership is a single module-wide lock (OUTBOX_LOCK_KEY)
 // shared by one EventProcessor handling every (topic, publisher) pair - the same single-leader model
 // views uses - so this reuses @crablet/event-poller's generic engine as-is.
+// Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. Running needs the `PgClient`
+// its wake-ups LISTEN on, given where it starts.
+export type OutboxRunRequirements = PgClient.PgClient;
+
 export const makeOutboxProcessor = (
   deps: OutboxDeps
-): Effect.Effect<
-  ProcessorHandle,
-  never,
-  SqlClient.SqlClient | PgClient.PgClient
-> =>
+): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
     const sessionSql_ = yield* sessionSql;
-    const sessionPg_ = yield* sessionPg;
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
     const progressTracker = yield* makeOutboxProgressTracker(instanceId);
@@ -67,11 +66,13 @@ export const makeOutboxProcessor = (
       instanceId,
       // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
       acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY, deps.leader)),
-      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: wakeups === "off" ? Stream.never : Stream.unwrap(Effect.map(sessionPg, (pg) => wakeupStream(pg, EVENTS_CHANNEL)))
     });
   });
 
 // Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loops and releases the
 // leader lock. What an application uses. `makeOutboxProcessor` builds without starting (a handle for status, a test that drives `start`/`stop` itself).
-export const startOutboxProcessor = (deps: OutboxDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
+export const startOutboxProcessor = (
+  deps: OutboxDeps
+): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient | OutboxRunRequirements | Scope.Scope> =>
   Effect.tap(makeOutboxProcessor(deps), (handle) => handle.service.startScoped);

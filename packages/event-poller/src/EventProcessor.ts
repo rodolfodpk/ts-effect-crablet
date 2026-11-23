@@ -44,16 +44,18 @@ const isLeadershipLost = (cause: Cause.Cause<unknown>): boolean => {
 // The event processor: one persistent, long-lived fiber per processorId (see makeEventProcessor's
 // `processorLoop`). A single dedicated fiber processes strictly sequentially by construction, so a
 // LISTEN/NOTIFY wakeup can never race an in-flight poll and no "already running" guard is needed.
-export interface EventProcessorService<I> {
+// `R` is what running the processor needs (its handler's and its wake-up stream's services): `process`, `start` and `startScoped` require it, so a module
+// builds its processor needing only what a handle that is not running uses, and the services a run needs are given where it starts (decision V1).
+export interface EventProcessorService<I, R = never> {
   // Callable directly (used by tests); does NOT check leadership - the leadership gate lives only
   // in the scheduled loop.
-  readonly process: (processorId: I) => Effect.Effect<number, unknown>;
-  readonly start: Effect.Effect<void>;
+  readonly process: (processorId: I) => Effect.Effect<number, unknown, R>;
+  readonly start: Effect.Effect<void, never, R>;
   readonly stop: Effect.Effect<void>;
   // `start`, owned by a Scope: the processors run until the scope closes, and closing it runs `stop` (interrupts the fibers, releases the leader lock and announces it).
   // Prefer this to calling `start` and `stop` by hand: a scope that ends without `stop` (an error, an interrupt, the process asked to shut down) cannot leave the loops running
   // or the lock held. `start` and `stop` stay for tests and for callers that manage the lifetime themselves.
-  readonly startScoped: Effect.Effect<void, never, Scope.Scope>;
+  readonly startScoped: Effect.Effect<void, never, Scope.Scope | R>;
   readonly pause: (processorId: I) => Effect.Effect<void, unknown>;
   readonly resume: (processorId: I) => Effect.Effect<void, unknown>;
   readonly getStatus: (processorId: I) => Effect.Effect<ProcessorStatus, unknown>;
@@ -74,16 +76,16 @@ export interface BackoffSnapshot {
 // reused as-is) and hands the results to this factory. This keeps EventProcessor decoupled from
 // concrete Postgres wiring, which is what makes event-processor-loop.test.ts able to run under Bun
 // with a fake always-leader stub and a manually-driven stream instead of a real database.
-export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends string> {
+export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends string, R = never> {
   readonly configs: ReadonlyArray<C>;
   // One fetcher for every processor: each fetch is given the processor's selection (`selectionOf`).
   readonly fetcher: EventFetcher<unknown, never>;
-  readonly handler: EventHandler<I, unknown, never>;
+  readonly handler: EventHandler<I, unknown, R>;
   readonly progressTracker: ProgressTracker<I>;
   readonly selectionOf: (config: C) => EventSelection;
   readonly instanceId: string;
   readonly acquireLeader: Effect.Effect<LeaderHandle | null, unknown>;
-  readonly wakeupStream: Stream.Stream<WakeupBatch, unknown>;
+  readonly wakeupStream: Stream.Stream<WakeupBatch, unknown, R>;
   // How often a follower tries to take the module's leader lock (the module's `leaderElectionRetryIntervalMs`). Default: `defaultPollingConfig`'s.
   readonly leaderRetryIntervalMs?: number;
   // Runs an effect in ONE database transaction (`sql.withTransaction`). When it is set, and the tracker has `advanceCursor`, a batch is handled and
@@ -92,14 +94,15 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   // applied once even when two processors take the same or overlapping batches (a zombie and its successor) or a crash falls between the handler and
   // the cursor (ADR-0023, ADR-0032).
   // Only for processors whose effects are all in this database (views); the outbox and the automations do things a rollback cannot undo.
-  readonly atomically?: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E | SqlError>;
+  readonly atomically?: <A, E, R2>(effect: Effect.Effect<A, E, R2>) => Effect.Effect<A, E | SqlError, R2>;
 }
 
-// A module's processor (views, automations, outbox), as its `make*Processor` and `start*Processor` return it.
-export type ProcessorHandle = EventProcessorHandle<string>;
+// A module's processor (views, automations, outbox, deadlines), as its `make*Processor` and `start*Processor` return it; `R` is what running it needs.
+// Code that only reads or controls a handle (a management service) takes `ProcessorHandle<unknown>`, which a handle of any `R` is.
+export type ProcessorHandle<R = never> = EventProcessorHandle<string, R>;
 
-export interface EventProcessorHandle<I extends string> {
-  readonly service: EventProcessorService<I>;
+export interface EventProcessorHandle<I extends string, R = never> {
+  readonly service: EventProcessorService<I, R>;
   readonly backoffSnapshot: (processorId: I) => Effect.Effect<BackoffSnapshot | null>;
   readonly allBackoffSnapshots: Effect.Effect<ReadonlyMap<I, BackoffSnapshot>>;
   // The events this processor selects, by id: what its backlog is counted against (ProcessorManagementService.getBacklog).
@@ -118,9 +121,9 @@ const withPollerTags = <In, State>(
   tags: ReadonlyArray<readonly [string, string]>
 ): Metric.Metric<In, State> => tags.reduce((acc, [key, value]) => Metric.withAttributes(acc, { [key]: value }), metric);
 
-export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends string>(
-  deps: EventProcessorDeps<C, I>
-): Effect.Effect<EventProcessorHandle<I>> =>
+export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends string, R = never>(
+  deps: EventProcessorDeps<C, I, R>
+): Effect.Effect<EventProcessorHandle<I, R>> =>
   Effect.gen(function* () {
     // PATTERN PRIMER - `Ref<A>`, Effect's mutable cell (think `AtomicReference<A>`, or a `useRef`
     // that any fiber can read/write). `Ref.make(initial)` allocates it; `Ref.get`/`Ref.set`/
@@ -167,7 +170,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // `fence`, when given, is checked before the handler runs and again before the cursor moves: a
     // zombie leader (lock lost, session dead) then stops instead of handling events the new leader
     // handles too (docs/history/plans/reliability-and-scale-diagnostic.md, D1).
-    const processWith = (id: I, fence: Effect.Effect<void, LeadershipLost>): Effect.Effect<number, unknown> =>
+    const processWith = (id: I, fence: Effect.Effect<void, LeadershipLost>): Effect.Effect<number, unknown, R> =>
       Effect.gen(function* () {
         const config = configOf(id);
         if (!config) return yield* Effect.die(new Error(`Unknown processorId: ${id}`));
@@ -200,7 +203,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         const atomicBatch = (
           atomically: NonNullable<typeof deps.atomically>,
           advance: NonNullable<typeof deps.progressTracker.advanceCursor>
-        ): Effect.Effect<number, unknown> =>
+        ): Effect.Effect<number, unknown, R> =>
           atomically(
             Effect.gen(function* () {
               yield* fence;
@@ -256,7 +259,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
         ).pipe(Effect.withSpan("crablet.poller.batch", { attributes: { "crablet.processor": String(id), "crablet.batch.events": events.length } }));
       });
 
-    const process = (id: I): Effect.Effect<number, unknown> => processWith(id, Effect.void);
+    const process = (id: I): Effect.Effect<number, unknown, R> => processWith(id, Effect.void);
 
     const waitForRelevantWakeup = (
       dequeue: PubSub.Subscription<WakeupBatch>,
@@ -277,7 +280,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       config: C,
       dequeue: PubSub.Subscription<WakeupBatch>,
       filter: SubscriberFilter
-    ): Effect.Effect<void> =>
+    ): Effect.Effect<void, never, R> =>
       Effect.gen(function* () {
         const leader = yield* Ref.get(leaderRef);
         const isLeader = leader !== null && leader.isLeader();
@@ -378,7 +381,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // be safe here too, because Effect's fiber runtime trampolines through `yield*` points rather
     // than growing the actual JS call stack, but `Effect.forever` says the *intent* ("repeat this
     // forever") directly instead of encoding it as recursion.
-    const processorLoop = (config: C): Effect.Effect<void> =>
+    const processorLoop = (config: C): Effect.Effect<void, never, R> =>
       Effect.scoped(
         Effect.gen(function* () {
           const dequeue = yield* PubSub.subscribe(hub);
@@ -427,7 +430,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     // The stream from `wakeupStream` reconnects by itself; this is the second line: should it end or fail anyway, say so and drain it
     // again, instead of leaving the processors on their polling interval for good.
-    const dispatcherLoop: Effect.Effect<void> = Effect.forever(
+    const dispatcherLoop: Effect.Effect<void, never, R> = Effect.forever(
       Stream.runForEach(deps.wakeupStream, (batch: WakeupBatch) =>
         Effect.andThen(PubSub.publish(hub, batch), batch.wildcard ? Queue.offer(leaderHint, undefined) : Effect.void)
       ).pipe(
@@ -436,7 +439,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       )
     );
 
-    const start: Effect.Effect<void> = Effect.gen(function* () {
+    const start: Effect.Effect<void, never, R> = Effect.gen(function* () {
       const initialHandle = yield* acquireLeaderSafe;
       if (initialHandle !== null) {
         yield* Ref.set(leaderRef, initialHandle);
@@ -477,7 +480,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       }
     });
 
-    const startScoped: Effect.Effect<void, never, Scope.Scope> = Effect.acquireRelease(start, () => stop);
+    const startScoped: Effect.Effect<void, never, Scope.Scope | R> = Effect.acquireRelease(start, () => stop);
 
     const pause = (id: I): Effect.Effect<void, unknown> => deps.progressTracker.setStatus(id, "PAUSED");
     const resume = (id: I): Effect.Effect<void, unknown> => deps.progressTracker.setStatus(id, "ACTIVE");
@@ -492,7 +495,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       (entries) => new Map(entries)
     );
 
-    const service: EventProcessorService<I> = {
+    const service: EventProcessorService<I, R> = {
       process,
       start,
       stop,
@@ -516,6 +519,6 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const selectionFor = (processorId: I): EventSelection | undefined => selectionById.get(processorId);
     const isLeader: Effect.Effect<boolean> = Effect.map(Ref.get(leaderRef), (leader) => leader !== null && leader.isLeader());
-    const handle: EventProcessorHandle<I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor, isLeader };
+    const handle: EventProcessorHandle<I, R> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor, isLeader };
     return handle;
   });

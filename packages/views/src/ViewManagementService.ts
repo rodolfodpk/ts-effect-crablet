@@ -48,7 +48,7 @@ const toDetails = (row: ProgressRow): ViewProgressDetails => ({
 });
 
 export const makeViewManagementService = (
-  handle: ProcessorHandle
+  handle: ProcessorHandle<unknown>
 ): Effect.Effect<ViewManagementService, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

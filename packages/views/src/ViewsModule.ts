@@ -1,6 +1,6 @@
 import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
-import { PgClient } from "@effect/sql-pg";
+import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
@@ -43,18 +43,17 @@ export interface ViewsDeps {
 // @crablet/event-poller and is reused as-is; this is the adapter layer
 // assembling the module-specific handler/progress-tracker/configs (and the shared SQL fetcher) and handing them, plus
 // the shared VIEWS_LOCK_KEY and EVENTS_CHANNEL, to that engine.
+// Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. Running needs the `PgClient`
+// its wake-ups LISTEN on, given where it starts.
+export type ViewsRunRequirements = PgClient.PgClient;
+
 export const makeViewsProcessor = (
   deps: ViewsDeps
-): Effect.Effect<
-  ProcessorHandle,
-  never,
-  SqlClient.SqlClient | PgClient.PgClient
-> =>
+): Effect.Effect<ProcessorHandle<ViewsRunRequirements>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
     const sessionSql_ = yield* sessionSql;
-    const sessionPg_ = yield* sessionPg;
 
     const progressTracker = yield* makePostgresProgressTracker<string>({
       tableName: "crablet_view_progress",
@@ -86,11 +85,13 @@ export const makeViewsProcessor = (
       acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, VIEWS_LOCK_KEY, deps.leader)),
       // A view's writes are in this database, so its batch and its cursor commit together (see EventProcessorDeps.atomically).
       atomically: (effect) => sql.withTransaction(effect),
-      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: wakeups === "off" ? Stream.never : Stream.unwrap(Effect.map(sessionPg, (pg) => wakeupStream(pg, EVENTS_CHANNEL)))
     });
   });
 
 // Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loops and releases the
 // leader lock. What an application uses. `makeViewsProcessor` builds without starting (a handle for status, a test that drives `start`/`stop` itself).
-export const startViewsProcessor = (deps: ViewsDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
+export const startViewsProcessor = (
+  deps: ViewsDeps
+): Effect.Effect<ProcessorHandle<ViewsRunRequirements>, never, SqlClient.SqlClient | ViewsRunRequirements | Scope.Scope> =>
   Effect.tap(makeViewsProcessor(deps), (handle) => handle.service.startScoped);

@@ -112,7 +112,7 @@ Start it with the commands deadlines may name, owned by a Scope like the other p
 // feature lists its own). One instance fires, the others wait on its lock.
 export const startCourseDeadlines = (
   instanceId: string = defaultInstanceId()
-): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
+): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
   startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
 ```
 

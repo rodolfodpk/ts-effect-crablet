@@ -49,7 +49,7 @@ const toDetails = (row: ProgressRow): AutomationProgressDetails => ({
 });
 
 export const makeAutomationManagementService = (
-  handle: ProcessorHandle
+  handle: ProcessorHandle<unknown>
 ): Effect.Effect<AutomationManagementService, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
