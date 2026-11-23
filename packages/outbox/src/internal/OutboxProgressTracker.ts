@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { ProgressTableNotReady, type ProgressTracker } from "@crablet/event-poller/ProgressTracker";
-import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
+import type { ProcessorStatus } from "@crablet/modules";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import { fromKey } from "../TopicPublisherPair.ts";

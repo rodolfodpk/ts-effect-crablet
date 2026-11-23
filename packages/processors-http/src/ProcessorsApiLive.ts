@@ -1,16 +1,9 @@
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
-import { isBackedOff, type ProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
+import { isBackedOff } from "@crablet/modules";
+import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
 import { adminApi } from "./AdminApi.ts";
 import { ProcessorNotFound, type ProcessorInfo } from "./ProcessorsApi.ts";
-
-// One module's processors, as the application names them. `kind` is the word a client sees (views, automations, outbox, or anything else);
-// `service` is that module's management service (`makeViewManagementService(handle)` and its siblings). `describe` says what a processor is for.
-export interface ProcessorSource {
-  readonly kind: string;
-  readonly service: ProcessorManagementService<string>;
-  readonly describe?: (id: string) => string | undefined;
-}
 
 export type ProcessorAction = "pause" | "resume" | "reset";
 

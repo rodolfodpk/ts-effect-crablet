@@ -1,5 +1,5 @@
 import { Effect, Ref } from "effect";
-import type { ProcessorStatus } from "../../src/ProcessorStatus.ts";
+import type { ProcessorStatus } from "@crablet/modules";
 import type { ProgressTracker } from "../../src/ProgressTracker.ts";
 import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
 import type { ProgressCursor } from "../../src/ProgressCursor.ts";

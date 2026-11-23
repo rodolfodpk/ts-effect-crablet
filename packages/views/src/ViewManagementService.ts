@@ -1,12 +1,9 @@
 import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
-import {
-  makeProcessorManagementService,
-  type ProcessorManagementService
-} from "@crablet/event-poller/ProcessorManagementService";
+import { makeProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
 import type { ProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
+import type { ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 
 // View management and progress details - wraps the generic

@@ -3,7 +3,8 @@ import { HttpApiBuilder } from "effect/http-api";
 import type { EventStore } from "@crablet/eventstore";
 import { adminApi } from "./AdminApi.ts";
 import { eventsHandler, type Masks } from "./EventsApiLive.ts";
-import { processorsHandlers, type ProcessorSource } from "./ProcessorsApiLive.ts";
+import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
+import { processorsHandlers } from "./ProcessorsApiLive.ts";
 
 export interface AdminApiOptions {
   // One per module: `{ kind, service, describe? }` (ProcessorsApiLive.ts). Two of the same kind are refused when the layer is built.

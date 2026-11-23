@@ -67,6 +67,7 @@
         "@crablet/db-migrations": "workspace:*",
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@crablet/outbox": "workspace:*",
         "@crablet/processors-http": "workspace:*",
         "@crablet/views": "workspace:*",
@@ -88,6 +89,7 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -133,6 +135,7 @@
       "dependencies": {
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -161,6 +164,13 @@
         "effect": "4.1.4",
       },
     },
+    "packages/modules": {
+      "name": "@crablet/modules",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.1.4",
+      },
+    },
     "packages/outbox": {
       "name": "@crablet/outbox",
       "version": "0.0.0",
@@ -168,6 +178,7 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -179,8 +190,8 @@
       "name": "@crablet/processors-http",
       "version": "0.0.0",
       "dependencies": {
-        "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "effect": "4.1.4",
       },
       "devDependencies": {
@@ -207,6 +218,7 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -290,6 +302,8 @@
     "@crablet/eventstore": ["@crablet/eventstore@workspace:packages/eventstore"],
 
     "@crablet/metrics-otel": ["@crablet/metrics-otel@workspace:packages/metrics-otel"],
+
+    "@crablet/modules": ["@crablet/modules@workspace:packages/modules"],
 
     "@crablet/outbox": ["@crablet/outbox@workspace:packages/outbox"],
 

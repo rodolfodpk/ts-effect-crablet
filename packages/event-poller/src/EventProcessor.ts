@@ -6,7 +6,7 @@ import { shouldWake, type SubscriberFilter } from "@crablet/eventstore/NotifyPay
 import * as PollerMetrics from "@crablet/metrics-otel/PollerMetrics";
 import * as LeaderMetrics from "@crablet/metrics-otel/LeaderMetrics";
 import { defaultPollingConfig, type ProcessorConfig } from "./ProcessorConfig.ts";
-import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import type { ProcessorStatus } from "@crablet/modules";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 import type { EventFetcher } from "./EventFetcher.ts";
 import * as ProgressCursorNS from "./ProgressCursor.ts";

@@ -1,3 +1,5 @@
+import type { ProgressCursor } from "@crablet/modules";
+
 // How far a processor has read: a point in the log in (transaction_id, position) order.
 //
 // Not a bare position: `position` is taken from a sequence when a row is inserted and `transaction_id` is the
@@ -5,10 +7,7 @@
 // move past a row that commits later with a LOWER position and so skip it for ever. Events are fetched in
 // (transaction_id, position) order, bounded by the snapshot's xmin, and a row that appears after a fetch always
 // sorts after everything fetched, so this cursor cannot skip one (see docs/history/plans/poller-cursor-fix.md).
-export interface ProgressCursor {
-  readonly transactionId: string;
-  readonly position: bigint;
-}
+export type { ProgressCursor };
 
 export const zero: ProgressCursor = { transactionId: "0", position: 0n };
 

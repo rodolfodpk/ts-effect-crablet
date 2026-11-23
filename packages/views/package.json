@@ -28,6 +28,7 @@
     "@effect/sql-pg": "4.1.4",
     "@crablet/eventstore": "workspace:*",
     "@crablet/event-poller": "workspace:*",
+    "@crablet/modules": "workspace:*",
     "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {

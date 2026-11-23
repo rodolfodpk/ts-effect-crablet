@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "effect": "4.1.4",
-    "@crablet/event-poller": "workspace:*",
+    "@crablet/modules": "workspace:*",
     "@crablet/eventstore": "workspace:*"
   },
   "devDependencies": {

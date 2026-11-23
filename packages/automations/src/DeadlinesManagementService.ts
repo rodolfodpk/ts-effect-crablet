@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
-import { makeProcessorManagementService, type ProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
+import { makeProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
+import type { ProcessorManagementService } from "@crablet/modules";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import { dueBacklog, makeDeadlineProgressTracker } from "./internal/DeadlineStore.ts";

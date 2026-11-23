@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { ProgressTableNotReady, type ProgressTracker } from "./ProgressTracker.ts";
-import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import type { ProcessorStatus } from "@crablet/modules";
 import * as ProgressCursorNS from "./ProgressCursor.ts";
 import type { ProgressCursor } from "./ProgressCursor.ts";
 import { assertSafeIdentifier } from "./internal/identifiers.ts";

@@ -21,7 +21,7 @@ import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
-import type { ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
+import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
 import * as M from "./domain/WalletModel.ts";

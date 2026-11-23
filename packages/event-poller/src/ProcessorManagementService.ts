@@ -2,56 +2,13 @@ import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { EventSelection } from "./EventSelection.ts";
 import { buildBacklogQuery } from "./internal/sql.ts";
-import type { ProcessorStatus } from "./ProcessorStatus.ts";
-import type { ProgressCursor } from "./ProgressCursor.ts";
+import type { Backlog, BackoffInfo, ProcessorDetails, ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import type { ProgressTracker } from "./ProgressTracker.ts";
 
-// Backoff info for a processor. Structurally
-// identical to EventProcessor.ts's BackoffSnapshot (both `{emptyPollCount, currentSkipCounter}`) -
-// deliberately not imported from there to avoid a circular dependency; TS structural typing makes
-// values from either module interchangeable without an explicit import.
-export interface BackoffInfo {
-  readonly emptyPollCount: number;
-  readonly currentSkipCounter: number;
-}
+// The contract this implements (ProcessorManagementService and its data) is @crablet/modules's; the event-poller is one implementation of it.
 
-export const isBackedOff = (info: BackoffInfo): boolean => info.currentSkipCounter > 0;
-
-// What is waiting for one processor: the committed events its own selection matches after its cursor. Counted up to BACKLOG_CAP so that a processor
-// days behind does not make the count read millions of rows; `capped` says the true number is at least `pendingEvents`.
+// What is waiting for one processor is counted up to BACKLOG_CAP, so that a processor days behind does not make the count read millions of rows.
 export const BACKLOG_CAP = 100_000;
-export interface Backlog {
-  readonly cursor: ProgressCursor;
-  readonly pendingEvents: number;
-  readonly capped: boolean;
-  // Age, by the events' own `occurred_at`, of the first pending event; null when nothing is pending. `occurred_at` can be supplied by the
-  // writer, so this is the event's time, not the time it was stored.
-  readonly oldestPendingSeconds: number | null;
-}
-
-// What a processor's progress row says about its failures: how many errors in a row, and the last one's text.
-export interface ProcessorDetails {
-  readonly errorCount: number;
-  readonly lastError: string | null;
-}
-
-// Pause/resume/reset and status inspection for processors.
-export interface ProcessorManagementService<I> {
-  readonly pause: (processorId: I) => Effect.Effect<boolean, unknown>;
-  readonly resume: (processorId: I) => Effect.Effect<boolean, unknown>;
-  readonly reset: (processorId: I) => Effect.Effect<boolean, unknown>;
-  readonly getStatus: (processorId: I) => Effect.Effect<ProcessorStatus, unknown>;
-  readonly getAllStatuses: Effect.Effect<ReadonlyMap<I, ProcessorStatus>, unknown>;
-  // Positions between the head of the WHOLE log and the cursor. A cursor only lands on events the processor selected, so for a processor that
-  // selects a rare event type this stays large while it is fully caught up; use `getBacklog` to ask whether it is behind.
-  readonly getLag: (processorId: I) => Effect.Effect<bigint | null, unknown>;
-  // The processor's own pending events (see Backlog); null for an id whose selection is not known to this service.
-  readonly getBacklog: (processorId: I) => Effect.Effect<Backlog | null, unknown>;
-  // The failure details of every processor that has a progress row (a processor that never ran has none).
-  readonly getAllDetails: Effect.Effect<ReadonlyMap<I, ProcessorDetails>, unknown>;
-  readonly getBackoffInfo: (processorId: I) => Effect.Effect<BackoffInfo | null>;
-  readonly getAllBackoffInfo: Effect.Effect<ReadonlyMap<I, BackoffInfo>>;
-}
 
 export interface ProcessorManagementDeps<I> {
   readonly progressTracker: ProgressTracker<I>;
