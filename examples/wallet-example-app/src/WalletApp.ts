@@ -61,7 +61,7 @@ export interface BackgroundProcessors {
 export interface BackgroundProcessorsOptions {
   readonly instanceId?: string | undefined;
   // Where the outbox publishes. Default: the log publisher the real app uses; outbox-e2e.test.ts passes a capturing one.
-  readonly outboxPublishers?: ReadonlyArray<OutboxPublisher> | undefined;
+  readonly outboxPublisher?: OutboxPublisher | undefined;
   // The roles to start (ADR-0022). Default: all of them, one process.
   readonly roles?: Roles | undefined;
   // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
@@ -80,7 +80,7 @@ export const startBackgroundProcessors = (
   SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const { instanceId = defaultInstanceId(), outboxPublishers = [makeLogPublisher()], roles = allRoles, polling = defaultPolling, leader } = options;
+    const { instanceId = defaultInstanceId(), outboxPublisher = makeLogPublisher(), roles = allRoles, polling = defaultPolling, leader } = options;
     // A role that is not started still has its handle: building one opens no connection and runs no loop.
     // #region views-processor
     const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };
@@ -97,13 +97,14 @@ export const startBackgroundProcessors = (
       topics: [
         defineTopic("wallet-events", {
           anyOfTags: new Set(["wallet_id", "from_wallet_id", "to_wallet_id"]),
-          publishers: outboxPublishers
+          // The publisher's name keys its progress row: it stays the one the wallet has always used.
+          publishers: ["LogPublisher"]
         })
       ],
       instanceId,
       leader
     };
-    const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor(outbox) : makeOutboxProcessor(outbox));
+    const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor({ ...outbox, publishers: { LogPublisher: outboxPublisher } }) : makeOutboxProcessor(outbox));
 
     return { roles, viewsHandle, automationsHandle, outboxHandle };
   });

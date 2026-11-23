@@ -31,7 +31,7 @@ export interface RunningWalletApp {
 // starting Effect returns.
 export const startWalletAppForTest = async (
   runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>,
-  outboxPublishers?: ReadonlyArray<OutboxPublisher>,
+  outboxPublisher?: OutboxPublisher,
   // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
   adminToken?: string,
   // The roles this instance runs (ADR-0022); default all, one process. Without `api` no HTTP server starts (baseUrl is ""), and the admin API is only mounted with `api`, as in the entry point.
@@ -44,7 +44,7 @@ export const startWalletAppForTest = async (
     Effect.gen(function* () {
       // In the test's scope, ahead of the server: the scope closes in reverse, so the server stops first, then the processors, both before the pool.
       const processors = yield* Scope.provide(
-        startBackgroundProcessors({ instanceId: options.instanceId, outboxPublishers, roles, polling: options.polling, leader: options.leader }),
+        startBackgroundProcessors({ instanceId: options.instanceId, outboxPublisher, roles, polling: options.polling, leader: options.leader }),
         scope
       );
       if (!roles.has("api")) return { context: Context.empty(), processors };

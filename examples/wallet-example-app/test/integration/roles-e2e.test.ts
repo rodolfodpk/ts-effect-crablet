@@ -28,7 +28,6 @@ const instances = new Map<string, Instance>();
 // whichever instance leads, and the api instance's admin API names it as the outbox instances run it.
 const published: Array<{ readonly instance: string; readonly event: StoredEvent }> = [];
 const capturing = (instance: string): OutboxPublisher<never> => ({
-  name: "CapturingTestPublisher",
   publishBatch: (events) => Effect.sync(() => { published.push(...events.map((event) => ({ instance, event }))); })
 });
 
@@ -44,7 +43,7 @@ const startInstance = async (name: string, roles: string): Promise<Instance> => 
   });
   const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
   const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie));
-  const app = await startWalletAppForTest(runtime, [capturing(name)], TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
+  const app = await startWalletAppForTest(runtime, capturing(name), TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
   const instance = { name, runtime, app };
   instances.set(name, instance);
   return instance;
