@@ -21,6 +21,7 @@ import type { AutomationHandler } from "../../src/AutomationHandler.ts";
 import { executeCommand } from "../../src/AutomationDecision.ts";
 import { IdempotencyMismatch } from "@crablet/commands/Errors";
 import {
+  assertAutomationIdempotent,
   checkAutomationIdempotency,
   type IdempotencyBackend,
   type IdempotencyReport
@@ -272,6 +273,12 @@ describe("the idempotency utility gives the same verdict on the in-memory store 
 
       assert.deepStrictEqual(inMemory, scenario.expect, "in memory, the verdict the scenario is meant to give");
       assert.deepStrictEqual(onPostgres, scenario.expect, "on Postgres, the same verdict");
+
+      // The assertion a test calls says the same on Postgres: it throws when the verdict is not ok, and returns the report when it is.
+      const again = scenario.build(`pa${crypto.randomUUID().slice(0, 8)}`);
+      const asserted = assertAutomationIdempotent(again.automation, again.triggers, { ...(again.given === undefined ? {} : { given: again.given }), backend: postgresBackend });
+      if (scenario.expect.ok) assert.strictEqual((await asserted).ok, true);
+      else await assert.rejects(asserted, /is not idempotent/);
     });
   }
 });
