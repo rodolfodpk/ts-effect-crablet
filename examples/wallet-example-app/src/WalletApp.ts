@@ -22,6 +22,7 @@ import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPu
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
+import { Processors } from "@crablet/modules/Processors";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
 import * as M from "./domain/WalletModel.ts";
@@ -160,7 +161,9 @@ export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>,
       return got.length === expected.length && timingSafeEqual(got, expected);
     })
   );
-  return adminApiLayer({ sources, masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization));
+  // The wallet assembles its modules by hand until it moves onto Crablet.processors (phase 3 of the @crablet/app plan); the admin reads them as `Processors`.
+  const processors = Layer.succeed(Processors, Processors.of({ sources, status: Effect.succeed([]) }));
+  return adminApiLayer({ masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization), Layer.provide(processors));
 };
 // #endregion admin-api
 

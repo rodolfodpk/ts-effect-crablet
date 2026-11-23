@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import * as Crablet from "../../src/Crablet.ts";
+import * as Crablet from "../support/CommandsLayer.ts";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { AuditConfigRef, purgeCommandAudit, startAuditRetention, withActor, type AuditPayload } from "../../src/CommandAudit.ts";
 import { defineCommand, emit, fail } from "../../src/Command.ts";

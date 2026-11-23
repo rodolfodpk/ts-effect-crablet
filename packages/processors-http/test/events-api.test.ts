@@ -11,6 +11,10 @@ import { authorizationFrom } from "../src/Authorization.ts";
 import { adminApi } from "../src/AdminApi.ts";
 import { adminApiLayer } from "../src/AdminApiLive.ts";
 import type { Masks, PayloadMask } from "../src/EventsApiLive.ts";
+import { Processors } from "@crablet/modules/Processors";
+
+// A process with no modules: these tests are about the event log.
+const noProcessors = Layer.succeed(Processors, Processors.of({ sources: [], status: Effect.succeed([]) }));
 
 const TOKEN = "s3cret";
 const Registered = defineEvent("UserRegistered", {
@@ -30,8 +34,9 @@ const serve = (mask?: PayloadMask) => {
   // an old shape, with a field the current definition no longer has, and a type with no definition
   store.seed({ type: "PlanUpgraded", tags: [{ key: "user_id", value: "u2" }], eventData: { userId: "u2", plan: "pro", phone: "555-0100" } });
   store.seed({ type: "Legacy", tags: [{ key: "user_id", value: "u2" }], eventData: { secret: "x" } });
-  const layer = adminApiLayer({ sources: [], masks: mask === undefined ? {} : { mask } }).pipe(
+  const layer = adminApiLayer({ masks: mask === undefined ? {} : { mask } }).pipe(
     Layer.provide(store.layer),
+    Layer.provide(noProcessors),
     Layer.provide(authorizationFrom((token) => Effect.succeed(Redacted.value(token) === TOKEN))),
     Layer.provide(NodeHttpServer.layerHttpServices)
   );
@@ -103,8 +108,9 @@ describe("the event log API", () => {
     await Effect.runPromise(Effect.provide(Effect.flatMap(EventStore, (es) => es.append([{ type: "PlanUpgraded", tags: [{ key: "user_id", value: "u9" }], eventData: { userId: "u9", plan: "pro" }, metadata: { actor: "admin-7", ip: "10.0.0.1" } }, Upgraded({ userId: "u9", plan: "free" })])), store.layer));
     const serveWith = (masks: Masks) =>
       HttpRouter.toWebHandler(
-        adminApiLayer({ sources: [], masks }).pipe(
+        adminApiLayer({ masks }).pipe(
           Layer.provide(store.layer),
+          Layer.provide(noProcessors),
           Layer.provide(authorizationFrom((token) => Effect.succeed(Redacted.value(token) === TOKEN))),
           Layer.provide(NodeHttpServer.layerHttpServices)
         ),

@@ -20,8 +20,7 @@
     "./VerifyEvents": "./src/VerifyEvents.ts",
     "./ModelImpact": "./src/ModelImpact.ts",
     "./testing/Scenario": "./src/testing/Scenario.ts",
-    "./testing/EventFixtures": "./src/testing/EventFixtures.ts",
-    "./Crablet": "./src/Crablet.ts"
+    "./testing/EventFixtures": "./src/testing/EventFixtures.ts"
   },
   "dependencies": {
     "effect": "4.1.4",

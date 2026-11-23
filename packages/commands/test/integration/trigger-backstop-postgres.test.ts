@@ -8,7 +8,7 @@ import { SqlClient } from "effect/sql";
 import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import * as Crablet from "../../src/Crablet.ts";
+import * as Crablet from "../support/CommandsLayer.ts";
 import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../../src/Command.ts";

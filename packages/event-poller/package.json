@@ -17,6 +17,7 @@
     "./PostgresProgressTracker": "./src/PostgresProgressTracker.ts",
     "./SqlEventFetcher": "./src/SqlEventFetcher.ts",
     "./ProcessorManagementService": "./src/ProcessorManagementService.ts",
+    "./ProcessSettings": "./src/ProcessSettings.ts",
     "./InstanceId": "./src/InstanceId.ts",
     "./MonitorProcessors": "./src/MonitorProcessors.ts"
   },

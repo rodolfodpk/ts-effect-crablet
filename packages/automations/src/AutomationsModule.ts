@@ -18,6 +18,9 @@ import type { AutomationHandler } from "./AutomationHandler.ts";
 import type { AutomationsConfig } from "./AutomationsConfig.ts";
 import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/AutomationEventHandler.ts";
 import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorConfig.ts";
+import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
+import { makeAutomationManagementService } from "./AutomationManagementService.ts";
 
 // The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
 // same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
@@ -93,3 +96,29 @@ export const startAutomationsProcessor = (
   deps: AutomationsDeps
 ): Effect.Effect<ProcessorHandle<AutomationsRunRequirements>, never, SqlClient.SqlClient | AutomationsRunRequirements | Scope.Scope> =>
   Effect.tap(makeAutomationsProcessor(deps), (handle) => handle.service.startScoped);
+
+// The automations module, described to the application (`@crablet/app`: `Crablet.modules(Automations.module(...))`). The process's settings (instance id, leader,
+// polling default) come from whoever builds it; `config` here overrides the polling default for this module. `describe` says what an automation is for, by its name, as the
+// admin API shows it.
+export interface AutomationsModuleOptions extends Omit<AutomationsDeps, "instanceId" | "leader"> {
+  readonly describe?: ((id: string) => string | undefined) | undefined;
+}
+
+export const module = (
+  options: AutomationsModuleOptions
+): RunnableModule<"automations", SqlClient.SqlClient, AutomationsRunRequirements, ProcessSettings> => {
+  const { describe, ...deps } = options;
+  const depsOf = (settings: ProcessSettings): AutomationsDeps => ({
+    ...deps,
+    config: { ...settings.polling, ...deps.config },
+    instanceId: settings.instanceId,
+    leader: settings.leader
+  });
+  const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"automations">, never, SqlClient.SqlClient> =>
+    Effect.map(makeAutomationManagementService(handle), (service) => ({ kind: "automations" as const, source: { kind: "automations", service, describe }, isLeader: handle.isLeader }));
+  return {
+    kind: "automations",
+    make: (settings) => Effect.flatMap(makeAutomationsProcessor(depsOf(settings)), built),
+    start: (settings) => Effect.flatMap(startAutomationsProcessor(depsOf(settings)), built)
+  };
+};

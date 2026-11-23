@@ -1,4 +1,4 @@
-import { Effect, type Scope, Stream } from "effect";
+import { Effect, Layer, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
@@ -18,6 +18,9 @@ import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 import { makeOutboxEventHandler } from "./internal/OutboxEventHandler.ts";
 import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts";
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
+import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
+import { makeOutboxManagementService } from "./OutboxManagementService.ts";
 
 // The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
 // same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
@@ -79,7 +82,7 @@ export const makeOutboxProcessor = (
 // What starting the outbox takes besides its declaration: one publisher for each name its topics give (a name with no publisher does not compile).
 export interface OutboxStartDeps<T extends ReadonlyArray<TopicConfig>> extends OutboxDeps {
   readonly topics: T;
-  readonly publishers: { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<any> };
+  readonly publishers: { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<unknown> };
 }
 
 // Builds the processor and starts it with its publishers, owned by the Scope: it runs until the scope closes, and closing it stops the loops and
@@ -91,3 +94,36 @@ export const startOutboxProcessor = <const T extends ReadonlyArray<TopicConfig>>
   Effect.tap(makeOutboxProcessor(deps), (handle) =>
     Effect.provideService(handle.service.startScoped, OutboxPublishers, deps.publishers)
   );
+
+// The outbox module, described to the application (`@crablet/app`: `Crablet.modules(Outbox.module(...))`). The process's settings (instance id, leader,
+// polling default) come from whoever builds it; `config` here overrides the polling default for this module. `describe` says what a (topic, publisher) pair is for, by its key, as the
+// admin API shows it.
+export interface OutboxModuleOptions extends Omit<OutboxDeps, "instanceId" | "leader"> {
+  readonly describe?: ((id: string) => string | undefined) | undefined;
+}
+
+export const module = (
+  options: OutboxModuleOptions
+): RunnableModule<"outbox", SqlClient.SqlClient, OutboxRunRequirements, ProcessSettings> => {
+  const { describe, ...deps } = options;
+  const depsOf = (settings: ProcessSettings): OutboxDeps => ({
+    ...deps,
+    config: { ...settings.polling, ...deps.config },
+    instanceId: settings.instanceId,
+    leader: settings.leader
+  });
+  const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"outbox">, never, SqlClient.SqlClient> =>
+    Effect.map(makeOutboxManagementService(handle), (service) => ({ kind: "outbox" as const, source: { kind: "outbox", service, describe }, isLeader: handle.isLeader }));
+  return {
+    kind: "outbox",
+    make: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), built),
+    start: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), (handle) => Effect.as(handle.service.startScoped, handle)).pipe(Effect.flatMap(built))
+  };
+};
+
+// The publishers a process that runs the outbox module provides, one per name its topics give (a missing name does not compile): the layer `Crablet.processors`
+// needs when the declaration has an outbox. A process that only catalogs the modules needs none.
+export const publishers = <const T extends ReadonlyArray<TopicConfig>>(
+  _topics: T,
+  given: { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<unknown> }
+): Layer.Layer<OutboxPublishers> => Layer.succeed(OutboxPublishers, given);

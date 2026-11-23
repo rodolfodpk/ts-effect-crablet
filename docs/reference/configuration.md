@@ -7,7 +7,7 @@ choose values: [Configure it](../guides/operate/configure.md).
 
 ## `Crablet.layer(pg, options)`
 
-From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `CommandAuditStore` and the database clients.
+From `@crablet/app`. It provides `CommandExecutor`, `EventStore`, `CommandAuditStore` and the database clients.
 
 `pg` is the connection, as `PgClient.layer` takes it (`@effect/sql-pg`): `host`, `port`, `database`, `username`, `password` (a `Redacted`), and
 `maxConnections` for the pool.

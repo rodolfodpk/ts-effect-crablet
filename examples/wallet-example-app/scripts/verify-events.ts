@@ -7,7 +7,7 @@
 // Connection: WALLET_DB_HOST / _PORT / _NAME / _USER / _PASSWORD, as the app itself. Exit code 1 when anything cannot be read or a tag drifted: run it in CI
 // against a copy of production data before a deploy that changes an event.
 import { Effect, Redacted } from "effect";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { formatEventsReport, verifyEvents } from "@crablet/commands/VerifyEvents";
 import * as M from "../src/domain/WalletModel.ts";
 import { WelcomeNotificationSent } from "../src/domain/notification/WelcomeNotificationSent.ts";

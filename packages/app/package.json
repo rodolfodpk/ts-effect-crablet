@@ -1,0 +1,25 @@
+{
+  "name": "@crablet/app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "effect": "4.1.4",
+    "@effect/sql-pg": "4.1.4",
+    "@crablet/commands": "workspace:*",
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/event-poller": "workspace:*",
+    "@crablet/modules": "workspace:*"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*",
+    "@crablet/views": "workspace:*",
+    "@crablet/automations": "workspace:*",
+    "@crablet/outbox": "workspace:*",
+    "@crablet/deadlines": "workspace:*"
+  },
+  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
+}

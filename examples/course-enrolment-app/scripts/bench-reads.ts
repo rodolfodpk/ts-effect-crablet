@@ -22,7 +22,7 @@ import { Context, Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "e
 import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import { Client } from "pg";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { startTestDb, type ConnInfo } from "@crablet/test-support";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import { ViewProgressHub } from "@crablet/views/ViewProgressHub";

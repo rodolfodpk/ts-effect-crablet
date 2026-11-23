@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/ProcessorManagement.ts",
-    "./ProcessorSource": "./src/ProcessorSource.ts"
+    "./ProcessorSource": "./src/ProcessorSource.ts",
+    "./Module": "./src/Module.ts",
+    "./Processors": "./src/Processors.ts"
   },
   "dependencies": {
     "effect": "4.1.4"

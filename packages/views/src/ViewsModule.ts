@@ -18,6 +18,9 @@ import type { ViewsConfig } from "./ViewsConfig.ts";
 import { withOverridesByName, type ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
+import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
+import { makeViewManagementService } from "./ViewManagementService.ts";
 
 // The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
 // same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
@@ -99,3 +102,29 @@ export const startViewsProcessor = (
   deps: ViewsDeps
 ): Effect.Effect<ProcessorHandle<ViewsRunRequirements>, never, SqlClient.SqlClient | ViewsRunRequirements | Scope.Scope> =>
   Effect.tap(makeViewsProcessor(deps), (handle) => handle.service.startScoped);
+
+// The views module, described to the application (`@crablet/app`: `Crablet.modules(Views.module(...))`). The process's settings (instance id, leader,
+// polling default) come from whoever builds it; `config` here overrides the polling default for this module. `describe` says what a view is for, by its name, as the
+// admin API shows it.
+export interface ViewsModuleOptions extends Omit<ViewsDeps, "instanceId" | "leader"> {
+  readonly describe?: ((id: string) => string | undefined) | undefined;
+}
+
+export const module = (
+  options: ViewsModuleOptions
+): RunnableModule<"views", SqlClient.SqlClient, ViewsRunRequirements, ProcessSettings> => {
+  const { describe, ...deps } = options;
+  const depsOf = (settings: ProcessSettings): ViewsDeps => ({
+    ...deps,
+    config: { ...settings.polling, ...deps.config },
+    instanceId: settings.instanceId,
+    leader: settings.leader
+  });
+  const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"views">, never, SqlClient.SqlClient> =>
+    Effect.map(makeViewManagementService(handle), (service) => ({ kind: "views" as const, source: { kind: "views", service, describe }, isLeader: handle.isLeader }));
+  return {
+    kind: "views",
+    make: (settings) => Effect.flatMap(makeViewsProcessor(depsOf(settings)), built),
+    start: (settings) => Effect.flatMap(startViewsProcessor(depsOf(settings)), built)
+  };
+};

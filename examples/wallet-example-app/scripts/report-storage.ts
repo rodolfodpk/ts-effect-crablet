@@ -6,7 +6,7 @@
 // Connection: WALLET_DB_HOST / _PORT / _NAME / _USER / _PASSWORD, as the app itself. In a running application keep the gauges current instead:
 //   yield* Effect.forkDetach(monitorStorage({ every: "5 minutes" }))   // from @crablet/eventstore/Storage
 import { Effect, Redacted } from "effect";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { formatStorageReport, storageReport } from "@crablet/eventstore/Storage";
 
 const layer = Crablet.layer({

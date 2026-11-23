@@ -5,10 +5,10 @@ import { PgClient } from "@effect/sql-pg";
 import { EventStore, makeEventStoreLayer, type EventStoreConfig } from "@crablet/eventstore";
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { CommandExecutor, CommandExecutorLive } from "./CommandExecutor.ts";
-import { AuditConfigRef, type AuditConfig } from "./CommandAudit.ts";
+import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import { AuditConfigRef, type AuditConfig } from "@crablet/commands/CommandAudit";
 
-// Everything the framework needs, in one layer: Postgres connection in, working command executor and
+// The wiring of an application (decision V3: it moved here from @crablet/commands, which keeps the domain and the executor). Everything the framework needs, in one layer: Postgres connection in, working command executor and
 // event store out.
 //
 //     const AppLive = Crablet.layer({

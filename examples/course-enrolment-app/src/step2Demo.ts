@@ -2,7 +2,7 @@
 //   docker compose up -d && node src/migrate.ts && node scripts/step2-postgres.ts
 // `runStep2` returns what happened so the integration test can assert it; the script just prints it.
 import { Effect, Redacted } from "effect";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { CommandExecutor } from "@crablet/commands";
 import { CourseFull, DefineCourse, StudentAtLimit, Subscribe } from "./domain/Enrolment.ts";
 import type { DbConnInfo } from "./db.ts";

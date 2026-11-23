@@ -13,6 +13,9 @@ import type { Command } from "@crablet/commands/Command";
 import { checkDeadlineCommands, DeadlineScheduled } from "@crablet/commands/Deadline";
 import { makeDeadlineEventHandler, type FireCommand, type RecordFiring } from "./internal/DeadlineEventHandler.ts";
 import { makeDeadlineFetcher, makeDeadlineProgressTracker, makeRecordFiring } from "./internal/DeadlineStore.ts";
+import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
+import { makeDeadlinesManagementService } from "./DeadlinesManagementService.ts";
 
 // The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
 // same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
@@ -95,3 +98,29 @@ export const startDeadlinesProcessor = (
   deps: DeadlinesDeps
 ): Effect.Effect<ProcessorHandle<DeadlinesRunRequirements>, never, SqlClient.SqlClient | DeadlinesRunRequirements | Scope.Scope> =>
   Effect.tap(makeDeadlinesProcessor(deps), (handle) => handle.service.startScoped);
+
+// The deadlines module, described to the application (`@crablet/app`: `Crablet.modules(Deadlines.module(...))`). The process's settings (instance id, leader,
+// polling default) come from whoever builds it; `config` here overrides the polling default for this module. `describe` says what the deadlines processor is for, as the
+// admin API shows it.
+export interface DeadlinesModuleOptions extends Omit<DeadlinesDeps, "instanceId" | "leader"> {
+  readonly describe?: ((id: string) => string | undefined) | undefined;
+}
+
+export const module = (
+  options: DeadlinesModuleOptions
+): RunnableModule<"deadlines", SqlClient.SqlClient, DeadlinesRunRequirements, ProcessSettings> => {
+  const { describe, ...deps } = options;
+  const depsOf = (settings: ProcessSettings): DeadlinesDeps => ({
+    ...deps,
+    config: { ...settings.polling, ...deps.config },
+    instanceId: settings.instanceId,
+    leader: settings.leader
+  });
+  const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"deadlines">, never, SqlClient.SqlClient> =>
+    Effect.map(makeDeadlinesManagementService(handle), (service) => ({ kind: "deadlines" as const, source: { kind: "deadlines", service, describe }, isLeader: handle.isLeader }));
+  return {
+    kind: "deadlines",
+    make: (settings) => Effect.flatMap(makeDeadlinesProcessor(depsOf(settings)), built),
+    start: (settings) => Effect.flatMap(startDeadlinesProcessor(depsOf(settings)), built)
+  };
+};

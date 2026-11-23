@@ -5,7 +5,7 @@ import { Effect, Redacted } from "effect";
 import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import * as Crablet from "../../src/Crablet.ts";
+import * as Crablet from "../support/CommandsLayer.ts";
 import { defineEvent } from "../../src/Event.ts";
 import { formatEventsReport, verifyEvents } from "../../src/VerifyEvents.ts";
 

@@ -3,7 +3,7 @@ import { Effect, Layer, Redacted } from "effect";
 import { HttpRouter } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { monitorStorage } from "@crablet/eventstore/Storage";
 import { migrateIfFresh } from "./migrate.ts";
 import { startBackgroundProcessors, monitorBackgroundProcessors, processorSources, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";

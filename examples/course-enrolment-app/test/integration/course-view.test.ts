@@ -6,7 +6,7 @@ import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { CourseDefined, StudentSubscribed } from "../../src/domain/Enrolment.ts";
 import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";

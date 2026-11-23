@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { inspect } from "node:util";
 import { Clock, Deferred, Effect, Exit, Fiber, ManagedRuntime, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { CommandExecutor } from "@crablet/commands";
 import type { Command } from "@crablet/commands/Command";
 import { startTestDb, type TestDb } from "@crablet/test-support";

@@ -16,6 +16,7 @@
       "name": "course-enrolment-app",
       "version": "0.0.0",
       "dependencies": {
+        "@crablet/app": "workspace:*",
         "@crablet/automations": "workspace:*",
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
@@ -62,6 +63,7 @@
       "name": "wallet-example-app",
       "version": "0.0.0",
       "dependencies": {
+        "@crablet/app": "workspace:*",
         "@crablet/automations": "workspace:*",
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
@@ -80,6 +82,25 @@
       },
       "devDependencies": {
         "@crablet/test-support": "workspace:*",
+      },
+    },
+    "packages/app": {
+      "name": "@crablet/app",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/commands": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/modules": "workspace:*",
+        "@effect/sql-pg": "4.1.4",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "@crablet/automations": "workspace:*",
+        "@crablet/deadlines": "workspace:*",
+        "@crablet/outbox": "workspace:*",
+        "@crablet/test-support": "workspace:*",
+        "@crablet/views": "workspace:*",
       },
     },
     "packages/automations": {
@@ -305,6 +326,8 @@
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
 
     "@balena/dockerignore": ["@balena/dockerignore@1.0.2", "", {}, "sha512-wMue2Sy4GAVTk6Ic4tJVcnfdau+gx2EnG7S+uAEe+TWJFqE4YoWN4/H8MSLj4eYJKxGg26lZwboEniNiNwZQ6Q=="],
+
+    "@crablet/app": ["@crablet/app@workspace:packages/app"],
 
     "@crablet/automations": ["@crablet/automations@workspace:packages/automations"],
 
