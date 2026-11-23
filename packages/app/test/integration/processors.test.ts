@@ -4,6 +4,7 @@ import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { Processors } from "@crablet/modules/Processors";
+import * as Views from "@crablet/views";
 import * as Automations from "@crablet/automations";
 import * as Outbox from "@crablet/outbox";
 import * as Deadlines from "@crablet/deadlines";
@@ -45,6 +46,36 @@ const open = async <E>(layer: Layer.Layer<Processors, E, never>) => {
 };
 
 describe("Crablet.processors and Crablet.catalog (ADR-0022)", () => {
+  it("runs every module declared when `run` is not given: each takes its own lock and says it leads", { timeout: 30_000 }, async () => {
+    const everything = Crablet.modules(Views.module({ views: [], describe: () => "a view" }))
+      .with(Automations.module({ automations: [] }))
+      .with(Outbox.module({ topics }))
+      .with(Deadlines.module({ commands: [] }));
+    const running = await open(
+      Crablet.processors(everything, { polling, monitorEvery: "1 second" }).pipe(
+        Layer.provide(Outbox.publishers(topics, { log: makeLogPublisher() })),
+        Layer.provideMerge(base())
+      )
+    );
+    try {
+      const deadline = Date.now() + 15_000;
+      let status = await Effect.runPromise(running.processors.status);
+      while (!status.every((s) => s.leads) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+        status = await Effect.runPromise(running.processors.status);
+      }
+      assert.deepStrictEqual(status, ["views", "automations", "outbox", "deadlines"].map((kind) => ({ kind, runs: true, leads: true })));
+      assert.deepStrictEqual(
+        await Effect.runPromise(Effect.provide(locksHeld, base())),
+        [Views.VIEWS_LOCK_KEY, Automations.AUTOMATIONS_LOCK_KEY, Outbox.OUTBOX_LOCK_KEY, Deadlines.DEADLINES_LOCK_KEY].map(String).sort()
+      );
+      assert.deepStrictEqual(running.processors.sources.map((s) => s.kind), ["views", "automations", "outbox", "deadlines"]);
+    } finally {
+      await running.close();
+    }
+  });
+
+
   it("runs the modules in `run` only: the others are built, take no lock, and say so; closing the layer releases the locks", { timeout: 30_000 }, async () => {
     const layer = Crablet.processors(declaration, { run: ["deadlines"], polling }).pipe(
       Layer.provide(Outbox.publishers(topics, { log: makeLogPublisher() })),
