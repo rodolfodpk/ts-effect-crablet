@@ -193,13 +193,13 @@ export const defineCommand = <
   // everything it reads joins the command's condition: a strict command's boundary, or a concurrent command's guard. A lookup that
   // changes before the append (the card is cancelled) refuses it, and the command runs again with a fresh lookup. Its result reaches
   // `model`, `consistency` and `decide` as `resolved`.
-  readonly resolve?: (input: Schema.Schema.Type<I>, read: ResolveReader) => Effect.Effect<R, RE> & Declared<RE, Es>;
+  readonly resolve?: (input: I["Type"], read: ResolveReader) => Effect.Effect<R, RE> & Declared<RE, Es>;
   // Omit for commands that need no state (e.g. "record that this happened"); `decide` then gets
   // `undefined` and the default consistency is `concurrent()`.
-  readonly model?: (input: Schema.Schema.Type<I>, context: ResolvedContext<R>) => ModelInstance<S>;
+  readonly model?: (input: I["Type"], context: ResolvedContext<R>) => ModelInstance<S>;
   // Default: `strict()` with a model, `concurrent()` without one. A model can only make a command stricter: without one, `decide` has no
   // state, so there is nothing to protect.
-  readonly consistency?: (input: Schema.Schema.Type<I>, context: ResolvedContext<R>) => Consistency;
+  readonly consistency?: (input: I["Type"], context: ResolvedContext<R>) => Consistency;
   // How a repeat of a request is recognised (ADR-0034). Two answers:
   //   - a QUERY, for an effect that can legitimately happen many times (a deposit), keyed on what identifies one REQUEST (a deposit id). It
   //     depends on the INPUT only, so it is checked before `resolve`/`decide` ever run: on a retry the state has moved on (the balance is already
@@ -209,13 +209,13 @@ export const defineCommand = <
   //     answers the repeat itself - `noop(...)` for the same request, a domain error for a different one. Nothing is looked up for it.
   //     It needs a model and decides under strict() (no `consistency`): a racing repeat conflicts, reloads, and `decide` sees the first.
   // Required by any caller that may repeat a request (a client retry, an automation redelivery); `assertRepeatHarmless` (testing) checks the answer.
-  readonly idempotentBy?: IdempotentBy<IB, Schema.Schema.Type<I>>;
+  readonly idempotentBy?: IdempotentBy<IB, I["Type"]>;
   // `context.now` is the instant of this attempt, from the clock (the one a model with a period decided its period at): stamp events with it (`subscribedAt: now`, with an `Instant` field) instead of `new Date()`, so a timestamp and a period agree, also under a test clock.
-  readonly decide: (state: S, input: Schema.Schema.Type<I>, context: DecideContext<R>) => D & Declared<ErrorOf<D>, Es>;
+  readonly decide: (state: S, input: I["Type"], context: DecideContext<R>) => D & Declared<ErrorOf<D>, Es>;
   // Conflict retries (default 3; 0 turns retrying off).
   readonly retries?: number;
-} & ByModelRule<IB>): Command<Schema.Schema.Type<I>, ErrorOf<D> | RE, I, Es> => {
-  type In = Schema.Schema.Type<I>;
+} & ByModelRule<IB>): Command<I["Type"], ErrorOf<D> | RE, I, Es> => {
+  type In = I["Type"];
   // The audit table stores the name in a column limited to 64 characters: fail at definition time, not mid-request.
   if (def.name.length < 1 || def.name.length > 64) throw new Error(`command name must be 1-64 characters, got ${def.name.length}: "${def.name}"`);
   // The byModel() rule, also for callers the type checker does not see (ADR-0034).
@@ -226,10 +226,7 @@ export const defineCommand = <
     }
   }
 
-  const decode = Schema.decodeUnknownEffect(def.input as unknown as Schema.Decoder<unknown>) as (
-    raw: unknown,
-    options?: { readonly errors?: "first" | "all" }
-  ) => Effect.Effect<In, Schema.SchemaError>;
+  const decode = Schema.decodeUnknownEffect(def.input);
   // `errors: "all"`: report EVERY failed field, not just the first, so a client can fix them in one go.
   const decodeInput = (raw: unknown) =>
     Effect.mapError(decode(raw, { errors: "all" }), (e) => new InvalidInput({ message: e.message, issues: inputIssuesOf(e) }));

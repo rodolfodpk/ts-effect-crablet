@@ -59,7 +59,7 @@ export interface FiredDeadline {
 const refusal = (command: Command<any, any>): string | undefined =>
   !command.idempotent
     ? `deadline for command "${command.name}": the command has no idempotentBy. A deadline can fire twice, so its command must say how to tell that the work is already done.`
-    : hasPersonalData(command.input as never)
+    : hasPersonalData(command.input)
       ? `deadline for command "${command.name}": its input has a field marked personal(...). A deadline's input is stored in a framework event, where it cannot be masked or erased: give it ids.`
       : undefined;
 
@@ -80,7 +80,7 @@ export const checkDeadlineCommands = (commands: ReadonlyArray<Command<any, any>>
 export const deadline = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: In, options: { readonly at: DateTime.Utc }): AppendEvent => {
   const problem = refusal(command);
   if (problem !== undefined) throw new Error(problem);
-  const encoded = Schema.encodeUnknownSync(command.input as unknown as Schema.Codec<unknown, unknown>)(input);
+  const encoded = Schema.encodeUnknownSync(command.input)(input);
   return DeadlineScheduled({ command: command.name, input: encoded, dueAt: options.at });
 };
 

@@ -44,7 +44,7 @@ export const recordCommand = (command: Command<any, any>, input: unknown): Effec
   Effect.gen(function* () {
     const config = yield* AuditConfigRef;
     if (config.payload === "off") return;
-    const data = config.payload === "full" ? input : config.payload === "none" ? {} : redact(command.input as never, input);
+    const data = config.payload === "full" ? input : config.payload === "none" ? {} : redact(command.input, input);
     const audit = yield* CommandAuditStore;
     const correlationId = yield* CorrelationContext.correlationId;
     const actor = yield* ActorRef;

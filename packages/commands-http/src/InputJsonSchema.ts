@@ -4,7 +4,7 @@ import type { Command } from "@crablet/commands/Command";
 // The JSON Schema (draft 2020-12, which OpenAPI 3.1 uses) of a command's input: what the API description shows as its
 // request body. Generated from the very schema the command validates with, so the two cannot drift.
 export const inputJsonSchema = (command: Pick<Command<any, any>, "input">): unknown =>
-  Schema.toJsonSchemaDocument(command.input as unknown as Schema.Top);
+  Schema.toJsonSchemaDocument(command.input);
 
 // Things in an input schema that make the generated description wrong or misleading. Empty = fine.
 //
@@ -19,7 +19,7 @@ export const inputJsonSchemaProblems = (command: Pick<Command<any, any>, "name" 
   if (JSON.stringify(inputJsonSchema(command)).includes('"Infinity"')) {
     problems.push(`command "${command.name}": an input field uses Schema.Number; use Schema.Finite or Schema.Int so its checks reach the API description`);
   }
-  for (const path of optionalFieldsAcceptingUndefined(command.input as unknown as Schema.Top, [])) {
+  for (const path of optionalFieldsAcceptingUndefined(command.input, [])) {
     problems.push(`command "${command.name}": field "${path}" uses Schema.optional; use Schema.optionalKey so it is not described as nullable`);
   }
   return problems;

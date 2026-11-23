@@ -54,6 +54,7 @@ export const serveApi = <
     ...(options.docs !== undefined ? { docs: options.docs } : {})
   };
   const commands = makeCommandApiGroupLive(api, options.commands.contracts, options.commands.implementations, config);
+  // type escape: `G` is a tuple the caller gives (its own groups); spreading it after `commands` loses the tuple shape, which `Layer.provide` needs
   const groups = [commands, ...(options.groups ?? [])] as unknown as [typeof commands, ...G];
   const served = Layer.merge(HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(groups)), apiDocsLayer(api, config));
   return options.cors === undefined ? served : Layer.merge(served, corsLayer(options.cors));

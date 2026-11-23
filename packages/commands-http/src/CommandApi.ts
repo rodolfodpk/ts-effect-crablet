@@ -7,7 +7,7 @@ import type { Command } from "@crablet/commands/Command";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
 import type { IdempotencyMismatch, InvalidInput, KindedError } from "@crablet/commands/Errors";
 import type { AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, problemSchemaOf, type DeclaredDomainError, type ProblemBody } from "./ProblemDetail.ts";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, problemSchemaOf, type ProblemBody } from "./ProblemDetail.ts";
 
 // The command API's description: ONE route per exposed command, `POST {basePath}/{name}`, whose request
 // body is the command's own input schema, plus `GET {basePath}` listing the exposed commands with their
@@ -34,7 +34,7 @@ export const CommandCreatedResponse = Schema.Struct({
   lastPosition: Schema.String,
   lastTransactionId: Schema.String,
   marker: Schema.String
-}).annotate({ httpApiStatus: 201, identifier: "CommandCreated" } as never);
+}).annotate({ httpApiStatus: 201, identifier: "CommandCreated" });
 
 // "Already done": a repeat of a request, or a command that had nothing to do. The marker points at the earlier write (ADR-0034), so a client whose
 // first answer was lost can still read its own write; it is null only when there is nothing to point at (a no-op of a command with no model).
@@ -44,7 +44,7 @@ export const CommandIdempotentResponse = Schema.Struct({
   lastPosition: Schema.NullOr(Schema.String),
   lastTransactionId: Schema.NullOr(Schema.String),
   marker: Schema.NullOr(Schema.String)
-}).annotate({ httpApiStatus: 200, identifier: "CommandIdempotent" } as never);
+}).annotate({ httpApiStatus: 200, identifier: "CommandIdempotent" });
 
 export const ExposedCommandsResponse = Schema.Struct({
   exposedCommands: Schema.Array(
@@ -62,7 +62,7 @@ const ConflictProblem = asProblem(CommandConflict);
 const UnexpectedProblem = asProblem(CommandApiUnexpectedError);
 const IdempotencyMismatchProblem = asProblem(CommandIdempotencyMismatch);
 
-export const executeEndpointName = (commandType: string) => `execute_${commandType}`;
+export const executeEndpointName = <const N extends string>(commandType: N): `execute_${N}` => `execute_${commandType}`;
 
 // Every error a command can fail with must be something the API knows how to present: a declared domain error (its KIND picks the HTTP
 // status; `defineCommand` already requires it to be declared), or one of the framework's own errors (input validation, a stale decision, a
@@ -105,29 +105,32 @@ export type CommandGroup<BasePath extends string, C extends ReadonlyArray<AnyCom
 //
 // The API is declared from CONTRACTS (the public part of each command, see @crablet/commands/Contract): the route is `POST {basePath}/{name}`
 // with the contract's own `name`, and the module that declares the API imports nothing of the commands' behavior (decide, models, events), so
-// it can be bundled for a browser. The group is built in a loop; the loop body is untyped (`any`) because TypeScript cannot follow a
-// runtime-variable set of endpoint names through `group.add(...)`. The RETURN type is the precise `CommandGroup` above - the one place that
-// asserts "the loop builds exactly this" (the OpenAPI description and the integration tests check the runtime, test/contract-api.types.ts the type).
+// it can be bundled for a browser. Each endpoint is built by `commandEndpoint` below, fully typed; the one thing the compiler cannot do is follow a run-time list of them
+// through `group.add(...)`, so the RETURN type is the precise `CommandGroup` above, asserted once (the OpenAPI description and the integration tests check the runtime,
+// test/contract-api.types.ts the type).
 // A command route has no query parameters: it answers once the command has committed, with the write's marker. A client that wants a read to
 // include the write sends that marker to the read (`?consistentWith=`, see @crablet/views-http).
+// One endpoint per contract, all typed by what the endpoint builder takes: the contract's input is its payload (an `InputSchema` is a `Schema.Top`), and its
+// declared domain errors become problem schemas beside the framework's.
+const commandEndpoint = <const BasePath extends `/${string}`, const K extends AnyCommandContract>(basePath: BasePath, contract: K) =>
+  HttpApiEndpoint.post(executeEndpointName(contract.name), `${basePath}/${contract.name}` as const, {
+    payload: contract.input,
+    success: [CommandCreatedResponse, CommandIdempotentResponse],
+    error: [BadRequestProblem, ConflictProblem, IdempotencyMismatchProblem, UnexpectedProblem, ...contract.errors.map((e) => problemSchemaOf(e))]
+  });
+
+// Passing through a list of contracts that is only known at run time erases the endpoint of each one (its name becomes `execute_${string}`, its payload
+// and its errors become unions), and TypeScript cannot follow a runtime-variable set of endpoints through `add(...)`. This assertion is the one place that says
+// "the list builds exactly `CommandGroup`"; test/contract-api.types.ts checks it for a concrete list, and the OpenAPI snapshots check the run-time description.
 export const makeCommandApiGroup = <const BasePath extends `/${string}`, const C extends ReadonlyArray<AnyCommandContract>>(
   basePath: BasePath,
   contracts: C
-): CommandGroup<BasePath, C> => {
-  let group: any = HttpApiGroup.make("commands").add(
-    HttpApiEndpoint.get("listExposedCommands", basePath, { success: ExposedCommandsResponse })
-  );
-  for (const contract of contracts) {
-    group = group.add(
-      HttpApiEndpoint.post(executeEndpointName(contract.name), `${basePath}/${contract.name}` as `/${string}`, {
-        payload: contract.input as unknown as Schema.Top,
-        success: [CommandCreatedResponse, CommandIdempotentResponse] as never,
-        error: [BadRequestProblem, ConflictProblem, IdempotencyMismatchProblem, UnexpectedProblem, ...contract.errors.map((e: DeclaredDomainError) => problemSchemaOf(e))] as never
-      })
-    );
-  }
-  return group as CommandGroup<BasePath, C>;
-};
+): CommandGroup<BasePath, C> =>
+  HttpApiGroup.make("commands").add(
+    HttpApiEndpoint.get("listExposedCommands", basePath, { success: ExposedCommandsResponse }),
+    ...contracts.map((contract) => commandEndpoint(basePath, contract))
+    // type escape: the list is a run-time value, so the compiler cannot build `CommandGroup` from it (see above)
+  ) as unknown as CommandGroup<BasePath, C>;
 
 // The server's side of a list of contracts: for each contract, the implemented command, built from THAT contract with
 // `defineCommand({ ...Contract, ... })`. A missing command, an extra one, or one built from a different contract does not compile; a

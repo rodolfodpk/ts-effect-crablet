@@ -20,6 +20,24 @@ import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, Comma
 // them), so it is all a command endpoint needs; `requirementsMatchTheHandler` below checks this against the handler's type.
 export type CommandApiRequirements = CommandExecutor;
 
+// The part of a group's handler registry this layer uses, as a structural type (see `groupBuilder` below). A raw handler answers with the response it builds, and
+// needs the request (the router's) and what `CommandApiRequirements` names, nothing else.
+interface CommandHandlerRegistry {
+  readonly handle: (
+    name: "listExposedCommands",
+    handler: () => Effect.Effect<{ readonly exposedCommands: ReadonlyArray<{ readonly commandType: string; readonly inputSchema: unknown }> }>
+  ) => CommandHandlerRegistry;
+  readonly handleRaw: (
+    name: string,
+    handler: () => Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, HttpServerRequest.HttpServerRequest | CommandApiRequirements>
+  ) => CommandHandlerRegistry;
+}
+type CommandGroupBuilder<Out> = (
+  api: unknown,
+  id: "commands",
+  build: (handlers: CommandHandlerRegistry) => Effect.Effect<CommandHandlerRegistry>
+) => Layer.Layer<Out, never, CommandApiRequirements>;
+
 // True when A and B are the same type (not merely assignable one way).
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
@@ -146,15 +164,15 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
   > = true;
   void requirementsMatchTheHandler;
 
-  // `HttpApiBuilder.group as any`: its signature requires "commands" to be statically known as a
-  // member of `Groups`, and the endpoint names are only known at run time (one per contract), so
-  // the whole call is cast. Narrow, deliberate type-erasure at this one dynamic-composition boundary;
-  // the check above keeps its requirements honest.
-  const groupBuilder = HttpApiBuilder.group as any;
-  const CommandsLive: Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> = groupBuilder(api, "commands", (handlers: any) =>
+  // `HttpApiBuilder.group` types its registry by the endpoints of the API, which cannot be expressed here: "commands" is a member of a caller's generic
+  // `Groups`, and the endpoint names are one per contract, known only at run time. So the builder is taken as the structural type above (`CommandGroupBuilder`), and
+  // what is registered through it is checked against that type: the handler's own requirements, its response, its errors.
+  // type escape: `HttpApiBuilder.group` as `CommandGroupBuilder`; the one place the registry's precise type is replaced by the structural one
+  const groupBuilder = HttpApiBuilder.group as unknown as CommandGroupBuilder<HttpApiGroup.Service<ApiId, "commands">>;
+  const CommandsLive = groupBuilder(api, "commands", (handlers) =>
     Effect.succeed(
       Object.entries(implementations as Readonly<Record<string, Command<any, any, any, any>>>).reduce(
-        (h: any, [commandType, command]) => h.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, command)),
+        (h, [commandType, command]) => h.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, command)),
         handlers.handle("listExposedCommands", () => listExposedCommands)
       )
     )

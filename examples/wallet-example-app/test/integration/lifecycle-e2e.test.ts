@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { HttpApiClient } from "effect/http-api";
+import { isDomainProblem } from "@crablet/commands-http/ClientErrors";
 import { FetchHttpClient } from "effect/http";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive } from "@crablet/eventstore";
@@ -195,7 +196,7 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     assert.strictEqual(wallet.body.balance, 25, "one read, already includes the deposit");
     assert.deepStrictEqual(wallet.headers, {}, "and it is not marked stale");
     // The refusal is one of the endpoint's declared problems; it is the domain one, with its kind and fields.
-    assert.ok("errorType" in missing, `expected a domain problem, got ${JSON.stringify(missing)}`);
+    assert.ok(isDomainProblem(missing), `expected a domain problem, got ${JSON.stringify(missing)}`);
     assert.strictEqual(missing.errorType, "WalletNotFound");
     assert.deepStrictEqual(missing.fields, { walletId: `ghost-${walletId}` });
   });

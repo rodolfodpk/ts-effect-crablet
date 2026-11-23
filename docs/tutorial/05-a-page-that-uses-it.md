@@ -136,7 +136,7 @@ const outcomeOf = (answer: { readonly status: "CREATED" | "IDEMPOTENT"; readonly
 ```
 
 **A refusal is data, and the compiler checks you handled it.** A domain error's problem body carries its `errorType` and its declared `fields`, typed exactly. `problemFromError`
-matches on them; the `never` in the last case means that if the server's command gains a new declared error and the page has no case for it, the page stops compiling:
+hands each one to `matchDomainProblem` (`@crablet/commands-http/ClientErrors`, which imports nothing, so the page can bundle it), which wants exactly one handler per declared error: if the server's command gains a new declared error and the page has no handler for it, the page stops compiling. The framework's own problems, the transport and the SchemaError go to the second function:
 
 <!-- file: examples/course-enrolment-ui/src/api.ts#problems -->
 ```ts
@@ -169,26 +169,22 @@ export type CallError =
   | Effect.Error<ReturnType<typeof getCourse>>
   | Effect.Error<ReturnType<typeof listCourses>>;
 
-export const problemFromError = (error: CallError): Problem => {
-  if ("errorType" in error) {
-    switch (error.errorType) {
-      case "CourseNotFound":
-        return { _tag: "CourseNotFound", courseId: error.fields.courseId };
-      case "CourseFull":
-        return { _tag: "CourseFull", courseId: error.fields.courseId, capacity: error.fields.capacity };
-      case "StudentAtLimit":
-        return { _tag: "StudentAtLimit", studentId: error.fields.studentId, limit: error.fields.limit };
-      case "CourseAlreadyDefined":
-        return { _tag: "CourseAlreadyDefined", courseId: error.fields.courseId, capacity: error.fields.capacity };
-      case "CourseWasCancelled":
-        return { _tag: "CourseWasCancelled", courseId: error.fields.courseId };
-      default: {
-        // a new declared error with no case above does not compile: `error` would not be `never`
-        const unhandled: never = error;
-        return unhandled;
-      }
-    }
-  }
+// One handler per domain error the calls declare (`matchDomainProblem`, @crablet/commands-http/ClientErrors): a command that gains a declared error does not compile
+// until it is handled here. Everything else - the framework's problems, the transport, a SchemaError - is read below.
+export const problemFromError = (error: CallError): Problem =>
+  matchDomainProblem(
+    error,
+    {
+      CourseNotFound: ({ fields }) => ({ _tag: "CourseNotFound", courseId: fields.courseId }),
+      CourseFull: ({ fields }) => ({ _tag: "CourseFull", courseId: fields.courseId, capacity: fields.capacity }),
+      StudentAtLimit: ({ fields }) => ({ _tag: "StudentAtLimit", studentId: fields.studentId, limit: fields.limit }),
+      CourseAlreadyDefined: ({ fields }) => ({ _tag: "CourseAlreadyDefined", courseId: fields.courseId, capacity: fields.capacity }),
+      CourseWasCancelled: ({ fields }) => ({ _tag: "CourseWasCancelled", courseId: fields.courseId })
+    },
+    (other) => problemFromOtherError(other)
+  );
+
+const problemFromOtherError = (error: OtherErrorsOf<CallError>): Problem => {
   if (Schema.isSchemaError(error)) return { _tag: "Mismatch", detail: error.message };
   // the 503 a read answers when the seat map cannot catch up to the write it was asked to include (told apart by its `reason`)
   if ("reason" in error && "views" in error) return { _tag: "SeatMapBehind", failed: error.reason === "view_failed" };

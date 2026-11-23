@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Effect } from "effect";
 import { HttpApiClient } from "effect/http-api";
+import { isDomainProblem } from "@crablet/commands-http/ClientErrors";
 import { FetchHttpClient } from "effect/http";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../support/startCourseAppForTest.ts";
@@ -130,7 +131,7 @@ describe("tutorial step 3: the HTTP API", () => {
     const { defined, refused } = await Effect.runPromise(program.pipe(Effect.provide(FetchHttpClient.layer)));
     assert.strictEqual(defined.status, "CREATED");
     // The refusal is one of the endpoint's declared problems; it is the domain one, with its kind and fields.
-    assert.ok("errorType" in refused, `expected a domain problem, got ${JSON.stringify(refused)}`);
+    assert.ok(isDomainProblem(refused), `expected a domain problem, got ${JSON.stringify(refused)}`);
     assert.strictEqual(refused.errorType, "CourseFull");
     assert.deepStrictEqual(refused.fields, { courseId, capacity: 1 });
   });
