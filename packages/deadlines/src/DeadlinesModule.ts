@@ -1,7 +1,7 @@
 import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
-import { DEADLINES_LOCK_KEY, tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { holdSessionOnce, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
 import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
@@ -13,6 +13,10 @@ import type { Command } from "@crablet/commands/Command";
 import { checkDeadlineCommands, DeadlineScheduled } from "@crablet/commands/Deadline";
 import { makeDeadlineEventHandler, type FireCommand, type RecordFiring } from "./internal/DeadlineEventHandler.ts";
 import { makeDeadlineFetcher, makeDeadlineProgressTracker, makeRecordFiring } from "./internal/DeadlineStore.ts";
+
+// The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
+// same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
+export const DEADLINES_LOCK_KEY = 4856221667890123459n;
 
 // The deadlines processor (ADR-0043): it runs each deadline's command once its due time has passed. Deadlines are set by `decide` with `deadline(...)`
 // (`@crablet/commands/Deadline`); the append that stores one writes its row in `crablet_deadlines`, which this processor reads by time.

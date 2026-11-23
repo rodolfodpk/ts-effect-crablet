@@ -345,7 +345,7 @@ from `now`, so a late firing does not push the series; the series ends when the 
 ## One lock per module, one leader per lock
 
 Every instance of the application starts the same processors. A PostgreSQL advisory lock decides which instance runs them, and **the lock is per module, not per processor**: there is one lock for
-the views, one for the automations, one for the outbox publishers and one for the deadlines (`VIEWS_LOCK_KEY`, `AUTOMATIONS_LOCK_KEY`, `OUTBOX_LOCK_KEY`, `DEADLINES_LOCK_KEY` in `eventstore`'s `Leader.ts`). The instance that holds a
+the views, one for the automations, one for the outbox publishers and one for the deadlines (`VIEWS_LOCK_KEY`, `AUTOMATIONS_LOCK_KEY`, `OUTBOX_LOCK_KEY`, `DEADLINES_LOCK_KEY`, each in its own module; `eventstore`'s `Leader.ts` is only the mechanism). The instance that holds a
 module's lock runs **all** of that module's processors (every view, every automation, every publisher, the deadlines processor); the others wait and retry. The locks are independent, so a different instance may lead each
 module, though the first instance to start usually leads all of them. A process holds the locks of every module it leads on one session ([ADR-0046](../adr/0046-one-lock-session-per-process.md)). The diagram shows one possible split, not the usual one, for an application with the four modules.
 

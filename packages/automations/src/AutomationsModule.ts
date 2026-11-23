@@ -2,7 +2,7 @@ import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
-import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
@@ -18,6 +18,10 @@ import type { AutomationHandler } from "./AutomationHandler.ts";
 import type { AutomationsConfig } from "./AutomationsConfig.ts";
 import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/AutomationEventHandler.ts";
 import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorConfig.ts";
+
+// The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
+// same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
+export const AUTOMATIONS_LOCK_KEY = 4856221667890123458n;
 
 export interface AutomationsDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).

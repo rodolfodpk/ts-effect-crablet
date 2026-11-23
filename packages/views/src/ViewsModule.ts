@@ -2,7 +2,7 @@ import { Effect, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
-import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
@@ -18,6 +18,10 @@ import type { ViewsConfig } from "./ViewsConfig.ts";
 import { withOverridesByName, type ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
+
+// The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
+// same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
+export const VIEWS_LOCK_KEY = 4856221667890123457n;
 
 // What the processor needs of a view: `defineView(...)`'s result has it.
 export interface RunnableView {

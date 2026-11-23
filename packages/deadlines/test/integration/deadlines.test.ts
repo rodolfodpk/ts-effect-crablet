@@ -10,7 +10,6 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import { DEADLINES_LOCK_KEY } from "@crablet/eventstore/Leader";
 import { CommandExecutor, CommandExecutorLive, type CommandExecutorService } from "@crablet/commands";
 import * as EventSelection from "@crablet/event-poller/EventSelection";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
@@ -18,7 +17,7 @@ import { byModel, deadline, defineCommand, defineEvent, defineModel, DomainError
 import { DeadlineFired, DeadlineScheduled } from "@crablet/commands/Deadline";
 import type { Command, RawInput } from "@crablet/commands/Command";
 import type { InputSchema } from "@crablet/commands/Contract";
-import { DEADLINES_PROCESSOR_ID, makeDeadlinesProcessor, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
+import { DEADLINES_LOCK_KEY, DEADLINES_PROCESSOR_ID, makeDeadlinesProcessor, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
 import { makeDeadlinesManagementService } from "../../src/DeadlinesManagementService.ts";
 import { makeDeadlineEventHandler } from "../../src/internal/DeadlineEventHandler.ts";
 import type { HandledPrefix } from "@crablet/event-poller/EventHandler";

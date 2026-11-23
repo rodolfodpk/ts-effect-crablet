@@ -21,7 +21,9 @@ import { Client } from "pg";
 import { execFileSync } from "node:child_process";
 import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
-import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
+import { VIEWS_LOCK_KEY } from "@crablet/views";
+import { AUTOMATIONS_LOCK_KEY } from "@crablet/automations";
+import { OUTBOX_LOCK_KEY } from "@crablet/outbox";
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 // (the wallet does not depend on the metrics package; these are the very files the framework counts with)
 import * as CommandMetrics from "../../../../packages/metrics-otel/src/CommandMetrics.ts";
