@@ -94,7 +94,7 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
 
 ## 6. Regenerate the description
 
-The OpenAPI document is checked in ([`docs/api/`](../../api)) and a unit test fails if it is stale, so an API change shows up as a diff. In the course app:
+The OpenAPI document is checked in ([`docs/api/`](../../api)) and a unit test fails if it is stale, so an API change shows up as a diff. CI also runs `bun run docs:api:breaking`, which compares it with the base branch and fails on a change that could break a client (a route, an answer or a response field removed or retyped; a new required request field), unless a commit of the change says "breaking" in its message ([ADR-0013](../../adr/0013-api-evolution-additive-vs-breaking.md)). In the course app:
 `node scripts/generate-openapi.ts` from `examples/course-enrolment-app`. A command answers with a **marker**; a read that carries it sees that write
 ([tutorial step 4](../../tutorial/04-read-your-own-writes.md)). Reference: [`@crablet/commands-http`](../../../packages/commands-http/README.md).
 

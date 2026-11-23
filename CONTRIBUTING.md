@@ -34,6 +34,8 @@ and every `.ts` file under `tsc`: the rules are in [CLAUDE.md](CLAUDE.md#type-sa
 type), `scripts/typecheck-coverage.test.ts` (every file in a tsconfig) and `scripts/type-escapes.test.ts` (each workspace's `crablet.typeEscapes` may not grow; lower it
 with `bun run type-escapes:baseline` after removing escapes). To run an Effect in a test, use `runWith(layer)` from `@crablet/test-support/RunWith`.
 
+**A change to the HTTP API** regenerates `docs/api/*.json` (`bun run docs:api`, and the course app's script). CI then runs `bun run docs:api:breaking` against the base branch: a change that could break a client fails it unless a commit says "breaking" in its message, and that commit updates every consumer ([ADR-0013](docs/adr/0013-api-evolution-additive-vs-breaking.md)).
+
 **SOLID, and who decides.** A change follows SRP, OCP, LSP, ISP and DIP. A violation, new or found, is reported with its options and decided by the maintainer,
 never accepted silently ([CLAUDE.md](CLAUDE.md#solid)).
 
