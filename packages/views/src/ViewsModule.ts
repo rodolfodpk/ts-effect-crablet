@@ -18,7 +18,7 @@ import type { ViewsConfig } from "./ViewsConfig.ts";
 import { withOverridesByName, type ProcessorRuntimeOverrides } from "@crablet/event-poller/ProcessorRuntimeOverrides";
 import { makeViewEventHandler } from "./internal/ViewEventHandler.ts";
 import { makeViewProcessorConfigs } from "./internal/ViewProcessorConfig.ts";
-import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import { builtModule, withProcessSettings, type ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
 import { makeViewManagementService } from "./ViewManagementService.ts";
 
@@ -114,14 +114,9 @@ export const module = (
   options: ViewsModuleOptions
 ): RunnableModule<"views", SqlClient.SqlClient, ViewsRunRequirements, ProcessSettings> => {
   const { describe, ...deps } = options;
-  const depsOf = (settings: ProcessSettings): ViewsDeps => ({
-    ...deps,
-    config: { ...settings.polling, ...deps.config },
-    instanceId: settings.instanceId,
-    leader: settings.leader
-  });
+  const depsOf = (settings: ProcessSettings) => withProcessSettings(deps, settings);
   const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"views">, never, SqlClient.SqlClient> =>
-    Effect.map(makeViewManagementService(handle), (service) => ({ kind: "views" as const, source: { kind: "views", service, describe }, isLeader: handle.isLeader }));
+    Effect.map(makeViewManagementService(handle), (service) => builtModule("views", handle, service, describe));
   return {
     kind: "views",
     make: (settings) => Effect.flatMap(makeViewsProcessor(depsOf(settings)), built),

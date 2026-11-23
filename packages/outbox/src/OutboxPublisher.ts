@@ -22,7 +22,7 @@ export interface OutboxPublisher<E = unknown> {
 
 // The publishers an outbox processor runs with, by the names its topics give them. What running the processor needs (OutboxRunRequirements):
 // `startOutboxProcessor` provides it from its `publishers`; a test that starts a handle by hand provides it itself.
-export class OutboxPublishers extends Context.Service<OutboxPublishers, Readonly<Record<string, OutboxPublisher<unknown>>>>()("OutboxPublishers") {}
+export class OutboxPublishers extends Context.Service<OutboxPublishers, Readonly<Record<string, OutboxPublisher<unknown>>>>()("@crablet/outbox/OutboxPublishers") {}
 
 // A trivial reference implementation that logs, useful as a default/example. `label` starts each line it writes; the publisher's name is the one the topics
 // give it.

@@ -13,7 +13,7 @@ import type { Command } from "@crablet/commands/Command";
 import { checkDeadlineCommands, DeadlineScheduled } from "@crablet/commands/Deadline";
 import { makeDeadlineEventHandler, type FireCommand, type RecordFiring } from "./internal/DeadlineEventHandler.ts";
 import { makeDeadlineFetcher, makeDeadlineProgressTracker, makeRecordFiring } from "./internal/DeadlineStore.ts";
-import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import { builtModule, withProcessSettings, type ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
 import { makeDeadlinesManagementService } from "./DeadlinesManagementService.ts";
 
@@ -110,14 +110,9 @@ export const module = (
   options: DeadlinesModuleOptions
 ): RunnableModule<"deadlines", SqlClient.SqlClient, DeadlinesRunRequirements, ProcessSettings> => {
   const { describe, ...deps } = options;
-  const depsOf = (settings: ProcessSettings): DeadlinesDeps => ({
-    ...deps,
-    config: { ...settings.polling, ...deps.config },
-    instanceId: settings.instanceId,
-    leader: settings.leader
-  });
+  const depsOf = (settings: ProcessSettings) => withProcessSettings(deps, settings);
   const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"deadlines">, never, SqlClient.SqlClient> =>
-    Effect.map(makeDeadlinesManagementService(handle), (service) => ({ kind: "deadlines" as const, source: { kind: "deadlines", service, describe }, isLeader: handle.isLeader }));
+    Effect.map(makeDeadlinesManagementService(handle), (service) => builtModule("deadlines", handle, service, describe));
   return {
     kind: "deadlines",
     make: (settings) => Effect.flatMap(makeDeadlinesProcessor(depsOf(settings)), built),

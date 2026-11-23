@@ -18,7 +18,7 @@ import type { AutomationHandler } from "./AutomationHandler.ts";
 import type { AutomationsConfig } from "./AutomationsConfig.ts";
 import { makeAutomationEventHandler, type ExecuteDecision } from "./internal/AutomationEventHandler.ts";
 import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorConfig.ts";
-import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import { builtModule, withProcessSettings, type ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
 import { makeAutomationManagementService } from "./AutomationManagementService.ts";
 
@@ -108,14 +108,9 @@ export const module = (
   options: AutomationsModuleOptions
 ): RunnableModule<"automations", SqlClient.SqlClient, AutomationsRunRequirements, ProcessSettings> => {
   const { describe, ...deps } = options;
-  const depsOf = (settings: ProcessSettings): AutomationsDeps => ({
-    ...deps,
-    config: { ...settings.polling, ...deps.config },
-    instanceId: settings.instanceId,
-    leader: settings.leader
-  });
+  const depsOf = (settings: ProcessSettings) => withProcessSettings(deps, settings);
   const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"automations">, never, SqlClient.SqlClient> =>
-    Effect.map(makeAutomationManagementService(handle), (service) => ({ kind: "automations" as const, source: { kind: "automations", service, describe }, isLeader: handle.isLeader }));
+    Effect.map(makeAutomationManagementService(handle), (service) => builtModule("automations", handle, service, describe));
   return {
     kind: "automations",
     make: (settings) => Effect.flatMap(makeAutomationsProcessor(depsOf(settings)), built),

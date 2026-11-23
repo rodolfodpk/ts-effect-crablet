@@ -12,6 +12,8 @@ import * as Outbox from "@crablet/outbox";
 import * as Deadlines from "@crablet/deadlines";
 import type { OutboxPublisher, OutboxPublishers } from "@crablet/outbox/OutboxPublisher";
 import { defineTopic } from "@crablet/outbox/TopicConfig";
+import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import type { RunnableModule } from "@crablet/modules/Module";
 import * as Crablet from "../src/index.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -34,7 +36,13 @@ export const processorsOfAllNeed: Equal<Needs<typeof processorsOfAll>, SqlClient
 export const viewsProcessors = Crablet.processors(viewsOnly);
 export const anAppOfViewsNeedsNoExecutor: Equal<Needs<typeof viewsProcessors>, SqlClient.SqlClient | PgClient.PgClient> = true;
 
+// A process that runs a fixed subset declares only those modules (ADR-0054, interface segregation): a deadlines worker needs what the deadlines need, and no
+// publisher, while the API lists everything with a catalog of the whole declaration.
+export const deadlinesWorker = Crablet.processors(Crablet.modules(Deadlines.module({ commands: [] })));
+export const aDeadlinesWorkerNeedsNoPublisher: Equal<Needs<typeof deadlinesWorker>, SqlClient.SqlClient | CommandExecutor | EventStore> = true;
+
 declare const kafka: OutboxPublisher;
+declare const custom: RunnableModule<string, never, never, ProcessSettings>;
 export const checks = () => {
   // `run` names declared kinds only
   Crablet.processors(all, { run: ["views", "outbox"] });
@@ -43,6 +51,9 @@ export const checks = () => {
 
   // @ts-expect-error two modules of one kind
   Crablet.modules(Views.module({ views: [] })).with(Views.module({ views: [] }));
+
+  // a module whose kind is typed `string` is not taken for a repeat of every kind (`with` checks it when called)
+  Crablet.modules(custom).with(Views.module({ views: [] }));
 
   // the outbox's publishers, one per name its topics give
   Outbox.publishers(topics, { kafka });

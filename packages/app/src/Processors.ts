@@ -9,18 +9,17 @@ import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
 import { Processors } from "@crablet/modules/Processors";
 
-// Any module this process may build or run. What building and running a list of them needs is inferred from the list (the union of each one's
-// `MakeR` and `RunR`), never written by hand.
-export type AnyModule = RunnableModule<string, unknown, unknown, ProcessSettings>;
 
 // The modules of an application, declared once and shared by every process that builds them: a plain value (it opens no connection and builds no
 // publisher), so the API and the workers import the same declaration. Built one module at a time, so each step's type is checked: the kinds, and what
 // building and running the modules need, are the union of each module's (never written by hand), and a second module of a kind already declared does not
-// compile when the kinds are literal (and is refused when it is built, when they are not).
+// compile when the kinds are literal (when they are not, `with` refuses it when it is called).
 export interface Modules<Kind extends string, MakeR, RunR> {
   readonly list: ReadonlyArray<RunnableModule<Kind, MakeR, RunR, ProcessSettings>>;
   readonly with: <K extends string, MR, RR>(
-    module: RunnableModule<K, MR, RR, ProcessSettings> & ([K] extends [Kind] ? { readonly error: `a module of kind "${K}" is already declared` } : unknown)
+    module: RunnableModule<K, MR, RR, ProcessSettings> &
+      // a repeated literal kind; a kind typed `string` (on either side) is checked by `with` when it is called
+      (string extends Kind | K ? unknown : [K] extends [Kind] ? { readonly error: `a module of kind "${K}" is already declared` } : unknown)
   ) => Modules<Kind | K, MakeR | MR, RunR | RR>;
 }
 
@@ -71,7 +70,8 @@ export const processors = <Kind extends string, MakeR, RunR>(
     Effect.gen(function* () {
       const settings = settingsOf(options);
       const running = new Set<string>(options.run ?? declared.map((m) => m.kind));
-      const built = yield* Effect.forEach(declared, (m) => (running.has(m.kind) ? m.start(settings) : m.make(settings)));
+      // the modules take independent locks, so they are built and started together: the start is the slowest one, not the sum
+      const built = yield* Effect.forEach(declared, (m) => (running.has(m.kind) ? m.start(settings) : m.make(settings)), { concurrency: "unbounded" });
       const sampled = built.filter((b) => running.has(b.kind)).map((b) => b.source.service);
       yield* Effect.logInfo(`crablet: this process runs ${[...running].join(", ") || "no module"}; builds ${declared.map((m) => m.kind).join(", ")}`);
       if (sampled.length > 0) {
@@ -91,7 +91,7 @@ export const catalog = <Kind extends string, MakeR, RunR>(
   Layer.effect(
     Processors,
     Effect.map(
-      Effect.forEach(declared, (m) => m.make(settingsOf(options))),
+      Effect.forEach(declared, (m) => m.make(settingsOf(options)), { concurrency: "unbounded" }),
       (built) => serviceOf(built, new Set())
     )
   );

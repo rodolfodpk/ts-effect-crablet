@@ -18,7 +18,7 @@ import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 import { makeOutboxEventHandler } from "./internal/OutboxEventHandler.ts";
 import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts";
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
-import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import { builtModule, withProcessSettings, type ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
 import { makeOutboxManagementService } from "./OutboxManagementService.ts";
 
@@ -79,11 +79,31 @@ export const makeOutboxProcessor = (
     });
   });
 
+// One publisher for each name the topics give. The names must be known to the compiler (literals, as `defineTopic` keeps them): with names typed
+// `string` (topics built at run time, or annotated `TopicConfig[]`) any record would do, so that does not compile.
+export type PublishersFor<T extends ReadonlyArray<TopicConfig>> = { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<unknown> } &
+  (string extends PublisherNamesOf<T> ? { readonly error: "the topics' publisher names must be literal: declare them with defineTopic, without widening to TopicConfig[]" } : unknown);
+
 // What starting the outbox takes besides its declaration: one publisher for each name its topics give (a name with no publisher does not compile).
 export interface OutboxStartDeps<T extends ReadonlyArray<TopicConfig>> extends OutboxDeps {
   readonly topics: T;
-  readonly publishers: { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<unknown> };
+  readonly publishers: PublishersFor<T>;
 }
+
+// Every publisher name the topics give has a publisher in the ones this process runs with, or the processor does not start: a missing one fails the start,
+// naming it, instead of failing every poll of its pair. The compiler checks this where the names are literal; this checks it where they are not (a
+// hand-built `OutboxPublishers`, publishers given for other topics).
+const requirePublishers = (topics: ReadonlyArray<TopicConfig>): Effect.Effect<void, never, OutboxPublishers> =>
+  Effect.flatMap(Effect.service(OutboxPublishers), (given) => {
+    const missing = [...new Set(topics.flatMap((t) => t.publishers.map((p) => p.publisher)))].filter((name) => !Object.hasOwn(given, name));
+    return missing.length === 0
+      ? Effect.void
+      : Effect.die(new Error(`outbox: no publisher given for ${missing.map((n) => `"${n}"`).join(", ")}, named by the topics; give one per name (Outbox.publishers)`));
+  });
+
+// Starts a built handle once its publishers are checked.
+const startChecked = (handle: ProcessorHandle<OutboxRunRequirements>, topics: ReadonlyArray<TopicConfig>) =>
+  Effect.andThen(requirePublishers(topics), handle.service.startScoped);
 
 // Builds the processor and starts it with its publishers, owned by the Scope: it runs until the scope closes, and closing it stops the loops and
 // releases the leader lock. What an application uses. `makeOutboxProcessor` builds without starting (a handle for status, a test that drives
@@ -91,9 +111,7 @@ export interface OutboxStartDeps<T extends ReadonlyArray<TopicConfig>> extends O
 export const startOutboxProcessor = <const T extends ReadonlyArray<TopicConfig>>(
   deps: OutboxStartDeps<T>
 ): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
-  Effect.tap(makeOutboxProcessor(deps), (handle) =>
-    Effect.provideService(handle.service.startScoped, OutboxPublishers, deps.publishers)
-  );
+  Effect.tap(makeOutboxProcessor(deps), (handle) => Effect.provideService(startChecked(handle, deps.topics), OutboxPublishers, deps.publishers));
 
 // The outbox module, described to the application (`@crablet/app`: `Crablet.modules(Outbox.module(...))`). The process's settings (instance id, leader,
 // polling default) come from whoever builds it; `config` here overrides the polling default for this module. `describe` says what a (topic, publisher) pair is for, by its key, as the
@@ -106,24 +124,18 @@ export const module = (
   options: OutboxModuleOptions
 ): RunnableModule<"outbox", SqlClient.SqlClient, OutboxRunRequirements, ProcessSettings> => {
   const { describe, ...deps } = options;
-  const depsOf = (settings: ProcessSettings): OutboxDeps => ({
-    ...deps,
-    config: { ...settings.polling, ...deps.config },
-    instanceId: settings.instanceId,
-    leader: settings.leader
-  });
+  const depsOf = (settings: ProcessSettings) => withProcessSettings(deps, settings);
   const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"outbox">, never, SqlClient.SqlClient> =>
-    Effect.map(makeOutboxManagementService(handle), (service) => ({ kind: "outbox" as const, source: { kind: "outbox", service, describe }, isLeader: handle.isLeader }));
+    Effect.map(makeOutboxManagementService(handle), (service) => builtModule("outbox", handle, service, describe));
   return {
     kind: "outbox",
     make: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), built),
-    start: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), (handle) => Effect.as(handle.service.startScoped, handle)).pipe(Effect.flatMap(built))
+    start: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), (handle) => Effect.as(startChecked(handle, deps.topics), handle)).pipe(Effect.flatMap(built))
   };
 };
 
 // The publishers a process that runs the outbox module provides, one per name its topics give (a missing name does not compile): the layer `Crablet.processors`
-// needs when the declaration has an outbox. A process that only catalogs the modules needs none.
-export const publishers = <const T extends ReadonlyArray<TopicConfig>>(
-  _topics: T,
-  given: { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<unknown> }
-): Layer.Layer<OutboxPublishers> => Layer.succeed(OutboxPublishers, given);
+// needs when the declaration has an outbox. A process that only catalogs the modules needs none. Given for other topics than the module's, a missing name
+// fails the module's start, naming it.
+export const publishers = <const T extends ReadonlyArray<TopicConfig>>(_topics: T, given: PublishersFor<T>): Layer.Layer<OutboxPublishers> =>
+  Layer.succeed(OutboxPublishers, given);

@@ -22,7 +22,7 @@ import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPu
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
-import { Processors } from "@crablet/modules/Processors";
+import { Processors, type ProcessorsService } from "@crablet/modules/Processors";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
 import * as M from "./domain/WalletModel.ts";
@@ -131,6 +131,21 @@ export const processorSources = (processors: BackgroundProcessors): Effect.Effec
   });
 // #endregion processor-sources
 
+// The wallet's modules as the `Processors` service the admin API reads: the sources, and the status from the handles (whether this process runs a module,
+// by its roles, and whether it leads it now). Built by hand until the wallet moves onto Crablet.processors (phase 3 of the @crablet/app plan).
+export const walletProcessors = (processors: BackgroundProcessors): Effect.Effect<ProcessorsService, never, SqlClient.SqlClient> =>
+  Effect.map(processorSources(processors), (sources) => {
+    const modules = [
+      { kind: "views" as const, handle: processors.viewsHandle },
+      { kind: "automations" as const, handle: processors.automationsHandle },
+      { kind: "outbox" as const, handle: processors.outboxHandle }
+    ];
+    return {
+      sources,
+      status: Effect.forEach(modules, ({ kind, handle }) => Effect.map(handle.isLeader, (leads) => ({ kind, runs: processors.roles.has(kind), leads })))
+    };
+  });
+
 // Keeps the consumer gauges (lag, cursor, status) current for the three modules, for as long as the scope lives. Every instance runs it, so a processor
 // whose leader has died still shows its lag growing (docs/guides/operate/monitor-it.md#are-the-consumers-keeping-up).
 // #region monitor-processors
@@ -153,7 +168,7 @@ export const monitorBackgroundProcessors = (
 const walletEventDefinitions = [M.WalletOpened, M.WalletClosed, M.WalletStatementOpened, M.WalletStatementClosed, M.DepositMade, M.WithdrawalMade, M.MoneyTransferred, WelcomeNotificationSent];
 
 // #region admin-api
-export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>, token: Redacted.Redacted<string>) => {
+export const makeWalletAdminApiLayer = (processors: ProcessorsService, token: Redacted.Redacted<string>) => {
   const expected = Buffer.from(Redacted.value(token));
   const authorization = authorizationFrom((presented) =>
     Effect.sync(() => {
@@ -161,9 +176,7 @@ export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>,
       return got.length === expected.length && timingSafeEqual(got, expected);
     })
   );
-  // The wallet assembles its modules by hand until it moves onto Crablet.processors (phase 3 of the @crablet/app plan); the admin reads them as `Processors`.
-  const processors = Layer.succeed(Processors, Processors.of({ sources, status: Effect.succeed([]) }));
-  return adminApiLayer({ masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization), Layer.provide(processors));
+  return adminApiLayer({ masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization), Layer.provide(Layer.succeed(Processors, processors)));
 };
 // #endregion admin-api
 

@@ -43,12 +43,20 @@ Four things in the packages stood in the way:
    `status` for health), and they are interchangeable: listing, pausing, resuming and resetting go through the database either way. This answers the
    question ADR-0022 left open in decision 4: a handle can be built without starting it (it opens no connection and runs no loop), so the `api` role
    serves the admin API for every module. The gauges are sampled for the modules a process runs.
+
+   **A process that runs a fixed subset declares only that subset** (the maintainer's decision on a review finding, 2026-11-23, interface
+   segregation). `Crablet.processors(declaration, { run })` needs what running every declared module needs, including those `run` leaves out: `run`
+   serves the one-image model (ADR-0022), where the roles are read at start-up and any module may run, so every requirement is needed anyway. A worker
+   that only ever runs the deadlines declares `Crablet.processors(Crablet.modules(Deadlines.module(...)))` and needs what the deadlines need, no
+   publisher; the API lists everything with a catalog of the whole declaration. Typing the requirements by a literal `run` was the alternative: the body
+   cannot show it to the compiler without an assertion on a `Layer` type.
 5. **The admin API reads the process's modules.** `adminApiLayer({ masks })` takes its sources from `Processors`, not from a list the application
    assembles.
 6. **A module owns its lock key.** `VIEWS_LOCK_KEY` and its siblings are in their modules, with the values they had: in a rolling deploy, old and new
    versions take the same lock. `Leader.ts` is only the mechanism.
 7. **A topic names its publishers; running the outbox takes one per name** (ADR-0039, amended). A process that only lists the outbox's processors
-   builds no client for the broker.
+   builds no client for the broker. The names must be literal for the compiler to check them; where they are not (publishers given for other topics, a
+   hand-built `OutboxPublishers`), a missing one fails the outbox's start, naming it, instead of every poll of its pair.
 8. **The deadlines are a module of their own** (`@crablet/deadlines`), sharing no code with the automations.
 9. **`Crablet.layer` is the application's wiring and lives in `@crablet/app`.** `@crablet/commands` keeps the domain and the executor.
 
@@ -59,7 +67,7 @@ Rules this records, for every application:
 - **One product per Effect context.** Two `Crablet.layer`s in one context share the same tags, and one hides the other. In practice, one product per process.
 - **Products talk by messages.** One product publishes through its outbox; another consumes and runs a command of its own. No product reads another's log.
 - **A module is the unit of exclusion, and its lock is fixed by its kind.** A module's processors cannot be split across two deployments.
-- **One leader setting, one polling default and one instance id per process,** given to every module (`ProcessSettings`); a module's `config` overrides the polling.
+- **One leader setting, one polling default and one instance id per process,** given to every module (`ProcessSettings`); a module's `config` overrides the polling, and a setting it leaves `undefined` keeps the process's.
 
 ## Consequences
 
@@ -85,6 +93,6 @@ Rules this records, for every application:
 ## Not done here
 
 - Health and status routes (`/healthz`, `/readyz`, `/status`) over `Processors`: phase 2b.
-- The examples moving onto `Crablet.processors`: phase 3. Until then the wallet provides `Processors` from its own sources, with an empty `status`.
+- The examples moving onto `Crablet.processors`: phase 3. Until then the wallet provides `Processors` from its own handles (`walletProcessors`).
 - The product name in the connections and the detection of two products in one database (V5): undecided.
 - Merging partial declarations, one per vertical slice: with phase 3.

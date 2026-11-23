@@ -11,7 +11,7 @@ import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { Polling } from "../../src/polling.ts";
 import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { allRoles, type Roles } from "../../src/roles.ts";
-import { startBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, processorSources, type BackgroundProcessors } from "../../src/WalletApp.ts";
+import { startBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, walletProcessors, type BackgroundProcessors } from "../../src/WalletApp.ts";
 
 export type CoreServices = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
 
@@ -49,7 +49,7 @@ export const startWalletAppForTest = async (
       );
       if (!roles.has("api")) return { context: Context.empty(), processors };
 
-      const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* processorSources(processors), Redacted.make(adminToken));
+      const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* walletProcessors(processors), Redacted.make(adminToken));
       const serverLayer = Layer.provideMerge(
         HttpRouter.serve(Layer.merge(makeWalletApiLayer({ basePath: "/api/commands" }), admin)),
         NodeHttpServer.layer(createServer, { port: 0 })

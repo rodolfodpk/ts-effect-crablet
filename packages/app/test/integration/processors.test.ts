@@ -102,6 +102,17 @@ describe("Crablet.processors and Crablet.catalog (ADR-0022)", () => {
     assert.deepStrictEqual(await Effect.runPromise(Effect.provide(locksHeld, base())), [], "closing the layer released the lock");
   });
 
+  it("an outbox given publishers for other names does not start: the start fails naming the missing one", { timeout: 30_000 }, async () => {
+    const other = [defineTopic("other-events", { publishers: ["webhook"] })];
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(
+        Layer.build(Crablet.processors(declaration, { run: ["outbox"], polling }).pipe(Layer.provide(Outbox.publishers(other, { webhook: makeLogPublisher() })), Layer.provide(base())))
+      )
+    );
+    assert.strictEqual(exit._tag, "Failure");
+    assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /no publisher given for "log"/);
+  });
+
   it("a catalog and a running process give the same sources; a pause through the catalog is what the running process reads (Liskov)", { timeout: 30_000 }, async () => {
     const catalog = await open(Crablet.catalog(declaration, { polling }).pipe(Layer.provide(base())));
     const running = await open(

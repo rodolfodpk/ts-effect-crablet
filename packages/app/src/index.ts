@@ -4,4 +4,4 @@
 //     by each process (ADR-0022).
 // It depends on no module: each module package describes itself (`Views.module(...)`), and a process imports only the modules it declares.
 export { layer, type CrabletOptions, type PgConfig, type Services } from "./Layer.ts";
-export { catalog, modules, processors, type AnyModule, type Modules, type ProcessOptions } from "./Processors.ts";
+export { catalog, modules, processors, type Modules, type ProcessOptions } from "./Processors.ts";
