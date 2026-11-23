@@ -38,18 +38,18 @@ export const DEADLINES_LOCK_KEY = 4856221667890123459n;
 
 export interface LeaderOptions {
   // How often the leader checks its own connection (default 1 second).
-  readonly heartbeat?: Duration.Input;
+  readonly heartbeat?: Duration.Input | undefined;
   // How long a check may take before it counts as failed (default 2 seconds): a connection that answers nothing is as lost as one that errors.
-  readonly verifyTimeout?: Duration.Input;
+  readonly verifyTimeout?: Duration.Input | undefined;
   // How long to wait for the client's pool to give the connection the lock is taken on (default 10 seconds). A pool whose connections are all busy (commands, view batches) gives none,
   // and a wait with no limit made the module never lead, silently. On the limit the attempt fails saying so.
-  readonly reserveTimeout?: Duration.Input;
+  readonly reserveTimeout?: Duration.Input | undefined;
   // Consecutive failed checks before the leader is lost (default 2): one slow answer does not end leadership.
-  readonly failuresBeforeLost?: number;
+  readonly failuresBeforeLost?: number | undefined;
   // How long the server keeps a lock session its leader stopped talking on (`idle_session_timeout` on that session; default 15 seconds; "off" leaves it to
   // the TCP keepalives). It must be longer than the leader's own loss detection, `failuresBeforeLost x (heartbeat + verifyTimeout)`, so the old leader has
   // stopped before the lock is free; a shorter one is refused. The takeover after a silent partition is about this plus the followers' retry interval.
-  readonly serverIdleTimeout?: Duration.Input | "off";
+  readonly serverIdleTimeout?: Duration.Input | "off" | undefined;
 }
 
 // When the leader has surely stopped after its connection went silent: `failuresBeforeLost` checks of `heartbeat` and `verifyTimeout` each.

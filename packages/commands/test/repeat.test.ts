@@ -1,8 +1,9 @@
 // A repeat must be the same request (ADR-0034): what `idempotentBy` decides about a key that was already used, and what a repeat answers with. Runs on
 // the in-memory event store; the Postgres store gives the same verdicts (packages/commands/test/integration/repeat-postgres.test.ts).
 import { describe, expect, test } from "bun:test";
-import { Cause, Effect, Exit } from "effect";
+import { Effect, Exit } from "effect";
 import * as Schema from "effect/Schema";
+import type { EventStore } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
@@ -10,7 +11,6 @@ import { byModel, concurrent, defineCommand, emit, fail, noop } from "../src/Com
 import { runHandler } from "../src/CommandExecutor.ts";
 import { fingerprintOf, isSameRequest } from "../src/Repeat.ts";
 import { IdempotencyMismatch } from "../src/Errors.ts";
-import type { ExecutionResult } from "../src/ExecutionResult.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";
 import { assertRepeatHarmless, given } from "../src/testing/Scenario.ts";
@@ -51,7 +51,7 @@ describe("a repeat of the same request", () => {
 
   test("the repeat answers with the EARLIER write's marker (a query key, and a decide answer), so a client whose first answer was lost can read its write", async () => {
     const store = makeInMemoryEventStore();
-    const run = <A>(e: Effect.Effect<A, unknown, any>) => Effect.runPromise(Effect.provide(e, store.layer) as Effect.Effect<A>);
+    const run = <A>(e: Effect.Effect<A, unknown, EventStore>) => Effect.runPromise(Effect.provide(e, store.layer));
     const first = await run(runHandler(Pay.handler, { accountId: "a", paymentId: "p1", amount: 10 }));
     const again = await run(runHandler(Pay.handler, { accountId: "a", paymentId: "p1", amount: 10 }));
     expect(again.marker).toEqual(first.marker);
@@ -81,8 +81,8 @@ describe("the same key from a different request", () => {
 
   test("the same trigger delivered again is already done even if the input was rebuilt differently (an automation's redelivery)", async () => {
     const store = makeInMemoryEventStore();
-    const underTrigger = <A>(e: Effect.Effect<A, unknown, any>, trigger: bigint) =>
-      Effect.runPromiseExit(Effect.provide(CorrelationContext.withCausationId(trigger)(e), store.layer) as Effect.Effect<A>);
+    const underTrigger = <A>(e: Effect.Effect<A, unknown, EventStore>, trigger: bigint) =>
+      Effect.runPromiseExit(Effect.provide(CorrelationContext.withCausationId(trigger)(e), store.layer));
     expect(Exit.isSuccess(await underTrigger(runHandler(Pay.handler, { accountId: "a", paymentId: "p1", amount: 10 }), 7n))).toBe(true);
     // Redelivered: state changed in between, so the automation built another amount; the trigger's work is done.
     const redelivered = await underTrigger(runHandler(Pay.handler, { accountId: "a", paymentId: "p1", amount: 11 }), 7n);
@@ -191,7 +191,7 @@ describe("the same trigger cannot append the same request twice", () => {
   });
   const store = makeInMemoryEventStore();
   const underTrigger = (input: { accountId: string; kind: string }, trigger: bigint) =>
-    Effect.runPromise(Effect.provide(CorrelationContext.withCausationId(trigger)(runHandler(Notify.handler, input, Notify.name)), store.layer) as Effect.Effect<ExecutionResult>);
+    Effect.runPromise(Effect.provide(CorrelationContext.withCausationId(trigger)(runHandler(Notify.handler, input, Notify.name)), store.layer));
 
   test("a redelivered trigger whose key never matches appends nothing the second time, and the reason says the backstop caught it", async () => {
     expect((await underTrigger({ accountId: "a", kind: "welcome" }, 1n)).wasIdempotent).toBe(false);

@@ -6,13 +6,16 @@
   "exports": {
     ".": "./src/index.ts",
     "./BrowserSafety": "./src/BrowserSafety.ts",
-    "./CatalogDump": "./src/CatalogDump.ts"
+    "./CatalogDump": "./src/CatalogDump.ts",
+    "./RunWith": "./src/RunWith.ts"
   },
   "dependencies": {
     "@crablet/db-migrations": "workspace:*",
+    "effect": "4.1.4",
     "pg": "8.23.1"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "12.2.1"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 2, "test": 0 } }
 }

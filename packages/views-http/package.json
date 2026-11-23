@@ -22,5 +22,6 @@
     "@effect/platform-node": "4.1.4",
     "@effect/sql-pg": "4.1.4",
     "pg": "8.23.1"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 5, "test": 4 } }
 }

@@ -1,7 +1,7 @@
 import { resolveOverride, type ProcessorRuntimeOverrides } from "./ProcessorRuntimeOverrides.ts";
 
 // How a processor polls, backs off and gives up: the one list of these settings (ADR-0030). The views, automations and outbox modules take
-// a `Partial<PollingConfig>` (everything optional, `defaultPollingConfig` fills the rest), and `ProcessorConfig` is this plus the processor's id.
+// `PollingSettings` (everything optional, `defaultPollingConfig` fills the rest), and `ProcessorConfig` is this plus the processor's id.
 export interface PollingConfig {
   // How long to wait between polls while events keep coming (also the wait when a processor first goes idle).
   readonly pollingIntervalMs: number;
@@ -37,8 +37,12 @@ export interface ProcessorConfig<I> extends Omit<PollingConfig, "leaderElectionR
   readonly processorId: I;
 }
 
+// What a module or a processor is given: any of the settings, each optional. A setting left out, or given as `undefined`, takes its default (so a caller
+// can pass `{ batchSize: options.batchSize }` without testing it first).
+export type PollingSettings = { readonly [K in keyof PollingConfig]?: PollingConfig[K] | undefined };
+
 // `defaultPollingConfig`, then what `fields` names. A field that is present but `undefined` does not override the default.
-export const resolvePollingConfig = (fields: Partial<PollingConfig> | undefined): PollingConfig => {
+export const resolvePollingConfig = (fields: PollingSettings | undefined): PollingConfig => {
   const merged: Record<string, unknown> = { ...defaultPollingConfig };
   for (const [key, value] of Object.entries(fields ?? {})) if (value !== undefined) merged[key] = value;
   return merged as unknown as PollingConfig;
@@ -49,7 +53,7 @@ const perProcessor = (config: PollingConfig): Omit<PollingConfig, "leaderElectio
   return rest;
 };
 
-export const processorConfigOf = <I>(processorId: I, fields: Partial<PollingConfig> = {}): ProcessorConfig<I> => ({
+export const processorConfigOf = <I>(processorId: I, fields: PollingSettings = {}): ProcessorConfig<I> => ({
   processorId,
   ...perProcessor(resolvePollingConfig(fields))
 });
@@ -58,7 +62,7 @@ export const processorConfigOf = <I>(processorId: I, fields: Partial<PollingConf
 // topic publisher's). A `null` or missing override inherits the module's value.
 export const processorConfigFrom = <I>(
   processorId: I,
-  moduleConfig: Partial<PollingConfig> | undefined,
+  moduleConfig: PollingSettings | undefined,
   overrides: ProcessorRuntimeOverrides = {}
 ): ProcessorConfig<I> => {
   const base = perProcessor(resolvePollingConfig(moduleConfig));

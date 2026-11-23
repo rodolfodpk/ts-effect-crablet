@@ -14,30 +14,30 @@ import { ProcessorsAuthorization } from "./Authorization.ts";
 
 export const ProcessorStatusSchema = Schema.Literals(["ACTIVE", "PAUSED", "FAILED"]).annotate({
   description: "ACTIVE: running. PAUSED: an operator paused it. FAILED: it stopped after too many errors in a row."
-} as never);
+});
 
 export const ProcessorInfo = Schema.Struct({
-  kind: Schema.String.annotate({ description: "Which module runs it, as the application named it (for example views, automations, outbox)." } as never),
-  id: Schema.String.annotate({ description: "The processor's id within its kind (a view's name; for the outbox a JSON pair [topic, publisher])." } as never),
-  description: Schema.NullOr(Schema.String).annotate({ description: "What the processor is for, when the application says." } as never),
+  kind: Schema.String.annotate({ description: "Which module runs it, as the application named it (for example views, automations, outbox)." }),
+  id: Schema.String.annotate({ description: "The processor's id within its kind (a view's name; for the outbox a JSON pair [topic, publisher])." }),
+  description: Schema.NullOr(Schema.String).annotate({ description: "What the processor is for, when the application says." }),
   status: ProcessorStatusSchema,
-  errorCount: Schema.NullOr(Schema.Finite).annotate({ description: "Errors in a row since the last good batch; null if it has no progress row yet." } as never),
-  lastError: Schema.NullOr(Schema.String).annotate({ description: "The text of the last error; null if none." } as never),
-  cursorPosition: Schema.NullOr(Schema.String).annotate({ description: "The log position the processor has read up to, as a string (a position is a bigint)." } as never),
-  pendingEvents: Schema.NullOr(Schema.Finite).annotate({ description: "Events the processor selects that are waiting after its cursor, counted up to 100 000." } as never),
-  pendingCapped: Schema.Boolean.annotate({ description: "True when pendingEvents stopped at its cap: the true number is at least that." } as never),
-  oldestPendingSeconds: Schema.NullOr(Schema.Finite).annotate({ description: "Age, by the events' own occurred_at, of the first waiting event; null when none waits." } as never),
-  backedOff: Schema.Boolean.annotate({ description: "True while the processor has backed off after errors or empty polls." } as never)
-}).annotate({ identifier: "ProcessorInfo" } as never);
+  errorCount: Schema.NullOr(Schema.Finite).annotate({ description: "Errors in a row since the last good batch; null if it has no progress row yet." }),
+  lastError: Schema.NullOr(Schema.String).annotate({ description: "The text of the last error; null if none." }),
+  cursorPosition: Schema.NullOr(Schema.String).annotate({ description: "The log position the processor has read up to, as a string (a position is a bigint)." }),
+  pendingEvents: Schema.NullOr(Schema.Finite).annotate({ description: "Events the processor selects that are waiting after its cursor, counted up to 100 000." }),
+  pendingCapped: Schema.Boolean.annotate({ description: "True when pendingEvents stopped at its cap: the true number is at least that." }),
+  oldestPendingSeconds: Schema.NullOr(Schema.Finite).annotate({ description: "Age, by the events' own occurred_at, of the first waiting event; null when none waits." }),
+  backedOff: Schema.Boolean.annotate({ description: "True while the processor has backed off after errors or empty polls." })
+}).annotate({ identifier: "ProcessorInfo" });
 export type ProcessorInfo = typeof ProcessorInfo.Type;
 
-export const ProcessorList = Schema.Struct({ processors: Schema.Array(ProcessorInfo) }).annotate({ identifier: "ProcessorList" } as never);
+export const ProcessorList = Schema.Struct({ processors: Schema.Array(ProcessorInfo) }).annotate({ identifier: "ProcessorList" });
 
 export const ProcessorActionResult = Schema.Struct({
   kind: Schema.String,
   id: Schema.String,
   status: ProcessorStatusSchema
-}).annotate({ identifier: "ProcessorActionResult" } as never);
+}).annotate({ identifier: "ProcessorActionResult" });
 
 export const ProcessorNotFoundType = "urn:crablet:problem:processors-api:not-found";
 

@@ -37,7 +37,7 @@ const withHub = async <A>(source: ListenSource, body: (hub: ViewProgressHubServi
         const hub = yield* makeViewProgressHub({ source, ...retry });
         return yield* body(hub);
       })
-    ) as Effect.Effect<A>
+    )
   );
 
 const until = async (check: () => boolean | Promise<boolean>, ms = 2000) => {

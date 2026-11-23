@@ -4,7 +4,7 @@
 // it top to bottom; the full two-rule domain (src/domain/Enrolment.ts) is step 2.
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
-import { defineCommand, defineEvent, defineModel, DomainError, emit, fail, noop } from "@crablet/commands/Domain";
+import { defineCommand, defineEvent, defineModel, DomainError, emit, fail } from "@crablet/commands/Domain";
 import { given } from "@crablet/commands/testing/Scenario";
 
 // #region step1-domain

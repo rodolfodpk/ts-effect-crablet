@@ -27,7 +27,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 // Phase 2 borrows the already-migrated crablet_view_progress table (single-key shape) purely to
 // validate the generic tracker implementation - Phase 3's real Views module will point the same

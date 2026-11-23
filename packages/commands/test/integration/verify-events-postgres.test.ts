@@ -20,8 +20,8 @@ const Fine = defineEvent("Fine", { schema: Schema.Struct({ id: Schema.String }),
 let db: TestDb;
 before(async () => { db = await startTestDb(); }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
-const run = <A, E>(e: Effect.Effect<A, E, any>) =>
-  Effect.runPromise(Effect.provide(e, Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })) as Effect.Effect<A, E, never>);
+const run = <A, E>(e: Effect.Effect<A, E, Crablet.Services>) =>
+  Effect.runPromise(Effect.provide(e, Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })));
 const insert = (type: string, tags: ReadonlyArray<string>, data: unknown) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ position: string }>("INSERT INTO crablet_events (type, tags, data, transaction_id) VALUES ($1, $2::text[], $3::jsonb, pg_current_xact_id()) RETURNING position::text AS position", [type, `{${tags.join(",")}}`, JSON.stringify(data)]));
 

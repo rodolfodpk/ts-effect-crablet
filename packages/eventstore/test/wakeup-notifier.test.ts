@@ -14,7 +14,7 @@ const setup = (windowMs: number, fail = false): Effect.Effect<Fixture> =>
   });
 // A notifier whose sends are recorded, running on the test clock.
 const run = (windowMs: number, body: (f: Fixture) => Effect.Effect<void>) =>
-  Effect.runPromise(Effect.flatMap(setup(windowMs), body).pipe(Effect.provide(TestClock.layer())) as Effect.Effect<void>);
+  Effect.runPromise(Effect.flatMap(setup(windowMs), body).pipe(Effect.provide(TestClock.layer())));
 
 describe("WakeupNotifier", () => {
   test("the first signal after idle is sent at once", () => run(50, ({ notifier, sent }) => Effect.gen(function* () {
@@ -62,17 +62,17 @@ describe("WakeupNotifier", () => {
     const { notifier } = yield* setup(0, true);
     yield* notifier.signal(set("A"), set());
     yield* notifier.signal(set("B"), set());
-  }).pipe(Effect.provide(TestClock.layer())) as Effect.Effect<void>));
+  }).pipe(Effect.provide(TestClock.layer()))));
 
   test("a failed send logs a warning; a send interrupted because the process is stopping logs nothing", async () => {
     const lines: Array<unknown> = [];
     const capture = Logger.layer([Logger.make((options) => void lines.push(options.message))], { mergeWithExisting: false });
     const notifierWith = (send: (p: string) => Effect.Effect<void, unknown>) =>
       Effect.flatMap(makeWakeupNotifier(send, 0), (n) => n.signal(set("A"), set()));
-    await Effect.runPromise(notifierWith(() => Effect.fail("boom")).pipe(Effect.provide(Layer.mergeAll(TestClock.layer(), capture))) as Effect.Effect<void>);
+    await Effect.runPromise(notifierWith(() => Effect.fail("boom")).pipe(Effect.provide(Layer.mergeAll(TestClock.layer(), capture))));
     expect(lines.map(String).filter((l) => l.includes("not sent"))).toHaveLength(1);
     lines.length = 0;
-    await Effect.runPromise(notifierWith(() => Effect.interrupt).pipe(Effect.provide(Layer.mergeAll(TestClock.layer(), capture))) as Effect.Effect<void>);
+    await Effect.runPromise(notifierWith(() => Effect.interrupt).pipe(Effect.provide(Layer.mergeAll(TestClock.layer(), capture))));
     expect(lines.map(String).filter((l) => l.includes("not sent"))).toHaveLength(0);
   });
 });

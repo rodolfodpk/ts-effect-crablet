@@ -66,12 +66,12 @@ describe("InMemoryEventStore: bookkeeping", () => {
 });
 
 describe("InMemoryEventStore: transaction", () => {
-  const appendIn = (store: ReturnType<typeof makeInMemoryEventStore>, type: string) =>
+  const appendIn = (type: string) =>
     Effect.flatMap(EventStore, (es) => es.append([ev(type)]));
 
   test("a successful transaction keeps what it appended", async () => {
     const store = makeInMemoryEventStore();
-    await Effect.runPromise(provide(store, store.transaction(appendIn(store, "Kept"))));
+    await Effect.runPromise(provide(store, store.transaction(appendIn("Kept"))));
     expect(types(store)).toEqual(["Kept"]);
   });
 
@@ -79,7 +79,7 @@ describe("InMemoryEventStore: transaction", () => {
     const store = makeInMemoryEventStore();
     store.seed(ev("Before"));
     const exit = await Effect.runPromiseExit(
-      provide(store, store.transaction(Effect.andThen(appendIn(store, "Doomed"), Effect.fail("nope"))))
+      provide(store, store.transaction(Effect.andThen(appendIn("Doomed"), Effect.fail("nope"))))
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(types(store)).toEqual(["Before"]);
@@ -89,7 +89,7 @@ describe("InMemoryEventStore: transaction", () => {
   test("a DEFECT inside a transaction also rolls back", async () => {
     const store = makeInMemoryEventStore();
     const exit = await Effect.runPromiseExit(
-      provide(store, store.transaction(Effect.andThen(appendIn(store, "Doomed"), Effect.die("bug"))))
+      provide(store, store.transaction(Effect.andThen(appendIn("Doomed"), Effect.die("bug"))))
     );
     expect(Exit.isFailure(exit) && exit.cause.reasons.some(Cause.isDieReason)).toBe(true);
     expect(types(store)).toEqual([]);
@@ -97,7 +97,7 @@ describe("InMemoryEventStore: transaction", () => {
 
   test("an interrupted transaction rolls back", async () => {
     const store = makeInMemoryEventStore();
-    const fiber = Effect.runFork(provide(store, store.transaction(Effect.andThen(appendIn(store, "Doomed"), Effect.never))));
+    const fiber = Effect.runFork(provide(store, store.transaction(Effect.andThen(appendIn("Doomed"), Effect.never))));
     await new Promise((resolve) => setTimeout(resolve, 20));
     await Effect.runPromise(Effect.sync(() => fiber.interruptUnsafe()));
     await new Promise((resolve) => setTimeout(resolve, 20));

@@ -51,7 +51,7 @@ export interface EventDef<Type extends string, Data, TagKeys extends string> {
   readonly decodeStored: (event: Pick<StoredEvent, "data" | "position" | "transactionId">) => Effect.Effect<Data, EventDecodingError>;
   // Query for events of this type, optionally restricted to events carrying these tag values.
   // Only tag keys this event declares are accepted.
-  readonly where: (filter?: { readonly [K in TagKeys]?: TagValue }) => Query.Query;
+  readonly where: (filter?: { readonly [K in TagKeys]?: TagValue | undefined }) => Query.Query;
 }
 
 // `Instant`, the type of an instant in a payload, is in its own module (it imports only Effect, so a browser can import it); re-exported here.

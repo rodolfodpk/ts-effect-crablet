@@ -32,5 +32,6 @@
   "devDependencies": {
     "@crablet/test-support": "workspace:*",
     "pg": "8.23.1"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 32, "test": 68 } }
 }

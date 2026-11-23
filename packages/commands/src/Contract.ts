@@ -23,7 +23,7 @@ import type { AnyDomainErrorClass } from "./Errors.ts";
 // A command's input schema: one that decodes and encodes with no services. The executor decodes the input, and fingerprints it by encoding it
 // (Repeat.ts), where no services are provided, so a schema that needed one would compile and then fail with "service not found". Most schemas
 // (`Schema.Struct` of primitives, `Schema.DateTimeUtcFromString`...) need none; a schema that does is refused here, at its declaration.
-export type InputSchema = Schema.Constraint & { readonly DecodingServices: never; readonly EncodingServices: never };
+export type InputSchema = Schema.Top & { readonly DecodingServices: never; readonly EncodingServices: never };
 
 export interface CommandContract<
   Name extends string = string,

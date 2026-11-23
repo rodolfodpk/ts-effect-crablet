@@ -14,7 +14,7 @@ import * as Tag from "@crablet/eventstore/Tag";
 import * as Query from "@crablet/eventstore/Query";
 import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
-import type { Loaded, ModelInstance } from "../src/Model.ts";
+import type { ModelInstance } from "../src/Model.ts";
 
 const Opened = defineEvent("PX_Opened", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ acct: d.id }) });
 const Credited = defineEvent("PX_Credited", { schema: Schema.Struct({ id: Schema.String, amount: Schema.Number, opId: Schema.String }), tags: (d) => ({ acct: d.id, op_id: d.opId }) });
@@ -402,7 +402,7 @@ describe("a period's load, at its edges", () => {
     return Effect.runPromise(
       Effect.flatMap(Clock.Clock, (base) =>
         Effect.provideService(model.load(service as never), Clock.Clock, Object.assign(Object.create(base), { currentTimeMillisUnsafe: () => ms, currentTimeMillis: Effect.succeed(ms) }) as Clock.Clock)
-      ) as Effect.Effect<Loaded<S>>
+      )
     );
   };
   const acct = Tag.of("acct", "a1");

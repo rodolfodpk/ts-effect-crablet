@@ -31,6 +31,7 @@
     "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "crablet": {
+    "typeEscapes": { "src": 1, "test": 24 },
     "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ReadSnapshot", "./ServerSettings", "./TagCodec"]
   },
   "dependencies": {

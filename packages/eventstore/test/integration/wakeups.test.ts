@@ -19,7 +19,7 @@ before(async () => {
 after(async () => { await db.stop(); });
 
 const run = <A>(config: EventStoreConfig, effect: Effect.Effect<A, unknown, EventStore | SqlClient.SqlClient | PgClient.PgClient>) =>
-  Effect.runPromise(Effect.provide(effect, Layer.provideMerge(makeEventStoreLayer(config), pgLayer)) as Effect.Effect<A, never, never>);
+  Effect.runPromise(Effect.provide(effect, Layer.provideMerge(makeEventStoreLayer(config), pgLayer)));
 
 // Collects what the listener hears: every batch with the time it arrived and what was committed at that moment, per type.
 const listen = (committedCount: (type: string) => Effect.Effect<number, unknown, SqlClient.SqlClient>) =>

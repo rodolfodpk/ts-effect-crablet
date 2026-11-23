@@ -17,5 +17,6 @@
   "devDependencies": {
     "pg": "8.23.1",
     "vite": "7.3.7"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 3, "test": 18 } }
 }

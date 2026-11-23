@@ -11,12 +11,12 @@ import { CommandAuditStore, CommandAuditStoreLive } from "../../src/CommandAudit
 import * as AppendEvent from "../../src/AppendEvent.ts";
 import * as Query from "../../src/Query.ts";
 import * as LogPosition from "../../src/LogPosition.ts";
-import { Conflict, Duplicate, MAX_APPEND_EVENTS } from "../../src/AppendErrors.ts";
+import { Duplicate, MAX_APPEND_EVENTS } from "../../src/AppendErrors.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
 
 let db: TestDb;
-let layer: Layer.Layer<EventStore | CommandAuditStore | SqlClient.SqlClient, never>;
+let layer: Layer.Layer<EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient, never>;
 
 before(async () => {
   db = await startTestDb();
@@ -37,7 +37,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, EventStore | CommandAuditStore | SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 describe("EventStore public API parity (Phase 1)", () => {
   it("append: event is queryable back", async () => {
@@ -230,7 +230,7 @@ describe("EventStore public API parity (Phase 1)", () => {
 
     const runWithPg = <A, E>(
       effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>
-    ) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+    ) => Effect.runPromise(Effect.provide(effect, layer));
 
     const batch = await runWithPg(
       Effect.gen(function* () {
@@ -304,7 +304,7 @@ describe("maxAppendEvents (ADR-0049)", () => {
     const pg = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
     const small = Layer.provide(makeEventStoreLayer({ maxAppendEvents: 3 }), pg).pipe(Layer.orDie);
     const batch = (n: number) => Array.from({ length: n }, (_, i) => AppendEvent.of("SmallLimitEvent", "batch", `b${i}`, {}));
-    const go = <A, E>(effect: Effect.Effect<A, E, EventStore>) => Effect.runPromise(Effect.provide(effect, small) as Effect.Effect<A, E, never>);
+    const go = <A, E>(effect: Effect.Effect<A, E, EventStore>) => Effect.runPromise(Effect.provide(effect, small));
     await go(Effect.flatMap(EventStore, (store) => store.append(batch(3))));
     const error = await go(Effect.flatMap(EventStore, (store) => Effect.flip(store.append(batch(4)))));
     assert.deepStrictEqual({ tag: error._tag, max: (error as { max?: number }).max }, { tag: "AppendTooLarge", max: 3 });

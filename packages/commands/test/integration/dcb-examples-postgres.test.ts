@@ -8,6 +8,7 @@ import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { IdempotencyMismatch } from "../../src/Errors.ts";
 import { barrier, pause } from "../support/barrier.ts";
@@ -66,7 +67,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 const errorOf = (exit: any) => exit.cause?.reasons?.find((r: any) => r._tag === "Fail")?.error;
 const exitAll = (effects: ReadonlyArray<Effect.Effect<any, any, any>>) =>
   Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length });

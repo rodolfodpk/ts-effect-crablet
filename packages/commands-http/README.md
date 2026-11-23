@@ -10,6 +10,7 @@ domain error mapped to a status code and documented in a generated OpenAPI 3.1 d
 - **`makeCommandApiGroupLive`** and **`makeCommandApiLive`** (`/CommandApiLive`) - the server side of the write group alone, which `serveApi` uses: pass the commands built from each contract. A missing or extra one does not compile, and a command that does not declare `idempotentBy` is refused when the layer is built: a client retries a request whose answer it lost ([ADR-0034](../../docs/adr/0034-a-repeat-must-be-the-same-request.md)).
 - **`ProblemDetail`** - the problem bodies (bad request with the failing fields, conflict, a request id reused by a different request (422), unexpected error). `problemOf(error)` is a domain error's problem typed from the error, for a hand-written endpoint that declares `problemSchemaOf(ErrorClass)`. A command also answers with a **marker** for read-your-writes, a repeat included.
 - **`ApiDescription`**, **`InputJsonSchema`** - the generated OpenAPI description.
+- **`ClientErrors`** (`/ClientErrors`, imports nothing, so a browser page can bundle it) - for a client derived from the API: `matchDomainProblem(error, handlers, otherwise)` takes one handler per domain error a command declares (typed by that error's own `fields`; a missing one does not compile), and `isDomainProblem(error)` narrows a union to its domain errors.
 - **`Cors`** - opt-in CORS.
 - **`CommandApiConfig`** (`/CommandApiConfig`) - the options of the write API: `basePath`, `correlationHeaderEnabled`, `openApiPath` and `docs`.
 

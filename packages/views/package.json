@@ -20,6 +20,7 @@
     "./ViewTableCheck": "./src/ViewTableCheck.ts"
   },
   "crablet": {
+    "typeEscapes": { "src": 0, "test": 27 },
     "internal": ["./ViewProgress", "./ViewProjector", "./ViewSubscription"]
   },
   "dependencies": {

@@ -12,12 +12,13 @@
     "effect": "4.1.4",
     "foldkit": "0.170.0",
     "@effect/platform-browser": "4.1.4",
-    "course-enrolment-app": "workspace:*"
+    "course-enrolment-app": "workspace:*",
+    "@crablet/commands-http": "workspace:*"
   },
   "devDependencies": {
-    "@crablet/commands-http": "workspace:*",
     "@crablet/test-support": "workspace:*",
     "pg": "8.23.1",
     "vite": "7.3.7"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 1, "test": 18 } }
 }

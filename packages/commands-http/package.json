@@ -8,6 +8,7 @@
     "./CommandApiConfig": "./src/CommandApiConfig.ts",
     "./ProblemDetail": "./src/ProblemDetail.ts",
     "./InputJsonSchema": "./src/InputJsonSchema.ts",
+    "./ClientErrors": "./src/ClientErrors.ts",
     "./ApiDescription": "./src/ApiDescription.ts",
     "./CommandApiLive": "./src/CommandApiLive.ts",
     "./ServeApi": "./src/ServeApi.ts",
@@ -22,5 +23,6 @@
     "@effect/platform-node": "4.1.4",
     "@effect/sql-pg": "4.1.4",
     "@crablet/test-support": "workspace:*"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 0, "test": 10 } }
 }

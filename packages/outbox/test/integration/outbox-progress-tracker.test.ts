@@ -29,7 +29,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer));
 const key = () => toKey({ topic: `topic-${crypto.randomUUID()}`, publisher: "log" });
 
 describe("the outbox progress tracker (against crablet_outbox_topic_progress)", () => {

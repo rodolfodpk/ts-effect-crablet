@@ -8,7 +8,9 @@
     "./ProcessorsApiLive": "./src/ProcessorsApiLive.ts",
     "./Authorization": "./src/Authorization.ts",
     "./EventsApi": "./src/EventsApi.ts",
-    "./EventsApiLive": "./src/EventsApiLive.ts"
+    "./EventsApiLive": "./src/EventsApiLive.ts",
+    "./AdminApi": "./src/AdminApi.ts",
+    "./AdminApiLive": "./src/AdminApiLive.ts"
   },
   "dependencies": {
     "effect": "4.1.4",
@@ -18,5 +20,6 @@
   "devDependencies": {
     "@crablet/commands": "workspace:*",
     "@effect/platform-node": "4.1.4"
-  }
+  },
+  "crablet": { "typeEscapes": { "src": 0, "test": 2 } }
 }

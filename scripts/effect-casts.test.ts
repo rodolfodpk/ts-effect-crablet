@@ -1,9 +1,7 @@
 // No value is cast to an Effect type (`Effect.Effect`, `Layer.Layer`, `Stream.Stream`, `ManagedRuntime`). Their requirements (R) and errors (E) are
 // what the compiler checks for us; a cast turns "does not compile" into "service not found" at run time (CLAUDE.md, "Type safe").
 //
-// Two rules, each with no exception:
-//   - in source code (`src/`), no cast to an Effect type at all, `as` or `as unknown as`;
-//   - anywhere, no `as unknown as Layer…` or `as unknown as ManagedRuntime…`.
+// One rule, everywhere (sources, tests, diagnostics, scripts), with no exception: no cast to an Effect type, `as` or `as unknown as`.
 // What these casts used to hide, and what replaced them:
 //   - 81 `as unknown as Layer.Layer<…, never>` in tests and diagnostics hid the layer's construction error (`SqlError`: the pool could not
 //     connect). `.pipe(Layer.orDie)` says that honestly: a failure to build is a defect there, and the services stay checked;
@@ -11,8 +9,10 @@
 //   - `as Effect.Effect<unknown, SchemaError>` in Repeat.ts hid a real requirement: an input schema could need a service to encode. A command's
 //     input is now an `InputSchema` (Contract.ts), which needs none;
 //   - `step2Demo.ts` ran its program as `Effect<A, E, any>` cast to `never`; it now takes exactly what `Crablet.layer` provides.
-// Tests and scripts that still cast with a plain `as` (a `run` helper taking `Effect<A, E, any>`) are fixed in one go with a typed helper, and
-// then the first rule covers them too. A cast through a function type or through `never`/`any` is not caught by a text scan; those are counted
+//   - 87 more in tests and scripts (most a `run` helper taking `Effect<A, E, any>`): 40 files compiled without them (they hid only the error
+//     channel); the rest took `runWith` (@crablet/test-support/RunWith) or a precise `R`, and two typed-client tests had their `any` client
+//     removed, which showed a `query: {}` the endpoints do not have and an error union read without narrowing.
+// A cast through a function type or through `never`/`any` is not caught by a text scan; those are counted
 // by the type-escape ratchet instead.
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -35,8 +35,6 @@ const isSource = (f: string) => /[\\/]src[\\/]/u.test(f);
 // Any cast to an Effect type: `as Effect.Effect<`, `as unknown as Layer.Layer<`, `as Layer<`, `as Stream.Stream<`, `as ManagedRuntime<`..., across line breaks.
 export const effectCast =
   /\bas\s+(?:unknown\s+as\s+)?(?:Effect\.Effect|Effect|Layer\.Layer|Layer|Stream\.Stream|Stream|ManagedRuntime\.ManagedRuntime|ManagedRuntime)\s*</u;
-// A cast of a layer or a runtime through `unknown`.
-export const unknownLayerCast = /\bas\s+unknown\s+as\s+(?:Layer\.Layer|Layer|ManagedRuntime\.ManagedRuntime|ManagedRuntime)\s*</u;
 
 const offendersOf = (pattern: RegExp, files: ReadonlyArray<string>) =>
   files.filter((f) => pattern.test(readFileSync(f, "utf8"))).map((f) => path.relative(root, f));
@@ -57,18 +55,12 @@ describe("casts to Effect types", () => {
       "x as unknown as ManagedRuntime.ManagedRuntime<R, never>",
       "x\n  as unknown as\n  Layer.Layer<\n A>"
     ]) expect(effectCast.test(cast)).toBe(true);
-    for (const cast of ["x as unknown as Layer.Layer<A, never>", "x\n as unknown as ManagedRuntime<R, never>"]) expect(unknownLayerCast.test(cast)).toBe(true);
     for (const fine of ["Layer.orDie(x)", "const layer: Layer.Layer<A> = x", "x.pipe(Layer.orDie)"]) {
       expect(effectCast.test(fine)).toBe(false);
-      expect(unknownLayerCast.test(fine)).toBe(false);
     }
   });
 
-  test("no source file casts to an Effect type", () => {
-    expect(offendersOf(effectCast, sources.filter(isSource))).toEqual([]);
-  });
-
-  test("no file casts a layer or a runtime through unknown", () => {
-    expect(offendersOf(unknownLayerCast, sources)).toEqual([]);
+  test("no file casts to an Effect type", () => {
+    expect(offendersOf(effectCast, sources)).toEqual([]);
   });
 });

@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { NodeHttpServer } from "@effect/platform-node";
-import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
+import { OpenApi } from "effect/http-api";
 import { HttpRouter } from "effect/http";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { EventStore } from "@crablet/eventstore";
 import { defineEvent } from "@crablet/commands/Event";
 import { eventPayloadMask, personal } from "@crablet/commands/Personal";
-import { eventsGroup } from "../src/EventsApi.ts";
 import { authorizationFrom } from "../src/Authorization.ts";
-import { makeEventsApiGroupLive, type PayloadMask } from "../src/EventsApiLive.ts";
+import { adminApi } from "../src/AdminApi.ts";
+import { adminApiLayer } from "../src/AdminApiLive.ts";
+import type { Masks, PayloadMask } from "../src/EventsApiLive.ts";
 
 const TOKEN = "s3cret";
 const Registered = defineEvent("UserRegistered", {
@@ -18,7 +19,7 @@ const Registered = defineEvent("UserRegistered", {
 });
 const Upgraded = defineEvent("PlanUpgraded", { schema: Schema.Struct({ userId: Schema.String, plan: Schema.String }), tags: (d) => ({ user_id: d.userId }) });
 
-const api = HttpApi.make("test").add(eventsGroup);
+const api = adminApi;
 const serve = (mask?: PayloadMask) => {
   const store = makeInMemoryEventStore();
   store.seed(
@@ -29,8 +30,7 @@ const serve = (mask?: PayloadMask) => {
   // an old shape, with a field the current definition no longer has, and a type with no definition
   store.seed({ type: "PlanUpgraded", tags: [{ key: "user_id", value: "u2" }], eventData: { userId: "u2", plan: "pro", phone: "555-0100" } });
   store.seed({ type: "Legacy", tags: [{ key: "user_id", value: "u2" }], eventData: { secret: "x" } });
-  const layer = HttpApiBuilder.layer(api).pipe(
-    Layer.provide(makeEventsApiGroupLive(api, mask === undefined ? {} : { mask })),
+  const layer = adminApiLayer({ sources: [], masks: mask === undefined ? {} : { mask } }).pipe(
     Layer.provide(store.layer),
     Layer.provide(authorizationFrom((token) => Effect.succeed(Redacted.value(token) === TOKEN))),
     Layer.provide(NodeHttpServer.layerHttpServices)
@@ -101,10 +101,9 @@ describe("the event log API", () => {
   test("metadata is withheld unless a metadata mask is given; an event without metadata says nothing is withheld", async () => {
     const store = makeInMemoryEventStore();
     await Effect.runPromise(Effect.provide(Effect.flatMap(EventStore, (es) => es.append([{ type: "PlanUpgraded", tags: [{ key: "user_id", value: "u9" }], eventData: { userId: "u9", plan: "pro" }, metadata: { actor: "admin-7", ip: "10.0.0.1" } }, Upgraded({ userId: "u9", plan: "free" })])), store.layer));
-    const serveWith = (masks: Parameters<typeof makeEventsApiGroupLive>[1]) =>
+    const serveWith = (masks: Masks) =>
       HttpRouter.toWebHandler(
-        HttpApiBuilder.layer(api).pipe(
-          Layer.provide(makeEventsApiGroupLive(api, masks)),
+        adminApiLayer({ sources: [], masks }).pipe(
           Layer.provide(store.layer),
           Layer.provide(authorizationFrom((token) => Effect.succeed(Redacted.value(token) === TOKEN))),
           Layer.provide(NodeHttpServer.layerHttpServices)

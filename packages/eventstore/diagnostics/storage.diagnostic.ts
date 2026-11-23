@@ -26,9 +26,8 @@ before(async () => {
 }, { timeout: 60_000 });
 after(async () => { await runtime.dispose(); await db.stop(); });
 
-const q = <A>(text: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<A & object>(text, params as never)) as Effect.Effect<ReadonlyArray<A>, never, SqlClient.SqlClient>) as Promise<ReadonlyArray<A>>;
+const q = <A>(text: string, params: ReadonlyArray<unknown> = []) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<A & object>(text, params as never))) as Promise<ReadonlyArray<A>>;
 const mb = (bytes: number | string) => `${(Number(bytes) / 1_048_576).toFixed(1)} MiB`;
-const pct = (a: number[], p: number) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor((p / 100) * a.length))]!;
 const MONTHS = 12;
 
 const deposit = (i: number) => {

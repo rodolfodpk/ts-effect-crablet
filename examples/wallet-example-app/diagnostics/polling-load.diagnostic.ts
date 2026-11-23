@@ -13,7 +13,7 @@ import { makeEventStoreLayer } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices } from "../test/support/startWalletAppForTest.ts";
+import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import type { Polling } from "../src/polling.ts";
 

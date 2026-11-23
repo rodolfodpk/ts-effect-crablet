@@ -82,7 +82,9 @@ describe("one lock session per process (ADR-0046)", () => {
 
   it("when the session dies every leader on it is lost together, and the next attempt leads on a new session", { timeout: 30_000 }, async () => {
     const leaders = (await Promise.all(KEYS.map((k) => acquire(processA, k)))) as Array<LeaderHandle>;
-    const [{ pid }] = await holders();
+    const [first] = await holders();
+    assert.ok(first, "the session holds the locks");
+    const { pid } = first;
     await probe.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.asVoid(sql.unsafe("SELECT pg_terminate_backend($1)", [pid]))));
     for (let i = 0; i < 50 && leaders.some((l) => l.isLeader()); i++) await sleep(100);
     assert.ok(leaders.every((l) => !l.isLeader()), "all four lost");

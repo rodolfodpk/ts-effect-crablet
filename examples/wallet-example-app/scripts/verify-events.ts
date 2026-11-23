@@ -8,7 +8,7 @@
 // against a copy of production data before a deploy that changes an event.
 import { Effect, Redacted } from "effect";
 import * as Crablet from "@crablet/commands/Crablet";
-import { formatEventsReport, verifyEvents, type EventsReport } from "@crablet/commands/VerifyEvents";
+import { formatEventsReport, verifyEvents } from "@crablet/commands/VerifyEvents";
 import * as M from "../src/domain/WalletModel.ts";
 import { WelcomeNotificationSent } from "../src/domain/notification/WelcomeNotificationSent.ts";
 
@@ -36,7 +36,7 @@ const program = verifyEvents({
   ...(types.length > 0 ? { types } : {})
 });
 
-const report = await Effect.runPromise(Effect.provide(program, layer) as Effect.Effect<EventsReport, never, never>);
+const report = await Effect.runPromise(Effect.provide(program, layer));
 console.log(formatEventsReport(report));
 process.exit(report.ok ? 0 : 1);
 // #endregion verify-script

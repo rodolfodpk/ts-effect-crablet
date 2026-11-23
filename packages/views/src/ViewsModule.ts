@@ -6,8 +6,8 @@ import { tryAcquireGlobalLeader, VIEWS_LOCK_KEY, type LeaderOptions } from "@cra
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
-import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
-import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
+import { resolvePollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { VIEW_PROGRESS_CHANNEL } from "./ViewProgress.ts";
@@ -28,15 +28,15 @@ export interface RunnableView {
 
 export interface ViewsDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
-  readonly config?: ViewsConfig;
+  readonly config?: ViewsConfig | undefined;
   // The views, each built with `defineView(...).on(...)`.
   readonly views: ReadonlyArray<RunnableView>;
   // Per-view polling, batch and backoff, by view name: deployment settings, kept out of the view's definition.
-  readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>>;
-  readonly instanceId?: string;
+  readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>> | undefined;
+  readonly instanceId?: string | undefined;
   // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
   // defaults of `LeaderOptions`.
-  readonly leader?: LeaderOptions;
+  readonly leader?: LeaderOptions | undefined;
 }
 
 // Views-module-specific wiring only. The generic scheduling/leader-election/backoff engine itself lives in
@@ -46,7 +46,7 @@ export interface ViewsDeps {
 export const makeViewsProcessor = (
   deps: ViewsDeps
 ): Effect.Effect<
-  EventProcessorHandle<ProcessorConfig<string>, string>,
+  ProcessorHandle,
   never,
   SqlClient.SqlClient | PgClient.PgClient
 > =>

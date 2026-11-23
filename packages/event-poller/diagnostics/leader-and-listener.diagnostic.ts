@@ -30,7 +30,7 @@ before(async () => {
 after(async () => { await runtime.dispose(); await db.stop(); });
 const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) => runtime.runPromise(e);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const sql = <A>(f: (s: SqlClient.SqlClient) => Effect.Effect<A, unknown, never>) => run(Effect.flatMap(SqlClient.SqlClient, f) as Effect.Effect<A, unknown, SqlClient.SqlClient>);
+const sql = <A>(f: (s: SqlClient.SqlClient) => Effect.Effect<A, unknown, never>) => run(Effect.flatMap(SqlClient.SqlClient, f));
 
 interface Call { readonly who: string; readonly at: number; readonly positions: ReadonlyArray<bigint> }
 
@@ -217,13 +217,13 @@ describe("DIAG", () => {
         Effect.gen(function* () {
           const s = yield* SqlClient.SqlClient;
           const connection = yield* s.reserve;
-          const pidBefore = (yield* connection.execute("SELECT pg_backend_pid() AS pid", [], undefined) as Effect.Effect<Array<{ pid: number }>>)[0]!.pid;
+          const pidBefore = (yield* connection.execute("SELECT pg_backend_pid() AS pid", [], undefined))[0]!.pid;
           yield* connection.execute("SELECT pg_try_advisory_lock($1)", [key.toString()], undefined);
           yield* Effect.promise(() => killPid(pidBefore));
           yield* Effect.sleep("300 millis");
           const results: string[] = [];
           for (let i = 0; i < 3; i++) {
-            const r = yield* Effect.exit(connection.execute("SELECT pg_backend_pid() AS pid", [], undefined) as Effect.Effect<Array<{ pid: number }>>);
+            const r = yield* Effect.exit(connection.execute("SELECT pg_backend_pid() AS pid", [], undefined));
             results.push(r._tag === "Success" ? `OK on pid ${(r.value as Array<{ pid: number }>)[0]!.pid}` : "FAILED");
             yield* Effect.sleep("200 millis");
           }

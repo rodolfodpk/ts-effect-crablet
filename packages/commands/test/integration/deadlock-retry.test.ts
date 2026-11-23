@@ -11,6 +11,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../../src/Command.ts";
 import { defineEvent } from "../../src/Event.ts";
@@ -31,7 +32,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 
 const Touched = defineEvent("DL_Touched", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ account_id: d.id }) });
 

@@ -20,7 +20,7 @@ before(async () => {
   ).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
-const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(e, layer) as Effect.Effect<A, E, never>);
+const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(e, layer));
 const gauge = (name: typeof StorageMetrics.tableBytes, attributes: Record<string, string>) => Effect.map(Metric.value(Metric.withAttributes(name, attributes)), (s) => (s as unknown as { value: number }).value);
 
 describe("storageReport", () => {

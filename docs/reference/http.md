@@ -20,6 +20,20 @@ it at `GET /api/views/changes` ([reading your own writes](../concepts/read-your-
 
 The checked-in descriptions of the two examples: [`wallet-openapi.json`](../api/wallet-openapi.json), [`course-enrolment-openapi.json`](../api/course-enrolment-openapi.json).
 
+## Two kinds of client
+
+The same API is read in two ways, and each gets different guarantees.
+
+| | A TypeScript client of your own product | Any other client |
+|---|---|---|
+| Examples | a Foldkit page, a service of the same deployment | curl, another language, another team, another product |
+| Contract comes from | the API definition (`makeCourseApi()`), imported, with `HttpApiClient.make` | `GET /openapi.json` |
+| What it gets | the payload and the errors **per command, at compile time**; the request checked against the schema before it is sent; the failure union narrowed by domain error (`matchDomainProblem`, `@crablet/commands-http/ClientErrors`) | each command's input as JSON Schema; every failure as `application/problem+json` with `errorType` and `fields`; the statuses below |
+| What guards it here | `packages/commands-http/test/contract-api.types.ts` (the type of each command), the browser-safety tests (the bundle reaches no server code) | the checked-in descriptions in `docs/api/`, compared byte for byte by a unit test (a change shows up as a diff); `scripts/openapi-breaking.ts`, run by CI, reports the **breaking** ones against the base branch; `inputJsonSchemaProblems` |
+| Its own risk | the types describe the version the page was **built** against: a page already deployed talks to a newer server over the network like any other client | a change to the description is a diff in review; a breaking one fails CI unless a commit has a `BREAKING:` line ([ADR-0013](../adr/0013-api-evolution-additive-vs-breaking.md)); it reads the shape, not the meaning behind it |
+
+The typed client is for **inside a product**. Between products, use the OpenAPI description or messages: importing another product's API definition couples the deployments.
+
 ## Command answers
 
 | Status | When | Body |

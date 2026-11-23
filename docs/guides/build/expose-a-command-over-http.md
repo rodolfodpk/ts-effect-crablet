@@ -94,6 +94,21 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
 
 ## 6. Regenerate the description
 
-The OpenAPI document is checked in ([`docs/api/`](../../api)) and a unit test fails if it is stale, so an API change shows up as a diff. In the course app:
+The OpenAPI document is checked in ([`docs/api/`](../../api)) and a unit test fails if it is stale, so an API change shows up as a diff. CI also runs `bun run docs:api:breaking`, which compares it with the base branch and fails on a change that could break a client (a route, an answer or a response field removed or retyped; a new required request field), unless a commit of the change has a line that starts with `BREAKING:` saying what breaks ([ADR-0013](../../adr/0013-api-evolution-additive-vs-breaking.md)). In the course app:
 `node scripts/generate-openapi.ts` from `examples/course-enrolment-app`. A command answers with a **marker**; a read that carries it sees that write
 ([tutorial step 4](../../tutorial/04-read-your-own-writes.md)). Reference: [`@crablet/commands-http`](../../../packages/commands-http/README.md).
+
+## 7. Use it from a client
+
+There are two kinds of client, and they are not promised the same things ([the comparison](../../reference/http.md#two-kinds-of-client)):
+
+- **A TypeScript client of your own product** (a Foldkit page, a service in the same deployment) derives its client from the API definition, with `HttpApiClient.make(makeCourseApi())`
+  and no codegen. A command is then typed per command: a misspelt payload field does not compile, and the call fails with exactly the problems that command declares. Read them with
+  `matchDomainProblem` from `@crablet/commands-http/ClientErrors` (it imports nothing, so a page can bundle it): one handler per declared error, so a command that gains a declared
+  error stops the page compiling until it is handled. [Tutorial step 5](../../tutorial/05-a-page-that-uses-it.md) builds one.
+  These types are checked **when the client is built**. They do not replace compatibility on the wire: a page that is already deployed talks to a newer server like any other client.
+- **Any other client** (curl, another language, another team, another product) reads `/openapi.json`: each command's input as JSON Schema, and every failure as `application/problem+json` with
+  `errorType` and `fields`. [Tutorial step 3](../../tutorial/03-an-http-api.md) uses `curl`.
+
+Between products, do not import another product's API definition to get its types: that couples the two deployments and hides the difference between the versions that are running.
+Use the OpenAPI description, or messages.

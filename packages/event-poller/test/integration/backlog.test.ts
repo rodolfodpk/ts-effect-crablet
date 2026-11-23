@@ -23,7 +23,7 @@ before(async () => {
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 
-const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => Effect.runPromise(Effect.provide(effect, layer));
 
 // An event of `type` that occurred `ageSeconds` ago. Returns the cursor just after it.
 const insert = (type: string, ageSeconds = 0, tags: ReadonlyArray<string> = []) =>

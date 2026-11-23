@@ -41,7 +41,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 // ---- a small domain: booking seats (one booking per seat) ----
 const SeatBooked = defineEvent("SeatBooked", {
@@ -97,7 +97,7 @@ const eventsOnSeat = (seatId: string) =>
   );
 
 const exitsOf = <A, E>(effects: ReadonlyArray<Effect.Effect<A, E, any>>) =>
-  run(Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length }) as Effect.Effect<any, never, any>) as Promise<
+  run(Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length })) as Promise<
     ReadonlyArray<{ _tag: "Success"; value: A } | { _tag: "Failure"; cause: { reasons: ReadonlyArray<{ _tag: string; error?: unknown }> } }>
   >;
 const failureOf = (exit: any) => exit.cause.reasons.find((r: any) => r._tag === "Fail")?.error;

@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit, fail, type ResolveReader } from "../../src/Command.ts";
 import { BookLent, CardCancelled, CardIssued, CardModel, CardNotValid, MemberModel } from "../support/borrow-book.ts";
@@ -28,7 +29,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 
 // The guide's library (support/borrow-book.ts): a card names a member, and a loan is the member's. The command here is the guide's `BorrowBook` with a wait after the lookup, so the
 // test can cancel the card between the lookup and the append.

@@ -55,7 +55,7 @@ export const compile = (op: Data): Compiled | null => {
       const cols = [...keys, ...Object.keys(op.table.columns)].filter((c) => op.row[c] !== undefined);
       assertKnown(op.table, Object.keys(op.row));
       for (const k of keys) if (op.row[k] === undefined) throw new Error(`${op.table.name}: the row is missing the key "${k}"`);
-      const values = cols.map((c, i) => `$${i + 1}`);
+      const values = cols.map((_c, i) => `$${i + 1}`);
       const nonKey = cols.filter((c) => !keys.includes(c));
       const conflict =
         op.onConflict === "replace" && nonKey.length > 0

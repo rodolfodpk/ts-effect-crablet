@@ -9,15 +9,21 @@ Using Effect and TypeScript only makes sense if the types tell the truth: an Eff
 really fail. A cast that erases them turns "does not compile" into "service not found" at run time.
 
 1. **No cast to an Effect type.** Never write `as Effect.Effect<…>`, `as Layer.Layer<…>`, `as Stream.Stream<…>` or `as ManagedRuntime<…>`, with or without
-   `unknown`, nor an `as any` / `as never` that stands in for one. A wrong `R` or `E` is fixed in the code. `scripts/effect-casts.test.ts` enforces it, with
-   no exception, in every `src/` and for `as unknown as` layers and runtimes everywhere; tests and scripts that still cast with a plain `as` are being fixed,
-   not listed as exceptions.
+   `unknown`, nor an `as any` / `as never` that stands in for one. A wrong `R` or `E` is fixed in the code. `scripts/effect-casts.test.ts` enforces it
+   everywhere (sources, tests, diagnostics, scripts), with no exception. To run an Effect in a test, use `runWith(layer)` from
+   `@crablet/test-support/RunWith`, whose `run` takes exactly what the layer provides.
 2. **An honest `E`.** A layer that can fail to build (`SqlError`, `ConfigError`) says so. `orDie` is not a cast: it is allowed where the failure really is a
    defect at that boundary (a test that cannot reach its database, an admin endpoint answering 500), with the reason in a comment, never to silence the compiler.
 3. **Requirements are derived, not written by hand.** A hand-written requirements type drifts unnoticed; take it from the code (`Effect.Services<…>`), or
-   check it against the code with a compile-time equality (`requirementsMatchTheHandler` in `packages/commands-http/src/CommandApiLive.ts`).
-4. **Every TypeScript file is type-checked.** A new folder of `.ts` files goes into a `tsconfig.json` `include`.
-5. **A type escape that must stay** (a generic `Schema` boundary, a dynamic HTTP group) says why in a comment next to it.
+   check it against the code with a compile-time equality. Example: `CommandApiRequirements` (`packages/commands-http/src/CommandApiLive.ts`) is read off
+   the layer type `HttpApiBuilder.group` infers, and `test/command-group-live.types.ts` pins it.
+4. **Every TypeScript file is type-checked.** A new folder of `.ts` files goes into a `tsconfig.json` `include`; `scripts/typecheck-coverage.test.ts`
+   fails when a versioned file is in none. Every tsconfig is strict, with `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+   `noUnusedLocals`, `noUnusedParameters`, `noImplicitOverride` and `noFallthroughCasesInSwitch`. An option the code reads with a default is typed
+   `x?: T | undefined`, so a caller may pass `undefined` for "the default".
+5. **A type escape that must stay** (`as unknown as`, `as never`, `as any`, `: any`, `<any>`: a generic `Schema` boundary, a dynamic HTTP group) says why on
+   its line or the line above, `// type escape: <why>`. The others are counted per workspace against `crablet.typeEscapes` in its `package.json`
+   (`scripts/type-escapes.test.ts`): the count may not grow, and when you remove escapes, lower it with `bun run type-escapes:baseline`.
 6. **A public API has type tests** (`// @ts-expect-error`) for what must not compile, so a type is shown to be precise and not merely accepted. Check that
    each one bites: remove it and see the compiler complain.
 

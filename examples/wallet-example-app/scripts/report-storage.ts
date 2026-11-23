@@ -7,7 +7,7 @@
 //   yield* Effect.forkDetach(monitorStorage({ every: "5 minutes" }))   // from @crablet/eventstore/Storage
 import { Effect, Redacted } from "effect";
 import * as Crablet from "@crablet/commands/Crablet";
-import { formatStorageReport, storageReport, type StorageReport } from "@crablet/eventstore/Storage";
+import { formatStorageReport, storageReport } from "@crablet/eventstore/Storage";
 
 const layer = Crablet.layer({
   host: process.env["WALLET_DB_HOST"] ?? "localhost",
@@ -18,7 +18,7 @@ const layer = Crablet.layer({
 });
 
 // #region report
-const report = await Effect.runPromise(Effect.provide(storageReport({ exact: process.argv.includes("--exact") }), layer) as Effect.Effect<StorageReport, never, never>);
+const report = await Effect.runPromise(Effect.provide(storageReport({ exact: process.argv.includes("--exact") }), layer));
 console.log(formatStorageReport(report));
 // #endregion report
 process.exit(0);

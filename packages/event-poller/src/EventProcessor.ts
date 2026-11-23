@@ -44,7 +44,7 @@ const isLeadershipLost = (cause: Cause.Cause<unknown>): boolean => {
 // The event processor: one persistent, long-lived fiber per processorId (see makeEventProcessor's
 // `processorLoop`). A single dedicated fiber processes strictly sequentially by construction, so a
 // LISTEN/NOTIFY wakeup can never race an in-flight poll and no "already running" guard is needed.
-export interface EventProcessorService<C extends ProcessorConfig<I>, I> {
+export interface EventProcessorService<I> {
   // Callable directly (used by tests); does NOT check leadership - the leadership gate lives only
   // in the scheduled loop.
   readonly process: (processorId: I) => Effect.Effect<number, unknown>;
@@ -96,10 +96,10 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
 }
 
 // A module's processor (views, automations, outbox), as its `make*Processor` and `start*Processor` return it.
-export type ProcessorHandle = EventProcessorHandle<ProcessorConfig<string>, string>;
+export type ProcessorHandle = EventProcessorHandle<string>;
 
-export interface EventProcessorHandle<C extends ProcessorConfig<I>, I extends string> {
-  readonly service: EventProcessorService<C, I>;
+export interface EventProcessorHandle<I extends string> {
+  readonly service: EventProcessorService<I>;
   readonly backoffSnapshot: (processorId: I) => Effect.Effect<BackoffSnapshot | null>;
   readonly allBackoffSnapshots: Effect.Effect<ReadonlyMap<I, BackoffSnapshot>>;
   // The events this processor selects, by id: what its backlog is counted against (ProcessorManagementService.getBacklog).
@@ -120,7 +120,7 @@ const withPollerTags = <In, State>(
 
 export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends string>(
   deps: EventProcessorDeps<C, I>
-): Effect.Effect<EventProcessorHandle<C, I>> =>
+): Effect.Effect<EventProcessorHandle<I>> =>
   Effect.gen(function* () {
     // PATTERN PRIMER - `Ref<A>`, Effect's mutable cell (think `AtomicReference<A>`, or a `useRef`
     // that any fiber can read/write). `Ref.make(initial)` allocates it; `Ref.get`/`Ref.set`/
@@ -492,7 +492,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
       (entries) => new Map(entries)
     );
 
-    const service: EventProcessorService<C, I> = {
+    const service: EventProcessorService<I> = {
       process,
       start,
       stop,
@@ -516,6 +516,6 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const selectionFor = (processorId: I): EventSelection | undefined => selectionById.get(processorId);
     const isLeader: Effect.Effect<boolean> = Effect.map(Ref.get(leaderRef), (leader) => leader !== null && leader.isLeader());
-    const handle: EventProcessorHandle<C, I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor, isLeader };
+    const handle: EventProcessorHandle<I> = { service, backoffSnapshot, allBackoffSnapshots, selectionFor, isLeader };
     return handle;
   });

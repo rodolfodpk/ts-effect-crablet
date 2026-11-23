@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest, problemOf } from "@crablet/commands-http/ProblemDetail";

@@ -4,9 +4,9 @@ import { EventStore } from "@crablet/eventstore";
 import { DEADLINES_LOCK_KEY, tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { holdSessionOnce, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
-import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
+import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
 import * as EventSelection from "@crablet/event-poller/EventSelection";
-import { processorConfigOf, resolvePollingConfig, type PollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { processorConfigOf, resolvePollingConfig, type PollingSettings } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { CommandExecutor } from "@crablet/commands";
 import type { Command } from "@crablet/commands/Command";
@@ -32,8 +32,8 @@ export const DEADLINES_PROCESSOR_ID = "deadlines";
 // deadline can fire after it is due, and an idle poll is one index lookup on the leader: 5 seconds by default, for deadlines in business time.
 // `fireTimeoutMs`: how long one deadline's command may take (its retries included) before the firing counts as a fault and is retried, so that a hung
 // command does not hold back the deadlines after it for good (ADR-0036's precedent for the outbox's publish).
-export type DeadlinesConfig = Partial<Omit<PollingConfig, "backoffEnabled" | "backoffThreshold" | "backoffMultiplier" | "backoffMaxSeconds">> & {
-  readonly fireTimeoutMs?: number;
+export type DeadlinesConfig = Omit<PollingSettings, "backoffEnabled" | "backoffThreshold" | "backoffMultiplier" | "backoffMaxSeconds"> & {
+  readonly fireTimeoutMs?: number | undefined;
 };
 export const defaultDeadlinesPollingIntervalMs = 5_000;
 export const defaultDeadlineFireTimeoutMs = 30_000;
@@ -41,18 +41,18 @@ export const defaultDeadlineFireTimeoutMs = 30_000;
 export interface DeadlinesDeps {
   // The commands deadlines may name. Each must declare `idempotentBy` (a deadline can fire twice) and have no `personal(...)` field in its input.
   readonly commands: ReadonlyArray<Command<any, any>>;
-  readonly config?: DeadlinesConfig;
-  readonly instanceId?: string;
+  readonly config?: DeadlinesConfig | undefined;
+  readonly instanceId?: string | undefined;
   // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
   // defaults of `LeaderOptions`.
-  readonly leader?: LeaderOptions;
+  readonly leader?: LeaderOptions | undefined;
 }
 
 // Builds the deadlines processor without starting it (a handle for status and the admin API, or a test that drives `start` and `stop` itself).
 export const makeDeadlinesProcessor = (
   deps: DeadlinesDeps
 ): Effect.Effect<
-  EventProcessorHandle<ProcessorConfig<string>, string>,
+  ProcessorHandle,
   never,
   SqlClient.SqlClient | CommandExecutor | EventStore
 > =>

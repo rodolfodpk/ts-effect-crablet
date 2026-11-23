@@ -13,6 +13,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit, fail, type Command } from "../../src/Command.ts";
 import { afterLoad } from "../support/barrier.ts";
@@ -25,7 +26,7 @@ after(async () => { await db.stop(); });
 
 const AppLive = () =>
   Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 const uid = () => crypto.randomUUID().slice(0, 8);
 const retriesOf = (commandType: string) =>
   Effect.map(Metric.value(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: commandType })), (m) => m.count);

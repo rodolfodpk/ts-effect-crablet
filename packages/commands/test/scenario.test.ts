@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import { concurrent, defineCommand, emit, fail, noop } from "../src/Command.ts";
+import { defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError, InvalidInput } from "../src/Errors.ts";
 import { defineEvent } from "../src/Event.ts";
 import { defineModel } from "../src/Model.ts";

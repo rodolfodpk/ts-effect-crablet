@@ -18,7 +18,7 @@ import type { SettleViews, UncaughtView } from "@crablet/views/SettleViews";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import { makeConsistentRead } from "@crablet/views-http";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { startWalletAppForTest, type CoreServices } from "../test/support/startWalletAppForTest.ts";
+import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import { WalletBalanceView } from "../src/views/WalletBalanceViewProjector.ts";
 import { WalletSummaryView } from "../src/views/WalletSummaryViewProjector.ts";
@@ -55,7 +55,7 @@ describe("DIAG", () => {
       Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)),
         PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })).pipe(Layer.orDie)
     );
-    const run = <A, E>(e: Effect.Effect<A, E, any>) => rt.runPromise(e as Effect.Effect<A, never, any>);
+    const run = <A, E>(e: Effect.Effect<A, E, any>) => rt.runPromise(e);
     try {
       // wallets, with the views caught up by a full instance that then stops; one marker per wallet
       const full = await startWalletAppForTest(rt);

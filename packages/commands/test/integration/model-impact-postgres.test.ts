@@ -19,8 +19,8 @@ const Transferred = defineEvent("Transferred", { schema: Schema.Struct({ from: S
 let db: TestDb;
 before(async () => { db = await startTestDb(); }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
-const run = <A, E>(e: Effect.Effect<A, E, any>) =>
-  Effect.runPromise(Effect.provide(e, Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })) as Effect.Effect<A, E, never>);
+const run = <A, E>(e: Effect.Effect<A, E, Crablet.Services>) =>
+  Effect.runPromise(Effect.provide(e, Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) })));
 
 describe("eventFactsFromLog", () => {
   it("lists, per event type in the log, the tag keys it carries; a model checked against them is told about the type it has not accounted for", { timeout: 60_000 }, async () => {

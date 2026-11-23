@@ -7,6 +7,7 @@ import { SqlClient } from "effect/sql";
 import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { byModel, defineCommand, emit } from "../../src/Command.ts";
 import { defineModel } from "../../src/Model.ts";
@@ -31,8 +32,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
-const runExit = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromiseExit(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run, runExit } = runWith(AppLive);
 
 const Paid = defineEvent("RPG_Paid", { schema: Schema.Struct({ paymentId: Schema.String, amount: Schema.Number }), tags: (d) => ({ payment_id: d.paymentId }) });
 const payInput = Schema.Struct({ paymentId: Schema.String, amount: Schema.Number });

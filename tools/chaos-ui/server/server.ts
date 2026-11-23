@@ -142,7 +142,7 @@ const loadCall = async (method: "GET" | "POST", path: string, body?: unknown): P
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await ensureForward();
-      const res = await fetch(`http://127.0.0.1:${FORWARD_PORT}${path}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(4000) });
+      const res = await fetch(`http://127.0.0.1:${FORWARD_PORT}${path}`, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(4000) });
       const json = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error(String(json["error"] ?? res.status));
       return json;

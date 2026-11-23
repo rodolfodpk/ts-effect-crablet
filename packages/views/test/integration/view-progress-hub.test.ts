@@ -44,7 +44,7 @@ const waitUntil = async (check: () => Promise<boolean>, ms = 15_000) => {
   }
 };
 const listeners = async () => Number((await admin.query("SELECT count(*) AS n FROM pg_stat_activity WHERE query LIKE 'LISTEN %' AND pid <> pg_backend_pid()")).rows[0].n);
-const run = <A>(effect: Effect.Effect<A, unknown, Scope.Scope | ViewProgressHub>) => runtime.runPromise(Effect.scoped(effect) as Effect.Effect<A, unknown, ViewProgressHub>);
+const run = <A>(effect: Effect.Effect<A, unknown, Scope.Scope | ViewProgressHub>) => runtime.runPromise(Effect.scoped(effect));
 
 describe("the view progress hub over a real LISTEN", () => {
   it("a ping sent by the database reaches the subscriber of that view, and not the subscriber of another", { timeout: 30_000 }, async () => {

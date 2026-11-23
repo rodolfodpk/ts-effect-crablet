@@ -15,7 +15,6 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
-import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { makeSqlEventFetcher } from "../../src/SqlEventFetcher.ts";
 import * as EventSelection from "../../src/EventSelection.ts";
 import * as ProgressCursorNS from "../../src/ProgressCursor.ts";
@@ -53,7 +52,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 const fetchAfter = (cursor: ProgressCursor, types: ReadonlyArray<string> = ["InvA", "InvB"], batchSize = 1000) =>
   run(

@@ -6,8 +6,8 @@ import { tryAcquireGlobalLeader, AUTOMATIONS_LOCK_KEY, type LeaderOptions } from
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
-import { makeEventProcessor, type EventProcessorHandle, type ProcessorHandle } from "@crablet/event-poller";
-import { resolvePollingConfig, type ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
+import { resolvePollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
@@ -20,17 +20,17 @@ import { makeAutomationProcessorConfigs } from "./internal/AutomationProcessorCo
 
 export interface AutomationsDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
-  readonly config?: AutomationsConfig;
+  readonly config?: AutomationsConfig | undefined;
   // The automations, each built with `defineAutomation(...).on(...)`. `AutomationHandler<any, any, any>`: a heterogeneous list, each with its own
   // command type T, is type-erased here - each keeps its own concrete T/E/HE where it is defined. The wiring below reads only the
   // EventSelection/automationName fields, which don't depend on T; T matters only to the per-decision dispatch (internal/AutomationEventHandler.ts).
   readonly automations: ReadonlyArray<AutomationHandler<any, any, any>>;
   // Per-automation polling, batch and backoff, by automation name: deployment settings, kept out of the automation's definition.
-  readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>>;
-  readonly instanceId?: string;
+  readonly overrides?: Readonly<Record<string, ProcessorRuntimeOverrides>> | undefined;
+  readonly instanceId?: string | undefined;
   // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
   // defaults of `LeaderOptions`.
-  readonly leader?: LeaderOptions;
+  readonly leader?: LeaderOptions | undefined;
 }
 
 // Automations-module-specific wiring only. Reuses @crablet/event-poller's generic engine as-is,
@@ -42,7 +42,7 @@ export interface AutomationsDeps {
 export const makeAutomationsProcessor = (
   deps: AutomationsDeps
 ): Effect.Effect<
-  EventProcessorHandle<ProcessorConfig<string>, string>,
+  ProcessorHandle,
   never,
   SqlClient.SqlClient | PgClient.PgClient | CommandExecutor
 > =>

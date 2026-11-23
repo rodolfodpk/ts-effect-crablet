@@ -67,7 +67,7 @@ export interface Loaded<S> {
   readonly horizon: LogPosition;
   // What every read of this load could see (ProjectionResult.seen; the intersection of them when it read more than once): the append condition
   // counts as a conflict only an event the load could not see (ADR-0048). Absent when a read did not carry one (the in-memory store).
-  readonly seen?: ReadSnapshot.ReadSnapshot;
+  readonly seen?: ReadSnapshot.ReadSnapshot | undefined;
   // The newest event the load read, settled or not (ProjectionResult.latest): an upper bound on what `decide` saw. A decision that answers
   // "already done" from the model returns it as its marker (ADR-0034).
   readonly latest: LogPosition;

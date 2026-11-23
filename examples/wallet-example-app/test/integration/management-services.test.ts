@@ -47,7 +47,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, CoreServices>) => runtime.runPromise(effect as Effect.Effect<A, E, never>);
+const run = <A, E>(effect: Effect.Effect<A, E, CoreServices>) => runtime.runPromise(effect);
 const sql = async (text: string) => {
   const client = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await client.connect();

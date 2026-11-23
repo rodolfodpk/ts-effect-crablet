@@ -39,7 +39,7 @@ after(async () => {
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient>) =>
-  Effect.runPromise(Effect.provide(effect, layer) as Effect.Effect<A, E, never>);
+  Effect.runPromise(Effect.provide(effect, layer));
 
 const uid = () => crypto.randomUUID();
 const ev = (type: string, ...tags: Array<[string, string]>) =>

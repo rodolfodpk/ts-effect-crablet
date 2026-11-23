@@ -23,7 +23,7 @@ after(async () => { await db.stop(); });
 
 const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (n: number) => n };
 const horizonOf = () =>
-  Effect.runPromise(Effect.provide(Effect.flatMap(EventStore, (es) => es.project(Query.of([]), LogPosition.zero(), [noop])), layer) as Effect.Effect<any, never, never>).then((r) => r.horizon as LogPosition.LogPosition);
+  Effect.runPromise(Effect.provide(Effect.flatMap(EventStore, (es) => es.project(Query.of([]), LogPosition.zero(), [noop])), layer)).then((r) => r.horizon as LogPosition.LogPosition);
 
 describe("project returns a horizon", () => {
   it("with nothing running, it is at or above every finished transaction; position 0, no timestamp", async () => {

@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../../src/Command.ts";
 import { defineEvent } from "../../src/Event.ts";
@@ -29,7 +30,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 
 const Notified = defineEvent("TB_Notified", { schema: Schema.Struct({ walletId: Schema.String, kind: Schema.String }), tags: (d) => ({ wallet_id: d.walletId }) });
 const notifyInput = Schema.Struct({ walletId: Schema.String, kind: Schema.String });

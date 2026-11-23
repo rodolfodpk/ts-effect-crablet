@@ -5,8 +5,7 @@ import {
   makeProcessorManagementService,
   type ProcessorManagementService
 } from "@crablet/event-poller/ProcessorManagementService";
-import type { EventProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorConfig } from "@crablet/event-poller/ProcessorConfig";
+import type { ProcessorHandle } from "@crablet/event-poller";
 import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 
@@ -53,7 +52,7 @@ const toDetails = (row: ProgressRow): AutomationProgressDetails => ({
 });
 
 export const makeAutomationManagementService = (
-  handle: EventProcessorHandle<ProcessorConfig<string>, string>
+  handle: ProcessorHandle
 ): Effect.Effect<AutomationManagementService, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

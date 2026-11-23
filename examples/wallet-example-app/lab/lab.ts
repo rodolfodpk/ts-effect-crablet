@@ -19,7 +19,6 @@ const CLUSTER = "crablet-lab";
 const CTX = `kind-${CLUSTER}`;
 const IMAGE = "crablet-wallet:lab";
 const MIGRATIONS_IMAGE = "crablet-migrations:lab";
-const POSTGRES_IMAGE = "postgres:18.6-alpine";
 const NETSHOOT = "nicolaka/netshoot:v0.14";
 const API = "http://127.0.0.1:8081";
 // the advisory lock keys of the three modules (packages/eventstore/src/Leader.ts)

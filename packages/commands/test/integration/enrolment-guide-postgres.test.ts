@@ -7,6 +7,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import { Conflict } from "@crablet/eventstore/AppendErrors";
 import * as Crablet from "../../src/Crablet.ts";
+import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import {
   CourseDefined,
@@ -34,7 +35,7 @@ const AppLive = () =>
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-const run = <A, E>(e: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.provide(e, AppLive()) as Effect.Effect<A, E, never>);
+const { run } = runWith(AppLive);
 
 const barrier = (parties: number) =>
   Effect.gen(function* () {
@@ -82,7 +83,7 @@ describe("enrolment against Postgres", () => {
   });
 
   it("a student's LAST slot: one student racing into two different courses, exactly one succeeds", async () => {
-    const [a, b, c, d] = [1, 2, 3, 4].map((n) => `c${n}-${uid()}`);
+    const [a, b, c, d] = [`c1-${uid()}`, `c2-${uid()}`, `c3-${uid()}`, `c4-${uid()}`] as const;
     const student = `s-${uid()}`;
     const r = await run(
       Effect.gen(function* () {

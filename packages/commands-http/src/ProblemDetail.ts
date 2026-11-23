@@ -26,9 +26,9 @@ export const CommandApiIdempotencyMismatchType = "urn:crablet:problem:command-ap
 export const InputIssueProblem = Schema.Struct({
   path: Schema.Array(Schema.Union([Schema.String, Schema.Int])).annotate({
     description: "Where in the request body: property names and array indexes, outermost first."
-  } as never),
+  }),
   message: Schema.String
-}).annotate({ identifier: "InputIssue" } as never);
+}).annotate({ identifier: "InputIssue" });
 
 export class CommandApiBadRequest extends Schema.Class<CommandApiBadRequest>("CommandApiBadRequest")(
   {
@@ -112,12 +112,28 @@ export class CommandIdempotencyMismatch extends Schema.Class<CommandIdempotencyM
 export const problemStatusOf = { not_found: 404, invalid: 400, conflict: 409, forbidden: 403 } as const;
 const problemTitleOf = { not_found: "Not Found", invalid: "Bad Request", conflict: "Conflict", forbidden: "Forbidden" } as const;
 
-export const domainProblemOf = (kind: ErrorKind, error: unknown): object => {
+// The problem body of a domain error, as `domainProblemOf` builds it and a command endpoint declares it (one `<Tag>Problem` per declared error).
+export interface DomainProblemBody {
+  readonly type: string;
+  readonly title: string;
+  readonly status: number;
+  readonly detail: string;
+  readonly errorType: string;
+  readonly fields: { readonly [x: string]: unknown };
+}
+
+// Is this a domain error's problem body (as `domainProblemOf` builds it)?
+export const isDomainProblemBody = (value: unknown): value is DomainProblemBody =>
+  typeof value === "object" && value !== null && "errorType" in value && typeof value.errorType === "string" && "fields" in value && typeof value.fields === "object" && value.fields !== null &&
+  "type" in value && "title" in value && "status" in value && "detail" in value;
+
+export const domainProblemOf = (kind: ErrorKind, error: unknown): DomainProblemBody => {
   const tag = (error as { _tag?: string })._tag ?? "DomainError";
   const message = (error as { message?: string }).message;
   const declared = (error as { constructor?: { fields?: Record<string, Schema.Top> } }).constructor?.fields ?? {};
   const values = Object.fromEntries(Object.keys(declared).map((key) => [key, (error as Record<string, unknown>)[key]]));
   // Encoded by the error's own field schemas, as an event's payload is: a field that transforms (an `Instant`) goes out as its text.
+  // type escape: `declared` is read off the error instance's constructor at run time, so the compiler cannot know its field schemas need no services to encode
   const fields = Schema.encodeUnknownSync(Schema.Struct(declared as never))(values);
   return {
     type: `urn:crablet:problem:command-api:${kind.replace("_", "-")}`,
@@ -167,6 +183,7 @@ export type ProblemBody<E> = E extends { readonly tag: infer Tag extends string;
 const problemSchemaCache = new WeakMap<object, Schema.Top>();
 export const problemSchemaOf = <E extends DeclaredDomainError>(error: E): ProblemBody<E> => {
   const cached = problemSchemaCache.get(error);
+  // type escape: the schema is built from the error class at run time; `ProblemBody<E>` is the type that construction yields, asserted here and at the return below
   if (cached !== undefined) return cached as unknown as ProblemBody<E>;
   const schema = Schema.Struct({
     type: Schema.String,
@@ -174,11 +191,12 @@ export const problemSchemaOf = <E extends DeclaredDomainError>(error: E): Proble
     status: Schema.Literal(problemStatusOf[error.kind]),
     detail: Schema.String,
     errorType: Schema.Literal(error.tag),
-    fields: Schema.Struct(error.fields as never)
+    fields: Schema.Struct(error.fields)
   })
-    .annotate({ httpApiStatus: problemStatusOf[error.kind], identifier: `${error.tag}Problem` } as never)
+    .annotate({ httpApiStatus: problemStatusOf[error.kind], identifier: `${error.tag}Problem` })
     .pipe(HttpApiSchema.asJson({ contentType: "application/problem+json" }));
   problemSchemaCache.set(error, schema);
+  // type escape: see above
   return schema as unknown as ProblemBody<E>;
 };
 

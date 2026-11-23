@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history: the OpenAPI check below compares with the base branch and reads the commits since it.
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -31,6 +34,11 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      # An API change that could break a client that is not TypeScript (scripts/openapi-breaking.ts, ADR-0013): fails unless a commit of the pull request has a "BREAKING:" line.
+      - name: OpenAPI breaking changes
+        if: github.event_name == 'pull_request'
+        run: bun scripts/openapi-breaking.ts origin/${{ github.base_ref }}
 
       - name: Unit tests (Bun, with coverage)
         run: bun run test:unit:coverage
