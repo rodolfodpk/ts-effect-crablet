@@ -1,12 +1,12 @@
 import { Effect, Layer } from "effect";
 import * as Schema from "effect/Schema";
-import { HttpApiBuilder } from "effect/http-api";
-import type { HttpApi, HttpApiGroup } from "effect/http-api";
+import { HttpApi, HttpApiBuilder } from "effect/http-api";
+import type { HttpApiGroup } from "effect/http-api";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { CommandExecutor } from "@crablet/commands";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { formatMarker } from "@crablet/eventstore/Marker";
-import { checkImplementations, executeEndpointName, listedCommands, makeCommandApi } from "./CommandApi.ts";
+import { checkImplementations, executeEndpointName, listedCommands, makeCommandApi, makeCommandApiGroup } from "./CommandApi.ts";
 import type { Implementations } from "./CommandApi.ts";
 import type { AnyCommandContract } from "@crablet/commands/Contract";
 import type { Command } from "@crablet/commands/Command";
@@ -14,47 +14,21 @@ import { apiDocsLayer, apiLayerOptions } from "./ApiDescription.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { defaultBasePath } from "./CommandApiConfig.ts";
 import { kindOf, type InputIssue } from "@crablet/commands/Errors";
-import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, domainProblemOf } from "./ProblemDetail.ts";
+import { CommandApiBadRequest, CommandConflict, CommandApiUnexpectedError, CommandIdempotencyMismatch, domainProblemOf, isDomainProblemBody, type DomainProblemBody } from "./ProblemDetail.ts";
 
-// What running a command needs from the environment. The executor brings its own event store, audit store and SQL client (its layer resolves
-// them), so it is all a command endpoint needs; `requirementsMatchTheHandler` below checks this against the handler's type.
-export type CommandApiRequirements = CommandExecutor;
+// What the command group's layer needs, as the compiler derives it from `makeCommandApiGroupLive` below (not written by hand): the executor, which brings its
+// own event store, audit store and SQL client.
+type RequirementsOf<L> = L extends Layer.Layer<infer _A, infer _E, infer R> ? R : never;
+export type CommandApiRequirements = RequirementsOf<ReturnType<typeof makeCommandApiGroupLive>>;
 
-// The part of a group's handler registry this layer uses, as a structural type (see `groupBuilder` below). A raw handler answers with the response it builds, and
-// needs the request (the router's) and what `CommandApiRequirements` names, nothing else.
-interface CommandHandlerRegistry {
-  readonly handle: (
-    name: "listExposedCommands",
-    handler: () => Effect.Effect<{ readonly exposedCommands: ReadonlyArray<{ readonly commandType: string; readonly inputSchema: unknown }> }>
-  ) => CommandHandlerRegistry;
-  readonly handleRaw: (
-    name: string,
-    handler: () => Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, HttpServerRequest.HttpServerRequest | CommandApiRequirements>
-  ) => CommandHandlerRegistry;
-}
-type CommandGroupBuilder<Out> = (
-  api: unknown,
-  id: "commands",
-  build: (handlers: CommandHandlerRegistry) => Effect.Effect<CommandHandlerRegistry>
-) => Layer.Layer<Out, never, CommandApiRequirements>;
-
-// True when A and B are the same type (not merely assignable one way).
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-
-// Duck-typed on the RFC 7807 shape (type/title/status/detail) rather than `instanceof` against a
-// fixed list of known classes: a domain error's problem is a plain object built from its declared
-// kind and fields (see ProblemDetail.ts). Anything that doesn't already look like a problem (a
-// framework-internal decode/encode error, an unrecognized handler-thrown value, ...) becomes a generic
-// 500 with the real message not echoed.
-const isProblemDetailShaped = (value: unknown): value is object =>
-  typeof value === "object" &&
-  value !== null &&
-  "type" in value &&
-  "title" in value &&
-  "status" in value &&
-  "detail" in value;
-
-const toProblemDetail = (error: unknown): object => (isProblemDetailShaped(error) ? error : CommandApiUnexpectedError.instance);
+// A command endpoint's failures are its declared problems; anything else (a framework-internal decode or encode error, an unrecognized value a handler
+// threw) becomes a generic 500, with the real message not echoed.
+// What a command endpoint fails with, as its description declares it: the framework's four problems, or a declared domain error's problem body.
+type CommandProblem = CommandApiBadRequest | CommandConflict | CommandIdempotencyMismatch | CommandApiUnexpectedError | DomainProblemBody;
+const toProblemDetail = (error: unknown): CommandProblem =>
+  error instanceof CommandApiBadRequest || error instanceof CommandConflict || error instanceof CommandIdempotencyMismatch || error instanceof CommandApiUnexpectedError || isDomainProblemBody(error)
+    ? error
+    : CommandApiUnexpectedError.instance;
 
 const CORRELATION_HEADER = "x-correlation-id";
 
@@ -73,7 +47,7 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
   contracts: C,
   implementations: Implementations<C>,
   config: CommandApiConfig = {}
-): Layer.Layer<HttpApiGroup.Service<ApiId, "commands">, never, CommandApiRequirements> => {
+) => {
   checkImplementations(contracts, implementations);
   const correlationHeaderEnabled = config.correlationHeaderEnabled ?? false;
 
@@ -156,26 +130,29 @@ export const makeCommandApiGroupLive = <ApiId extends string, Groups extends Htt
       Effect.catchDefect((defect) => Effect.fail(toProblemDetail(defect)))
     );
 
-  // The layer's requirements are declared below through the `as any` group builder, so the compiler cannot see them; this checks them against
-  // what the handler really needs (the request is the router's), so `CommandApiRequirements` cannot drift from the code without a compile error.
-  const requirementsMatchTheHandler: Equal<
-    Exclude<Effect.Services<ReturnType<typeof handleCommand>>, HttpServerRequest.HttpServerRequest>,
-    CommandApiRequirements
-  > = true;
-  void requirementsMatchTheHandler;
+  // The group is registered against an API of its own: the caller's identifier, and only this group, built from the same contracts and base path. Its type is
+  // concrete (the contracts read as `ReadonlyArray<AnyCommandContract>`, so every command endpoint is `execute_${string}`), so `HttpApiBuilder.group` types the
+  // handlers and derives the layer's error and requirements itself: nothing here asserts a layer's type. The served group is the caller's, made by
+  // `makeCommandApiGroup` from the same contracts; the service the layer provides is keyed by the API's identifier and the group's, so it is the one the caller's
+  // API needs.
+  const everyContract: ReadonlyArray<AnyCommandContract> = contracts;
+  const commandsApi = HttpApi.make(api.identifier).add(makeCommandApiGroup((config.basePath ?? defaultBasePath) as `/${string}`, everyContract));
+  const commandEntries = Object.entries(implementations as Readonly<Record<string, Command<any, any, any, any>>>);
 
-  // `HttpApiBuilder.group` types its registry by the endpoints of the API, which cannot be expressed here: "commands" is a member of a caller's generic
-  // `Groups`, and the endpoint names are one per contract, known only at run time. So the builder is taken as the structural type above (`CommandGroupBuilder`), and
-  // what is registered through it is checked against that type: the handler's own requirements, its response, its errors.
-  // type escape: `HttpApiBuilder.group` as `CommandGroupBuilder`; the one place the registry's precise type is replaced by the structural one
-  const groupBuilder = HttpApiBuilder.group as unknown as CommandGroupBuilder<HttpApiGroup.Service<ApiId, "commands">>;
-  const CommandsLive = groupBuilder(api, "commands", (handlers) =>
-    Effect.succeed(
-      Object.entries(implementations as Readonly<Record<string, Command<any, any, any, any>>>).reduce(
-        (h, [commandType, command]) => h.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, command)),
-        handlers.handle("listExposedCommands", () => listExposedCommands)
-      )
-    )
+  const CommandsLive = HttpApiBuilder.group(commandsApi, "commands", (handlers) =>
+    // The executor is taken when the group is built and given to each request (ADR-0042): a requirement of this layer, met once, not of every request.
+    Effect.map(Effect.context<CommandExecutor>(), (services) => {
+      const listed = handlers.handle("listExposedCommands", () => listExposedCommands);
+      // One command endpoint, registered with the handler every command gets: this step is typed, and gives the registry its requirements and errors.
+      const registerCommand = (registry: typeof listed, commandType: string, command: Command<any, any, any, any>) =>
+        registry.handleRaw(executeEndpointName(commandType), () => handleCommand(commandType, command).pipe(Effect.provideContext(services)));
+      type Registered = ReturnType<typeof registerCommand>;
+      // type escape: at the type level every command endpoint is the one identifier `execute_${string}`, handled after the first registration; at run time there is one
+      // per contract, so the fold hands each step the registry as it was before that identifier was handled. The requirements and errors are those of `registerCommand`.
+      const registered = commandEntries.reduce<typeof listed | Registered>((registry, [commandType, command]) => registerCommand(registry as typeof listed, commandType, command), listed);
+      // type escape: see above (with no contracts there is no command endpoint to handle, and the registry is `listed`)
+      return registered as Registered;
+    })
   );
 
   return CommandsLive;

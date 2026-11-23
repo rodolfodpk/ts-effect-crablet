@@ -112,7 +112,22 @@ export class CommandIdempotencyMismatch extends Schema.Class<CommandIdempotencyM
 export const problemStatusOf = { not_found: 404, invalid: 400, conflict: 409, forbidden: 403 } as const;
 const problemTitleOf = { not_found: "Not Found", invalid: "Bad Request", conflict: "Conflict", forbidden: "Forbidden" } as const;
 
-export const domainProblemOf = (kind: ErrorKind, error: unknown): object => {
+// The problem body of a domain error, as `domainProblemOf` builds it and a command endpoint declares it (one `<Tag>Problem` per declared error).
+export interface DomainProblemBody {
+  readonly type: string;
+  readonly title: string;
+  readonly status: number;
+  readonly detail: string;
+  readonly errorType: string;
+  readonly fields: { readonly [x: string]: unknown };
+}
+
+// Is this a domain error's problem body (as `domainProblemOf` builds it)?
+export const isDomainProblemBody = (value: unknown): value is DomainProblemBody =>
+  typeof value === "object" && value !== null && "errorType" in value && typeof value.errorType === "string" && "fields" in value && typeof value.fields === "object" && value.fields !== null &&
+  "type" in value && "title" in value && "status" in value && "detail" in value;
+
+export const domainProblemOf = (kind: ErrorKind, error: unknown): DomainProblemBody => {
   const tag = (error as { _tag?: string })._tag ?? "DomainError";
   const message = (error as { message?: string }).message;
   const declared = (error as { constructor?: { fields?: Record<string, Schema.Top> } }).constructor?.fields ?? {};

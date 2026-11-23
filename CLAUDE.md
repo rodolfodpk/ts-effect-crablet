@@ -15,7 +15,8 @@ really fail. A cast that erases them turns "does not compile" into "service not 
 2. **An honest `E`.** A layer that can fail to build (`SqlError`, `ConfigError`) says so. `orDie` is not a cast: it is allowed where the failure really is a
    defect at that boundary (a test that cannot reach its database, an admin endpoint answering 500), with the reason in a comment, never to silence the compiler.
 3. **Requirements are derived, not written by hand.** A hand-written requirements type drifts unnoticed; take it from the code (`Effect.Services<…>`), or
-   check it against the code with a compile-time equality (`requirementsMatchTheHandler` in `packages/commands-http/src/CommandApiLive.ts`).
+   check it against the code with a compile-time equality. Example: `CommandApiRequirements` (`packages/commands-http/src/CommandApiLive.ts`) is read off
+   the layer type `HttpApiBuilder.group` infers, and `test/command-group-live.types.ts` pins it.
 4. **Every TypeScript file is type-checked.** A new folder of `.ts` files goes into a `tsconfig.json` `include`; `scripts/typecheck-coverage.test.ts`
    fails when a versioned file is in none. Every tsconfig is strict, with `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
    `noUnusedLocals`, `noUnusedParameters`, `noImplicitOverride` and `noFallthroughCasesInSwitch`. An option the code reads with a default is typed

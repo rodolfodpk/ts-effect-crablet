@@ -35,7 +35,7 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      # An API change that could break a client that is not TypeScript (scripts/openapi-breaking.ts, ADR-0013): fails unless a commit of the pull request says "breaking".
+      # An API change that could break a client that is not TypeScript (scripts/openapi-breaking.ts, ADR-0013): fails unless a commit of the pull request has a "BREAKING:" line.
       - name: OpenAPI breaking changes
         if: github.event_name == 'pull_request'
         run: bun scripts/openapi-breaking.ts origin/${{ github.base_ref }}

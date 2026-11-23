@@ -167,3 +167,62 @@ describe("the checked-in descriptions", () => {
     });
   }
 });
+
+// ---- found by review (2026-11-23): each was missed or wrongly accepted ----
+describe("the acknowledgement is an explicit marker, not the word anywhere", () => {
+  test("a line that starts with BREAKING: or BREAKING CHANGE: acknowledges; the word in prose does not", async () => {
+    const { acknowledgedIn } = await import("./openapi-breaking.ts");
+    expect(acknowledgedIn("Remove the subscribe route\n\nBREAKING: clients must call enrol instead")).toBe(true);
+    expect(acknowledgedIn("feat: rename\n\nBREAKING CHANGE: the field is now `id`")).toBe(true);
+    expect(acknowledgedIn("refactor, no breaking change")).toBe(false);
+    expect(acknowledgedIn("Tell a breaking OpenAPI change from an additive one")).toBe(false);
+    expect(acknowledgedIn("non-breaking: a new optional field")).toBe(false);
+    expect(acknowledgedIn("  breaking: lower case does not count")).toBe(false);
+  });
+});
+
+describe("a base that cannot be read is an error, not a pass", () => {
+  test("an unknown base ref stops the check with a failure", () => {
+    const run = Bun.spawnSync(["bun", path.join(import.meta.dir, "openapi-breaking.ts"), "no-such-ref-crablet"], { stdout: "pipe", stderr: "pipe" });
+    expect(run.exitCode).not.toBe(0);
+    expect(`${run.stdout}${run.stderr}`).toContain("no-such-ref-crablet");
+  });
+});
+
+describe("shapes the first version did not read", () => {
+  test("a response field that may now be null (Schema.NullOr) is breaking", () => {
+    expect(change((d) => { schemas(d).Created.properties.marker = { anyOf: [{ type: "string" }, { type: "null" }] }; }).some((i) => i.includes("201.marker"))).toBe(true);
+  });
+
+  test("a response field that becomes a union of other shapes is breaking; one that stays within the same shape is not", () => {
+    expect(change((d) => { schemas(d).Created.properties.marker = { anyOf: [{ type: "string" }, { type: "integer" }] }; }).length).toBeGreaterThan(0);
+    expect(change((d) => { schemas(d).Created.properties.marker = { anyOf: [{ type: "string" }] }; })).toEqual([]);
+  });
+
+  test("exclusive bounds: switching to an exclusive bound at the same value, or raising it, tightens a request; lowering it does not", () => {
+    const amount = (bound: Record<string, number>) => {
+      const doc = base();
+      schemas(doc).Input.properties.amount = { type: "number", ...bound };
+      return doc;
+    };
+    expect(breakingChanges(amount({ minimum: 0 }), amount({ exclusiveMinimum: 0 })).length).toBe(1);
+    expect(breakingChanges(amount({ exclusiveMinimum: 0 }), amount({ exclusiveMinimum: 1 })).length).toBe(1);
+    expect(breakingChanges(amount({ exclusiveMaximum: 10 }), amount({ exclusiveMaximum: 5 })).length).toBe(1);
+    expect(breakingChanges(amount({ maximum: 10 }), amount({ exclusiveMaximum: 10 })).length).toBe(1);
+    expect(breakingChanges(amount({ exclusiveMinimum: 1 }), amount({ exclusiveMinimum: 0 }))).toEqual([]);
+    expect(breakingChanges(amount({ exclusiveMinimum: 0 }), amount({ minimum: 0 }))).toEqual([]);
+  });
+
+  test("a check added through allOf (where Effect puts extra checks) tightens a request; a response field removed inside allOf is reported", () => {
+    expect(change((d) => { schemas(d).Input.properties.studentId = { type: "string", allOf: [{ minLength: 3 }] }; })).toEqual([
+      "POST /api/commands/subscribe request.studentId: minLength tightened to 3"
+    ]);
+    const split = base();
+    schemas(split).Created = { allOf: [{ type: "object", properties: { status: { type: "string" } }, required: ["status"] }, { type: "object", properties: { marker: { type: "string" } }, required: ["marker"] }] };
+    const without = clone(split);
+    schemas(without).Created.allOf[1].properties = {};
+    schemas(without).Created.allOf[1].required = [];
+    expect(breakingChanges(split, without).some((i) => i.includes('field "marker" removed'))).toBe(true);
+    expect(breakingChanges(split, clone(split))).toEqual([]);
+  });
+});

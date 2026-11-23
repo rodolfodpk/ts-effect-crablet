@@ -21,17 +21,57 @@ export interface Counts { readonly src: number; readonly test: number }
 export interface Workspace { readonly dir: string; readonly packageJson: string; readonly counts: Counts; readonly recorded: Counts | undefined }
 
 const escape = /\bas\s+unknown\s+as\b|\bas\s+never\b|\bas\s+any\b|:\s*any\b|<any>/gu;
-const reason = /\/\/\s*type escape:/u;
+const reason = /\btype escape:/u;
 
-// The escapes of one file: per line, outside comments, unless the line or the one above says `// type escape:`.
+// One line of a file, split into its code (strings emptied, comments removed) and its comments. A small tokenizer, not regexes, so a string that holds `//` or
+// `/*` (a URL) does not hide the code after it. A template literal's `${...}` is read as part of the string: an escape written inside one is not counted.
+// A `/` starts a regular expression, not a division, after these (or at the start of a line).
+const beforeRegex = /[(,=:[!&|?{};+\-*%<>~^]$/u;
+const split = (text: string): ReadonlyArray<{ readonly code: string; readonly comment: string }> => {
+  const lines: Array<{ code: string; comment: string }> = [{ code: "", comment: "" }];
+  let state: "code" | "line" | "block" | "regex" | "'" | '"' | "`" = "code";
+  let inClass = false; // inside a regex's [...], where a `/` does not end it
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i] ?? "";
+    const next = text[i + 1] ?? "";
+    const line = lines[lines.length - 1]!;
+    if (c === "\n") {
+      // a line comment ends here, and so does a quoted string or a regex (neither can span lines): an unterminated one cannot swallow the file
+      if (state === "line" || state === "'" || state === '"' || state === "regex") state = "code";
+      lines.push({ code: "", comment: "" });
+      continue;
+    }
+    if (state === "code") {
+      if (c === "/" && next === "/") { state = "line"; i++; continue; }
+      if (c === "/" && next === "*") { state = "block"; i++; continue; }
+      if (c === "/" && (line.code.trim() === "" || beforeRegex.test(line.code.trimEnd()))) { state = "regex"; inClass = false; line.code += '""'; continue; }
+      if (c === "'" || c === '"' || c === "`") { state = c; line.code += '""'; continue; }
+      line.code += c;
+    } else if (state === "line" || state === "block") {
+      if (state === "block" && c === "*" && next === "/") { state = "code"; i++; continue; }
+      line.comment += c;
+    } else if (state === "regex") {
+      if (c === "\\") { i++; continue; }
+      if (c === "[") inClass = true;
+      else if (c === "]") inClass = false;
+      else if (c === "/" && !inClass) state = "code";
+    } else {
+      if (c === "\\") { i++; continue; }
+      if (c === state) state = "code";
+    }
+  }
+  return lines;
+};
+
+// The escapes of one file, outside comments and strings. A `// type escape: <why>` excuses the line it ends, or, when it stands alone on its line, the line below.
 export const escapesIn = (text: string): number => {
-  const lines = text.replace(/\/\*[\s\S]*?\*\//gu, (block) => block.replace(/[^\n]/gu, " ")).split("\n");
+  const lines = split(text);
   let count = 0;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (reason.test(line) || reason.test(lines[i - 1] ?? "")) continue;
-    const code = line.replace(/\/\/.*$/u, "").replace(/(["'`])(?:\\.|(?!\1)[^\\])*\1/gu, '""');
-    count += (code.match(escape) ?? []).length;
+    const { code, comment } = lines[i]!;
+    const above = lines[i - 1];
+    const excused = reason.test(comment) || (above !== undefined && above.code.trim() === "" && reason.test(above.comment));
+    if (!excused) count += (code.match(escape) ?? []).length;
   }
   return count;
 };

@@ -17,6 +17,23 @@ describe("type escapes", () => {
     expect(escapesIn("const g = HttpApiBuilder.group as any; // type escape: the dynamic group")).toBe(0);
   });
 
+  // found by review (2026-11-23)
+  test("a string that holds // or /* does not hide the code after it", () => {
+    expect(escapesIn('const u = fetch("http://x") as any;')).toBe(1);
+    expect(escapesIn('const p = "/*" as never;\nconst q = r as never; // */')).toBe(2);
+    expect(escapesIn("const t = `a // b` as any;")).toBe(1);
+    // a regex literal that holds a quote, or a slash, does not open a string that swallows the lines below
+    expect(escapesIn('expect(f(m as never)).toThrow(/the "x" event/);\nconst k = n as never;')).toBe(2);
+    expect(escapesIn("const r = a.split(/\\//) as never;\nconst s = b as never;")).toBe(2);
+    expect(escapesIn("const half = total / 2 as never;\nconst d = e as never;")).toBe(2);
+  });
+
+  test("a reason at the end of a line excuses that line only; a reason on its own line excuses the line below", () => {
+    expect(escapesIn("const a = x as any; // type escape: ok\nconst b = y as any;")).toBe(1);
+    expect(escapesIn("// type escape: ok\nconst b = y as any;\nconst c = z as any;")).toBe(1);
+    expect(escapesIn("  // type escape: indented, alone on its line\n  const b = y as any;")).toBe(0);
+  });
+
   test("every workspace records its counts", () => {
     expect(all.filter((w) => w.recorded === undefined).map((w) => w.dir)).toEqual([]);
   });

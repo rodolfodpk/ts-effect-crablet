@@ -30,6 +30,15 @@ describe("reading what a typed client fails with", () => {
     expect(meaning(newer)).toBe("rejected:undefined");
   });
 
+  // found by review (2026-11-23): a plain property lookup would find a function on Object.prototype
+  test("an errorType named after an Object.prototype member is not taken for a handler", () => {
+    for (const inherited of ["constructor", "toString", "hasOwnProperty", "__proto__", "valueOf"]) {
+      // type escape: a problem the compiler does not know is exactly what this test builds
+      const odd = { errorType: inherited, detail: "x", fields: {} } as unknown as CallError;
+      expect(meaning(odd)).toBe("rejected:undefined");
+    }
+  });
+
   test("the guard accepts an object with a string errorType, and nothing else", () => {
     expect(isDomainProblem(full)).toBe(true);
     for (const not of [null, undefined, "CourseFull", 7, {}, { errorType: 1 }, rejected, new Error("x")]) expect(isDomainProblem(not)).toBe(false);

@@ -43,8 +43,9 @@ export function matchDomainProblem(
   otherwise: (other: unknown) => unknown
 ): unknown {
   if (hasErrorType(error)) {
-    const handler = handlers[error.errorType];
+    // Only a handler the caller gave counts: `Object.hasOwn`, so an `errorType` such as "constructor" does not find a function inherited from Object.prototype.
     // A problem the types do not know (a server newer than the page) has no handler: it is handled as any other error.
+    const handler = Object.hasOwn(handlers, error.errorType) ? handlers[error.errorType] : undefined;
     if (handler !== undefined) return handler(error);
   }
   return otherwise(error);
