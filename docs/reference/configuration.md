@@ -25,7 +25,7 @@ Processor settings (polling, backoff, `maxErrors`, the leader retry) are in [Vie
 
 ## Polling settings
 
-How a processor polls, backs off and gives up, in `PollingConfig` (`@crablet/event-poller/ProcessorConfig`). The views, automations and outbox modules each take a
+How a processor polls, backs off and gives up, in `PollingConfig` (`Crablet.PollingConfig`, with `Crablet.defaultPollingConfig`). The views, automations and outbox modules each take a
 `PollingSettings` as `config`, or none: what is left out, or given as `undefined`, takes the default below ([ADR-0030](../adr/0030-one-polling-config.md)). The deadlines module takes
 a `DeadlinesConfig`: the same, plus `fireTimeoutMs`, how long one deadline's command may take (30 s by default).
 
@@ -69,7 +69,7 @@ modules by role.
 
 `@crablet/app` reads a process's settings with Effect's `Config`, under the product's prefix (`WALLET` gives `WALLET_DB_HOST`). Each part comes from its
 owner, and an application with names of its own composes the parts instead: `Crablet.databaseConfig(defaults)`, `Crablet.rolesConfig(appRoles)`,
-`Crablet.migrateConfig`, `Crablet.pollingConfig` (from `@crablet/event-poller/Config`) and `Crablet.wakeupsConfig` (from `@crablet/eventstore/Config`).
+`Crablet.migrateConfig`, `Crablet.pollingConfig` and `Crablet.wakeupsConfig`.
 A blank variable counts as unset. A bad value is a `ConfigError` that names the variable (`at ["WALLET"]["DB_POOL"]`), and the process does not start.
 
 | Variable (under the prefix) | Default | What it does |

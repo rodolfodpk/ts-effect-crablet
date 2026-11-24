@@ -9,4 +9,5 @@ export { catalog, modules, processors, type Modules, type ProcessOptions } from 
 export { config, databaseConfig, migrateConfig, plainConnection, rolesConfig, type ConfigOptions, type Connection, type DatabaseDefaults, type Roles, type Settings } from "./Config.ts";
 export { processorsFor, runOf, UnknownRole } from "./Roles.ts";
 export { polling as pollingConfig, type PollingFromConfig } from "@crablet/event-poller/Config";
+export { defaultPollingConfig, type PollingConfig, type PollingSettings } from "@crablet/event-poller/ProcessorConfig";
 export { wakeups as wakeupsConfig } from "@crablet/eventstore/Config";

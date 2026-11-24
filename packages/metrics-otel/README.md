@@ -10,7 +10,7 @@ One module per area, each its own import (`@crablet/metrics-otel/PollerMetrics`,
 pod's clock behind the period already open), **ReadConsistencyMetrics** and **StorageMetrics** (the `crablet.storage.*` gauges that `monitorStorage` keeps current).
 
 The other packages record into these; you do not call them yourself, you only wire an exporter. Two are not recorded by the processing loop: `monitorStorage` keeps the `crablet.storage.*` gauges current, and
-`monitorProcessors` (`@crablet/event-poller/MonitorProcessors`) keeps `crablet.poller.lag_events`, `lag_seconds`, `cursor_position` and `status`, so a processor with no leader still reports.
+the sampler `Crablet.processors` runs (`@crablet/app`) keeps `crablet.poller.lag_events`, `lag_seconds`, `cursor_position` and `status`, so a processor with no leader still reports.
 
 ## Names at the backend
 

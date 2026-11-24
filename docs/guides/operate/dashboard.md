@@ -68,9 +68,8 @@ With it, the metrics, the spans (`crablet.command`, `crablet.eventstore.append`,
 **2. Report the consumers and storage.** `Crablet.processors` and `Crablet.processorsFor` (`@crablet/app`) do it for the modules a process runs, for as long as its layer
 lives: the consumer gauges (lag, cursor, status; every 15 seconds, `monitorEvery`) and the storage gauges. The wallet gets them by running
 `walletProcesses` ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)). A process that runs no module (only `api`) samples none, so a processor whose
-leader has died still shows its lag through the standbys, and the queries take the `max`. An application that starts its processors by hand calls
-`monitorProcessors(services, { instanceId })` (`@crablet/event-poller/MonitorProcessors`) and `monitorStorage()` (`@crablet/eventstore/Storage`) itself; without them the
-lag, cursor, status and storage panels stay empty.
+leader has died still shows its lag through the standbys, and the queries take the `max`. Without a process that runs a module, the lag, cursor, status and storage
+panels stay empty.
 
 ## Use your own stack
 

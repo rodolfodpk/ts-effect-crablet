@@ -55,3 +55,37 @@ describe("public API and plumbing", () => {
     });
   }
 });
+
+// The engine is not what applications build on (ADR-0031, ADR-0054): an application takes the modules and `@crablet/app`, which re-exports what it needs of the engine
+// (the polling settings). No example or tool source (tests and diagnostics may reach the engine), and no document but the engine's own README, imports or names one of its
+// entry points (a quoted specifier, or a subpath); prose may name the package, and a package README may list it among its dependencies. An application's package.json may have it only as a devDependency, for its tests and diagnostics.
+const engine = "@crablet/event-poller";
+const importsEngine = (text: string): boolean => new RegExp(`["']${engine.replace("/", "\\/")}(\\/[A-Za-z]+)?["']`, "u").test(text) || text.includes(`${engine}/`);
+const applicationManifests = [...readdirSync(path.join(root, "examples")), ...readdirSync(path.join(root, "tools"))]
+  .flatMap((dir) => [path.join(root, "examples", dir, "package.json"), path.join(root, "tools", dir, "package.json")])
+  .filter((f) => { try { return statSync(f).isFile(); } catch { return false; } });
+
+describe("applications do not import the engine", () => {
+  test("the check sees application sources, documents and manifests (so it cannot pass vacuously)", () => {
+    expect(applicationFiles.length).toBeGreaterThan(20);
+    expect(documents.length).toBeGreaterThan(20);
+    expect(applicationManifests.length).toBeGreaterThanOrEqual(2);
+    expect(importsEngine(`import { x } from "${engine}/Config";`)).toBe(true);
+    expect(importsEngine(`import * as P from '${engine}';`)).toBe(true);
+    expect(importsEngine(`(\`${engine}/MonitorProcessors\`)`)).toBe(true);
+    expect(importsEngine(`[\`${engine}\`](../event-poller/README.md)`)).toBe(false);
+  });
+
+  test(`no example or tool source, and no document, imports ${engine}`, () => {
+    const own = path.join(root, "packages", "event-poller", "README.md");
+    const offenders = [...applicationFiles, ...documents.filter((f) => f !== own)].filter((f) => importsEngine(readFileSync(f, "utf8"))).map(rel);
+    expect(offenders).toEqual([]);
+  });
+
+  test(`an application lists ${engine} only as a devDependency`, () => {
+    const offenders = applicationManifests
+      .filter((f) => engine in ((JSON.parse(readFileSync(f, "utf8")) as { dependencies?: Record<string, string> }).dependencies ?? {}))
+      .map(rel);
+    expect(offenders).toEqual([]);
+  });
+});
