@@ -88,8 +88,10 @@ environment variable.
 
 ## The wallet's health endpoints
 
+Served by `healthRoutes` ([`@crablet/processors-http/Health`](../../packages/processors-http/README.md)); an application of your own gets the same three.
+
 | Endpoint | Served by | Answers |
 |---|---|---|
-| `GET /healthz` | every role (a process without `api` serves only this and `/status`) | the process is alive; says nothing about the database |
-| `GET /readyz` | the `api` role | ready: a `SELECT 1` answered within 2 seconds, else `503` |
-| `GET /status` | every role | JSON: its roles, uptime, and for each module whether it runs it and leads it now |
+| `GET /healthz` | every role (a process without `api` serves only these three) | the process is alive; says nothing about the database or leadership |
+| `GET /readyz` | every role (the lab probes it on the `api` role) | ready: a `SELECT 1` answered within 2 seconds, else `503` |
+| `GET /status` | every role | JSON: the instance (`HOSTNAME`), uptime, and for each module whether it runs it and leads it now |

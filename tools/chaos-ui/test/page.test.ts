@@ -80,7 +80,7 @@ describe("is it healthy", () => {
   });
 
   test("a pod and the database that agree about leadership raise nothing; a pod that claims what the lock says another holds is a warning", () => {
-    const m = (module: "views" | "automations" | "outbox", leading: boolean) => ({ module, runs: true, leading });
+    const m = (kind: "views" | "automations" | "outbox", leads: boolean) => ({ kind, runs: true, leads });
     const leaders = { views: "a", automations: "a", outbox: "a" };
     const agree = [{ pod: "a", answered: true, uptimeSeconds: 5, modules: [m("views", true), m("automations", true), m("outbox", true)] }, { pod: "b", answered: true, uptimeSeconds: 5, modules: [m("views", false), m("automations", false), m("outbox", false)] }];
     expect(disagreements(state({ leaders, reports: agree }))).toEqual([]);

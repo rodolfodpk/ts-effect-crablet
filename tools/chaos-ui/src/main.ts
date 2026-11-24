@@ -233,7 +233,7 @@ type State_ = typeof State.Type;
 export const disagreements = (s: State_): ReadonlyArray<string> =>
   (["views", "automations", "outbox"] as const).flatMap((module) => {
     const holder = s.leaders[module];
-    const claims = s.reports.filter((r) => r.answered && r.modules.some((m) => m.module === module && m.leading)).map((r) => r.pod);
+    const claims = s.reports.filter((r) => r.answered && r.modules.some((m) => m.kind === module && m.leads)).map((r) => r.pod);
     const wrong = claims.filter((pod) => pod !== holder);
     return wrong.length > 0 ? [`${wrong.join(", ")} says it leads ${module}, the lock is held by ${holder ?? "nobody"}`] : holder !== null && s.reports.some((r) => r.answered) && !claims.includes(holder) && s.reports.some((r) => r.pod === holder && r.answered) ? [`${holder} holds the ${module} lock but does not say it leads`] : [];
   });
@@ -397,8 +397,8 @@ const modulesCard = (s: State_, h: HtmlBuilder<Message>) => {
                     [
                       h.td([h.Class("mono")], [r.pod]),
                       ...modules.map((module) => {
-                        const m = r.modules.find((x) => x.module === module);
-                        return h.td([], [!r.answered ? chip(h, "bad", "no answer") : m === undefined || !m.runs ? h.span([h.Class("muted")], ["not run here"]) : m.leading ? chip(h, s.leaders[module] === r.pod ? "ok" : "bad", "leads") : chip(h, "paused", "standby")]);
+                        const m = r.modules.find((x) => x.kind === module);
+                        return h.td([], [!r.answered ? chip(h, "bad", "no answer") : m === undefined || !m.runs ? h.span([h.Class("muted")], ["not run here"]) : m.leads ? chip(h, s.leaders[module] === r.pod ? "ok" : "bad", "leads") : chip(h, "paused", "standby")]);
                       }),
                       h.td([h.Class("num muted")], [r.answered ? formatDuration(r.uptimeSeconds) : ""])
                     ]

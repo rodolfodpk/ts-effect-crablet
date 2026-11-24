@@ -29,8 +29,9 @@ export type Pod = typeof Pod.Type;
 // The pod that holds each module's leader lock, or null when none does.
 export const Leaders = Schema.Struct({ views: Schema.NullOr(Schema.String), automations: Schema.NullOr(Schema.String), outbox: Schema.NullOr(Schema.String) });
 
-// What a pod says about itself on GET /status: the modules it runs and whether it leads each. `answered` is false when the pod did not answer (the other fields are then empty).
-export const ModuleReport = Schema.Struct({ module: Schema.Literals(["views", "automations", "outbox"]), runs: Schema.Boolean, leading: Schema.Boolean });
+// What a pod says about itself on GET /status (`healthRoutes`, @crablet/processors-http/Health): the modules it runs and whether it leads each. `answered` is false when the pod did
+// not answer (the other fields are then empty).
+export const ModuleReport = Schema.Struct({ kind: Schema.String, runs: Schema.Boolean, leads: Schema.Boolean });
 export const PodReport = Schema.Struct({ pod: Schema.String, answered: Schema.Boolean, uptimeSeconds: Schema.Finite, modules: Schema.Array(ModuleReport) });
 export type PodReport = typeof PodReport.Type;
 

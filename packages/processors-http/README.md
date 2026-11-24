@@ -16,9 +16,15 @@ backlog, and pause, resume or reset one; browse the events page by page, with pe
   `eventPayloadMask(definitions)` from `@crablet/commands/Personal`, which redacts the fields marked `personal(...)` and drops the keys a definition does not know (an older
   field could hold personal data no mark covers). A type with no definition shows no payload, and without a mask no payload is shown at all. An event's metadata ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)) is
   shown only through a `metadataMask` the application gives (it has no schema to mark personal data with); without one it is withheld. `listEvents` is exported for tests.
+- **`healthRoutes({ ping, readyTimeout, instance })`** (`/Health`) - a process's probes, as routes to serve beside its others: `GET /healthz` (alive; asks neither the
+  database nor the modules, so a standby is healthy), `GET /readyz` (`ping` answered within `readyTimeout`, 2 seconds by default, else `503`) and `GET /status` (JSON: the
+  instance, the uptime, and for each module whether this process runs it and leads it now). It reads `Processors` when built and needs no authorization: it says nothing an
+  operator would hide. A worker serves only these.
 - **`ProcessorsAuthorization`**, **`authorizationFrom(check)`** (`/Authorization`) - the bearer-token middleware every endpoint carries, and a way to build its implementation from a check on the token.
 
 ```ts
+// every process: the probes, over the modules it built (Crablet.processors or Crablet.catalog)
+const health = healthRoutes({ ping: sql`SELECT 1`, instance: process.env.HOSTNAME });
 const layer = adminApiLayer({ masks: { mask: eventPayloadMask(myEventDefinitions) } }).pipe(   // needs Processors and the EventStore
   Layer.provide(authorizationFrom((token) => isAdmin(Redacted.value(token))))   // yours: a static token, a JWT check, an identity service
 );
@@ -37,7 +43,7 @@ shows payloads only through the application's mask: whoever holds the token sees
 
 ## Depends on
 
-[`@crablet/event-poller`](../event-poller/README.md) (`ProcessorManagementService`), [`@crablet/eventstore`](../eventstore/README.md) (the event log's `read`), `effect`.
+[`@crablet/modules`](../modules/README.md) (`Processors`, `ProcessorManagementService`), [`@crablet/eventstore`](../eventstore/README.md) (the event log's `read`), `effect`.
 
 ## Read more
 

@@ -10,7 +10,8 @@
     "./EventsApi": "./src/EventsApi.ts",
     "./EventsApiLive": "./src/EventsApiLive.ts",
     "./AdminApi": "./src/AdminApi.ts",
-    "./AdminApiLive": "./src/AdminApiLive.ts"
+    "./AdminApiLive": "./src/AdminApiLive.ts",
+    "./Health": "./src/Health.ts"
   },
   "dependencies": {
     "effect": "4.1.4",

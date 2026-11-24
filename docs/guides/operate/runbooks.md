@@ -38,11 +38,11 @@ the alert waits until its last report is older than 120 seconds.
 
 **Check, in this order:**
 
-1. **Ask the instances.** Every process of the wallet serves `GET /status` on its port (8080 by default); an application of your own exposes its own. It says what the process runs and
+1. **Ask the instances.** Every process of the wallet serves `GET /status` on its port (8080 by default), and so does any application that serves `healthRoutes` (`@crablet/processors-http/Health`). It says what the process runs and
    whether it leads each module right now:
    ```json
-   {"pod":"wallet-views-1","roles":["views","automations"],"uptimeSeconds":812,
-    "modules":[{"module":"views","runs":true,"leading":false},{"module":"automations","runs":true,"leading":true}]}
+   {"instance":"wallet-views-1","uptimeSeconds":812,
+    "modules":[{"kind":"views","runs":true,"leads":false},{"kind":"automations","runs":true,"leads":true},{"kind":"outbox","runs":false,"leads":false}]}
    ```
    (An example.) If no instance has `runs: true` for the module, nothing is started for it: start one. If some do and none leads, go on.
 2. **Ask Postgres who holds the lock.** There is one advisory lock per module: views `4856221667890123457`, automations `4856221667890123458`, outbox `4856221667890123456`, deadlines `4856221667890123459`.
