@@ -13,7 +13,6 @@
     "@effect/platform-node": "4.1.4",
     "@crablet/eventstore": "workspace:*",
     "@crablet/commands": "workspace:*",
-    "@crablet/event-poller": "workspace:*",
     "@crablet/views": "workspace:*",
     "@crablet/automations": "workspace:*",
     "@crablet/outbox": "workspace:*",
@@ -25,6 +24,7 @@
     "pg": "8.23.1"
   },
   "devDependencies": {
+    "@crablet/event-poller": "workspace:*",
     "@crablet/test-support": "workspace:*"
   },
   "crablet": { "typeEscapes": { "src": 4, "test": 78 } }

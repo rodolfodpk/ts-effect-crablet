@@ -43,7 +43,7 @@ exporter, so wire one in your application ([See it on a dashboard](../guides/ope
 | `crablet.outbox.events_published`, `crablet.outbox.publish.successes`, `.failures`, `.duration` | an outbox publisher |
 | `crablet.deadlines.fired` | deadlines fired, tagged `outcome`: `appended` (the command appended), `noop` (it had nothing to do), `failed` (it failed with something other than a domain error, timed out, or could not be run) |
 
-The lag, cursor and status gauges are kept current by `monitorProcessors()` (`@crablet/event-poller/MonitorProcessors`). For the deadlines processor the
+The lag, cursor and status gauges are kept current by `Crablet.processors` and `Crablet.processorsFor` (`@crablet/app`), for the modules a process runs. For the deadlines processor the
 lag gauges count something else: the deadlines that are due and not fired, read from `crablet_deadlines`, and how late the oldest is. The storage gauges are kept current by
 `monitorStorage()` (`@crablet/eventstore/Storage`).
 

@@ -23,9 +23,8 @@ current instead: `Effect.forkDetach(monitorStorage({ every: "5 minutes" }))` fro
 
 ## Are the consumers keeping up?
 
-The processing loop cannot report this for a processor that has no leader, so a sampler does, in every instance:
-`Effect.forkDetach(monitorProcessors([viewManagement, automationManagement, outboxManagement], { every: "15 seconds" }))` from `@crablet/event-poller/MonitorProcessors`, with the
-management services of the modules the process runs. It reads each processor's status and cursor and counts what is waiting for it, **against that processor's own selection**.
+The processing loop cannot report this for a processor that has no leader, so a sampler does, in every instance: `Crablet.processors` and `Crablet.processorsFor`
+(`@crablet/app`) run one over the modules the process runs, every 15 seconds (`monitorEvery`), for as long as their layer lives. It reads each processor's status and cursor and counts what is waiting for it, **against that processor's own selection**.
 (The distance from the end of the whole log is not the number to watch: a cursor only ever lands on an event the processor selected, so a consumer of a rare event type is far
 from the head of the log when it has everything.) It never writes, and a failed read is logged and tried again.
 

@@ -22,7 +22,6 @@
         "@crablet/commands-http": "workspace:*",
         "@crablet/db-migrations": "workspace:*",
         "@crablet/deadlines": "workspace:*",
-        "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/processors-http": "workspace:*",
         "@crablet/views": "workspace:*",
@@ -33,6 +32,7 @@
         "pg": "8.23.1",
       },
       "devDependencies": {
+        "@crablet/event-poller": "workspace:*",
         "@crablet/test-support": "workspace:*",
       },
     },
@@ -69,7 +69,6 @@
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
         "@crablet/db-migrations": "workspace:*",
-        "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/modules": "workspace:*",
         "@crablet/outbox": "workspace:*",
@@ -82,6 +81,7 @@
         "pg": "8.23.1",
       },
       "devDependencies": {
+        "@crablet/event-poller": "workspace:*",
         "@crablet/test-support": "workspace:*",
       },
     },
