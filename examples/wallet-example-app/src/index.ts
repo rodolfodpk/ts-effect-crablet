@@ -7,7 +7,8 @@ import * as Crablet from "@crablet/app";
 import { Processors } from "@crablet/modules/Processors";
 import { healthRoutes } from "@crablet/processors-http/Health";
 import { monitorStorage } from "@crablet/eventstore/Storage";
-import { migrateIfFresh } from "./migrate.ts";
+import { migrateIfFresh } from "@crablet/db-migrations/Migrate";
+import { walletMigrations } from "./migrate.ts";
 import { startBackgroundProcessors, monitorBackgroundProcessors, walletProcessors, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
@@ -43,7 +44,7 @@ const roles = rolesFromEnv(); // WALLET_ROLES; unset = all, the single process (
 async function main(): Promise<void> {
   // WALLET_MIGRATE=off: the schema is applied by a pre-deploy job (`node src/migrate.ts`), as it must be when several instances start together (ADR-0022, decision 6).
   if (process.env["WALLET_MIGRATE"] === "off") console.log("migrations: not applied by this process (WALLET_MIGRATE=off)");
-  else console.log(`migrations: ${(await migrateIfFresh(connInfo)) === "applied" ? "applied to a fresh database" : "the schema is already there, left as it is"}`);
+  else console.log(`migrations: ${(await migrateIfFresh(connInfo, walletMigrations)) === "applied" ? "applied to a fresh database" : "the schema is already there, left as it is"}`);
 
   const appLayer = Crablet.layer({
     host: connInfo.host,

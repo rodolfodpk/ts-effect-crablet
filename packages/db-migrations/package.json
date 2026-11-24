@@ -4,7 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./Migrate": "./src/Migrate.ts"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@crablet/test-support": "workspace:*"
   },
   "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
 }

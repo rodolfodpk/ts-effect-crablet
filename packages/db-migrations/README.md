@@ -18,9 +18,13 @@ The SQL schema, as a plain file bundle. This repository owns the schema; applica
   | `V7__crablet_event_metadata.sql` | the client's metadata on an event (`crablet_events.metadata`), and `append_events_if` and `append_events_batch` again, taking it ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)) |
 
 - **`sqlDir`** - the directory holding the `.sql` files.
+- **`migrate(conn, app?)`**, **`migrateIfFresh(conn, app?)`**, **`migrateApp(conn, app)`** (`/Migrate`) - apply the framework's files, then the application's
+  (`{ dir, files }`, numbered from V100), in one transaction, with a plain `pg` client: deploy-time bootstrapping, before any layer exists. `migrateIfFresh` applies
+  only to a database without the event log (a restart leaves it alone); `migrateApp` applies only the application's, on top of a test database. The
+  application's list is checked first (`problemsWith`): a file below V100, out of order or missing stops it before connecting.
 
-An application applies them with its own tool (the examples use a small `migrate.ts`, and keep their own tables in a separate `db/migration` folder numbered from V100).
-Nothing is applied for you. `schema-snapshot.json` is the schema they give, read from the catalog; a test compares the two
+They record nothing, so they are for a fresh database. An existing one needs a migration tool with a history table (Flyway applies these files as they are; see
+[Run it in production](../../docs/guides/operate/run-in-production.md)). The examples list their own files in `src/migrate.ts` and keep them in `db/migration`. `schema-snapshot.json` is the schema they give, read from the catalog; a test compares the two
 (`packages/eventstore/test/integration/schema-snapshot.test.ts`).
 
 **A database created before ADR-0047** (with the files V1 to V19) cannot be upgraded to these: its applied versions name files that no longer exist.
@@ -29,7 +33,7 @@ database and apply the files.
 
 ## Depends on
 
-Nothing.
+`pg` (for `/Migrate` only; the files and their list need nothing).
 
 ## Read more
 

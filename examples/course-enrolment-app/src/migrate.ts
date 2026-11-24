@@ -1,38 +1,18 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
-import { Client } from "pg";
-import { migrationFiles as coreMigrationFiles, sqlDir as coreSqlDir } from "@crablet/db-migrations";
-import { dbConnInfoFromEnv, type DbConnInfo } from "./db.ts";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appMigrationDir = path.join(__dirname, "..", "db", "migration");
+import { migrate, type AppMigrations } from "@crablet/db-migrations/Migrate";
+import { dbConnInfoFromEnv } from "./db.ts";
 
 // This app's own tables (the views), applied after the framework's core schema.
 export const appMigrationFiles: ReadonlyArray<string> = ["V100__course_seats_view.sql", "V101__course_seats_drop_last_position.sql", "V102__course_enrolments_view.sql", "V103__course_readiness_view.sql"];
 
-// Applies the framework's core schema, then this app's own. Plain pg.Client, not Effect: deploy-time bootstrapping.
-// Run it ONCE against a fresh database (the migrations are not idempotent):   node src/migrate.ts
-export async function migrate(connInfo: DbConnInfo): Promise<void> {
-  const client = new Client({
-    host: connInfo.host,
-    port: connInfo.port,
-    database: connInfo.database,
-    user: connInfo.username,
-    password: connInfo.password
-  });
-  await client.connect();
-  try {
-    // #region apply-migrations
-    for (const file of coreMigrationFiles) await client.query(readFileSync(path.join(coreSqlDir, file), "utf-8"));
-    for (const file of appMigrationFiles) await client.query(readFileSync(path.join(appMigrationDir, file), "utf-8"));
-    // #endregion apply-migrations
-  } finally {
-    await client.end();
-  }
-}
+// #region apply-migrations
+// What `migrate` (@crablet/db-migrations/Migrate) applies after the framework's schema, in one transaction.
+export const courseMigrations: AppMigrations = { dir: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "db", "migration"), files: appMigrationFiles };
+// #endregion apply-migrations
 
+// Run it ONCE against a fresh database (the migrations are not idempotent):   node src/migrate.ts
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await migrate(dbConnInfoFromEnv());
+  await migrate(dbConnInfoFromEnv(), courseMigrations);
   console.log("Migrations applied.");
 }
