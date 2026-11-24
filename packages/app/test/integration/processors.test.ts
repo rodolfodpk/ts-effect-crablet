@@ -113,6 +113,31 @@ describe("Crablet.processors and Crablet.catalog (ADR-0022)", () => {
     assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /no publisher given for "log"/);
   });
 
+  it("with roles from the configuration, a kind the declaration has runs, and one it lacks fails the start with UnknownRole before any module is built", { timeout: 30_000 }, async () => {
+    const roles = (modules: ReadonlyArray<string>): Crablet.Roles<"api"> => ({ app: new Set(), declared: ["api"], modules });
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(Layer.build(Crablet.processorsFor(declaration, roles(["deadlines", "views"]), { polling }).pipe(Layer.provide(Outbox.publishers(topics, { log: makeLogPublisher() })), Layer.provide(base()))))
+    );
+    assert.strictEqual(exit._tag, "Failure");
+    assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /UnknownRole.*"views" is not a role of this process; the roles are api, automations, outbox, deadlines, all/s);
+    assert.deepStrictEqual(await Effect.runPromise(Effect.provide(locksHeld, base())), [], "nothing was built or started");
+
+    const running = await open(
+      Crablet.processorsFor(declaration, roles(["deadlines"]), { polling }).pipe(Layer.provide(Outbox.publishers(topics, { log: makeLogPublisher() })), Layer.provide(base()))
+    );
+    try {
+      const deadline = Date.now() + 10_000;
+      let status = await Effect.runPromise(running.processors.status);
+      while (!status.some((s) => s.kind === "deadlines" && s.leads) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+        status = await Effect.runPromise(running.processors.status);
+      }
+      assert.deepStrictEqual(status.map((s) => [s.kind, s.runs]), [["automations", false], ["outbox", false], ["deadlines", true]]);
+    } finally {
+      await running.close();
+    }
+  });
+
   it("a catalog and a running process give the same sources; a pause through the catalog is what the running process reads (Liskov)", { timeout: 30_000 }, async () => {
     const catalog = await open(Crablet.catalog(declaration, { polling }).pipe(Layer.provide(base())));
     const running = await open(

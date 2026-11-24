@@ -3,8 +3,8 @@
 ## Status
 
 **Accepted** (2026-11-23, the maintainer's plan for `@crablet/app`, phase 2a). Built: `@crablet/app` (`Crablet.layer`, `Crablet.modules`,
-`Crablet.processors`, `Crablet.catalog`), `@crablet/modules` (the contracts), `@crablet/deadlines`, a `module()` in each module package, `healthRoutes` in `@crablet/processors-http/Health` (phase 2b). Tests:
-`packages/app/test/processors.types.ts`, `packages/app/test/integration/processors.test.ts`, `packages/app/test/integration/health.test.ts`, `packages/processors-http/test/health{.test,.types}.ts`, `packages/*/test/processor-requirements.types.ts`,
+`Crablet.processors`, `Crablet.catalog`), `@crablet/modules` (the contracts), `@crablet/deadlines`, a `module()` in each module package, `healthRoutes` in `@crablet/processors-http/Health` (phase 2b), `Crablet.config` and `Crablet.processorsFor` (phase 2d). Tests:
+`packages/app/test/processors.types.ts`, `packages/app/test/integration/processors.test.ts`, `packages/app/test/integration/health.test.ts`, `packages/app/test/{config,roles}.test.ts`, `packages/processors-http/test/health{.test,.types}.ts`, `packages/*/test/processor-requirements.types.ts`,
 `scripts/lock-keys.test.ts`, `scripts/app-dependencies.test.ts`, `packages/modules/test/contracts.test.ts`. Amends [ADR-0022](0022-runtime-roles.md)
 (decision 4) and [ADR-0039](0039-a-topic-takes-its-publishers.md).
 
@@ -75,8 +75,12 @@ Rules this records, for every application:
 ## Consequences
 
 - An application declares its modules and says which a process runs; it no longer starts processors, builds handles or lists sources itself.
-- `run` is typed by the declared kinds. Reading the roles from the environment, and refusing an unknown one as a typed error, is `Crablet.config`'s
-  (phase 2d).
+- `run` is typed by the declared kinds. Read from the environment (phase 2d), the roles are names: `Crablet.config` (`@crablet/app/Config`) reads
+  `ROLES` without knowing the modules (a new kind needs no change to it) and keeps the application's own roles apart, and `Crablet.processorsFor`
+  checks the others against the declaration, failing the layer with `UnknownRole` (in its `E`; `processors` with a literal `run` still cannot fail).
+  It is a function of its own because one function whose `E` depended on the kind of `run` could not be written without an assertion on a `Layer`
+  type. `Crablet.config` composes the `Config` of each owner (the connection here, the polling in `@crablet/event-poller/Config`, the wake-ups in
+  `@crablet/eventstore/Config`); the product's name (V5) is not in it yet.
 - **Breaking (pre-release, [ADR-0013](0013-api-evolution-additive-vs-breaking.md)):** `@crablet/commands/Crablet` (now `@crablet/app`),
   `@crablet/automations/Deadlines` (now `@crablet/deadlines`), `@crablet/event-poller/ProcessorStatus` (now `@crablet/modules`), the lock keys in
   `@crablet/eventstore/Leader`, `ProcessorSource` from `processors-http`, `defineTopic` with publisher objects, `OutboxPublisher.name`,

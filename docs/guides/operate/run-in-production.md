@@ -34,18 +34,23 @@ Flyway's naming (the framework's are V1 to V7, so number your own from V100 and 
 
 <!-- file: examples/course-enrolment-app/src/index.ts#crablet-layer -->
 ```ts
-const appLayer = Crablet.layer({
-  host: conn.host,
-  port: conn.port,
-  database: conn.database,
-  username: conn.username,
-  password: Redacted.make(conn.password),
-  // COURSES_DB_POOL: at most this many connections. Unset, the library's default applies.
-  ...(poolSize === undefined ? {} : { maxConnections: poolSize })
-});
+// COURSES_DB_POOL: at most this many connections; unset, the library's default. COURSES_DB_SESSION_HOST: a direct connection for the leader locks and LISTEN.
+const appLayer = Crablet.layer(database.pg, database.session === undefined ? {} : { session: database.session });
 ```
 
-The event store, the command executor and the audit store all come from this layer. Take the connection details from your environment, not from code.
+The event store, the command executor and the audit store all come from this layer. The connection comes from the environment, read with Effect's
+`Config` by `Crablet.databaseConfig` under the product's prefix:
+
+<!-- file: examples/course-enrolment-app/src/config.ts#course-database -->
+```ts
+// The connection, from COURSES_DB_* (HOST, PORT, NAME, USER, PASSWORD, or URL; POOL, unset for the library's default; SESSION_* for a direct session
+// connection). The defaults match docker-compose.yml. The course runs no roles and migrates with a script, so it reads this part alone.
+export const courseDatabase = Crablet.databaseConfig({ name: "courses_db", username: "postgres", password: "postgres" }).pipe(Config.nested("COURSES"));
+```
+
+A process that also has roles, polling and wake-ups to set reads them all with `Crablet.config(prefix, { roles, database })` (the wallet, in
+`src/config.ts`); the variables are in the [configuration reference](../../reference/configuration.md). A bad value stops the start with a
+`ConfigError` that names the variable.
 
 ### Size the pool
 

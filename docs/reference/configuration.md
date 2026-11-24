@@ -65,23 +65,38 @@ A single view, automation or topic publisher can override `pollingIntervalMs`, `
 belong to the module (the leader retry is not part of a processor's config at all: there is one leader lock per module). A module's processors can be stopped at run time by pausing them ([runbooks](../guides/operate/runbooks.md)), and a process starts only some
 modules by role.
 
+## `Crablet.config(prefix, options)`: the settings from the environment
+
+`@crablet/app` reads a process's settings with Effect's `Config`, under the product's prefix (`WALLET` gives `WALLET_DB_HOST`). Each part comes from its
+owner, and an application with names of its own composes the parts instead: `Crablet.databaseConfig(defaults)`, `Crablet.rolesConfig(appRoles)`,
+`Crablet.migrateConfig`, `Crablet.pollingConfig` (from `@crablet/event-poller/Config`) and `Crablet.wakeupsConfig` (from `@crablet/eventstore/Config`).
+A blank variable counts as unset. A bad value is a `ConfigError` that names the variable (`at ["WALLET"]["DB_POOL"]`), and the process does not start.
+
+| Variable (under the prefix) | Default | What it does |
+|---|---|---|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | `localhost`, `5432`, then what the call gives (`options.database`); without it, required | The database connection. The password is `Redacted`. |
+| `DB_URL` | unset | `postgres://user:password@host:port/database`, as platforms give it. When set, it wins over the parts. |
+| `DB_POOL` | the library's default (10) | The most connections the pool opens, at least 1 ([size the pool](../guides/operate/run-in-production.md#size-the-pool)). |
+| `DB_SESSION_HOST` and `_PORT`, `_NAME`, `_USER`, `_PASSWORD` | unset: share the main connection | A direct connection for the leader locks and `LISTEN`, while `DB_HOST` points at a pooler in transaction mode. Each part falls back to the main one. |
+| `DB_SESSION_POOL` | `10` | The session pool, at least 1. It must cover what the roles keep for good. |
+| `ROLES` | `all` | What this process runs ([ADR-0022](../adr/0022-runtime-roles.md)): a comma-separated list of the application's own roles (`options.roles`) and module kinds, or `all`. `Crablet.processorsFor(modules, settings.roles)` checks the kinds against the declaration and fails with `UnknownRole` (the name, and every valid role). An empty entry is a `ConfigError`. |
+| `MIGRATE` | `on` | `off`: this process applies no migration; a pre-deploy job does ([ADR-0022](../adr/0022-runtime-roles.md), decision 6). |
+| `POLL_MS` | `1000` | How often the processors poll while there are events, at least 50. |
+| `BACKOFF_MAX_SECONDS` | `10` | The most an idle processor waits between polls, at least 1. |
+| `WAKEUPS` | `coalesced` | `coalesced` or `off` (see `eventStore.wakeupMode`). |
+
+The result feeds the rest: `Crablet.layer(settings.pg, settings.options)`, `Crablet.processorsFor(modules, settings.roles, { polling: settings.polling })`,
+and `migrateIfFresh(Crablet.plainConnection(settings.pg), app)` when `settings.migrate`.
+
 ## The wallet's environment variables
 
-The wallet example (`examples/wallet-example-app/src/index.ts`) reads these. They are a model for your own application; the framework itself reads no
-environment variable.
+The wallet example reads the table above with the prefix `WALLET` (`examples/wallet-example-app/src/config.ts`: `api` is its own role, `views`,
+`automations` and `outbox` its modules; the database defaults are `wallet_db`, `postgres`, `postgres`). The course reads only the connection, with the
+prefix `COURSES` (`courses_db`). The wallet also reads these of its own:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `WALLET_DB_HOST`, `WALLET_DB_PORT`, `WALLET_DB_NAME`, `WALLET_DB_USER`, `WALLET_DB_PASSWORD` | `localhost`, `5432`, `wallet_db`, `postgres`, `postgres` | The database connection. |
-| `WALLET_DB_POOL` | the library's default (10) | The most connections the pool opens ([size the pool](../guides/operate/run-in-production.md#size-the-pool)). |
-| `WALLET_DB_SESSION_HOST` and `_PORT`, `_NAME`, `_USER`, `_PASSWORD` | unset: share the main connection | A direct connection for the leader locks and `LISTEN`, while `WALLET_DB_HOST` points at a pooler in transaction mode. |
-| `WALLET_DB_SESSION_POOL` | `10` | The session pool. It must cover what the roles keep for good. |
 | `PORT` | `8080` | The HTTP port. |
-| `WALLET_ROLES` | `all` | What this process runs: a comma-separated list of `api`, `views`, `automations`, `outbox`, or `all` ([ADR-0022](../adr/0022-runtime-roles.md)). An invalid value stops the start-up. |
-| `WALLET_MIGRATE` | applies migrations to a fresh database | `off`: this process applies none; a pre-deploy job does. |
-| `WALLET_POLL_MS` | `1000` | How often the processors poll while there are events. |
-| `WALLET_BACKOFF_MAX_SECONDS` | `10` | The most an idle processor waits between polls. |
-| `WALLET_WAKEUPS` | `coalesced` | `coalesced` or `off` (see `eventStore.wakeupMode`). |
 | `WALLET_PERIOD` | `month` | The statement period: `month`, or `minutes:N` (1 to 1440) for the kind lab. Choose it for a new database. |
 | `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the admin API at `/admin/processors` and the event log at `/admin/events` (on the `api` role), behind this bearer token. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | Exports metrics, spans and logs over OTLP ([See it on a dashboard](../guides/operate/dashboard.md)). |

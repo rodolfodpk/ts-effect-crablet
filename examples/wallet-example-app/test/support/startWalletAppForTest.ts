@@ -8,7 +8,7 @@ import type { EventStore } from "@crablet/eventstore";
 import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
 import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
-import type { Polling } from "../../src/polling.ts";
+import type { PollingFromConfig as Polling } from "@crablet/app";
 import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { allRoles, type Roles } from "../../src/roles.ts";
 import { startBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, walletProcessors, type BackgroundProcessors } from "../../src/WalletApp.ts";

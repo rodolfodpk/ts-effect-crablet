@@ -16,7 +16,7 @@ import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
-import { rolesFromEnv } from "../../src/roles.ts";
+import { rolesFromValue } from "../support/roles.ts";
 
 const TOKEN = "admin-token-for-tests";
 
@@ -43,7 +43,7 @@ const startInstance = async (name: string, roles: string): Promise<Instance> => 
   });
   const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
   const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie));
-  const app = await startWalletAppForTest(runtime, capturing(name), TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
+  const app = await startWalletAppForTest(runtime, capturing(name), TOKEN, { roles: rolesFromValue(roles), instanceId: name });
   const instance = { name, runtime, app };
   instances.set(name, instance);
   return instance;
