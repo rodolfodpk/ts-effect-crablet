@@ -41,3 +41,17 @@ Every change follows the five principles:
 **A violation is never accepted silently**, whether it comes with a new change or is found in existing code. Report it to the maintainer with the
 principle, what is at stake, the options and a recommendation, and let the maintainer decide. Record the decision in an ADR (or in the plan, until the
 ADR exists). "It is acceptable" and "it is out of scope" are the maintainer's calls, not the author's.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` (and today `docs/reference/glossary.md`) and `docs/adr/` at the root. See `docs/agents/domain.md`.
