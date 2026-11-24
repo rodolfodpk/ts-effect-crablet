@@ -6,7 +6,13 @@ import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { AUTOMATIONS_LOCK_KEY, DEADLINES_LOCK_KEY, OUTBOX_LOCK_KEY, tryAcquireGlobalLeader, VIEWS_LOCK_KEY, type LeaderHandle } from "../../src/Leader.ts";
+import { tryAcquireGlobalLeader, type LeaderHandle } from "../../src/Leader.ts";
+
+// Four modules' locks: the mechanism is what is tested here, so any four distinct keys (the modules own theirs).
+const VIEWS_LOCK_KEY = 9100000000000000001n;
+const AUTOMATIONS_LOCK_KEY = 9100000000000000002n;
+const OUTBOX_LOCK_KEY = 9100000000000000003n;
+const DEADLINES_LOCK_KEY = 9100000000000000004n;
 
 type Rt = ManagedRuntime.ManagedRuntime<SqlClient.SqlClient, never>;
 let db: TestDb;

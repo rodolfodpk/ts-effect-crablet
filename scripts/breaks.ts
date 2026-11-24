@@ -307,7 +307,7 @@ export const breaks: ReadonlyArray<Break> = [
     file: APPEND_V7,
     find: "WHERE i.type = 'crablet.DeadlineScheduled')",
     replace: "WHERE FALSE)",
-    tests: ["packages/automations/test/integration/deadlines.test.ts"],
+    tests: ["packages/deadlines/test/integration/deadlines.test.ts"],
     why: "a deadline would be stored and never fire"
   },
   {
@@ -434,10 +434,10 @@ export const breaks: ReadonlyArray<Break> = [
   // The deadlines.
   {
     id: "deadline-fires-early",
-    file: "packages/automations/src/internal/DeadlineStore.ts",
+    file: "packages/deadlines/src/internal/DeadlineStore.ts",
     find: "WHERE d.due_at <= $1::timestamptz",
     replace: "WHERE d.due_at <= $1::timestamptz + interval '100 years'",
-    tests: ["packages/automations/test/integration/deadlines.test.ts"],
+    tests: ["packages/deadlines/test/integration/deadlines.test.ts"],
     why: "a deadline would fire before it is due"
   },
 

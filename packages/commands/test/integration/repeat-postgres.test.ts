@@ -6,7 +6,7 @@ import { Deferred, Effect, Exit, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import * as Crablet from "../../src/Crablet.ts";
+import * as Crablet from "../support/CommandsLayer.ts";
 import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { byModel, defineCommand, emit } from "../../src/Command.ts";

@@ -1,6 +1,6 @@
 import { Data, type Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
-import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import type { ProcessorStatus } from "@crablet/modules";
 import type { ProgressCursor } from "./ProgressCursor.ts";
 
 // "Progress table not ready yet" - typed, instead of string-matching a message: PostgresProgressTracker maps Postgres SQLSTATE

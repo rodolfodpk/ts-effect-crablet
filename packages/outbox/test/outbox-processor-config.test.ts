@@ -2,15 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
 
 const { leaderElectionRetryIntervalMs: _moduleLevel, ...perProcessorDefaults } = defaultPollingConfig;
-import { makeOutboxProcessorConfigs, publishersOf } from "../src/internal/OutboxProcessorConfig.ts";
+import { makeOutboxProcessorConfigs } from "../src/internal/OutboxProcessorConfig.ts";
 import { defineTopic } from "../src/TopicConfig.ts";
-import { makeLogPublisher } from "../src/OutboxPublisher.ts";
 import { toKey } from "../src/TopicPublisherPair.ts";
 import type { OutboxConfig } from "../src/OutboxConfig.ts";
 
-const kafka = makeLogPublisher("kafka");
-const webhook = makeLogPublisher("webhook");
-const sns = makeLogPublisher("sns");
+const kafka = "kafka";
+const webhook = "webhook";
+const sns = "sns";
 
 const baseConfig: OutboxConfig = {
   pollingIntervalMs: 1000,
@@ -61,14 +60,3 @@ describe("makeOutboxProcessorConfigs", () => {
   });
 });
 
-describe("publishersOf", () => {
-  test("the processor runs the publishers of its topics, once each", () => {
-    expect(publishersOf([defineTopic("orders", { publishers: [kafka, webhook] }), defineTopic("payments", { publishers: [kafka] })])).toEqual([kafka, webhook]);
-  });
-
-  test("two different publishers under one name are refused: their progress would be one row", () => {
-    expect(() => publishersOf([defineTopic("orders", { publishers: [kafka] }), defineTopic("payments", { publishers: [makeLogPublisher("kafka")] })])).toThrow(
-      'two different publishers are named "kafka"'
-    );
-  });
-});

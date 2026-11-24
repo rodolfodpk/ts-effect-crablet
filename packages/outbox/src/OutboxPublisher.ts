@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 
 // Consumers implement this to push events to an
@@ -15,19 +15,22 @@ import type { StoredEvent } from "@crablet/eventstore";
 //   - a consumer that does not keep the order keeps the set of `eventId`s it has seen.
 // (A repeat is accepted for the outbox; an automation, by contrast, must be idempotent - see defineAutomation.)
 export interface OutboxPublisher<E = unknown> {
-  readonly name: string;
   readonly preferredMode?: "batch" | "individual";
   readonly publishBatch: (events: ReadonlyArray<StoredEvent>) => Effect.Effect<void, E, never>;
   readonly isHealthy?: () => boolean;
 }
 
-// A trivial reference implementation that logs, useful as a default/example.
-export const makeLogPublisher = (name = "LogPublisher"): OutboxPublisher<never> => ({
-  name,
+// The publishers an outbox processor runs with, by the names its topics give them. What running the processor needs (OutboxRunRequirements):
+// `startOutboxProcessor` provides it from its `publishers`; a test that starts a handle by hand provides it itself.
+export class OutboxPublishers extends Context.Service<OutboxPublishers, Readonly<Record<string, OutboxPublisher<unknown>>>>()("@crablet/outbox/OutboxPublishers") {}
+
+// A trivial reference implementation that logs, useful as a default/example. `label` starts each line it writes; the publisher's name is the one the topics
+// give it.
+export const makeLogPublisher = (label = "LogPublisher"): OutboxPublisher<never> => ({
   publishBatch: (events) =>
     Effect.sync(() => {
       for (const event of events) {
-        console.log(`[${name}] ${event.type} @ (${event.transactionId}, ${event.position}) id ${event.eventId}`);
+        console.log(`[${label}] ${event.type} @ (${event.transactionId}, ${event.position}) id ${event.eventId}`);
       }
     })
 });

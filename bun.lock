@@ -16,10 +16,12 @@
       "name": "course-enrolment-app",
       "version": "0.0.0",
       "dependencies": {
+        "@crablet/app": "workspace:*",
         "@crablet/automations": "workspace:*",
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
         "@crablet/db-migrations": "workspace:*",
+        "@crablet/deadlines": "workspace:*",
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/views": "workspace:*",
@@ -61,12 +63,14 @@
       "name": "wallet-example-app",
       "version": "0.0.0",
       "dependencies": {
+        "@crablet/app": "workspace:*",
         "@crablet/automations": "workspace:*",
         "@crablet/commands": "workspace:*",
         "@crablet/commands-http": "workspace:*",
         "@crablet/db-migrations": "workspace:*",
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@crablet/outbox": "workspace:*",
         "@crablet/processors-http": "workspace:*",
         "@crablet/views": "workspace:*",
@@ -80,6 +84,25 @@
         "@crablet/test-support": "workspace:*",
       },
     },
+    "packages/app": {
+      "name": "@crablet/app",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/commands": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/modules": "workspace:*",
+        "@effect/sql-pg": "4.1.4",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "@crablet/automations": "workspace:*",
+        "@crablet/deadlines": "workspace:*",
+        "@crablet/outbox": "workspace:*",
+        "@crablet/test-support": "workspace:*",
+        "@crablet/views": "workspace:*",
+      },
+    },
     "packages/automations": {
       "name": "@crablet/automations",
       "version": "0.0.0",
@@ -88,6 +111,7 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -127,12 +151,29 @@
       "name": "@crablet/db-migrations",
       "version": "0.0.0",
     },
+    "packages/deadlines": {
+      "name": "@crablet/deadlines",
+      "version": "0.0.0",
+      "dependencies": {
+        "@crablet/commands": "workspace:*",
+        "@crablet/event-poller": "workspace:*",
+        "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
+        "@effect/sql-pg": "4.1.4",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+      },
+    },
     "packages/event-poller": {
       "name": "@crablet/event-poller",
       "version": "0.0.0",
       "dependencies": {
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -161,6 +202,13 @@
         "effect": "4.1.4",
       },
     },
+    "packages/modules": {
+      "name": "@crablet/modules",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.1.4",
+      },
+    },
     "packages/outbox": {
       "name": "@crablet/outbox",
       "version": "0.0.0",
@@ -168,6 +216,7 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -179,8 +228,8 @@
       "name": "@crablet/processors-http",
       "version": "0.0.0",
       "dependencies": {
-        "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "effect": "4.1.4",
       },
       "devDependencies": {
@@ -207,6 +256,7 @@
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
         "@crablet/metrics-otel": "workspace:*",
+        "@crablet/modules": "workspace:*",
         "@effect/sql-pg": "4.1.4",
         "effect": "4.1.4",
       },
@@ -277,6 +327,8 @@
 
     "@balena/dockerignore": ["@balena/dockerignore@1.0.2", "", {}, "sha512-wMue2Sy4GAVTk6Ic4tJVcnfdau+gx2EnG7S+uAEe+TWJFqE4YoWN4/H8MSLj4eYJKxGg26lZwboEniNiNwZQ6Q=="],
 
+    "@crablet/app": ["@crablet/app@workspace:packages/app"],
+
     "@crablet/automations": ["@crablet/automations@workspace:packages/automations"],
 
     "@crablet/commands": ["@crablet/commands@workspace:packages/commands"],
@@ -285,11 +337,15 @@
 
     "@crablet/db-migrations": ["@crablet/db-migrations@workspace:packages/db-migrations"],
 
+    "@crablet/deadlines": ["@crablet/deadlines@workspace:packages/deadlines"],
+
     "@crablet/event-poller": ["@crablet/event-poller@workspace:packages/event-poller"],
 
     "@crablet/eventstore": ["@crablet/eventstore@workspace:packages/eventstore"],
 
     "@crablet/metrics-otel": ["@crablet/metrics-otel@workspace:packages/metrics-otel"],
+
+    "@crablet/modules": ["@crablet/modules@workspace:packages/modules"],
 
     "@crablet/outbox": ["@crablet/outbox@workspace:packages/outbox"],
 

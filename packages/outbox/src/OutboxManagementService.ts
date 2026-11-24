@@ -1,12 +1,9 @@
 import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
-import {
-  makeProcessorManagementService,
-  type ProcessorManagementService
-} from "@crablet/event-poller/ProcessorManagementService";
+import { makeProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
 import type { ProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
+import type { ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
 
@@ -72,7 +69,7 @@ const toDetails = (row: ProgressRow): OutboxProgressDetails => ({
 // refresh leader_instance/leader_heartbeat the way getCursor does (see internal/OutboxProgressTracker.ts), so
 // monitoring never writes.
 export const makeOutboxManagementService = (
-  handle: ProcessorHandle,
+  handle: ProcessorHandle<unknown>,
   instanceId = "outbox-management-service"
 ): Effect.Effect<OutboxManagementService, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {

@@ -6,7 +6,7 @@ import { defineCommand, emit, fail, type Command } from "@crablet/commands/Comma
 import { DomainError } from "@crablet/commands/Errors";
 import { defineEvent } from "@crablet/commands/Event";
 import type { StoredEvent } from "@crablet/eventstore";
-import { assertAutomationIdempotent, checkAutomationIdempotency } from "../src/testing/AutomationIdempotency.ts";
+import { assertAutomationIdempotent, checkAutomationIdempotency, inMemoryBackend } from "../src/testing/AutomationIdempotency.ts";
 import { defineAutomation, type AutomationHandler } from "../src/AutomationHandler.ts";
 import { executeCommand } from "../src/AutomationDecision.ts";
 
@@ -122,5 +122,11 @@ describe("assertAutomationIdempotent", () => {
     const good = notifyWith((c) => Notified.where({ deposit_id: c.depositId }));
     const automation = defineAutomation("notify-deposit", good).on(DepositMade, (d) => ({ walletId: d.walletId, depositId: d.depositId }));
     expect((await assertAutomationIdempotent(automation, triggers)).effects).toBe(2);
+  });
+
+  test("takes the options the check takes (here, the in-memory backend named)", async () => {
+    const good = notifyWith((c) => Notified.where({ deposit_id: c.depositId }));
+    const automation = defineAutomation("notify-deposit", good).on(DepositMade, (d) => ({ walletId: d.walletId, depositId: d.depositId }));
+    expect((await assertAutomationIdempotent(automation, triggers, { given: [], backend: inMemoryBackend() })).effects).toBe(2);
   });
 });

@@ -6,6 +6,18 @@
 example's feed takes views. Tests: `topic-config.test.ts`, `outbox-processor-config.test.ts` (`publishersOf`), `outbox-integration.test.ts`. Follows
 [ADR-0037](0037-the-declaration-api.md), which removed the same pattern from the views processor.
 
+**Amended** (2026-11-23, the maintainer's decision, phase 2a of the `@crablet/app` plan): **a topic names its publishers again, and the compiler checks the
+names.** `defineTopic(name, { publishers: ["kafka"] })` keeps the names as literal types, and `startOutboxProcessor({ topics, publishers: { kafka } })`
+takes one publisher per name: a missing name does not compile, and neither does a publisher no topic names (`test/topic-publishers.types.ts`). The
+mistake this ADR removed (a name with no publisher, found at run time) stays impossible, now by type rather than by holding the objects.
+
+Why: a process that only lists and controls the outbox's processors (an API serving the admin, ADR-0022) needs the declaration, and with publishers in it
+that process had to build a client for the broker it never uses. The declaration now holds no publisher, and `makeOutboxProcessor({ topics })` needs only the
+SQL client; the publishers are what running needs (`OutboxPublishers`, provided by `startOutboxProcessor`). **One name is one publisher** by construction:
+the name is the record's key, and `OutboxPublisher` lost its `name` field, so a name has one source. Breaking (pre-release, ADR-0013): `defineTopic` takes
+names, `OutboxPublisher.name` and `publishersOf` are removed, `startOutboxProcessor` takes `publishers`. The wallet keeps the name `LogPublisher`, so its
+progress rows carry on.
+
 ## Context
 
 ADR-0037 made the processors take what was declared, because two lists that must agree by name drift. The outbox kept such a pair: a topic named its

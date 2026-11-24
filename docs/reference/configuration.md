@@ -7,7 +7,7 @@ choose values: [Configure it](../guides/operate/configure.md).
 
 ## `Crablet.layer(pg, options)`
 
-From `@crablet/commands/Crablet`. It provides `CommandExecutor`, `EventStore`, `CommandAuditStore` and the database clients.
+From `@crablet/app`. It provides `CommandExecutor`, `EventStore`, `CommandAuditStore` and the database clients.
 
 `pg` is the connection, as `PgClient.layer` takes it (`@effect/sql-pg`): `host`, `port`, `database`, `username`, `password` (a `Redacted`), and
 `maxConnections` for the pool.
@@ -52,7 +52,7 @@ The outbox module's `OutboxConfig` adds one setting of its own:
 |---|---|---|
 | `publishTimeoutMs` | `30000` | How long one call to a publisher's `publishBatch` may take before it counts as a failure (and toward `maxErrors`). Without it a destination that hangs would hold its topic back for good. A timed-out publish may have reached the destination, so the events are published again ([ADR-0036](../adr/0036-outbox-delivery-event-id-timeout-and-partial-progress.md)). |
 
-The deadlines module's `DeadlinesConfig` (`@crablet/automations/Deadlines`) takes the same settings except the four backoff ones: it does not back off,
+The deadlines module's `DeadlinesConfig` (`@crablet/deadlines`) takes the same settings except the four backoff ones: it does not back off,
 because no wake-up ends a wait (a new event makes nothing due; time does). Its interval defaults to **5000** instead: it is how late a deadline can fire
 after it is due, and deadlines are business time; an idle poll is one index lookup, on the leader only. Its batch is fired one deadline at a time, so a
 backlog (many deadlines due at the same instant) drains at about `batchSize` per interval ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)). It adds one setting of its own:

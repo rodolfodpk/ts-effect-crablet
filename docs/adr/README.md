@@ -35,7 +35,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0035: The same trigger cannot append the same request twice](0035-the-same-trigger-cannot-append-the-same-request-twice.md) - **accepted**: the database's backstop behind an automation's `idempotentBy`
 - [ADR-0037: The declaration API: one shape, checked by the type checker](0037-the-declaration-api.md) - **accepted**: `define*(name, …).on(Event, handler)` for models, views and automations; `byModel()`; a model's tags checked
 - [ADR-0038: A caller's input is typed, and a processor starts in a scope](0038-typed-run-input-and-scoped-processors.md) - **accepted**: `run` and `when` take the schema's input type; `start*Processor` owns a processor by a Scope
-- [ADR-0039: A topic takes its publishers, and the feed takes views](0039-a-topic-takes-its-publishers.md) - **accepted**: `defineTopic(name, { publishers: [publisher] })`; no second list matched by name
+- [ADR-0039: A topic takes its publishers, and the feed takes views](0039-a-topic-takes-its-publishers.md) - **accepted**, amended 2026-11-23: a topic names its publishers and starting the outbox takes one per name, checked by the compiler
 - [ADR-0040: A result carries one marker, and a domain file has one import](0040-one-marker-and-one-domain-import.md) - **accepted**: `ExecutionResult.marker`; `@crablet/commands/Domain`
 - [ADR-0041: The framework adds the tags a command's own model reads its events by](0041-the-framework-adds-a-models-tags.md) - **accepted**: missing scope and period tags are added at append; another value is refused
 - [ADR-0042: An API is served in one layer, and its groups are typed against it](0042-serve-an-api-in-one-layer.md) - **accepted**: `serveApi`; read groups without `as any`; `problemOf`
@@ -64,6 +64,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0024: The leader lock and LISTEN can use a connection of their own, so the rest can go through a pooler](0024-session-connections-for-leader-and-listen.md) - **accepted**: built; tested on PgBouncer in Docker, not on RDS Proxy
 - [ADR-0045: The leader's lease is its session: Postgres ends a lock session the leader stopped talking on](0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md) - **accepted** (not run on AWS): built and tested on Postgres; `idle_session_timeout` on the lock session and a primary check; a silent partition's takeover bounded near 20 s instead of the keepalives' 388 s on RDS; the kind lab, a replica and AWS still to run
 - [ADR-0046: One lock session and one LISTEN connection per process](0046-one-lock-session-per-process.md) - **accepted**: the locks of every module a process leads on one session with one heartbeat, and every `LISTEN` on one connection beside the pool (a leader of three modules holds 2 connections for good, not 7; a follower 1, not 4); an attempt's statements bounded; tested on Postgres and in the kind lab
+- [ADR-0054: The modules declared once, run or only listed by each process](0054-the-modules-declared-once-run-or-listed.md) - **accepted**: each module describes itself (`Views.module`); `@crablet/app` declares them once and runs some (`Crablet.processors`) or none (`Crablet.catalog`), both as the same `Processors` service; building needs only the SQL client
 
 ## Storage and operation
 

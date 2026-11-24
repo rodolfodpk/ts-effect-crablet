@@ -1,12 +1,9 @@
 import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
-import {
-  makeProcessorManagementService,
-  type ProcessorManagementService
-} from "@crablet/event-poller/ProcessorManagementService";
+import { makeProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
 import type { ProcessorHandle } from "@crablet/event-poller";
-import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
+import type { ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import { makePostgresProgressTracker } from "@crablet/event-poller/PostgresProgressTracker";
 
 // Automation management and progress details - wraps the generic ProcessorManagementService with one extra query against
@@ -52,7 +49,7 @@ const toDetails = (row: ProgressRow): AutomationProgressDetails => ({
 });
 
 export const makeAutomationManagementService = (
-  handle: ProcessorHandle
+  handle: ProcessorHandle<unknown>
 ): Effect.Effect<AutomationManagementService, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

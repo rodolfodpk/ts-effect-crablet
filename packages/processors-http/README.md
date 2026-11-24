@@ -8,8 +8,8 @@ backlog, and pause, resume or reset one; browse the events page by page, with pe
 
 - **`processorsGroup`** (the package entry point) - `GET /admin/processors`, `POST /admin/processors/:kind/:id/pause`, `.../resume`, `.../reset`. Problems are RFC 7807 (`application/problem+json`).
 - **`adminApi`** (`/AdminApi`) - the two groups below as one API: what a server mounts and what a client (`HttpApiClient.make(adminApi)`) is derived from. It imports nothing of the server.
-- **`adminApiLayer({ sources, masks })`** (`/AdminApiLive`) - the API served, every handler checked against its endpoint (no cast: the API is concrete). It needs the `EventStore`, and its type requires `ProcessorsAuthorization`: a server without one does not compile.
-- **`processorsHandlers(sources)`** (`/ProcessorsApiLive`) - the handlers, over a list of `{ kind, service, describe? }` sources; `service` is a module's management service (`makeViewManagementService(handle)` and its siblings), `kind` is the word a client sees. `listProcessors` and `actOnProcessor` are exported for tests.
+- **`adminApiLayer({ masks })`** (`/AdminApiLive`) - the API served, every handler checked against its endpoint (no cast: the API is concrete). It reads the modules from the `Processors` service (`@crablet/modules/Processors`, which `Crablet.processors` or `Crablet.catalog` of `@crablet/app` provides) and needs the `EventStore`, and its type requires `ProcessorsAuthorization`: a server without one does not compile.
+- **`processorsHandlers(sources)`** (`/ProcessorsApiLive`) - the handlers, over a list of `{ kind, service, describe? }` sources (`ProcessorSource`, from `@crablet/modules`); `service` is a module's management service (`makeViewManagementService(handle)` and its siblings), `kind` is the word a client sees. `listProcessors` and `actOnProcessor` are exported for tests.
 - **`eventsGroup`** (`/EventsApi`) - `GET /admin/events?types=A,B&tag=key=value&after=<cursor>&limit=100`: one page of the log in order, of events whose transaction
   had finished, with the `cursor` to read on from ([ADR-0050](../../docs/adr/0050-the-event-store-used-directly.md)). Any of the types, all of the tags; neither, every event.
 - **`eventsHandler({ mask })`** (`/EventsApiLive`) - its handler, over the `EventStore`. `mask` decides what of a payload is shown: build it with
@@ -19,7 +19,7 @@ backlog, and pause, resume or reset one; browse the events page by page, with pe
 - **`ProcessorsAuthorization`**, **`authorizationFrom(check)`** (`/Authorization`) - the bearer-token middleware every endpoint carries, and a way to build its implementation from a check on the token.
 
 ```ts
-const layer = adminApiLayer({ sources, masks: { mask: eventPayloadMask(myEventDefinitions) } }).pipe(   // needs the EventStore
+const layer = adminApiLayer({ masks: { mask: eventPayloadMask(myEventDefinitions) } }).pipe(   // needs Processors and the EventStore
   Layer.provide(authorizationFrom((token) => isAdmin(Redacted.value(token))))   // yours: a static token, a JWT check, an identity service
 );
 ```

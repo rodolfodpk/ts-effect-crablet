@@ -55,7 +55,8 @@ Reading the log in the background.
 |---|---|
 | [`packages/event-poller`](../../packages/event-poller/README.md) | Generic polling engine (progress tracking, backoff, leader-gated fibers) — the shared base the views, outbox, automations and deadlines modules build on |
 | [`packages/views`](../../packages/views/README.md) | Read-model projections: `ViewProjector`s driven by the poller, with subscription and management services |
-| [`packages/automations`](../../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command; and deadlines: run a command once a time has passed ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)) |
+| [`packages/automations`](../../packages/automations/README.md) | Automations: react to an event by issuing a follow-up command |
+| [`packages/deadlines`](../../packages/deadlines/README.md) | Deadlines: run a command once a time has passed ([ADR-0043](../adr/0043-a-deadline-is-an-event-in-the-log.md)) |
 | [`packages/outbox`](../../packages/outbox/README.md) | Transactional outbox: per-topic publishers fed from the event stream by the poller |
 
 ### HTTP
@@ -64,6 +65,8 @@ Reading the log in the background.
 |---|---|
 | [`packages/commands-http`](../../packages/commands-http/README.md) | A REST API over your commands, with RFC 7807 problem-detail errors |
 | [`packages/views-http`](../../packages/views-http/README.md) | Consistent reads over views: a read can wait for a write's marker (or the head of the log) before it answers, and is refused with a 503 or marked stale if a view is behind (used by the wallet's and the course app's reads) |
+| [`packages/app`](../../packages/app/README.md) | An application's wiring: `Crablet.layer` (database, event store, executor) and the background modules declared once and run (`Crablet.processors`) or only listed (`Crablet.catalog`) by each process |
+| [`packages/modules`](../../packages/modules/README.md) | The contracts the background modules implement and their consumers depend on: a module's management service and its data, and a processor source for the admin API |
 | [`packages/processors-http`](../../packages/processors-http/README.md) | An admin API over the processors: list them (status, failures, cursor, backlog), pause, resume or reset one; and the event log, page by page, with personal data and metadata masked ([ADR-0050](../adr/0050-the-event-store-used-directly.md)); closed until the application provides an authorization ([ADR-0020](../adr/0020-processors-admin-api.md)) |
 
 ### Operating it

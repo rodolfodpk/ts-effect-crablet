@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { checkViewTables } from "@crablet/views/ViewTableCheck";
 import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";

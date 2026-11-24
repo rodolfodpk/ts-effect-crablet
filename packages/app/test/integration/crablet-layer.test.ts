@@ -9,10 +9,10 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
-import * as Crablet from "../../src/Crablet.ts";
-import { CommandExecutor } from "../../src/CommandExecutor.ts";
-import { defineCommand, emit } from "../../src/Command.ts";
-import { defineEvent } from "../../src/Event.ts";
+import * as Crablet from "../../src/index.ts";
+import { CommandExecutor } from "@crablet/commands";
+import { defineCommand, emit } from "@crablet/commands/Command";
+import { defineEvent } from "@crablet/commands/Event";
 
 let db: TestDb;
 before(async () => {

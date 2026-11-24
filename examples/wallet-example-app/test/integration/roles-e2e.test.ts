@@ -9,7 +9,9 @@ import { Client } from "pg";
 import { EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
-import { AUTOMATIONS_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "@crablet/eventstore/Leader";
+import { VIEWS_LOCK_KEY } from "@crablet/views";
+import { AUTOMATIONS_LOCK_KEY } from "@crablet/automations";
+import { OUTBOX_LOCK_KEY } from "@crablet/outbox";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
@@ -26,7 +28,6 @@ const instances = new Map<string, Instance>();
 // whichever instance leads, and the api instance's admin API names it as the outbox instances run it.
 const published: Array<{ readonly instance: string; readonly event: StoredEvent }> = [];
 const capturing = (instance: string): OutboxPublisher<never> => ({
-  name: "CapturingTestPublisher",
   publishBatch: (events) => Effect.sync(() => { published.push(...events.map((event) => ({ instance, event }))); })
 });
 
@@ -42,7 +43,7 @@ const startInstance = async (name: string, roles: string): Promise<Instance> => 
   });
   const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
   const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie));
-  const app = await startWalletAppForTest(runtime, [capturing(name)], TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
+  const app = await startWalletAppForTest(runtime, capturing(name), TOKEN, { roles: rolesFromEnv(roles), instanceId: name });
   const instance = { name, runtime, app };
   instances.set(name, instance);
   return instance;

@@ -7,7 +7,10 @@
 // (docs/history/plans/dashboard.md, step 2). scripts/dashboard.test.ts derives those names from @crablet/metrics-otel and fails when a panel or an alert
 // queries one that does not exist, or when a metric has neither a panel nor a stated reason for having none.
 import { resolve } from "node:path";
-import { AUTOMATIONS_LOCK_KEY, DEADLINES_LOCK_KEY, OUTBOX_LOCK_KEY, VIEWS_LOCK_KEY } from "../packages/eventstore/src/Leader.ts";
+import { VIEWS_LOCK_KEY } from "../packages/views/src/ViewsModule.ts";
+import { AUTOMATIONS_LOCK_KEY } from "../packages/automations/src/AutomationsModule.ts";
+import { OUTBOX_LOCK_KEY } from "../packages/outbox/src/OutboxModule.ts";
+import { DEADLINES_LOCK_KEY } from "../packages/deadlines/src/DeadlinesModule.ts";
 
 type Target = { readonly expr: string; readonly legend?: string; readonly instant?: boolean; readonly format?: "table" };
 type Panel = Record<string, unknown>;

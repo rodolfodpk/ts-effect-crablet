@@ -1,6 +1,6 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md. Confirms appended events are actually forwarded
 // through the outbox processor to a real OutboxPublisher - using a capturing test publisher
-// (injected via startBackgroundProcessors' outboxPublishers option) instead of asserting on
+// (injected via startBackgroundProcessors' outboxPublisher option) instead of asserting on
 // console log output, which makeLogPublisher() alone would force.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -22,7 +22,6 @@ let app: RunningWalletApp;
 const captured: Array<StoredEvent> = [];
 
 const capturingPublisher: OutboxPublisher<never> = {
-  name: "CapturingTestPublisher",
   publishBatch: (events) =>
     Effect.sync(() => {
       captured.push(...events);
@@ -42,7 +41,7 @@ before(async () => {
   const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
   const layer = Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
-  app = await startWalletAppForTest(runtime, [capturingPublisher]);
+  app = await startWalletAppForTest(runtime, capturingPublisher);
 }, { timeout: 60_000 });
 
 after(async () => {

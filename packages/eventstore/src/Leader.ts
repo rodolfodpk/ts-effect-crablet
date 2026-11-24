@@ -30,11 +30,7 @@ import { ConnectionError, SqlError } from "effect/sql/SqlError";
 // `reserve` already gives a pooled-but-pinned connection tied to an Effect Scope we control -
 // the "hold it open, don't return it to the pool" shape leadership needs.
 
-export const OUTBOX_LOCK_KEY = 4856221667890123456n;
-export const VIEWS_LOCK_KEY = 4856221667890123457n;
-export const AUTOMATIONS_LOCK_KEY = 4856221667890123458n;
-// The deadlines processor (ADR-0043): a lock of its own, so it fails over independently of the automations although it runs in the same role.
-export const DEADLINES_LOCK_KEY = 4856221667890123459n;
+// The lock keys are the modules' own (VIEWS_LOCK_KEY in @crablet/views, and so on): this file is only the mechanism, and knows no module.
 
 export interface LeaderOptions {
   // How often the leader checks its own connection (default 1 second).

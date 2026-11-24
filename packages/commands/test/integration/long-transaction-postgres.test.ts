@@ -12,7 +12,7 @@ import { Effect, Metric, Redacted } from "effect";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
-import * as Crablet from "../../src/Crablet.ts";
+import * as Crablet from "../support/CommandsLayer.ts";
 import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit, fail, type Command } from "../../src/Command.ts";

@@ -4,14 +4,14 @@ import { Effect, Exit, Layer, Redacted } from "effect";
 import { NodeHttpServer } from "@effect/platform-node";
 import { OpenApi } from "effect/http-api";
 import { HttpRouter } from "effect/http";
-import type { Backlog, ProcessorDetails, ProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
-import type { ProcessorStatus } from "@crablet/event-poller/ProcessorStatus";
-import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
+import type { Backlog, ProcessorDetails, ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import { authorizationFrom } from "../src/Authorization.ts";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { adminApi } from "../src/AdminApi.ts";
 import { adminApiLayer } from "../src/AdminApiLive.ts";
-import { actOnProcessor, listProcessors, processorsHandlers, type ProcessorSource } from "../src/ProcessorsApiLive.ts";
+import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
+import { Processors } from "@crablet/modules/Processors";
+import { actOnProcessor, listProcessors, processorsHandlers } from "../src/ProcessorsApiLive.ts";
 
 const TOKEN = "s3cret";
 
@@ -40,7 +40,7 @@ const fakeService = (
   };
 };
 
-const backlog = (pendingEvents: number, oldestPendingSeconds: number | null, position = 40n): Backlog => ({ cursor: ProgressCursorNS.of("9", position), pendingEvents, capped: false, oldestPendingSeconds });
+const backlog = (pendingEvents: number, oldestPendingSeconds: number | null, position = 40n): Backlog => ({ cursor: { transactionId: "9", position }, pendingEvents, capped: false, oldestPendingSeconds });
 
 const makeSources = () => {
   const views = fakeService({
@@ -57,7 +57,10 @@ const makeSources = () => {
 
 const api = adminApi;
 // The processors groups are served with the rest of the admin API, whose event log needs an EventStore: an empty one here.
-const adminLayerOf = (sources: ReadonlyArray<ProcessorSource>) => adminApiLayer({ sources }).pipe(Layer.provide(makeInMemoryEventStore().layer));
+// The process's modules, as Crablet.processors or Crablet.catalog would give them: here, the sources themselves, none running.
+const processorsOf = (sources: ReadonlyArray<ProcessorSource>) =>
+  Layer.succeed(Processors, Processors.of({ sources, status: Effect.succeed(sources.map((s) => ({ kind: s.kind, runs: false, leads: false }))) }));
+const adminLayerOf = (sources: ReadonlyArray<ProcessorSource>) => adminApiLayer().pipe(Layer.provide(makeInMemoryEventStore().layer), Layer.provide(processorsOf(sources)));
 const serveWith = (sources: ReadonlyArray<ProcessorSource>, check: (token: string) => Effect.Effect<boolean, unknown> = (t) => Effect.succeed(t === TOKEN)) => {
   const layer = adminLayerOf(sources).pipe(
     Layer.provide(authorizationFrom((token) => check(Redacted.value(token)))),

@@ -7,6 +7,7 @@
     "start": "node src/index.ts"
   },
   "dependencies": {
+    "@crablet/app": "workspace:*",
     "effect": "4.1.4",
     "@effect/sql-pg": "4.1.4",
     "@effect/platform-node": "4.1.4",
@@ -18,6 +19,7 @@
     "@crablet/outbox": "workspace:*",
     "@crablet/commands-http": "workspace:*",
     "@crablet/views-http": "workspace:*",
+    "@crablet/modules": "workspace:*",
     "@crablet/processors-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",
     "pg": "8.23.1"

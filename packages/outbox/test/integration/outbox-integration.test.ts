@@ -10,7 +10,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { makeOutboxProcessor } from "../../src/OutboxModule.ts";
 import { defineTopic } from "../../src/TopicConfig.ts";
 import type { OutboxConfig } from "../../src/OutboxConfig.ts";
-import type { OutboxPublisher } from "../../src/OutboxPublisher.ts";
+import { OutboxPublishers, type OutboxPublisher } from "../../src/OutboxPublisher.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
@@ -71,11 +71,7 @@ const baseOutboxConfig: OutboxConfig = {
   maxErrors: 5
 };
 
-const fakePublisher = (
-  name: string,
-  onPublish: (events: ReadonlyArray<StoredEvent>) => void
-): OutboxPublisher => ({
-  name,
+const fakePublisher = (onPublish: (events: ReadonlyArray<StoredEvent>) => void): OutboxPublisher => ({
   publishBatch: (events) => Effect.sync(() => onPublish(events))
 });
 
@@ -94,15 +90,15 @@ describe("outbox module integration (real Postgres)", () => {
       makeOutboxProcessor({
         config: baseOutboxConfig,
         topics: [
-          defineTopic(topicA, { eventTypes: new Set([typeA]), publishers: [fakePublisher("pubA", (events) => seenA.push(...events))] }),
-          defineTopic(topicB, { eventTypes: new Set([typeB]), publishers: [fakePublisher("pubB", (events) => seenB.push(...events))] })
+          defineTopic(topicA, { eventTypes: new Set([typeA]), publishers: ["pubA"] }),
+          defineTopic(topicB, { eventTypes: new Set([typeB]), publishers: ["pubB"] })
         ],
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );
 
     try {
-      await run(handle.service.start);
+      await run(Effect.provideService(handle.service.start, OutboxPublishers, { pubA: fakePublisher((events) => seenA.push(...events)), pubB: fakePublisher((events) => seenB.push(...events)) }));
 
       await run(
         Effect.gen(function* () {
@@ -137,10 +133,7 @@ describe("outbox module integration (real Postgres)", () => {
         topics: [
           defineTopic(topic, {
             eventTypes: new Set([eventType]),
-            publishers: [
-              fakePublisher("good", (events) => seenGood.push(...events)),
-              { name: "bad", publishBatch: () => Effect.fail("simulated publish failure") }
-            ]
+            publishers: ["good", "bad"]
           })
         ],
         instanceId: `instance-${crypto.randomUUID()}`
@@ -148,7 +141,7 @@ describe("outbox module integration (real Postgres)", () => {
     );
 
     try {
-      await run(handle.service.start);
+      await run(Effect.provideService(handle.service.start, OutboxPublishers, { good: fakePublisher((events) => seenGood.push(...events)), bad: { publishBatch: () => Effect.fail("simulated publish failure") } }));
 
       await run(
         Effect.gen(function* () {
@@ -186,13 +179,13 @@ describe("outbox module integration (real Postgres)", () => {
     const handle = await run(
       makeOutboxProcessor({
         config: { ...baseOutboxConfig, pollingIntervalMs: 60_000 },
-        topics: [defineTopic(topic, { eventTypes: new Set([eventType]), publishers: [fakePublisher("pub", (events) => seen.push(...events))] })],
+        topics: [defineTopic(topic, { eventTypes: new Set([eventType]), publishers: ["pub"] })],
         instanceId: `instance-${crypto.randomUUID()}`
       })
     );
 
     try {
-      await run(handle.service.start);
+      await run(Effect.provideService(handle.service.start, OutboxPublishers, { pub: fakePublisher((events) => seen.push(...events)) }));
       await waitUntilAsync(() => getProgress(topic, "pub"), (p) => p !== null);
       // PgClient.listen uses a dedicated connection - give it the same small registration grace
       // period listen-notify.test.ts uses before sending a NOTIFY that Postgres will not replay.

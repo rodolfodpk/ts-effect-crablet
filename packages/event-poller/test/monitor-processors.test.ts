@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect, Fiber, Metric } from "effect";
 import * as PollerMetrics from "@crablet/metrics-otel/PollerMetrics";
 import { monitorProcessors, recordProcessorSamples, sampleProcessors } from "../src/MonitorProcessors.ts";
-import type { Backlog, ProcessorManagementService } from "../src/ProcessorManagementService.ts";
-import type { ProcessorStatus } from "../src/ProcessorStatus.ts";
+import type { Backlog, ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import * as ProgressCursorNS from "../src/ProgressCursor.ts";
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);

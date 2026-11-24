@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { Context, Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import type { ConnInfo } from "@crablet/test-support";
 import { makeCourseApiLayer, startCourseViews, type CourseAppConfig, type CourseViewsOptions } from "../../src/CourseApp.ts";
 

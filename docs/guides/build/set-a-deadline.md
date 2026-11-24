@@ -112,11 +112,11 @@ Start it with the commands deadlines may name, owned by a Scope like the other p
 // feature lists its own). One instance fires, the others wait on its lock.
 export const startCourseDeadlines = (
   instanceId: string = defaultInstanceId()
-): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | CommandExecutor | EventStore | CommandAuditStore | Scope.Scope> =>
+): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
   startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
 ```
 
-`startDeadlinesProcessor` (`@crablet/automations/Deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in
+`startDeadlinesProcessor` (`@crablet/deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in
 due order with the deadline as its cause, and records how it ended. It has a leader lock of its own, so one instance fires and the others wait; it belongs
 with the automations role. `makeDeadlinesManagementService` gives the admin API its status, pause, resume and reset, and its backlog: how many deadlines are
 due and how long ago the oldest fell due.

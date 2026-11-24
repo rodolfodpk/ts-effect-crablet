@@ -1,5 +1,5 @@
 import { Clock, Effect } from "effect";
-import type { EventStoreService } from "@crablet/eventstore";
+import { EventStore } from "@crablet/eventstore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { DeadlineFired } from "@crablet/commands/Deadline";
 import { SqlClient } from "effect/sql";
@@ -67,9 +67,11 @@ export const makeDeadlineProgressTracker = (): Effect.Effect<ProgressTracker<str
 // Records that a deadline fired: its row is deleted and `crablet.DeadlineFired` appended, caused by it, in one transaction. The row goes first, as the
 // guard: a processor that finds it already gone (a zombie leader and its successor fired the same deadline) records nothing, so a deadline has one
 // `DeadlineFired`. The command runs in a transaction of its own before this one: its append must be that transaction's first write (ADR-0033), so the two cannot be one.
-export const makeRecordFiring = (sql: SqlClient.SqlClient, eventStore: EventStoreService): RecordFiring => (deadline, outcome) =>
+// The event store is read where the processor runs (decision V1), so building the module needs only the SQL client.
+export const makeRecordFiring = (sql: SqlClient.SqlClient): RecordFiring<EventStore> => (deadline, outcome) =>
   sql.withTransaction(
     Effect.gen(function* () {
+      const eventStore = yield* EventStore;
       const deleted = yield* sql`DELETE FROM crablet_deadlines WHERE deadline_position = ${deadline.position.toString()}::bigint RETURNING 1 AS gone`;
       if (deleted.length === 0) return false;
       const fired = DeadlineFired({ deadlinePosition: deadline.position.toString(), ...outcome });

@@ -12,6 +12,7 @@ export class PublishTimedOut extends Error {
 // In individual mode a failure after some events were published reports how many (HandledPrefix), so the processor keeps them and publishes again from
 // the first that failed, not the whole batch (ADR-0036).
 export const publishToOutbox = (
+  name: string,
   publisher: OutboxPublisher,
   events: ReadonlyArray<StoredEvent>,
   timeoutMs: number
@@ -20,7 +21,7 @@ export const publishToOutbox = (
     publisher.publishBatch(batch).pipe(
       Effect.timeoutOrElse({
         duration: Duration.millis(timeoutMs),
-        orElse: () => Effect.fail(new PublishTimedOut(`publisher "${publisher.name}": publishing ${batch.length} event(s) took longer than ${timeoutMs} ms`))
+        orElse: () => Effect.fail(new PublishTimedOut(`publisher "${name}": publishing ${batch.length} event(s) took longer than ${timeoutMs} ms`))
       })
     );
   if (publisher.preferredMode !== "individual") return publish(events).pipe(Effect.map(() => events.length));

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { SqlClient } from "effect/sql";
-import { BACKLOG_CAP, isBackedOff, makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
+import { isBackedOff } from "@crablet/modules";
+import { BACKLOG_CAP, makeProcessorManagementService } from "../src/ProcessorManagementService.ts";
 import * as EventSelection from "../src/EventSelection.ts";
 import { makeInMemoryProgressTracker } from "./fixtures/InMemoryProgressTracker.ts";
 import * as ProgressCursorNS from "../src/ProgressCursor.ts";

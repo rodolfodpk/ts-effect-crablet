@@ -1,7 +1,6 @@
 import { Duration, Effect, Metric } from "effect";
 import * as PollerMetrics from "@crablet/metrics-otel/PollerMetrics";
-import type { ProcessorManagementService } from "./ProcessorManagementService.ts";
-import type { ProcessorStatus } from "./ProcessorStatus.ts";
+import type { ProcessorManagementService, ProcessorStatus } from "@crablet/modules";
 import { defaultInstanceId } from "./InstanceId.ts";
 
 // What the sampler reads about one processor.

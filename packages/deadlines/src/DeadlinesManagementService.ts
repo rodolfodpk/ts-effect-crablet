@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { SqlClient } from "effect/sql";
-import { makeProcessorManagementService, type ProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
+import { makeProcessorManagementService } from "@crablet/event-poller/ProcessorManagementService";
+import type { ProcessorManagementService } from "@crablet/modules";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import { dueBacklog, makeDeadlineProgressTracker } from "./internal/DeadlineStore.ts";
@@ -9,7 +10,7 @@ import { dueBacklog, makeDeadlineProgressTracker } from "./internal/DeadlineStor
 // due and not fired (`pendingEvents`), and how long ago the oldest fell due (`oldestPendingSeconds`), read from crablet_deadlines; the admin API and the
 // consumer gauges (MonitorProcessors) show them as they show a view's lag. Its cursor never moves, so it has no lag in positions.
 export const makeDeadlinesManagementService = (
-  handle: ProcessorHandle
+  handle: ProcessorHandle<unknown>
 ): Effect.Effect<ProcessorManagementService<string>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

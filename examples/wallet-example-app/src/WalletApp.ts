@@ -21,7 +21,8 @@ import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
-import type { ProcessorSource } from "@crablet/processors-http/ProcessorsApiLive";
+import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
+import { Processors, type ProcessorsService } from "@crablet/modules/Processors";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
 import * as M from "./domain/WalletModel.ts";
@@ -53,15 +54,15 @@ export interface WalletAppConfig {
 export interface BackgroundProcessors {
   // The roles this process runs.
   readonly roles: Roles;
-  readonly viewsHandle: ProcessorHandle;
-  readonly automationsHandle: ProcessorHandle;
-  readonly outboxHandle: ProcessorHandle;
+  readonly viewsHandle: ProcessorHandle<unknown>;
+  readonly automationsHandle: ProcessorHandle<unknown>;
+  readonly outboxHandle: ProcessorHandle<unknown>;
 }
 
 export interface BackgroundProcessorsOptions {
   readonly instanceId?: string | undefined;
   // Where the outbox publishes. Default: the log publisher the real app uses; outbox-e2e.test.ts passes a capturing one.
-  readonly outboxPublishers?: ReadonlyArray<OutboxPublisher> | undefined;
+  readonly outboxPublisher?: OutboxPublisher | undefined;
   // The roles to start (ADR-0022). Default: all of them, one process.
   readonly roles?: Roles | undefined;
   // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
@@ -80,7 +81,7 @@ export const startBackgroundProcessors = (
   SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const { instanceId = defaultInstanceId(), outboxPublishers = [makeLogPublisher()], roles = allRoles, polling = defaultPolling, leader } = options;
+    const { instanceId = defaultInstanceId(), outboxPublisher = makeLogPublisher(), roles = allRoles, polling = defaultPolling, leader } = options;
     // A role that is not started still has its handle: building one opens no connection and runs no loop.
     // #region views-processor
     const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };
@@ -97,13 +98,14 @@ export const startBackgroundProcessors = (
       topics: [
         defineTopic("wallet-events", {
           anyOfTags: new Set(["wallet_id", "from_wallet_id", "to_wallet_id"]),
-          publishers: outboxPublishers
+          // The publisher's name keys its progress row: it stays the one the wallet has always used.
+          publishers: ["LogPublisher"]
         })
       ],
       instanceId,
       leader
     };
-    const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor(outbox) : makeOutboxProcessor(outbox));
+    const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor({ ...outbox, publishers: { LogPublisher: outboxPublisher } }) : makeOutboxProcessor(outbox));
 
     return { roles, viewsHandle, automationsHandle, outboxHandle };
   });
@@ -129,6 +131,21 @@ export const processorSources = (processors: BackgroundProcessors): Effect.Effec
   });
 // #endregion processor-sources
 
+// The wallet's modules as the `Processors` service the admin API reads: the sources, and the status from the handles (whether this process runs a module,
+// by its roles, and whether it leads it now). Built by hand until the wallet moves onto Crablet.processors (phase 3 of the @crablet/app plan).
+export const walletProcessors = (processors: BackgroundProcessors): Effect.Effect<ProcessorsService, never, SqlClient.SqlClient> =>
+  Effect.map(processorSources(processors), (sources) => {
+    const modules = [
+      { kind: "views" as const, handle: processors.viewsHandle },
+      { kind: "automations" as const, handle: processors.automationsHandle },
+      { kind: "outbox" as const, handle: processors.outboxHandle }
+    ];
+    return {
+      sources,
+      status: Effect.forEach(modules, ({ kind, handle }) => Effect.map(handle.isLeader, (leads) => ({ kind, runs: processors.roles.has(kind), leads })))
+    };
+  });
+
 // Keeps the consumer gauges (lag, cursor, status) current for the three modules, for as long as the scope lives. Every instance runs it, so a processor
 // whose leader has died still shows its lag growing (docs/guides/operate/monitor-it.md#are-the-consumers-keeping-up).
 // #region monitor-processors
@@ -151,7 +168,7 @@ export const monitorBackgroundProcessors = (
 const walletEventDefinitions = [M.WalletOpened, M.WalletClosed, M.WalletStatementOpened, M.WalletStatementClosed, M.DepositMade, M.WithdrawalMade, M.MoneyTransferred, WelcomeNotificationSent];
 
 // #region admin-api
-export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>, token: Redacted.Redacted<string>) => {
+export const makeWalletAdminApiLayer = (processors: ProcessorsService, token: Redacted.Redacted<string>) => {
   const expected = Buffer.from(Redacted.value(token));
   const authorization = authorizationFrom((presented) =>
     Effect.sync(() => {
@@ -159,7 +176,7 @@ export const makeWalletAdminApiLayer = (sources: ReadonlyArray<ProcessorSource>,
       return got.length === expected.length && timingSafeEqual(got, expected);
     })
   );
-  return adminApiLayer({ sources, masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization));
+  return adminApiLayer({ masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization), Layer.provide(Layer.succeed(Processors, processors)));
 };
 // #endregion admin-api
 

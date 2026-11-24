@@ -10,11 +10,14 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
-import { DEADLINES_LOCK_KEY } from "@crablet/eventstore/Leader";
-import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import { CommandExecutor, CommandExecutorLive, type CommandExecutorService } from "@crablet/commands";
+import * as EventSelection from "@crablet/event-poller/EventSelection";
+import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import { byModel, deadline, defineCommand, defineEvent, defineModel, DomainError, emit, fail, Instant, noop } from "@crablet/commands/Domain";
-import { DeadlineFired } from "@crablet/commands/Deadline";
-import { DEADLINES_PROCESSOR_ID, makeDeadlinesProcessor, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
+import { DeadlineFired, DeadlineScheduled } from "@crablet/commands/Deadline";
+import type { Command, RawInput } from "@crablet/commands/Command";
+import type { InputSchema } from "@crablet/commands/Contract";
+import { DEADLINES_LOCK_KEY, DEADLINES_PROCESSOR_ID, makeDeadlinesProcessor, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
 import { makeDeadlinesManagementService } from "../../src/DeadlinesManagementService.ts";
 import { makeDeadlineEventHandler } from "../../src/internal/DeadlineEventHandler.ts";
 import type { HandledPrefix } from "@crablet/event-poller/EventHandler";
@@ -85,8 +88,8 @@ const Buy = defineCommand({
 });
 
 const config: DeadlinesConfig = { pollingIntervalMs: 100, leaderElectionRetryIntervalMs: 200, maxErrors: 2 };
-const exec = (command: typeof Hold | typeof Buy, input: Record<string, unknown>) =>
-  run(Effect.flatMap(CommandExecutor, (executor) => executor.run(command as typeof Hold, input as never)));
+const exec = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: RawInput<I>) =>
+  run(Effect.flatMap(CommandExecutor, (executor) => executor.run(command, input)));
 const seat = () => `seat-${crypto.randomUUID()}`;
 
 interface EventRow { readonly position: string; readonly type: string; readonly data: Record<string, unknown>; readonly causation_id: string | null }
@@ -107,6 +110,8 @@ const withProcessor = async (body: () => Promise<void>, instanceId = `dl-${crypt
   await run(handle.service.start);
   try { await body(); } finally { await run(handle.service.stop); }
 };
+
+const anySelection = EventSelection.of({ eventTypes: new Set([DeadlineScheduled.type]) });
 
 describe("deadlines against Postgres (ADR-0043)", () => {
   it("the append that stores a deadline writes its row, with its due time; an append that is rolled back writes none", { timeout: 30_000 }, async () => {
@@ -171,11 +176,10 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     // The handler the processor runs, driven by hand twice over the same fetched deadline.
     const handleTwice = Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      const store = yield* EventStore;
       const executor = yield* CommandExecutor;
-      const execute = (command: never, input: never) => executor.runDecoded(command, input);
-      const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute as never, makeRecordFiring(sql, store), 30_000);
-      const fetched = (yield* (yield* makeDeadlineFetcher()).fetchEvents(undefined as never, undefined as never, 100)).filter((e: StoredEvent) => e.position.toString() === scheduled.position);
+      const execute: CommandExecutorService["runDecoded"] = (command, input) => executor.runDecoded(command, input);
+      const handler = makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute, makeRecordFiring(sql), 30_000);
+      const fetched = (yield* (yield* makeDeadlineFetcher()).fetchEvents(anySelection, ProgressCursor.zero, 100)).filter((e: StoredEvent) => e.position.toString() === scheduled.position);
       assert.strictEqual(fetched.length, 1);
       yield* handler.handle(DEADLINES_PROCESSOR_ID, fetched);
       yield* handler.handle(DEADLINES_PROCESSOR_ID, fetched);
@@ -189,14 +193,13 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     const id = seat();
     await exec(Hold, { seatId: id, forMs: 0 });
     const scheduled = (await deadlineOf(id))!;
-    const fetchIt = Effect.map(Effect.flatMap(makeDeadlineFetcher(), (f) => f.fetchEvents(undefined as never, undefined as never, 100)), (es) =>
+    const fetchIt = Effect.map(Effect.flatMap(makeDeadlineFetcher(), (f) => f.fetchEvents(anySelection, ProgressCursor.zero, 100)), (es) =>
       es.filter((e: StoredEvent) => e.position.toString() === scheduled.position)
     );
-    const handlerWith = (execute: unknown, fireTimeoutMs: number) =>
+    const handlerWith = (execute: CommandExecutorService["runDecoded"], fireTimeoutMs: number) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        const store = yield* EventStore;
-        return makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute as never, makeRecordFiring(sql, store), fireTimeoutMs);
+        return makeDeadlineEventHandler(new Map([[ReleaseSeat.name, ReleaseSeat]]), execute, makeRecordFiring(sql), fireTimeoutMs);
       });
     // A command that never ends (a lock it waits on, a remote call that hangs).
     const stuck = Effect.gen(function* () {
@@ -216,7 +219,7 @@ describe("deadlines against Postgres (ADR-0043)", () => {
     await run(
       Effect.gen(function* () {
         const executor = yield* CommandExecutor;
-        const execute = (command: never, input: never) => executor.runDecoded(command, input);
+        const execute: CommandExecutorService["runDecoded"] = (command, input) => executor.runDecoded(command, input);
         const handler = yield* handlerWith(execute, 30_000);
         yield* handler.handle(DEADLINES_PROCESSOR_ID, yield* fetchIt);
       })

@@ -1,0 +1,16 @@
+{
+  "name": "@crablet/modules",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/ProcessorManagement.ts",
+    "./ProcessorSource": "./src/ProcessorSource.ts",
+    "./Module": "./src/Module.ts",
+    "./Processors": "./src/Processors.ts"
+  },
+  "dependencies": {
+    "effect": "4.1.4"
+  },
+  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
+}

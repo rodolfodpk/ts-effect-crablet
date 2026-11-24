@@ -12,7 +12,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import * as Crablet from "../src/Crablet.ts";
+import * as Crablet from "../test/support/CommandsLayer.ts";
 import { CommandExecutor } from "../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../src/Command.ts";
 import { defineEvent } from "../src/Event.ts";

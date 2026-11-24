@@ -4,7 +4,7 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Clock, Effect, Exit, ManagedRuntime, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
-import * as Crablet from "@crablet/commands/Crablet";
+import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../support/startCourseAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";

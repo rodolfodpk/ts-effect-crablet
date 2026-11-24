@@ -12,12 +12,12 @@ describe("makeLogPublisher", () => {
 
   test("logs each event with its place in the log and its stable id, the id a real destination would deduplicate by", async () => {
     const publisher = makeLogPublisher("audit");
-    expect(publisher.name).toBe("audit");
     await Effect.runPromise(publisher.publishBatch([event(1n, "id-1"), event(2n, "id-2")]));
     expect(log.mock.calls.map((c) => c[0])).toEqual(["[audit] DepositMade @ (7, 1) id id-1", "[audit] DepositMade @ (7, 2) id id-2"]);
   });
 
-  test("is named LogPublisher by default", () => {
-    expect(makeLogPublisher().name).toBe("LogPublisher");
+  test("labels its lines LogPublisher by default", async () => {
+    await Effect.runPromise(makeLogPublisher().publishBatch([event(1n, "id-1")]));
+    expect(log.mock.calls.map((c) => c[0])).toEqual(["[LogPublisher] DepositMade @ (7, 1) id id-1"]);
   });
 });

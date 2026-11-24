@@ -69,7 +69,7 @@ C4Component
     Component(executor, "CommandExecutor and EventStore", "Crablet.layer", "Validates, loads the boundary, decides, appends if nothing newer, retries on a conflict")
     Component(processor, "Views processor", "event-poller and views", "Leader-gated by the views module's advisory lock (one lock for all views, not one per view); reads new events, runs the projector, moves the cursor")
     Component(projector, "CourseSeatsViewProjector", "ViewProjector", "Idempotent seat counter per course, using decodeStored")
-    Component(deadlines, "Deadlines processor", "automations/Deadlines", "Leader-gated by the deadlines module's own lock; fires each due deadline: ReleaseUnpaidSubscription, CancelUnreadyCourse, IssueInvoice, ReleaseOverdueInvoice")
+    Component(deadlines, "Deadlines processor", "deadlines", "Leader-gated by the deadlines module's own lock; fires each due deadline: ReleaseUnpaidSubscription, CancelUnreadyCourse, IssueInvoice, ReleaseOverdueInvoice")
     Component(hub, "ViewProgressHub", "views", "One LISTEN per process; wakes waiting reads and open feeds")
     Component(openapi, "OpenAPI and docs", "commands-http", "GET /openapi.json, optional /docs page")
   }

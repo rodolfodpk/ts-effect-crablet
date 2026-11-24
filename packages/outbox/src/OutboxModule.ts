@@ -1,26 +1,35 @@
-import { Effect, type Scope, Stream } from "effect";
+import { Effect, Layer, type Scope, Stream } from "effect";
 import { SqlClient } from "effect/sql";
-import { PgClient } from "@effect/sql-pg";
+import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
-import { tryAcquireGlobalLeader, OUTBOX_LOCK_KEY, type LeaderOptions } from "@crablet/eventstore/Leader";
+import { tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
 import { wakeupStream } from "@crablet/eventstore/Listen";
 import { holdSessionOnce, sessionPg, sessionSql } from "@crablet/eventstore/SessionClients";
 import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
 import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
+import type { EventHandler } from "@crablet/event-poller/EventHandler";
 import { resolvePollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
 import { makeSqlEventFetcher } from "@crablet/event-poller/SqlEventFetcher";
-import type { TopicConfig } from "./TopicConfig.ts";
+import type { PublisherNamesOf, TopicConfig } from "./TopicConfig.ts";
+import { OutboxPublishers, type OutboxPublisher } from "./OutboxPublisher.ts";
 import { defaultPublishTimeoutMs, type OutboxConfig } from "./OutboxConfig.ts";
 import { makeOutboxProgressTracker } from "./internal/OutboxProgressTracker.ts";
 import { makeOutboxEventHandler } from "./internal/OutboxEventHandler.ts";
-import { makeOutboxProcessorConfigs, publishersOf } from "./internal/OutboxProcessorConfig.ts";
+import { makeOutboxProcessorConfigs } from "./internal/OutboxProcessorConfig.ts";
 import * as TopicPublisherPair from "./TopicPublisherPair.ts";
+import { builtModule, withProcessSettings, type ProcessSettings } from "@crablet/event-poller/ProcessSettings";
+import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
+import { makeOutboxManagementService } from "./OutboxManagementService.ts";
+
+// The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
+// same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
+export const OUTBOX_LOCK_KEY = 4856221667890123456n;
 
 export interface OutboxDeps {
   // Optional: what is left out takes its value from `defaultPollingConfig` (ADR-0030).
   readonly config?: OutboxConfig | undefined;
-  // The topics, each built with `defineTopic(...)`. The publishers are theirs: the processor runs the publishers its topics name.
+  // The topics, each built with `defineTopic(...)`. They name their publishers; the publishers themselves are given where the processor starts.
   readonly topics: ReadonlyArray<TopicConfig>;
   readonly instanceId?: string | undefined;
   // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
@@ -31,24 +40,23 @@ export interface OutboxDeps {
 // Outbox-module-specific wiring only. Leadership is a single module-wide lock (OUTBOX_LOCK_KEY)
 // shared by one EventProcessor handling every (topic, publisher) pair - the same single-leader model
 // views uses - so this reuses @crablet/event-poller's generic engine as-is.
+// Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. Running needs the `PgClient`
+// its wake-ups LISTEN on and the publishers its topics name, given where it starts.
+export type OutboxRunRequirements = PgClient.PgClient | OutboxPublishers;
+
 export const makeOutboxProcessor = (
   deps: OutboxDeps
-): Effect.Effect<
-  ProcessorHandle,
-  never,
-  SqlClient.SqlClient | PgClient.PgClient
-> =>
+): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     // The leader's lock and LISTEN: the session clients when the application provides them (behind a pooler in transaction mode), else the ones above.
     const sessionSql_ = yield* sessionSql;
-    const sessionPg_ = yield* sessionPg;
     const instanceId = deps.instanceId ?? defaultInstanceId();
 
     const progressTracker = yield* makeOutboxProgressTracker(instanceId);
     const fetcher = yield* makeSqlEventFetcher();
     const { publishTimeoutMs, ...pollingConfig } = deps.config ?? {};
-    const handler = makeOutboxEventHandler(publishersOf(deps.topics), publishTimeoutMs ?? defaultPublishTimeoutMs);
+    const handler: EventHandler<string, unknown, OutboxRunRequirements> = makeOutboxEventHandler(publishTimeoutMs ?? defaultPublishTimeoutMs);
     const configs = makeOutboxProcessorConfigs(pollingConfig, deps.topics);
     const topicByName = new Map(deps.topics.map((t) => [t.topic, t] as const));
 
@@ -67,11 +75,67 @@ export const makeOutboxProcessor = (
       instanceId,
       // The first attempt at the lock marks that the module has started: the process's one lock session is counted by the first module (its LISTEN is on the process's LISTEN connection, not in the pool); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
       acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, OUTBOX_LOCK_KEY, deps.leader)),
-      wakeupStream: wakeups === "off" ? Stream.never : wakeupStream(sessionPg_, EVENTS_CHANNEL)
+      wakeupStream: wakeups === "off" ? Stream.never : Stream.unwrap(Effect.map(sessionPg, (pg) => wakeupStream(pg, EVENTS_CHANNEL)))
     });
   });
 
-// Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loops and releases the
-// leader lock. What an application uses. `makeOutboxProcessor` builds without starting (a handle for status, a test that drives `start`/`stop` itself).
-export const startOutboxProcessor = (deps: OutboxDeps): Effect.Effect<ProcessorHandle, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
-  Effect.tap(makeOutboxProcessor(deps), (handle) => handle.service.startScoped);
+// One publisher for each name the topics give. The names must be known to the compiler (literals, as `defineTopic` keeps them): with names typed
+// `string` (topics built at run time, or annotated `TopicConfig[]`) any record would do, so that does not compile.
+export type PublishersFor<T extends ReadonlyArray<TopicConfig>> = { readonly [K in PublisherNamesOf<T>]: OutboxPublisher<unknown> } &
+  (string extends PublisherNamesOf<T> ? { readonly error: "the topics' publisher names must be literal: declare them with defineTopic, without widening to TopicConfig[]" } : unknown);
+
+// What starting the outbox takes besides its declaration: one publisher for each name its topics give (a name with no publisher does not compile).
+export interface OutboxStartDeps<T extends ReadonlyArray<TopicConfig>> extends OutboxDeps {
+  readonly topics: T;
+  readonly publishers: PublishersFor<T>;
+}
+
+// Every publisher name the topics give has a publisher in the ones this process runs with, or the processor does not start: a missing one fails the start,
+// naming it, instead of failing every poll of its pair. The compiler checks this where the names are literal; this checks it where they are not (a
+// hand-built `OutboxPublishers`, publishers given for other topics).
+const requirePublishers = (topics: ReadonlyArray<TopicConfig>): Effect.Effect<void, never, OutboxPublishers> =>
+  Effect.flatMap(Effect.service(OutboxPublishers), (given) => {
+    const missing = [...new Set(topics.flatMap((t) => t.publishers.map((p) => p.publisher)))].filter((name) => !Object.hasOwn(given, name));
+    return missing.length === 0
+      ? Effect.void
+      : Effect.die(new Error(`outbox: no publisher given for ${missing.map((n) => `"${n}"`).join(", ")}, named by the topics; give one per name (Outbox.publishers)`));
+  });
+
+// Starts a built handle once its publishers are checked.
+const startChecked = (handle: ProcessorHandle<OutboxRunRequirements>, topics: ReadonlyArray<TopicConfig>) =>
+  Effect.andThen(requirePublishers(topics), handle.service.startScoped);
+
+// Builds the processor and starts it with its publishers, owned by the Scope: it runs until the scope closes, and closing it stops the loops and
+// releases the leader lock. What an application uses. `makeOutboxProcessor` builds without starting (a handle for status, a test that drives
+// `start`/`stop` itself and provides `OutboxPublishers`).
+export const startOutboxProcessor = <const T extends ReadonlyArray<TopicConfig>>(
+  deps: OutboxStartDeps<T>
+): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
+  Effect.tap(makeOutboxProcessor(deps), (handle) => Effect.provideService(startChecked(handle, deps.topics), OutboxPublishers, deps.publishers));
+
+// The outbox module, described to the application (`@crablet/app`: `Crablet.modules(Outbox.module(...))`). The process's settings (instance id, leader,
+// polling default) come from whoever builds it; `config` here overrides the polling default for this module. `describe` says what a (topic, publisher) pair is for, by its key, as the
+// admin API shows it.
+export interface OutboxModuleOptions extends Omit<OutboxDeps, "instanceId" | "leader"> {
+  readonly describe?: ((id: string) => string | undefined) | undefined;
+}
+
+export const module = (
+  options: OutboxModuleOptions
+): RunnableModule<"outbox", SqlClient.SqlClient, OutboxRunRequirements, ProcessSettings> => {
+  const { describe, ...deps } = options;
+  const depsOf = (settings: ProcessSettings) => withProcessSettings(deps, settings);
+  const built = (handle: ProcessorHandle<unknown>): Effect.Effect<BuiltModule<"outbox">, never, SqlClient.SqlClient> =>
+    Effect.map(makeOutboxManagementService(handle), (service) => builtModule("outbox", handle, service, describe));
+  return {
+    kind: "outbox",
+    make: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), built),
+    start: (settings) => Effect.flatMap(makeOutboxProcessor(depsOf(settings)), (handle) => Effect.as(startChecked(handle, deps.topics), handle)).pipe(Effect.flatMap(built))
+  };
+};
+
+// The publishers a process that runs the outbox module provides, one per name its topics give (a missing name does not compile): the layer `Crablet.processors`
+// needs when the declaration has an outbox. A process that only catalogs the modules needs none. Given for other topics than the module's, a missing name
+// fails the module's start, naming it.
+export const publishers = <const T extends ReadonlyArray<TopicConfig>>(_topics: T, given: PublishersFor<T>): Layer.Layer<OutboxPublishers> =>
+  Layer.succeed(OutboxPublishers, given);

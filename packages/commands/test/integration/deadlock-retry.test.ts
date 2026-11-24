@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
-import * as Crablet from "../../src/Crablet.ts";
+import * as Crablet from "../support/CommandsLayer.ts";
 import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../../src/Command.ts";

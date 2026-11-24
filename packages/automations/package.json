@@ -9,8 +9,6 @@
     "./AutomationDecision": "./src/AutomationDecision.ts",
     "./AutomationsConfig": "./src/AutomationsConfig.ts",
     "./AutomationManagementService": "./src/AutomationManagementService.ts",
-    "./Deadlines": "./src/DeadlinesModule.ts",
-    "./DeadlinesManagementService": "./src/DeadlinesManagementService.ts",
     "./testing/AutomationIdempotency": "./src/testing/AutomationIdempotency.ts"
   },
   "dependencies": {
@@ -18,6 +16,7 @@
     "@effect/sql-pg": "4.1.4",
     "@crablet/eventstore": "workspace:*",
     "@crablet/event-poller": "workspace:*",
+    "@crablet/modules": "workspace:*",
     "@crablet/commands": "workspace:*",
     "@crablet/metrics-otel": "workspace:*"
   },
@@ -25,7 +24,7 @@
     "@crablet/test-support": "workspace:*"
   },
   "crablet": {
-    "typeEscapes": { "src": 0, "test": 11 },
+    "typeEscapes": { "src": 0, "test": 4 },
     "internal": ["./AutomationDecision"]
   }
 }

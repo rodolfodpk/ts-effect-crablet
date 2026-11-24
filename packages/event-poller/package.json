@@ -10,7 +10,6 @@
     "./ProgressPing": "./src/ProgressPing.ts",
     "./EventFetcher": "./src/EventFetcher.ts",
     "./EventHandler": "./src/EventHandler.ts",
-    "./ProcessorStatus": "./src/ProcessorStatus.ts",
     "./ProcessorConfig": "./src/ProcessorConfig.ts",
     "./ProcessorRuntimeOverrides": "./src/ProcessorRuntimeOverrides.ts",
     "./BackoffState": "./src/BackoffState.ts",
@@ -18,6 +17,7 @@
     "./PostgresProgressTracker": "./src/PostgresProgressTracker.ts",
     "./SqlEventFetcher": "./src/SqlEventFetcher.ts",
     "./ProcessorManagementService": "./src/ProcessorManagementService.ts",
+    "./ProcessSettings": "./src/ProcessSettings.ts",
     "./InstanceId": "./src/InstanceId.ts",
     "./MonitorProcessors": "./src/MonitorProcessors.ts"
   },
@@ -29,6 +29,7 @@
     "effect": "4.1.4",
     "@effect/sql-pg": "4.1.4",
     "@crablet/eventstore": "workspace:*",
+    "@crablet/modules": "workspace:*",
     "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {
