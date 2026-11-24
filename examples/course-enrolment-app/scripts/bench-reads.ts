@@ -26,7 +26,8 @@ import * as Crablet from "@crablet/app";
 import { startTestDb, type ConnInfo } from "@crablet/test-support";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import { ViewProgressHub } from "@crablet/views/ViewProgressHub";
-import { makeCourseApiLayer, startCourseViews } from "../src/CourseApp.ts";
+import { makeCourseApiLayer } from "../src/CourseApp.ts";
+import { courseModules } from "../src/processes.ts";
 
 const arg = (name: string, fallback: number): number => {
   const i = process.argv.indexOf(`--${name}`);
@@ -63,7 +64,7 @@ const startApp = async (conn: ConnInfo, options: { readonly pool: number; readon
   );
   const scope = await runtime.runPromise(Scope.make());
   // The view processor first: the scope closes in reverse, so the server stops before the views, and both before the pool.
-  await runtime.runPromise(Scope.provide(startCourseViews(undefined, { viewDelayMs: options.viewDelayMs }), scope));
+  await runtime.runPromise(Scope.provide(Layer.build(Crablet.processors(courseModules({ viewDelayMs: options.viewDelayMs }), { run: ["views"] })), scope));
   const context = await runtime.runPromise(
     Scope.provide(
       Layer.build(

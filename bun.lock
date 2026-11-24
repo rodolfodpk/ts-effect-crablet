@@ -24,6 +24,7 @@
         "@crablet/deadlines": "workspace:*",
         "@crablet/event-poller": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/processors-http": "workspace:*",
         "@crablet/views": "workspace:*",
         "@crablet/views-http": "workspace:*",
         "@effect/platform-node": "4.1.4",

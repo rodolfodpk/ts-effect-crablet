@@ -1,38 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
-import { Effect, Layer, Redacted, type Scope } from "effect";
-import { SqlClient } from "effect/sql";
-import { PgClient } from "@effect/sql-pg";
+import { Effect, Layer, Redacted } from "effect";
 import { HttpApi } from "effect/http-api";
-import { EventStore } from "@crablet/eventstore";
-import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
-import { CommandExecutor } from "@crablet/commands";
-import type { ProcessorHandle } from "@crablet/event-poller";
-import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
-import { monitorProcessors } from "@crablet/event-poller/MonitorProcessors";
-import { makeViewsProcessor, startViewsProcessor } from "@crablet/views";
-import { makeViewManagementService } from "@crablet/views/ViewManagementService";
 import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
-import { makeAutomationsProcessor, startAutomationsProcessor } from "@crablet/automations";
-import { makeAutomationManagementService } from "@crablet/automations/AutomationManagementService";
-import { makeOutboxProcessor, startOutboxProcessor } from "@crablet/outbox";
-import { makeOutboxManagementService } from "@crablet/outbox/OutboxManagementService";
-import { defineTopic } from "@crablet/outbox/TopicConfig";
-import type { LeaderOptions } from "@crablet/eventstore/Leader";
-import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
-import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
-import { Processors, type ProcessorsService } from "@crablet/modules/Processors";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
 import * as M from "./domain/WalletModel.ts";
 import { WelcomeNotificationSent } from "./domain/notification/WelcomeNotificationSent.ts";
 import { serveApi } from "@crablet/commands-http/ServeApi";
-import { walletViewOverrides, walletViews } from "./views/WalletViewConfig.ts";
-import { allRoles, type Role, type Roles } from "./roles.ts";
-import type { PollingFromConfig } from "@crablet/app";
-import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
-import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
 import { OpenWallet } from "./domain/commands/OpenWalletCommand.ts";
@@ -50,118 +26,7 @@ export interface WalletAppConfig {
   readonly docs?: { readonly ui: "scalar" | "swagger"; readonly path?: string } | undefined;
 }
 
-// The three processors of the wallet. Every handle exists whatever the roles (the admin API reads status through them); only the modules named in
-// `roles` are started.
-export interface BackgroundProcessors {
-  // The roles this process runs.
-  readonly roles: Roles;
-  readonly viewsHandle: ProcessorHandle<unknown>;
-  readonly automationsHandle: ProcessorHandle<unknown>;
-  readonly outboxHandle: ProcessorHandle<unknown>;
-}
-
-export interface BackgroundProcessorsOptions {
-  readonly instanceId?: string | undefined;
-  // Where the outbox publishes. Default: the log publisher the real app uses; outbox-e2e.test.ts passes a capturing one.
-  readonly outboxPublisher?: OutboxPublisher | undefined;
-  // The roles to start (ADR-0022). Default: all of them, one process.
-  readonly roles?: Roles | undefined;
-  // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
-  readonly polling?: PollingFromConfig | undefined;
-  // The leaders' settings, for every module: the heartbeat and the server's idle timeout of a silent leader's session (ADR-0045). Default: the defaults.
-  readonly leader?: LeaderOptions | undefined;
-}
-
-// Builds the three background processors (views, automations, outbox) and starts those of the roles, owned by the Scope: closing it stops them
-// and releases their leader locks (the other instances take over at once), so close it before the connection pool.
-export const startBackgroundProcessors = (
-  options: BackgroundProcessorsOptions = {}
-): Effect.Effect<
-  BackgroundProcessors,
-  never,
-  SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const { instanceId = defaultInstanceId(), outboxPublisher = makeLogPublisher(), roles = allRoles, polling = { pollingIntervalMs: defaultPollingConfig.pollingIntervalMs, backoffMaxSeconds: defaultPollingConfig.backoffMaxSeconds }, leader } = options;
-    // A role that is not started still has its handle: building one opens no connection and runs no loop.
-    // #region views-processor
-    const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };
-    const viewsHandle = yield* (roles.has("views") ? startViewsProcessor(views) : makeViewsProcessor(views));
-    // #endregion views-processor
-
-    // #region automations-processor
-    const automations = { config: polling, automations: [walletOpenedAutomation], instanceId, leader };
-    const automationsHandle = yield* (roles.has("automations") ? startAutomationsProcessor(automations) : makeAutomationsProcessor(automations));
-    // #endregion automations-processor
-
-    const outbox = {
-      config: polling,
-      topics: [
-        defineTopic("wallet-events", {
-          anyOfTags: new Set(["wallet_id", "from_wallet_id", "to_wallet_id"]),
-          // The publisher's name keys its progress row: it stays the one the wallet has always used.
-          publishers: ["LogPublisher"]
-        })
-      ],
-      instanceId,
-      leader
-    };
-    const outboxHandle = yield* (roles.has("outbox") ? startOutboxProcessor({ ...outbox, publishers: { LogPublisher: outboxPublisher } }) : makeOutboxProcessor(outbox));
-
-    return { roles, viewsHandle, automationsHandle, outboxHandle };
-  });
-
-// What each module's processors are for, as the admin API shows it.
-const wallet = {
-  "wallet-balance-view": "The balance of each wallet",
-  "wallet-transaction-view": "Every transaction of each wallet, newest first",
-  "wallet-summary-view": "Totals per wallet",
-  "wallet-statement-view": "Monthly statements",
-  "wallet-opened-welcome-notification": "Sends a welcome notification when a wallet is opened"
-} as const;
-
-// The three modules' management services, named as a client of the admin API (and the consumer gauges) sees their kinds.
-// #region processor-sources
-export const processorSources = (processors: BackgroundProcessors): Effect.Effect<ReadonlyArray<ProcessorSource>, never, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    return [
-      { kind: "views", service: yield* makeViewManagementService(processors.viewsHandle), describe: (id) => (wallet as Record<string, string>)[id] },
-      { kind: "automations", service: yield* makeAutomationManagementService(processors.automationsHandle), describe: (id) => (wallet as Record<string, string>)[id] },
-      { kind: "outbox", service: yield* makeOutboxManagementService(processors.outboxHandle) }
-    ];
-  });
-// #endregion processor-sources
-
-// The wallet's modules as the `Processors` service the admin API reads: the sources, and the status from the handles (whether this process runs a module,
-// by its roles, and whether it leads it now). Built by hand until the wallet moves onto Crablet.processors (phase 3 of the @crablet/app plan).
-export const walletProcessors = (processors: BackgroundProcessors): Effect.Effect<ProcessorsService, never, SqlClient.SqlClient> =>
-  Effect.map(processorSources(processors), (sources) => {
-    const modules = [
-      { kind: "views" as const, handle: processors.viewsHandle },
-      { kind: "automations" as const, handle: processors.automationsHandle },
-      { kind: "outbox" as const, handle: processors.outboxHandle }
-    ];
-    return {
-      sources,
-      status: Effect.forEach(modules, ({ kind, handle }) => Effect.map(handle.isLeader, (leads) => ({ kind, runs: processors.roles.has(kind), leads })))
-    };
-  });
-
-// Keeps the consumer gauges (lag, cursor, status) current for the three modules, for as long as the scope lives. Every instance runs it, so a processor
-// whose leader has died still shows its lag growing (docs/guides/operate/monitor-it.md#are-the-consumers-keeping-up).
-// #region monitor-processors
-export const monitorBackgroundProcessors = (
-  processors: BackgroundProcessors,
-  instanceId: string = defaultInstanceId()
-): Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> =>
-  Effect.gen(function* () {
-    // Only the modules this process runs: the gauges come from the roles that have a loop to sample (ADR-0022, decision 4).
-    const sources = (yield* processorSources(processors)).filter((s) => processors.roles.has(s.kind as Role));
-    if (sources.length > 0) yield* Effect.forkScoped(monitorProcessors(sources.map((s) => s.service), { instanceId }));
-  });
-// #endregion monitor-processors
-
-// The admin API over the three modules' processors (list, pause, resume, reset) and the event log (browse it page by page, payloads masked from the
+// The admin API over the modules' processors (list, pause, resume, reset) and the event log (browse it page by page, payloads masked from the
 // wallet's event definitions: personal fields redacted, unknown keys dropped, ADR-0050), behind a bearer token. It is a separate API from the wallet's, mounted
 // only when the application is given a token (index.ts: WALLET_ADMIN_TOKEN): there is no admin API without one, and the server does not start a
 // mounted one without an authorization. The token is compared in constant time; a real application would check its own identity provider instead.
@@ -169,7 +34,7 @@ export const monitorBackgroundProcessors = (
 const walletEventDefinitions = [M.WalletOpened, M.WalletClosed, M.WalletStatementOpened, M.WalletStatementClosed, M.DepositMade, M.WithdrawalMade, M.MoneyTransferred, WelcomeNotificationSent];
 
 // #region admin-api
-export const makeWalletAdminApiLayer = (processors: ProcessorsService, token: Redacted.Redacted<string>) => {
+export const makeWalletAdminApiLayer = (token: Redacted.Redacted<string>) => {
   const expected = Buffer.from(Redacted.value(token));
   const authorization = authorizationFrom((presented) =>
     Effect.sync(() => {
@@ -177,7 +42,8 @@ export const makeWalletAdminApiLayer = (processors: ProcessorsService, token: Re
       return got.length === expected.length && timingSafeEqual(got, expected);
     })
   );
-  return adminApiLayer({ masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization), Layer.provide(Layer.succeed(Processors, processors)));
+  // the modules come from the process's `Processors` (src/processes.ts)
+  return adminApiLayer({ masks: { mask: eventPayloadMask(walletEventDefinitions) } }).pipe(Layer.provide(authorization));
 };
 // #endregion admin-api
 

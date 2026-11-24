@@ -120,7 +120,7 @@ export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadCons
 const consistentRead = makeConsistentRead({ config: courseReadConsistency });
 ```
 
-(The server you started already includes all of this: `startCourseViews()` runs the view processor, woken by Postgres `LISTEN/NOTIFY`.)
+(The server you started already includes all of this: the views module (`courseModules` in `src/processes.ts`) runs the view processor, woken by Postgres `LISTEN/NOTIFY`.)
 Define a course, subscribe a student, and read **once** after each - with no waiting code and no marker:
 
 ```bash

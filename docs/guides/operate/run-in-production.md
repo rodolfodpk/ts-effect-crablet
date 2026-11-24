@@ -35,7 +35,10 @@ Flyway's naming (the framework's are V1 to V7, so number your own from V100 and 
 <!-- file: examples/course-enrolment-app/src/index.ts#crablet-layer -->
 ```ts
 // COURSES_DB_POOL: at most this many connections; unset, the library's default. COURSES_DB_SESSION_HOST: a direct connection for the leader locks and LISTEN.
-const appLayer = Crablet.layer(database.pg, database.session === undefined ? {} : { session: database.session });
+const appLayer = Crablet.layer(database.pg, {
+  eventStore: { wakeupMode: settings.wakeupMode },
+  ...(database.session === undefined ? {} : { session: database.session })
+});
 ```
 
 The event store, the command executor and the audit store all come from this layer. The connection comes from the environment, read with Effect's
@@ -44,7 +47,7 @@ The event store, the command executor and the audit store all come from this lay
 <!-- file: examples/course-enrolment-app/src/config.ts#course-database -->
 ```ts
 // The connection, from COURSES_DB_* (HOST, PORT, NAME, USER, PASSWORD, or URL; POOL, unset for the library's default; SESSION_* for a direct session
-// connection). The defaults match docker-compose.yml. The course runs no roles and migrates with a script, so it reads this part alone.
+// connection). The defaults match docker-compose.yml. The scripts (migrate, step 2) read this part alone.
 export const courseDatabase = Crablet.databaseConfig({ name: "courses_db", username: "postgres", password: "postgres" }).pipe(Config.nested("COURSES"));
 ```
 
@@ -198,27 +201,56 @@ api pod, waiting for views that run in another pod, took 109 ms in all):
 
 ## 3. Start the processors, serve, and fail loudly
 
-Start each processor with its module's `start*Processor` (`startViewsProcessor`, `startAutomationsProcessor`, `startOutboxProcessor`, `startDeadlinesProcessor`): it builds the processor and starts it, owned by a
-**Scope**, so closing the scope interrupts the fibers, releases the leader lock and announces it, and it does so even if the program fails or is interrupted. The entry point below
-is scoped and runs under `NodeRuntime.runMain`, which turns SIGINT and SIGTERM into an interrupt, so a deploy that stops the process stops the processors first, then closes the pool.
+Declare the application's modules once (`Crablet.modules`, `@crablet/app`, [ADR-0054](../../adr/0054-the-modules-declared-once-run-or-listed.md)) and give the
+process a layer that runs those its roles name and lists them all (`Crablet.processorsFor(modules, settings.roles)`, or `Crablet.processors(modules, { run })`
+with the roles in the code). The course's two modules:
+
+<!-- file: examples/course-enrolment-app/src/processes.ts#course-modules -->
+```ts
+// The course's two modules, declared once (ADR-0054). The views: the seats left (table operations) and who took which seat (its own SQL, through
+// `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release Subscribe set, when a
+// course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the feature lists its own).
+// One instance runs each module; the others wait on its lock.
+export const courseModules = (options: CourseModulesOptions = {}) =>
+  Crablet.modules(Views.module({ views: [CourseSeatsView, CourseEnrolmentsView].map(delayedBy(options.viewDelayMs ?? 0)) }))
+    .with(Deadlines.module({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands] }));
+```
+
+The processes layer sits on the application layer, so closing it interrupts the processors' fibers, releases their leader locks and announces it before the
+pool closes, even if the program fails or is interrupted: the order is the layers', not a rule to remember. The entry point runs under `NodeRuntime.runMain`,
+which turns SIGINT and SIGTERM into an interrupt, so a deploy that stops the process stops the processors first, then closes the pool. Every role serves the
+probes (`healthRoutes`, `@crablet/processors-http/Health`: `/healthz`, `/readyz`, `/status`); only `api` serves the API:
 
 <!-- file: examples/course-enrolment-app/src/index.ts#launch -->
 ```ts
+// The modules COURSES_ROLES names run (unset: both), and both are listed for /status. A role that is neither `api` nor a module stops the start
+// with UnknownRole. On top of the application layer, so closing it stops the modules and releases their leader locks (another instance takes over
+// at once) before the connection pool closes.
+const processes = Crablet.processorsFor(courseModules({ viewDelayMs }), settings.roles, { polling: settings.polling }).pipe(Layer.provideMerge(appLayer));
+
 const program = Effect.gen(function* () {
-  yield* startCourseViews(undefined, { viewDelayMs });
-  yield* startCourseDeadlines(); // releases the seats left unpaid when their payment window closes
+  // Every role serves the probes (/healthz, /readyz, /status); a process without `api` serves nothing else.
+  const sql = yield* SqlClient.SqlClient;
+  const health = healthRoutes({ ping: sql`SELECT 1`, instance: process.env["HOSTNAME"] ?? "unknown" });
+  // gracefulShutdownTimeout: a live-update connection stays open, and shutting down waits for open responses up to this long (default 20 s).
+  const server = NodeHttpServer.layer(createServer, { port, gracefulShutdownTimeout: "2 seconds" });
   yield* Effect.log(`course-enrolment-app listening on :${port}; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}`);
-  yield* Layer.launch(server);
+  if (!settings.roles.app.has("api")) return yield* Layer.launch(HttpRouter.serve(health).pipe(Layer.provide(server)));
+  const api = makeCourseApiLayer({
+    ...(docsUi === "scalar" || docsUi === "swagger" ? { docs: { ui: docsUi } } : {}),
+    ...(corsOrigins.length > 0 ? { cors: { allowedOrigins: corsOrigins as [string, ...Array<string>] } } : {})
+  });
+  yield* Layer.launch(HttpRouter.serve(Layer.merge(api, health)).pipe(Layer.provide(server)));
 });
 
-// The program is scoped, and `runMain` turns SIGINT and SIGTERM into an interrupt: the scope closes, the processors stop and release their leader locks (another instance
-// takes over at once), and only then does the connection pool close. A failure is logged and ends the process with a non-zero code.
-NodeRuntime.runMain(Effect.provide(Effect.scoped(program), appLayer));
+// `runMain` turns SIGINT and SIGTERM into an interrupt: the program's scope closes, then the processes, then the pool. A failure is logged and ends the
+// process with a non-zero code.
+NodeRuntime.runMain(Effect.provide(Effect.scoped(program), processes));
 ```
 
-The wallet starts its three processors the same way, with `startViewsProcessor`, `startAutomationsProcessor` and `startOutboxProcessor`, and only those of the
-roles the process runs (`startBackgroundProcessors` in [`WalletApp.ts`](../../../examples/wallet-example-app/src/WalletApp.ts)). `make*Processor` builds a processor without starting it,
-and `service.start` and `service.stop` stay available for tests that drive the lifetime themselves.
+The wallet does the same with three modules ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)). Underneath, each module's
+`start*Processor` (`startViewsProcessor` and its siblings) builds a processor and starts it owned by a scope, and `make*Processor` builds one without starting it;
+they stay available for tests that drive a processor's lifetime themselves.
 
 ## 4. Several instances
 

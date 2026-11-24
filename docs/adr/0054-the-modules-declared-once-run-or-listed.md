@@ -99,6 +99,5 @@ Rules this records, for every application:
 
 ## Not done here
 
-- The examples moving onto `Crablet.processors`: phase 3. Until then the wallet provides `Processors` from its own handles (`walletProcessors`).
 - The product name in the connections and the detection of two products in one database (V5): undecided.
 - Merging partial declarations, one per vertical slice: with phase 3.

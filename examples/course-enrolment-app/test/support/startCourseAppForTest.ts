@@ -4,7 +4,8 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as Crablet from "@crablet/app";
 import type { ConnInfo } from "@crablet/test-support";
-import { makeCourseApiLayer, startCourseViews, type CourseAppConfig, type CourseViewsOptions } from "../../src/CourseApp.ts";
+import { makeCourseApiLayer, type CourseAppConfig } from "../../src/CourseApp.ts";
+import { courseModules, type CourseModulesOptions } from "../../src/processes.ts";
 
 export interface RunningCourseApp {
   readonly baseUrl: string;
@@ -15,7 +16,7 @@ export interface RunningCourseApp {
 export const startCourseAppForTest = async (
   conn: ConnInfo,
   config: CourseAppConfig = {},
-  viewsOptions: CourseViewsOptions = {}
+  viewsOptions: CourseModulesOptions = {}
 ): Promise<RunningCourseApp> => {
   const runtime = ManagedRuntime.make(
     Crablet.layer({
@@ -27,8 +28,9 @@ export const startCourseAppForTest = async (
     })
   );
   const scope = await runtime.runPromise(Scope.make());
-  // The view processor first: the scope closes in reverse, so the server stops before the views, and both before the pool.
-  await runtime.runPromise(Scope.provide(startCourseViews(undefined, viewsOptions), scope));
+  // The views running (the deadlines built, not run: a test of them starts them itself), first: the scope closes in reverse, so the server stops
+  // before the views, and both before the pool.
+  await runtime.runPromise(Scope.provide(Layer.build(Crablet.processors(courseModules(viewsOptions), { run: ["views"] })), scope));
   const context = await runtime.runPromise(
     Scope.provide(
       Layer.build(

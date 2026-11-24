@@ -2,13 +2,16 @@
 // running with a clock past the payment window, releases the unpaid seat; the seats view gives it back.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Clock, Effect, Exit, ManagedRuntime, Redacted, Scope } from "effect";
+import { Clock, Effect, Exit, ManagedRuntime, Redacted, Scope, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../support/startCourseAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
-import { startCourseDeadlines } from "../../src/CourseApp.ts";
+import { courseModules } from "../../src/processes.ts";
+
+// The course's deadlines module running (the views built, not run), as a process whose roles name `deadlines` runs it.
+const startCourseDeadlines = (instanceId: string) => Layer.build(Crablet.processors(courseModules(), { run: ["deadlines"], instanceId }));
 import { PAYMENT_WINDOW_DAYS } from "../../src/domain/Payments.ts";
 
 let db: TestDb;

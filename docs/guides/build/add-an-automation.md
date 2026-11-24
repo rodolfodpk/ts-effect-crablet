@@ -44,11 +44,18 @@ The name keys the automation's progress (its cursor): keep it when you change th
 
 ## 3. Register it
 
-<!-- file: examples/wallet-example-app/src/WalletApp.ts#automations-processor -->
+The automations go to one module, declared with the application's others (the wallet's, in
+[`processes.ts`](../../../examples/wallet-example-app/src/processes.ts), lists `walletOpenedAutomation` in `walletAutomationsOptions`):
+
+<!-- file: examples/wallet-example-app/src/processes.ts#wallet-modules -->
 ```ts
-const automations = { config: polling, automations: [walletOpenedAutomation], instanceId, leader };
-const automationsHandle = yield* (roles.has("automations") ? startAutomationsProcessor(automations) : makeAutomationsProcessor(automations));
+export const walletModules = Crablet.modules(Views.module({ ...walletViewsOptions, describe }))
+  .with(Automations.module({ ...walletAutomationsOptions, describe }))
+  .with(Outbox.module({ topics: walletTopics }));
 ```
+
+A process whose roles name `automations` runs it (`Crablet.processorsFor`, `@crablet/app`); its layer needs a `CommandExecutor`, which
+`Crablet.layer` provides.
 
 Polling and batch settings for one automation go to the processor by name, `overrides: { "wallet-opened-welcome-notification": { batchSize: 10 } }`, not
 into its definition. Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:

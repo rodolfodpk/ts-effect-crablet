@@ -1,25 +1,14 @@
-import { Effect, Layer, type Duration, type Scope } from "effect";
-import type { SqlClient } from "effect/sql";
+import { Layer, type Duration } from "effect";
 import type { PgClient } from "@effect/sql-pg";
 import type { CorsConfig } from "@crablet/commands-http/Cors";
 import { serveApi } from "@crablet/commands-http/ServeApi";
-import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
-import type { ProcessorHandle } from "@crablet/event-poller";
-import { startViewsProcessor, type RunnableView } from "@crablet/views";
-import { startDeadlinesProcessor } from "@crablet/deadlines";
-import type { CommandExecutor } from "@crablet/commands";
-import type { EventStore } from "@crablet/eventstore";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
 import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
-import { ReleaseUnpaidSubscription } from "./domain/Payments.ts";
-import { CancelUnreadyCourse } from "./domain/CourseStart.ts";
-import { monthlyFeeDeadlineCommands } from "./features/monthly-fee/index.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
 import { CourseSeatsView } from "./views/CourseSeatsViewProjector.ts";
-import { CourseEnrolmentsView } from "./views/CourseEnrolmentsViewProjector.ts";
 
 // The API definition lives in CourseApi.ts (browser-safe); re-exported so existing imports keep working.
 export { courseApiInfo, makeCourseApi } from "./CourseApi.ts";
@@ -62,35 +51,3 @@ export const makeCourseApiLayer = (config: CourseAppConfig = {}) => {
 };
 // #endregion serve
 
-// Starts the background view processor (an append wakes it through LISTEN/NOTIFY; the poll interval is the fallback), owned by the Scope:
-// closing the scope stops it and releases its leader lock, so another instance takes over at once. Close it before closing the database pool.
-//
-// `viewDelayMs` is a DEMO knob (default 0, off): it holds every batch back that long before the view applies it, so a read
-// made right after a write is visibly stale (`?consistency=eventual`) and a read that carries the write's marker has something to wait for. The delay is spent
-// BEFORE the projector's transaction opens, so no database transaction sits open while it waits.
-export interface CourseViewsOptions {
-  readonly viewDelayMs?: number;
-}
-
-export const startCourseViews = (
-  instanceId: string = defaultInstanceId(),
-  options: CourseViewsOptions = {}
-): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> => {
-  const delayMs = options.viewDelayMs ?? 0;
-  const delayed = (view: RunnableView): RunnableView =>
-    delayMs > 0
-      ? { ...view, projector: Effect.map(view.projector, (p) => ({ ...p, handle: (events) => Effect.andThen(Effect.sleep(`${delayMs} millis`), p.handle(events)) })) }
-      : view;
-  // Two views off the same events: the seats left (table operations) and who took which seat (its own SQL, through `raw`).
-  return startViewsProcessor({ views: [delayed(CourseSeatsView), delayed(CourseEnrolmentsView)], instanceId });
-};
-
-// #region deadlines
-// Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes it runs the release
-// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the
-// feature lists its own). One instance fires, the others wait on its lock.
-export const startCourseDeadlines = (
-  instanceId: string = defaultInstanceId()
-): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
-  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
-// #endregion deadlines
