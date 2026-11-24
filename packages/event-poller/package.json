@@ -11,6 +11,7 @@
     "./EventFetcher": "./src/EventFetcher.ts",
     "./EventHandler": "./src/EventHandler.ts",
     "./ProcessorConfig": "./src/ProcessorConfig.ts",
+    "./Config": "./src/Config.ts",
     "./ProcessorRuntimeOverrides": "./src/ProcessorRuntimeOverrides.ts",
     "./BackoffState": "./src/BackoffState.ts",
     "./ProgressTracker": "./src/ProgressTracker.ts",

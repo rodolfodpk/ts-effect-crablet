@@ -60,3 +60,19 @@ export const checks = () => {
   // @ts-expect-error a name with no publisher
   Outbox.publishers(topics, {});
 };
+
+// Roles from the configuration (phase 2d): the layer's E says the start can refuse a role, and what it needs is what `processors` would need.
+type Parts<L> = L extends Layer.Layer<infer A, infer E, infer R> ? { readonly a: A; readonly e: E; readonly r: R } : never;
+declare const configured: Crablet.Roles<"api">;
+const viewsFromConfig = Crablet.processorsFor(viewsOnly, configured);
+const viewsInCode = Crablet.processors(viewsOnly, { run: ["views"] });
+export const configuredFailsWithUnknownRole: Equal<Parts<typeof viewsFromConfig>["e"], Crablet.UnknownRole> = true;
+export const configuredNeedsWhatRunningNeeds: Equal<Parts<typeof viewsFromConfig>["r"], Parts<typeof viewsInCode>["r"]> = true;
+// Written in the code, `run` is checked by the compiler, and the layer cannot fail.
+export const literalRunCannotFail: Equal<Parts<typeof viewsInCode>["e"], never> = true;
+
+// The application's roles keep their literal type.
+declare const settings: Crablet.Settings<"api">;
+export const appRolesAreLiteral: Equal<typeof settings.roles.app, ReadonlySet<"api">> = true;
+// @ts-expect-error a role the configuration was not given is not one of the application's
+settings.roles.app.has("workers");

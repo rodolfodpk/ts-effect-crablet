@@ -15,7 +15,7 @@ import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
-import type { Polling } from "../src/polling.ts";
+import type { PollingFromConfig as Polling } from "@crablet/app";
 
 const QUICK = process.env["QUICK"] !== undefined;
 const profiles: Record<string, Polling> = {

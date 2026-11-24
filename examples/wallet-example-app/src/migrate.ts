@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as Crablet from "@crablet/app";
 import { migrate, migrateIfFresh, type AppMigrations } from "@crablet/db-migrations/Migrate";
+import { readWalletConfig } from "./config.ts";
 
 // The app's own migrations, in order. Every `V*.sql` in db/migration must be listed (test/migration-files.test.ts), because the lab's Flyway job applies the whole directory and this list is what the migrate job and the tests apply.
 export const appMigrationFiles = [
@@ -19,13 +21,7 @@ export const walletMigrations: AppMigrations = { dir: path.join(path.dirname(fil
 // see docs/history/NOTES.md), so the portable Node equivalent is comparing
 // this module's own URL against the script Node was actually invoked with.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const connInfo = {
-    host: process.env["WALLET_DB_HOST"] ?? "localhost",
-    port: Number(process.env["WALLET_DB_PORT"] ?? 5432),
-    database: process.env["WALLET_DB_NAME"] ?? "wallet_db",
-    username: process.env["WALLET_DB_USER"] ?? "postgres",
-    password: process.env["WALLET_DB_PASSWORD"] ?? "postgres"
-  };
+  const connInfo = Crablet.plainConnection((await readWalletConfig()).pg); // WALLET_DB_*, as the app reads them
   // As a pre-deploy job: `node src/migrate.ts` applies everything (run it once, on an empty database). WALLET_MIGRATE_MODE=if-fresh does what the entry point does at start-up
   // (several of these started together are the race the kind lab measures).
   if (process.env["WALLET_MIGRATE_MODE"] === "if-fresh") console.log(`migrations: ${await migrateIfFresh(connInfo, walletMigrations)}`);

@@ -30,7 +30,8 @@ import { WelcomeNotificationSent } from "./domain/notification/WelcomeNotificati
 import { serveApi } from "@crablet/commands-http/ServeApi";
 import { walletViewOverrides, walletViews } from "./views/WalletViewConfig.ts";
 import { allRoles, type Role, type Roles } from "./roles.ts";
-import { defaultPolling, type Polling } from "./polling.ts";
+import type { PollingFromConfig } from "@crablet/app";
+import { defaultPollingConfig } from "@crablet/event-poller/ProcessorConfig";
 import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
@@ -66,7 +67,7 @@ export interface BackgroundProcessorsOptions {
   // The roles to start (ADR-0022). Default: all of them, one process.
   readonly roles?: Roles | undefined;
   // How often the processors poll and how far they back off when idle (WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS).
-  readonly polling?: Polling | undefined;
+  readonly polling?: PollingFromConfig | undefined;
   // The leaders' settings, for every module: the heartbeat and the server's idle timeout of a silent leader's session (ADR-0045). Default: the defaults.
   readonly leader?: LeaderOptions | undefined;
 }
@@ -81,7 +82,7 @@ export const startBackgroundProcessors = (
   SqlClient.SqlClient | PgClient.PgClient | EventStore | CommandAuditStore | CommandExecutor | Scope.Scope
 > =>
   Effect.gen(function* () {
-    const { instanceId = defaultInstanceId(), outboxPublisher = makeLogPublisher(), roles = allRoles, polling = defaultPolling, leader } = options;
+    const { instanceId = defaultInstanceId(), outboxPublisher = makeLogPublisher(), roles = allRoles, polling = { pollingIntervalMs: defaultPollingConfig.pollingIntervalMs, backoffMaxSeconds: defaultPollingConfig.backoffMaxSeconds }, leader } = options;
     // A role that is not started still has its handle: building one opens no connection and runs no loop.
     // #region views-processor
     const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };

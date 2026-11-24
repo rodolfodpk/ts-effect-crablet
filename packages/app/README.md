@@ -17,6 +17,13 @@ process imports only the modules it declares.
 - **`Crablet.catalog(modules)`** - every module built and none run, as the same `Processors` service: for a process that serves the admin API and the status of
   modules other processes run (an API deployment, [ADR-0022](../../docs/adr/0022-runtime-roles.md)). It needs only the SQL client, and builds no publisher.
 
+- **`Crablet.config(prefix, { roles, database })`** (`/Config`) - one process's settings from its environment, with Effect's `Config`, under the product's
+  prefix (`WALLET_DB_HOST`, `WALLET_ROLES`...): the connection (or `DB_URL`), the pool, the session connection, the polling, the wake-ups, the roles and
+  whether to migrate. Each part comes from its owner and can be read alone (`databaseConfig`, `rolesConfig`, `migrateConfig`, `pollingConfig`,
+  `wakeupsConfig`). The variables are in the [configuration reference](../../docs/reference/configuration.md#crabletconfigprefix-options-the-settings-from-the-environment).
+- **`Crablet.processorsFor(modules, settings.roles, options)`** - `Crablet.processors` with `run` from the configuration. A role that is neither the
+  application's nor a declared kind fails the layer with `UnknownRole`, naming it and the valid ones, before anything is built.
+
 ```ts
 const declaration = Crablet.modules(Views.module({ views: shopViews }))
   .with(Automations.module({ automations: [welcome] }))
@@ -29,6 +36,13 @@ const Workers = Crablet.processors(declaration, { run: ["views", "automations", 
 );
 // the API
 const Catalog = Crablet.catalog(declaration).pipe(Layer.provideMerge(Crablet.layer(pg)));
+
+// or every process of one image, its roles from SHOP_ROLES
+const settings = yield* Crablet.config("SHOP", { roles: ["api"] });
+const Process = Crablet.processorsFor(declaration, settings.roles, { polling: settings.polling }).pipe(   // E: UnknownRole
+  Layer.provide(Outbox.publishers(topics, { kafka: makeKafkaPublisher() })),
+  Layer.provideMerge(Crablet.layer(settings.pg, settings.options))
+);
 ```
 
 The admin API (`adminApiLayer`, `@crablet/processors-http`) reads `Processors` from either.
