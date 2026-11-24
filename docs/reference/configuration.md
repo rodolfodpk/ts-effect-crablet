@@ -91,8 +91,8 @@ and `migrateIfFresh(Crablet.plainConnection(settings.pg), app)` when `settings.m
 ## The wallet's environment variables
 
 The wallet example reads the table above with the prefix `WALLET` (`examples/wallet-example-app/src/config.ts`: `api` is its own role, `views`,
-`automations` and `outbox` its modules; the database defaults are `wallet_db`, `postgres`, `postgres`). The course reads only the connection, with the
-prefix `COURSES` (`courses_db`). The wallet also reads these of its own:
+`automations` and `outbox` its modules; the database defaults are `wallet_db`, `postgres`, `postgres`). The course reads the connection, the roles (`api`, and its
+modules `views` and `deadlines`), the polling and the wake-ups with the prefix `COURSES` (`courses_db`), and not `COURSES_MIGRATE`: it migrates with its script. The wallet also reads these of its own:
 
 | Variable | Default | What it does |
 |---|---|---|

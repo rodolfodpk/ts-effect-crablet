@@ -10,15 +10,18 @@ import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { PollingFromConfig as Polling } from "@crablet/app";
 import type { LeaderOptions } from "@crablet/eventstore/Leader";
-import { allRoles, type Roles } from "../../src/roles.ts";
-import { startBackgroundProcessors, makeWalletApiLayer, makeWalletAdminApiLayer, walletProcessors, type BackgroundProcessors } from "../../src/WalletApp.ts";
+import type * as Crablet from "@crablet/app";
+import { Processors, type ProcessorsService } from "@crablet/modules/Processors";
+import { makeWalletApiLayer, makeWalletAdminApiLayer } from "../../src/WalletApp.ts";
+import { walletProcesses } from "../../src/processes.ts";
+import { rolesFromValue } from "./roles.ts";
 
 export type CoreServices = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
 
 export interface RunningWalletApp {
   readonly baseUrl: string;
-  // The running app's processors, for a test that needs their handles (for example to build a management service over them).
-  readonly processors: BackgroundProcessors;
+  // The running app's modules, as the admin API and /status see them (their sources and their status).
+  readonly processors: ProcessorsService;
   stop(): Promise<void>;
 }
 
@@ -35,23 +38,24 @@ export const startWalletAppForTest = async (
   // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
   adminToken?: string,
   // The roles this instance runs (ADR-0022); default all, one process. Without `api` no HTTP server starts (baseUrl is ""), and the admin API is only mounted with `api`, as in the entry point.
-  options: { readonly roles?: Roles; readonly instanceId?: string; readonly polling?: Polling; readonly leader?: LeaderOptions } = {}
+  options: { readonly roles?: Crablet.Roles<"api">; readonly instanceId?: string; readonly polling?: Polling; readonly leader?: LeaderOptions } = {}
 ): Promise<RunningWalletApp> => {
-  const roles = options.roles ?? allRoles;
+  const roles = options.roles ?? rolesFromValue("all");
+  const runsApi = roles.app.has("api");
   const scope = await runtime.runPromise(Scope.make());
 
   const { context, processors } = await runtime.runPromise(
     Effect.gen(function* () {
       // In the test's scope, ahead of the server: the scope closes in reverse, so the server stops first, then the processors, both before the pool.
-      const processors = yield* Scope.provide(
-        startBackgroundProcessors({ instanceId: options.instanceId, outboxPublisher, roles, polling: options.polling, leader: options.leader }),
-        scope
-      );
-      if (!roles.has("api")) return { context: Context.empty(), processors };
+      // a role the test gives that the wallet does not have (UnknownRole) is a defect of the test, not a failure to handle
+      const processes = walletProcesses(roles, { instanceId: options.instanceId, outboxPublisher, polling: options.polling, leader: options.leader }).pipe(Layer.orDie);
+      const built = yield* Scope.provide(Layer.build(processes), scope);
+      const processors = Context.get(built, Processors);
+      if (!runsApi) return { context: Context.empty(), processors };
 
-      const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(yield* walletProcessors(processors), Redacted.make(adminToken));
+      const admin = adminToken === undefined ? Layer.empty : makeWalletAdminApiLayer(Redacted.make(adminToken));
       const serverLayer = Layer.provideMerge(
-        HttpRouter.serve(Layer.merge(makeWalletApiLayer({ basePath: "/api/commands" }), admin)),
+        HttpRouter.serve(Layer.merge(makeWalletApiLayer({ basePath: "/api/commands" }), admin)).pipe(Layer.provide(Layer.succeed(Processors, processors))),
         NodeHttpServer.layer(createServer, { port: 0 })
       );
       const context = yield* Scope.provide(Layer.build(serverLayer), scope);
@@ -59,13 +63,13 @@ export const startWalletAppForTest = async (
     })
   );
 
-  const port = !roles.has("api") ? 0 : (() => {
+  const port = !runsApi ? 0 : (() => {
     const address = Context.get(context as Context.Context<HttpServer.HttpServer>, HttpServer.HttpServer).address;
     return address._tag === "UnixPathAddress" ? 0 : address.port;
   })();
 
   return {
-    baseUrl: roles.has("api") ? `http://localhost:${port}` : "",
+    baseUrl: runsApi ? `http://localhost:${port}` : "",
     processors,
     // Closing the scope stops the server and then the background processors, before the caller disposes of the runtime (and its pool).
     stop: () => runtime.runPromise(Scope.close(scope, Exit.void))

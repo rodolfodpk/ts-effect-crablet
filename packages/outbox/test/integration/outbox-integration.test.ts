@@ -1,13 +1,13 @@
 // Runs under Node (Testcontainers) - see docs/history/NOTES.md.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import { makeOutboxProcessor } from "../../src/OutboxModule.ts";
+import { makeOutboxProcessor, startOutboxProcessor } from "../../src/OutboxModule.ts";
 import { defineTopic } from "../../src/TopicConfig.ts";
 import type { OutboxConfig } from "../../src/OutboxConfig.ts";
 import { OutboxPublishers, type OutboxPublisher } from "../../src/OutboxPublisher.ts";
@@ -117,6 +117,32 @@ describe("outbox module integration (real Postgres)", () => {
       assert.strictEqual(seenB[0]!.type, typeB);
     } finally {
       await run(handle.service.stop);
+    }
+  });
+
+  it("startOutboxProcessor takes the publishers by name and runs until its scope closes", { timeout: 20_000 }, async () => {
+    const runId = crypto.randomUUID();
+    const topic = `outbox-integ-start-${runId}`;
+    const type = `OutboxIntegStarted-${runId}`;
+    const seen: Array<StoredEvent> = [];
+    const scope = await run(Scope.make());
+    try {
+      await run(
+        Scope.provide(
+          startOutboxProcessor({
+            config: baseOutboxConfig,
+            topics: [defineTopic(topic, { eventTypes: new Set([type]), publishers: ["pub"] })],
+            publishers: { pub: fakePublisher((events) => seen.push(...events)) },
+            instanceId: `instance-${crypto.randomUUID()}`
+          }),
+          scope
+        )
+      );
+      await run(Effect.flatMap(Effect.service(EventStore), (store) => store.append([AppendEvent.ofUntagged(type, {})])));
+      await waitUntilAsync(() => getProgress(topic, "pub"), (p) => p !== null && p.last_position !== "0");
+      assert.deepStrictEqual(seen.map((e) => e.type), [type]);
+    } finally {
+      await run(Scope.close(scope, Exit.void));
     }
   });
 

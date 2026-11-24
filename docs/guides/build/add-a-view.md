@@ -55,7 +55,7 @@ not at the first event. And the same declaration runs in memory (`applyInMemory`
 `raw((sql) => ...)`: your own SQL, still in a `defineView`. The framework still reads the payload through the event's definition, runs your SQL on the `sql` of the view's cursor (so it commits with it, and the batch is applied
 once), and takes the event types from the handlers. Declare the table anyway, so the drift check covers it. Nothing checks the SQL text, and `raw` cannot run in memory (`applyInMemory` refuses it), so write the test
 ([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
-The course app registers it next to the seats view (`startCourseViews`, as in step 4) and reads it with `SqlSchema` (`GET /api/courses/:courseId/enrolments`, tested end to end in [`course-enrolments.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments.test.ts)), so this approach has a write and a query on the same view.
+The course app declares it next to the seats view (`courseModules` in `processes.ts`, as in step 4) and reads it with `SqlSchema` (`GET /api/courses/:courseId/enrolments`, tested end to end in [`course-enrolments.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments.test.ts)), so this approach has a write and a query on the same view.
 
 <!-- file: examples/course-enrolment-app/src/views/CourseEnrolmentsViewProjector.ts#hand-written -->
 ```ts
@@ -96,17 +96,22 @@ Nothing to write: the view listens to the event types of its handlers, so it can
 it: the wallet's views read any event that names a wallet, `defineView(name, { tables, anyOfTags: WalletTags.ANY_WALLET })`, because a transfer names
 its wallets as `from_wallet_id` and `to_wallet_id`.
 
-## 4. Register it with the views processor
+## 4. Register it with the views module
 
-The views go to one processor. This is the wallet's, with four views (`walletViews`), and a per-view setting given by the view's name
-(`walletViewOverrides`: polling and batch size are deployment settings, not part of the view). `startViewsProcessor` builds the processor and starts it, owned by the scope, which
-stops it before the connection pool closes; a process that does not run the views role only builds it (`makeViewsProcessor`), for the admin API's status ([Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
+The views go to one module, declared with the application's others. This is the wallet's ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)): its
+four views (`walletViews`) and a per-view setting given by the view's name (`walletViewOverrides`: polling and batch size are deployment settings, not part of
+the view), in `walletViewsOptions`.
 
-<!-- file: examples/wallet-example-app/src/WalletApp.ts#views-processor -->
+<!-- file: examples/wallet-example-app/src/processes.ts#wallet-modules -->
 ```ts
-const views = { config: polling, views: walletViews, overrides: walletViewOverrides, instanceId, leader };
-const viewsHandle = yield* (roles.has("views") ? startViewsProcessor(views) : makeViewsProcessor(views));
+export const walletModules = Crablet.modules(Views.module({ ...walletViewsOptions, describe }))
+  .with(Automations.module({ ...walletAutomationsOptions, describe }))
+  .with(Outbox.module({ topics: walletTopics }));
 ```
+
+`Crablet.processorsFor(walletModules, settings.roles)` (`@crablet/app`) starts the module in a process whose roles name `views`, owned by its layer, which
+stops it before the connection pool closes; a process that does not run it only builds it, for the admin API and `/status`
+([Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
 
 ## 5. Read it
 

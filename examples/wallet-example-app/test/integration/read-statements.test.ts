@@ -10,6 +10,7 @@ import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
+import { rolesFromValue } from "../support/roles.ts";
 import { startWalletAppForTest } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -55,7 +56,7 @@ describe("statements per consistent read", () => {
 
     // an instance with only the API: no pollers, so no statements but the reads'
     const rt2 = make();
-    const api = await startWalletAppForTest(rt2, undefined, undefined, { roles: new Set(["api"]) as never });
+    const api = await startWalletAppForTest(rt2, undefined, undefined, { roles: rolesFromValue("api") });
     await new Promise((r) => setTimeout(r, 1000));
     try {
       const N = 20;

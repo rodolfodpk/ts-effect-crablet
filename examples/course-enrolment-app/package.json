@@ -19,6 +19,7 @@
     "@crablet/commands": "workspace:*",
     "@crablet/commands-http": "workspace:*",
     "@crablet/db-migrations": "workspace:*",
+    "@crablet/processors-http": "workspace:*",
     "@crablet/event-poller": "workspace:*",
     "@crablet/eventstore": "workspace:*",
     "@crablet/views": "workspace:*",

@@ -5,7 +5,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { inspect } from "node:util";
-import { Clock, Deferred, Effect, Exit, Fiber, ManagedRuntime, Redacted, Scope } from "effect";
+import { Clock, Deferred, Effect, Exit, Fiber, ManagedRuntime, Redacted, Scope, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 import * as Crablet from "@crablet/app";
 import { CommandExecutor } from "@crablet/commands";
@@ -13,7 +13,10 @@ import type { Command } from "@crablet/commands/Command";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startCourseAppForTest, type RunningCourseApp } from "../support/startCourseAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
-import { startCourseDeadlines } from "../../src/CourseApp.ts";
+import { courseModules } from "../../src/processes.ts";
+
+// The course's deadlines module running (the views built, not run), as a process whose roles name `deadlines` runs it.
+const startCourseDeadlines = (instanceId: string) => Layer.build(Crablet.processors(courseModules(), { run: ["deadlines"], instanceId }));
 import { DefineCourse, Subscribe } from "../../src/domain/Enrolment.ts";
 import { PriceCourse } from "../../src/domain/Payments.ts";
 import { INVOICE_DUE_DAYS, invoiceIdOf, IssueInvoice, PayInvoice, ReleaseOverdueInvoice, StartMonthlyFee } from "../../src/features/monthly-fee/index.ts";

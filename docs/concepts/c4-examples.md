@@ -172,7 +172,7 @@ C4Component
   Rel(outbox, broker, "publishBatch")
 ```
 
-Where to read the code: the domain in `src/domain/` (one file per command), the composition in `src/WalletApp.ts` (`startBackgroundProcessors` starts the three processors),
+Where to read the code: the domain in `src/domain/` (one file per command), the modules in `src/processes.ts` (declared once; `walletProcesses` runs those the roles name), the HTTP composition in `src/WalletApp.ts`,
 the views in `src/views/`, the automation in `src/automations/`, the read endpoints in `src/api/`. The statement view is written but this example has no read endpoint for it.
 
 ### Level 2 again: deployed as separate roles

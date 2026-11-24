@@ -101,24 +101,25 @@ The command must declare `idempotentBy`: a deadline can fire twice (a crash betw
 "already done". Its input must have no `personal(...)` field: it is stored inside a framework event, where it cannot be masked or erased, so give it
 ids. `deadline(...)` refuses either at once, so the first test of the command that sets it fails.
 
-## 3. Run the deadlines processor
+## 3. Run the deadlines module
 
-Start it with the commands deadlines may name, owned by a Scope like the other processors:
+Declare it with the application's other modules, with the commands deadlines may name (`Deadlines.module`, `@crablet/deadlines`):
 
-<!-- file: examples/course-enrolment-app/src/CourseApp.ts#deadlines -->
+<!-- file: examples/course-enrolment-app/src/processes.ts#course-modules -->
 ```ts
-// Starts the deadlines processor (ADR-0043), owned by the Scope like the views: when a subscription's payment window closes it runs the release
-// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the
-// feature lists its own). One instance fires, the others wait on its lock.
-export const startCourseDeadlines = (
-  instanceId: string = defaultInstanceId()
-): Effect.Effect<ProcessorHandle<unknown>, never, SqlClient.SqlClient | CommandExecutor | EventStore | Scope.Scope> =>
-  startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands], instanceId });
+// The course's two modules, declared once (ADR-0054). The views: the seats left (table operations) and who took which seat (its own SQL, through
+// `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release Subscribe set, when a
+// course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the feature lists its own).
+// One instance runs each module; the others wait on its lock.
+export const courseModules = (options: CourseModulesOptions = {}) =>
+  Crablet.modules(Views.module({ views: [CourseSeatsView, CourseEnrolmentsView].map(delayedBy(options.viewDelayMs ?? 0)) }))
+    .with(Deadlines.module({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands] }));
 ```
 
-`startDeadlinesProcessor` (`@crablet/deadlines`) polls `crablet_deadlines` for what is due by the application's clock, runs each command in
-due order with the deadline as its cause, and records how it ended. It has a leader lock of its own, so one instance fires and the others wait; it belongs
-with the automations role. `makeDeadlinesManagementService` gives the admin API its status, pause, resume and reset, and its backlog: how many deadlines are
+A process whose roles name `deadlines` runs it (`Crablet.processorsFor`, `@crablet/app`; [Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
+
+The module polls `crablet_deadlines` for what is due by the application's clock, runs each command in
+due order with the deadline as its cause, and records how it ended. It has a leader lock of its own, so one instance fires and the others wait. The admin API gets its status, pause, resume and reset, and its backlog: how many deadlines are
 due and how long ago the oldest fell due.
 
 ## 4. Test it without a database

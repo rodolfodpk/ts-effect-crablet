@@ -65,24 +65,12 @@ export const observabilityLayer = (env: Readonly<Record<string, string | undefin
 Provide it next to your application layer: `Effect.provide(Effect.scoped(program), Layer.mergeAll(appLayer, observabilityLayer()))`. Closing the scope flushes what is still buffered.
 With it, the metrics, the spans (`crablet.command`, `crablet.eventstore.append`, `crablet.poller.batch`, [Monitor it](monitor-it.md#traces-and-log-context)) and the logs arrive, and a log line carries the trace id of the request that wrote it.
 
-**2. Report the consumers**, in every instance, for as long as the scope lives:
-
-<!-- file: examples/wallet-example-app/src/WalletApp.ts#monitor-processors -->
-```ts
-export const monitorBackgroundProcessors = (
-  processors: BackgroundProcessors,
-  instanceId: string = defaultInstanceId()
-): Effect.Effect<void, never, SqlClient.SqlClient | Scope.Scope> =>
-  Effect.gen(function* () {
-    // Only the modules this process runs: the gauges come from the roles that have a loop to sample (ADR-0022, decision 4).
-    const sources = (yield* processorSources(processors)).filter((s) => processors.roles.has(s.kind as Role));
-    if (sources.length > 0) yield* Effect.forkScoped(monitorProcessors(sources.map((s) => s.service), { instanceId }));
-  });
-```
-
-Without it the lag, cursor and status panels stay empty. Every instance reports the same values (so a processor still shows its lag when its leader has died), and the queries take the `max`.
-
-**3. Report storage:** `yield* Effect.forkScoped(monitorStorage({ every: "1 minute" }))` from `@crablet/eventstore/Storage`. Without it the Storage row stays empty.
+**2. Report the consumers and storage.** `Crablet.processors` and `Crablet.processorsFor` (`@crablet/app`) do it for the modules a process runs, for as long as its layer
+lives: the consumer gauges (lag, cursor, status; every 15 seconds, `monitorEvery`) and the storage gauges. The wallet gets them by running
+`walletProcesses` ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)). A process that runs no module (only `api`) samples none, so a processor whose
+leader has died still shows its lag through the standbys, and the queries take the `max`. An application that starts its processors by hand calls
+`monitorProcessors(services, { instanceId })` (`@crablet/event-poller/MonitorProcessors`) and `monitorStorage()` (`@crablet/eventstore/Storage`) itself; without them the
+lag, cursor, status and storage panels stay empty.
 
 ## Use your own stack
 

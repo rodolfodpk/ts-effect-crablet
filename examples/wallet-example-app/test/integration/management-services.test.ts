@@ -12,6 +12,10 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { makeViewManagementService, type ViewManagementService } from "@crablet/views/ViewManagementService";
 import { makeAutomationManagementService, type AutomationManagementService } from "@crablet/automations/AutomationManagementService";
 import { makeOutboxManagementService, type OutboxManagementService } from "@crablet/outbox/OutboxManagementService";
+import { makeViewsProcessor } from "@crablet/views";
+import { makeAutomationsProcessor } from "@crablet/automations";
+import { makeOutboxProcessor } from "@crablet/outbox";
+import { walletAutomationsOptions, walletTopics, walletViewsOptions } from "../../src/processes.ts";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
@@ -33,9 +37,10 @@ before(async () => {
   ({ views, automations, outbox } = await runtime.runPromise(
     Effect.gen(function* () {
       return {
-        views: yield* makeViewManagementService(app.processors.viewsHandle),
-        automations: yield* makeAutomationManagementService(app.processors.automationsHandle),
-        outbox: yield* makeOutboxManagementService(app.processors.outboxHandle)
+        // handles of the same modules, built and not started (they read the running app's progress through the database)
+        views: yield* makeViewManagementService(yield* makeViewsProcessor({ ...walletViewsOptions, instanceId: "management-test" })),
+        automations: yield* makeAutomationManagementService(yield* makeAutomationsProcessor({ ...walletAutomationsOptions, instanceId: "management-test" })),
+        outbox: yield* makeOutboxManagementService(yield* makeOutboxProcessor({ topics: walletTopics, instanceId: "management-test" }))
       };
     })
   ));
