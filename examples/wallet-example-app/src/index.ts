@@ -4,13 +4,14 @@ import { HttpRouter } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import * as Crablet from "@crablet/app";
+import { Processors } from "@crablet/modules/Processors";
+import { healthRoutes } from "@crablet/processors-http/Health";
 import { monitorStorage } from "@crablet/eventstore/Storage";
 import { migrateIfFresh } from "./migrate.ts";
 import { startBackgroundProcessors, monitorBackgroundProcessors, walletProcessors, makeWalletAdminApiLayer, makeWalletApiLayer } from "./WalletApp.ts";
 import { observabilityLayer } from "./Observability.ts";
 import { poolSizeFromEnv } from "./poolSize.ts";
 import { hasWorkers, rolesFromEnv } from "./roles.ts";
-import { apiHealthRoutes, processStatus, serveHealth } from "./health.ts";
 import { pollingFromEnv, wakeupModeFromEnv } from "./polling.ts";
 
 const connInfo = {
@@ -61,24 +62,19 @@ async function main(): Promise<void> {
     // Every handle is built; only the modules named in WALLET_ROLES are started. A process with only `api` runs no loop and holds no leader lock.
     const processors = yield* startBackgroundProcessors({ roles, polling });
     yield* monitorBackgroundProcessors(processors);
-    const status = processStatus(roles, { views: processors.viewsHandle.isLeader, automations: processors.automationsHandle.isLeader, outbox: processors.outboxHandle.isLeader }, Date.now());
     if (hasWorkers(roles)) yield* Effect.forkScoped(monitorStorage({ every: "1 minute" })); // the crablet.storage.* gauges
     yield* Effect.log(`wallet-example-app roles: ${[...roles].join(",")}; listening on :${port}; wake-ups: ${wakeupMode}; polling: ${polling.pollingIntervalMs} ms, idle up to ${polling.backoffMaxSeconds} s; database pool: ${poolSize === undefined ? "the library's default size" : `up to ${poolSize} connections`}; leader and LISTEN: ${sessionInfo === undefined ? "on the main connection" : `direct to ${sessionInfo.host}:${sessionInfo.port}`}`);
-    if (!roles.has("api")) {
-      // Workers only: no application routes, just a liveness probe.
-      yield* serveHealth(port, status);
-      return yield* Effect.never;
-    }
+    // Every role serves the probes (/healthz, /readyz, /status: what this process runs and leads); a process without `api` serves nothing else.
+    const modules = yield* walletProcessors(processors);
+    const sql = yield* SqlClient.SqlClient;
+    const health = healthRoutes({ ping: sql`SELECT 1`, instance: process.env["HOSTNAME"] ?? "unknown" }).pipe(Layer.provide(Layer.succeed(Processors, modules)));
+    const server = NodeHttpServer.layer(createServer, { port });
+    if (!roles.has("api")) return yield* Layer.launch(HttpRouter.serve(health).pipe(Layer.provide(server)));
     // The admin API (list, pause, resume and reset the processors) exists only when WALLET_ADMIN_TOKEN is set, and is behind that bearer token.
     const adminToken = process.env["WALLET_ADMIN_TOKEN"];
-    const admin = adminToken === undefined || adminToken === "" ? Layer.empty : makeWalletAdminApiLayer(yield* walletProcessors(processors), Redacted.make(adminToken));
+    const admin = adminToken === undefined || adminToken === "" ? Layer.empty : makeWalletAdminApiLayer(modules, Redacted.make(adminToken));
     if (admin !== Layer.empty) yield* Effect.log("admin API mounted at /admin/processors and /admin/events (bearer token from WALLET_ADMIN_TOKEN)");
-    const sql = yield* SqlClient.SqlClient;
-    yield* Layer.launch(
-      HttpRouter.serve(Layer.mergeAll(makeWalletApiLayer({ basePath: "/api/commands" }), admin, apiHealthRoutes(sql`SELECT 1`, undefined, status))).pipe(
-        Layer.provide(NodeHttpServer.layer(createServer, { port }))
-      )
-    );
+    yield* Layer.launch(HttpRouter.serve(Layer.mergeAll(makeWalletApiLayer({ basePath: "/api/commands" }), admin, health)).pipe(Layer.provide(server)));
   });
 
   // Set OTEL_EXPORTER_OTLP_ENDPOINT to export metrics, spans and logs over OTLP (docs/guides/operate/dashboard.md); unset, nothing is exported.

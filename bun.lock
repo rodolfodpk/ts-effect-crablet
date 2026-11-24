@@ -99,6 +99,7 @@
         "@crablet/automations": "workspace:*",
         "@crablet/deadlines": "workspace:*",
         "@crablet/outbox": "workspace:*",
+        "@crablet/processors-http": "workspace:*",
         "@crablet/test-support": "workspace:*",
         "@crablet/views": "workspace:*",
       },

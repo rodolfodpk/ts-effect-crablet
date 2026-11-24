@@ -3,8 +3,8 @@
 ## Status
 
 **Accepted** (2026-11-23, the maintainer's plan for `@crablet/app`, phase 2a). Built: `@crablet/app` (`Crablet.layer`, `Crablet.modules`,
-`Crablet.processors`, `Crablet.catalog`), `@crablet/modules` (the contracts), `@crablet/deadlines`, a `module()` in each module package. Tests:
-`packages/app/test/processors.types.ts`, `packages/app/test/integration/processors.test.ts`, `packages/*/test/processor-requirements.types.ts`,
+`Crablet.processors`, `Crablet.catalog`), `@crablet/modules` (the contracts), `@crablet/deadlines`, a `module()` in each module package, `healthRoutes` in `@crablet/processors-http/Health` (phase 2b). Tests:
+`packages/app/test/processors.types.ts`, `packages/app/test/integration/processors.test.ts`, `packages/app/test/integration/health.test.ts`, `packages/processors-http/test/health{.test,.types}.ts`, `packages/*/test/processor-requirements.types.ts`,
 `scripts/lock-keys.test.ts`, `scripts/app-dependencies.test.ts`, `packages/modules/test/contracts.test.ts`. Amends [ADR-0022](0022-runtime-roles.md)
 (decision 4) and [ADR-0039](0039-a-topic-takes-its-publishers.md).
 
@@ -50,8 +50,11 @@ Four things in the packages stood in the way:
    that only ever runs the deadlines declares `Crablet.processors(Crablet.modules(Deadlines.module(...)))` and needs what the deadlines need, no
    publisher; the API lists everything with a catalog of the whole declaration. Typing the requirements by a literal `run` was the alternative: the body
    cannot show it to the compiler without an assertion on a `Layer` type.
-5. **The admin API reads the process's modules.** `adminApiLayer({ masks })` takes its sources from `Processors`, not from a list the application
-   assembles.
+5. **The admin API and the probes read the process's modules.** `adminApiLayer({ masks })` takes its sources from `Processors`, not from a list the application
+   assembles. `healthRoutes({ ping, readyTimeout, instance })` (`@crablet/processors-http/Health`, phase 2b) serves `/healthz`, `/readyz` and `/status` from its
+   `status`, with the rules ADR-0022 set: a standby is healthy, `/healthz` asks nothing of the database, `/readyz` has a generous timeout. They are routes, not a
+   server: a worker serves them on the server the application provides, as the API does (ADR-0042), so no framework package depends on `@effect/platform-node`.
+   `/status` answers in the framework's words (`kind`, `runs`, `leads`, the `instance`); the wallet's own shape (`module`, `leading`, `pod`, `roles`) is gone.
 6. **A module owns its lock key.** `VIEWS_LOCK_KEY` and its siblings are in their modules, with the values they had: in a rolling deploy, old and new
    versions take the same lock. `Leader.ts` is only the mechanism.
 7. **A topic names its publishers; running the outbox takes one per name** (ADR-0039, amended). A process that only lists the outbox's processors
@@ -77,7 +80,7 @@ Rules this records, for every application:
 - **Breaking (pre-release, [ADR-0013](0013-api-evolution-additive-vs-breaking.md)):** `@crablet/commands/Crablet` (now `@crablet/app`),
   `@crablet/automations/Deadlines` (now `@crablet/deadlines`), `@crablet/event-poller/ProcessorStatus` (now `@crablet/modules`), the lock keys in
   `@crablet/eventstore/Leader`, `ProcessorSource` from `processors-http`, `defineTopic` with publisher objects, `OutboxPublisher.name`,
-  `adminApiLayer({ sources })`.
+  `adminApiLayer({ sources })`, the wallet's `/status` shape (phase 2b).
 - Provided twice, `Crablet.processors` builds two sets of processors. The re-entrance guard of ADR-0046 keeps them from both leading, but the loops and
   the samplers double: provide it once, at the top.
 
@@ -92,7 +95,6 @@ Rules this records, for every application:
 
 ## Not done here
 
-- Health and status routes (`/healthz`, `/readyz`, `/status`) over `Processors`: phase 2b.
 - The examples moving onto `Crablet.processors`: phase 3. Until then the wallet provides `Processors` from its own handles (`walletProcessors`).
 - The product name in the connections and the detection of two products in one database (V5): undecided.
 - Merging partial declarations, one per vertical slice: with phase 3.

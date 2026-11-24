@@ -19,7 +19,8 @@
     "@crablet/views": "workspace:*",
     "@crablet/automations": "workspace:*",
     "@crablet/outbox": "workspace:*",
-    "@crablet/deadlines": "workspace:*"
+    "@crablet/deadlines": "workspace:*",
+    "@crablet/processors-http": "workspace:*"
   },
   "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
 }

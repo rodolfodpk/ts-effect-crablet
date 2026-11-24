@@ -27,5 +27,5 @@
   "devDependencies": {
     "@crablet/test-support": "workspace:*"
   },
-  "crablet": { "typeEscapes": { "src": 4, "test": 80 } }
+  "crablet": { "typeEscapes": { "src": 4, "test": 79 } }
 }
