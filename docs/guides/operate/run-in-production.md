@@ -9,15 +9,19 @@ The example is the course app's [`index.ts`](../../../examples/course-enrolment-
 
 ## 1. Apply the migrations
 
-The schema is a bundle of SQL files in [`@crablet/db-migrations`](../../../packages/db-migrations/README.md); you apply them, then your own tables (numbered from V100).
+The schema is a bundle of SQL files in [`@crablet/db-migrations`](../../../packages/db-migrations/README.md). Your own tables are files of yours, numbered from
+V100; you list them, and `migrate(conn, app)` (`@crablet/db-migrations/Migrate`) applies the framework's, then yours, in one transaction:
 
 <!-- file: examples/course-enrolment-app/src/migrate.ts#apply-migrations -->
 ```ts
-for (const file of coreMigrationFiles) await client.query(readFileSync(path.join(coreSqlDir, file), "utf-8"));
-for (const file of appMigrationFiles) await client.query(readFileSync(path.join(appMigrationDir, file), "utf-8"));
+// What `migrate` (@crablet/db-migrations/Migrate) applies after the framework's schema, in one transaction.
+export const courseMigrations: AppMigrations = { dir: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "db", "migration"), files: appMigrationFiles };
 ```
 
-**There is no migration runner and no record of what was applied.** The example runs every file against a fresh database, and the files are not idempotent. For an
+Your list is checked before anything is applied: a file numbered below V100, out of order or missing stops it. One transaction means a file that fails
+leaves the database as it was. `migrateIfFresh(conn, app)` does the same only when the database has no event log, so an application can restart against it.
+
+**This is not a migration tool: nothing records what was applied.** It is for a fresh database, and the files are not idempotent. For an
 existing database you apply only the files it has not had, in order, with your own deployment tooling. A database created before the files were consolidated (V1 to V19)
 cannot be upgraded to them and is recreated ([ADR-0047](../../adr/0047-the-migrations-are-the-schemas-shape.md)).
 

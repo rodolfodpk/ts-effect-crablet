@@ -151,6 +151,12 @@
     "packages/db-migrations": {
       "name": "@crablet/db-migrations",
       "version": "0.0.0",
+      "dependencies": {
+        "pg": "8.23.1",
+      },
+      "devDependencies": {
+        "@crablet/test-support": "workspace:*",
+      },
     },
     "packages/deadlines": {
       "name": "@crablet/deadlines",
