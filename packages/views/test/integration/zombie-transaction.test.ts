@@ -13,7 +13,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { viewsOf } from "../fixtures/viewsOf.ts";
-import { makeViewsProcessor } from "../../src/ViewsModule.ts";
+import { makeViewsProcessor } from "../../src/ViewsProcessor.ts";
 import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import type { ViewProjector } from "../../src/ViewProjector.ts";
 

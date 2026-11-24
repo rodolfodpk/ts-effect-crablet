@@ -248,9 +248,9 @@ const program = Effect.gen(function* () {
 NodeRuntime.runMain(Effect.provide(Effect.scoped(program), processes));
 ```
 
-The wallet does the same with three modules ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)). Underneath, each module's
-`start*Processor` (`startViewsProcessor` and its siblings) builds a processor and starts it owned by a scope, and `make*Processor` builds one without starting it;
-they stay available for tests that drive a processor's lifetime themselves.
+The wallet does the same with three modules ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)). Underneath, each module builds its
+processors on the engine; those builders (each module's `ViewsProcessor`, `OutboxProcessor`, ... entry point) are internal, kept for the packages' tests that drive a processor's
+lifetime themselves.
 
 ## 4. Several instances
 

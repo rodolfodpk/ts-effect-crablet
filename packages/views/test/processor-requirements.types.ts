@@ -4,7 +4,7 @@ import type { Effect, Scope } from "effect";
 import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import type { ProcessorHandle } from "@crablet/event-poller";
-import type { makeViewsProcessor, startViewsProcessor, ViewsRunRequirements } from "../src/ViewsModule.ts";
+import type { makeViewsProcessor, startViewsProcessor, ViewsRunRequirements } from "../src/ViewsProcessor.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Made = ReturnType<typeof makeViewsProcessor>;

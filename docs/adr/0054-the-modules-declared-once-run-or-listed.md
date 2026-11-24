@@ -3,7 +3,7 @@
 ## Status
 
 **Accepted** (2026-11-23, the maintainer's plan for `@crablet/app`, phase 2a). Built: `@crablet/app` (`Crablet.layer`, `Crablet.modules`,
-`Crablet.processors`, `Crablet.catalog`), `@crablet/modules` (the contracts), `@crablet/deadlines`, a `module()` in each module package, `healthRoutes` in `@crablet/processors-http/Health` (phase 2b), `Crablet.config` and `Crablet.processorsFor` (phase 2d). Tests:
+`Crablet.processors`, `Crablet.catalog`), `@crablet/modules` (the contracts), `@crablet/deadlines`, a `module()` in each module package, `healthRoutes` in `@crablet/processors-http/Health` (phase 2b), `Crablet.config` and `Crablet.processorsFor` (phase 2d); applications import nothing of `@crablet/event-poller`, and each module's processor builders and management service are internal (phase 3). Tests:
 `packages/app/test/processors.types.ts`, `packages/app/test/integration/processors.test.ts`, `packages/app/test/integration/health.test.ts`, `packages/app/test/{config,roles}.test.ts`, `packages/processors-http/test/health{.test,.types}.ts`, `packages/*/test/processor-requirements.types.ts`,
 `scripts/lock-keys.test.ts`, `scripts/app-dependencies.test.ts`, `packages/modules/test/contracts.test.ts`. Amends [ADR-0022](0022-runtime-roles.md)
 (decision 4) and [ADR-0039](0039-a-topic-takes-its-publishers.md).

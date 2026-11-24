@@ -17,7 +17,7 @@ import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { formatMarker } from "@crablet/eventstore/Marker";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
-import { makeViewsProcessor } from "@crablet/views";
+import { makeViewsProcessor } from "@crablet/views/ViewsProcessor";
 import { makeTransactionalViewProjector } from "@crablet/views/ViewProjector";
 import { viewSubscriptionOf } from "@crablet/views/ViewSubscription";
 import type { ViewsConfig } from "@crablet/views/ViewsConfig";

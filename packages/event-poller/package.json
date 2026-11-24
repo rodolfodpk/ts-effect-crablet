@@ -24,7 +24,7 @@
   },
   "crablet": {
     "typeEscapes": { "src": 1, "test": 21 },
-    "internal": ["./BackoffState", "./EventFetcher", "./EventHandler", "./PostgresProgressTracker", "./ProgressPing", "./ProgressTracker", "./SqlEventFetcher"]
+    "internal": ["./BackoffState", "./EventFetcher", "./EventHandler", "./InstanceId", "./MonitorProcessors", "./PostgresProgressTracker", "./ProcessSettings", "./ProcessorConfig", "./ProgressPing", "./ProgressTracker", "./SqlEventFetcher"]
   },
   "dependencies": {
     "effect": "4.1.4",

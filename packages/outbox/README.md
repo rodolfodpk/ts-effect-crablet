@@ -5,10 +5,9 @@ A transactional outbox: events are published to something outside the database, 
 
 ## What it gives you
 
-- **`startOutboxProcessor({ topics, publishers })`** (`/OutboxModule`) - runs the publishers, leader-gated, fed by the poller, owned by the Scope. `publishers` has one `OutboxPublisher` per name the topics give: a missing name does not compile. `makeOutboxProcessor({ topics })` builds without starting and without publishers (a handle for status and the admin API); starting such a handle by hand needs `OutboxPublishers` provided.
+- **`module({ topics, config, describe })`** and **`publishers(topics, { ... })`** (the package entry point) - the outbox module, which `@crablet/app` runs, leader-gated, fed by the poller; `publishers` is the layer of one `OutboxPublisher` per name the topics give (a missing name does not compile), needed only by a process that runs the module.
 - **`OutboxPublisher`** - the one thing you implement: `publishBatch(events)` (or one event at a time, with `preferredMode: "individual"`). `makeLogPublisher` is a ready-made one that logs.
 - **`defineTopic(name, { anyOfTags, publishers: ["kafka"] })`** (`/TopicConfig`), **`TopicPublisherAssignment`**, **`OutboxConfig`** - which events go to which topic, and the names of its publishers (or `{ publisher: "kafka", pollingIntervalMs }`, a `TopicPublisherAssignment`, to give one its own polling settings). A name keys its progress row with the topic's; the declaration holds no publisher, so a process that only lists the processors builds none ([ADR-0039](../../docs/adr/0039-a-topic-takes-its-publishers.md), amended). `config` is optional: `OutboxConfig` is a partial of the shared [polling settings](../../docs/reference/configuration.md#polling-settings).
-- **`OutboxManagementService`** - inspect and control topics.
 - **`TopicPublisherPair`** (`/TopicPublisherPair`) - a topic and one of its publishers, and `toKey`/`fromKey`, the JSON pair a publisher's processor is identified by (in the admin API, say).
 
 A publisher must tolerate a repeat: after a crash, a publish that timed out (`publishTimeoutMs`, default 30 s) or a change of leader, an event is published

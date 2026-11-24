@@ -11,7 +11,7 @@ import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstor
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import { defineView, type ViewEvent } from "../../src/ProjectedView.ts";
-import { makeViewsProcessor } from "../../src/ViewsModule.ts";
+import { makeViewsProcessor } from "../../src/ViewsProcessor.ts";
 import { applyInMemory, normalizeRow, rowsOf } from "../../src/ViewMemory.ts";
 import { checkViewTables } from "../../src/ViewTableCheck.ts";
 import { bigint, decimal, integer, text, timestamptz, viewTable } from "../../src/ViewTable.ts";

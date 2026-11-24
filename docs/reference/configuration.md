@@ -30,9 +30,10 @@ How a processor polls, backs off and gives up, in `PollingConfig` (`Crablet.Poll
 a `DeadlinesConfig`: the same, plus `fireTimeoutMs`, how long one deadline's command may take (30 s by default).
 
 ```ts
-startViewsProcessor({ views });                                                        // all defaults
-startViewsProcessor({ views, config: { pollingIntervalMs: 200 } });                    // one setting changed, for every view
-startViewsProcessor({ views, overrides: { "wallet-statement-view": { batchSize: 100 } } }); // one view's setting, by its name
+Views.module({ views });                                                        // all defaults
+Views.module({ views, config: { pollingIntervalMs: 200 } });                    // one setting changed, for every view
+Views.module({ views, overrides: { "wallet-statement-view": { batchSize: 100 } } }); // one view's setting, by its name
+Crablet.processors(modules, { polling: { pollingIntervalMs: 200 } });          // the process's default, for every module (a module's `config` wins)
 ```
 
 | Setting | Default | What it does |
