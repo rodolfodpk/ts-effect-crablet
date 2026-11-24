@@ -17,7 +17,8 @@ import { byModel, deadline, defineCommand, defineEvent, defineModel, DomainError
 import { DeadlineFired, DeadlineScheduled } from "@crablet/commands/Deadline";
 import type { Command, RawInput } from "@crablet/commands/Command";
 import type { InputSchema } from "@crablet/commands/Contract";
-import { DEADLINES_LOCK_KEY, DEADLINES_PROCESSOR_ID, makeDeadlinesProcessor, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
+import { DEADLINES_LOCK_KEY, DEADLINES_PROCESSOR_ID, type DeadlinesConfig } from "../../src/DeadlinesModule.ts";
+import { makeDeadlinesProcessor } from "../../src/DeadlinesProcessor.ts";
 import { makeDeadlinesManagementService } from "../../src/DeadlinesManagementService.ts";
 import { makeDeadlineEventHandler } from "../../src/internal/DeadlineEventHandler.ts";
 import type { HandledPrefix } from "@crablet/event-poller/EventHandler";

@@ -13,7 +13,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit, noop } from "@crablet/commands/Command";
 import { defineEvent } from "@crablet/commands/Event";
-import { makeAutomationsProcessor } from "../../src/AutomationsModule.ts";
+import { makeAutomationsProcessor } from "../../src/AutomationsProcessor.ts";
 import { defineAutomation } from "../../src/AutomationHandler.ts";
 import type { AutomationsConfig } from "../../src/AutomationsConfig.ts";
 

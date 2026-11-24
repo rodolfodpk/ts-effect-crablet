@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/OutboxModule.ts",
+    "./OutboxProcessor": "./src/OutboxProcessor.ts",
     "./OutboxPublisher": "./src/OutboxPublisher.ts",
     "./TopicConfig": "./src/TopicConfig.ts",
     "./TopicPublisherPair": "./src/TopicPublisherPair.ts",
@@ -22,5 +23,8 @@
   "devDependencies": {
     "@crablet/test-support": "workspace:*"
   },
-  "crablet": { "typeEscapes": { "src": 0, "test": 1 } }
+  "crablet": {
+    "typeEscapes": { "src": 0, "test": 1 },
+    "internal": ["./OutboxManagementService", "./OutboxProcessor"]
+  }
 }

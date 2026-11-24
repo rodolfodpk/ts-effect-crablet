@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/AutomationsModule.ts",
+    "./AutomationsProcessor": "./src/AutomationsProcessor.ts",
     "./AutomationHandler": "./src/AutomationHandler.ts",
     "./AutomationDecision": "./src/AutomationDecision.ts",
     "./AutomationsConfig": "./src/AutomationsConfig.ts",
@@ -25,6 +26,6 @@
   },
   "crablet": {
     "typeEscapes": { "src": 0, "test": 4 },
-    "internal": ["./AutomationDecision"]
+    "internal": ["./AutomationDecision", "./AutomationManagementService", "./AutomationsProcessor"]
   }
 }

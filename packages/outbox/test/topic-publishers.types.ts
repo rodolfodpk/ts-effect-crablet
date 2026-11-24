@@ -1,5 +1,5 @@
 // Compile-time tests (never executed): a topic names its publishers, and starting the outbox takes one publisher per name (ADR-0039, amended 2026-11-23).
-import { startOutboxProcessor } from "../src/OutboxModule.ts";
+import { startOutboxProcessor } from "../src/OutboxProcessor.ts";
 import { defineTopic, type PublisherNamesOf, type TopicConfig } from "../src/TopicConfig.ts";
 import type { OutboxPublisher } from "../src/OutboxPublisher.ts";
 

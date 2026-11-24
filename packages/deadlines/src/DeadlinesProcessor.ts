@@ -1,0 +1,99 @@
+// The deadlines processor itself: build it (`makeDeadlinesProcessor`) or build and start it (`startDeadlinesProcessor`). Internal (`crablet.internal`): an application
+// runs the module through `@crablet/app` (`Deadlines.module(...)`); the package's tests and the module build on this.
+import { Effect, type Scope, Stream } from "effect";
+import { SqlClient } from "effect/sql";
+import { EventStore } from "@crablet/eventstore";
+import { tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
+import { holdSessionOnce, sessionSql } from "@crablet/eventstore/SessionClients";
+import { checkIdleInTransactionOnce } from "@crablet/eventstore/ServerSettings";
+import { makeEventProcessor, type ProcessorHandle } from "@crablet/event-poller";
+import * as EventSelection from "@crablet/event-poller/EventSelection";
+import { processorConfigOf, resolvePollingConfig, type PollingSettings } from "@crablet/event-poller/ProcessorConfig";
+import { defaultInstanceId } from "@crablet/event-poller/InstanceId";
+import { CommandExecutor } from "@crablet/commands";
+import type { Command } from "@crablet/commands/Command";
+import { checkDeadlineCommands, DeadlineScheduled } from "@crablet/commands/Deadline";
+import { makeDeadlineEventHandler, type FireCommand, type RecordFiring } from "./internal/DeadlineEventHandler.ts";
+import { makeDeadlineFetcher, makeDeadlineProgressTracker, makeRecordFiring } from "./internal/DeadlineStore.ts";
+
+// The module's advisory lock: one leader per database at a time (ADR-0022). Its value never changes: in a rolling deploy, old and new versions take the
+// same lock, so they never lead together. The key belongs to the module, not to the event store, so a new kind of module needs no change there.
+export const DEADLINES_LOCK_KEY = 4856221667890123459n;
+
+// The deadlines processor (ADR-0043): it runs each deadline's command once its due time has passed. Deadlines are set by `decide` with `deadline(...)`
+// (`@crablet/commands/Deadline`); the append that stores one writes its row in `crablet_deadlines`, which this processor reads by time.
+//
+//     startDeadlinesProcessor({ commands: [ReleaseUnpaidSubscription] })
+//
+// It is a processor of the event-poller engine, like the automations, with what differs about deadlines: a fetcher that reads by time, a cursor that
+// never moves, no wake-ups (a new event makes nothing due; time does) and so no backoff. It has a leader lock of its own (DEADLINES_LOCK_KEY): one
+// instance fires, the others wait, and it fails over independently of the automations. It belongs with the automations role: it fires commands
+// through the same executor.
+
+// The processor's one id, as its progress row and the admin API name it.
+export const DEADLINES_PROCESSOR_ID = "deadlines";
+
+// Polling and batch, and how many errors in a row make it FAILED; the backoff settings do not apply (it does not back off). The interval is how late a
+// deadline can fire after it is due, and an idle poll is one index lookup on the leader: 5 seconds by default, for deadlines in business time.
+// `fireTimeoutMs`: how long one deadline's command may take (its retries included) before the firing counts as a fault and is retried, so that a hung
+// command does not hold back the deadlines after it for good (ADR-0036's precedent for the outbox's publish).
+export type DeadlinesConfig = Omit<PollingSettings, "backoffEnabled" | "backoffThreshold" | "backoffMultiplier" | "backoffMaxSeconds"> & {
+  readonly fireTimeoutMs?: number | undefined;
+};
+export const defaultDeadlinesPollingIntervalMs = 5_000;
+export const defaultDeadlineFireTimeoutMs = 30_000;
+
+export interface DeadlinesDeps {
+  // The commands deadlines may name. Each must declare `idempotentBy` (a deadline can fire twice) and have no `personal(...)` field in its input.
+  readonly commands: ReadonlyArray<Command<any, any>>;
+  readonly config?: DeadlinesConfig | undefined;
+  readonly instanceId?: string | undefined;
+  // How the module's leader checks its lock and how long the server keeps a silent leader's session (`serverIdleTimeout`, ADR-0045). Default: the
+  // defaults of `LeaderOptions`.
+  readonly leader?: LeaderOptions | undefined;
+}
+
+// What running the deadlines processor needs, given where it starts (decision V1): the executor its commands go through, and the event store its firings are
+// appended to. Building it needs only the SQL client: a handle that is not running is read and controlled through the database.
+export type DeadlinesRunRequirements = CommandExecutor | EventStore;
+
+// Builds the deadlines processor without starting it (a handle for status and the admin API, or a test that drives `start` and `stop` itself).
+export const makeDeadlinesProcessor = (
+  deps: DeadlinesDeps
+): Effect.Effect<ProcessorHandle<DeadlinesRunRequirements>, never, SqlClient.SqlClient> =>
+  Effect.gen(function* () {
+    const commands = checkDeadlineCommands(deps.commands);
+    const sql = yield* SqlClient.SqlClient;
+    const sessionSql_ = yield* sessionSql;
+
+    const recordFiring: RecordFiring<DeadlinesRunRequirements> = makeRecordFiring(sql);
+    const fire: FireCommand<DeadlinesRunRequirements> = (command, input) => Effect.flatMap(CommandExecutor, (executor) => executor.runDecoded(command, input));
+
+    const { fireTimeoutMs, ...pollingConfig } = deps.config ?? {};
+    const config = processorConfigOf(DEADLINES_PROCESSOR_ID, {
+      pollingIntervalMs: defaultDeadlinesPollingIntervalMs,
+      ...pollingConfig,
+      backoffEnabled: false
+    });
+    const selection = EventSelection.of({ eventTypes: new Set([DeadlineScheduled.type]) });
+    const started = Effect.andThen(yield* holdSessionOnce("the deadlines module"), checkIdleInTransactionOnce(sql));
+
+    return yield* makeEventProcessor({
+      configs: [config],
+      leaderRetryIntervalMs: resolvePollingConfig(pollingConfig).leaderElectionRetryIntervalMs,
+      fetcher: yield* makeDeadlineFetcher(),
+      handler: makeDeadlineEventHandler(commands, fire, recordFiring, fireTimeoutMs ?? defaultDeadlineFireTimeoutMs),
+      progressTracker: yield* makeDeadlineProgressTracker(),
+      selectionOf: () => selection,
+      instanceId: deps.instanceId ?? defaultInstanceId(),
+      // The first attempt at the lock marks that the module has started: it keeps nothing of its own for good (no LISTEN; its lock is on the process's lock session); and it checks, once per process, that the server ends a vanished pod's transaction (ServerSettings).
+      acquireLeader: Effect.andThen(started, tryAcquireGlobalLeader(sessionSql_, DEADLINES_LOCK_KEY, deps.leader)),
+      wakeupStream: Stream.never
+    });
+  });
+
+// Builds the processor and starts it, owned by the Scope: it runs until the scope closes, and closing it stops the loop and releases the lock.
+export const startDeadlinesProcessor = (
+  deps: DeadlinesDeps
+): Effect.Effect<ProcessorHandle<DeadlinesRunRequirements>, never, SqlClient.SqlClient | DeadlinesRunRequirements | Scope.Scope> =>
+  Effect.tap(makeDeadlinesProcessor(deps), (handle) => handle.service.startScoped);

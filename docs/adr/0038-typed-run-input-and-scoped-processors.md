@@ -6,6 +6,10 @@
 (`test/run-input.types.ts`); `startViewsProcessor`, `startAutomationsProcessor`, `startOutboxProcessor` and the `ProcessorHandle` type
 (`@crablet/event-poller`). Follows [ADR-0037](0037-the-declaration-api.md).
 
+**Status update (2026-11-24):** the `start*Processor` and `make*Processor` functions, and the `make*ManagementService`s, are no longer what an application
+uses: they moved to an internal entry point per module (`ViewsProcessor`, `AutomationsProcessor`, `OutboxProcessor`, `DeadlinesProcessor`; `crablet.internal`), and an application runs the modules
+through `@crablet/app` ([ADR-0054](0054-the-modules-declared-once-run-or-listed.md)). The decisions here (a scope owns a processor) stand.
+
 ## Context
 
 A review of the public API after ADR-0037 found two places where the API did less than the declarations promised.

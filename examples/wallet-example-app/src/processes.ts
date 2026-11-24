@@ -24,7 +24,7 @@ export const walletTopics = [
 ];
 
 // What each module runs: the four views with a per-view setting by name (polling and batch size are deployment settings, not part of a view), the
-// welcome automation, the topic. A test that needs a module's own handle builds one from these (`makeViewsProcessor({ ...walletViewsOptions, instanceId })`).
+// welcome automation, the topic. A test that needs a module's own handle builds one from these (`makeViewsProcessor({ ...walletViewsOptions, instanceId })`, the views package's internal `ViewsProcessor`).
 export const walletViewsOptions = { views: walletViews, overrides: walletViewOverrides };
 export const walletAutomationsOptions = { automations: [walletOpenedAutomation] };
 

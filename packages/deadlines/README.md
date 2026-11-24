@@ -6,7 +6,12 @@ It shares no code with the other modules.
 
 ## What it gives you
 
-- **`startDeadlinesProcessor({ commands, config })`** (the package entry point) - fires the deadlines commands set with `deadline(...)`, leader-gated
-  (`makeDeadlinesProcessor` builds without starting); each firing goes through the `CommandExecutor`. `config` is a `DeadlinesConfig`, the polling
+- **`module({ commands, config, describe })`** (the package entry point) - the deadlines module, which `@crablet/app` runs: it fires the deadlines commands
+  set with `deadline(...)`, leader-gated; each firing goes through the `CommandExecutor`. `config` is a `DeadlinesConfig`, the polling
   settings plus `fireTimeoutMs`, how long one firing may take ([set a deadline](../../docs/guides/build/set-a-deadline.md)).
-- **`makeDeadlinesManagementService`** (`/DeadlinesManagementService`) - inspect and control the deadlines processor, with its backlog: the deadlines due and not fired.
+- Its management service reaches the admin API through `Processors`, with its backlog: the deadlines due and not fired.
+
+## Internal
+
+`./DeadlinesProcessor` (`makeDeadlinesProcessor`, `startDeadlinesProcessor`) and `./DeadlinesManagementService` are listed under `crablet.internal` in
+[`package.json`](./package.json): the module builds on them, and so do the package's tests; they can change without notice ([the boundary](../../docs/reference/README.md#public-api-and-plumbing)).

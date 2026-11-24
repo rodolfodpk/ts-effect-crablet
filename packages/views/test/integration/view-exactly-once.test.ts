@@ -14,7 +14,7 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import { makeViewsProcessor } from "../../src/ViewsModule.ts";
+import { makeViewsProcessor } from "../../src/ViewsProcessor.ts";
 import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import { makeTransactionalViewProjector } from "../../src/ViewProjector.ts";
 import type { ViewsConfig } from "../../src/ViewsConfig.ts";

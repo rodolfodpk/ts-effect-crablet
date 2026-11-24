@@ -11,7 +11,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
-import { makeViewsProcessor } from "../../src/ViewsModule.ts";
+import { makeViewsProcessor } from "../../src/ViewsProcessor.ts";
 import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import { makeTransactionalViewProjector } from "../../src/ViewProjector.ts";
 import { VIEW_PROGRESS_CHANNEL, decodeViewProgressPing } from "../../src/ViewProgress.ts";

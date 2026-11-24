@@ -5,7 +5,7 @@ import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import type { OutboxPublishers } from "../src/OutboxPublisher.ts";
-import type { makeOutboxProcessor, startOutboxProcessor, OutboxRunRequirements } from "../src/OutboxModule.ts";
+import type { makeOutboxProcessor, startOutboxProcessor, OutboxRunRequirements } from "../src/OutboxProcessor.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Made = ReturnType<typeof makeOutboxProcessor>;

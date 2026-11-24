@@ -20,8 +20,8 @@ answer `503` with reason `view_failed`.
    ([ADR-0034](../../adr/0034-a-repeat-must-be-the-same-request.md)). Fix the key in the code; the trigger has not been handled.
 5. **The deadlines processor:** its last error is in `crablet_deadline_progress.last_error`. The causes are those of [a deadline's fault](../build/set-a-deadline.md):
    the command failed with something other than a domain error (the database, a conflict that ran out of retries), it took longer than `fireTimeoutMs`
-   (30 seconds by default), the processor was not given that command, or the deadline's input no longer decodes. `GET /admin/processors` lists it only if
-   the application gives the admin API a source made with `makeDeadlinesManagementService`, which none of the examples does; otherwise read the table.
+   (30 seconds by default), the processor was not given that command, or the deadline's input no longer decodes. `GET /admin/processors` lists it when the
+   process declares `Deadlines.module` and serves the admin API (`Processors` carries its source); otherwise read the table.
    Its reset is the same: it clears the error and the due deadlines fire again in due order. There is no cursor to rewind: what is left to fire is
    the rows of `crablet_deadlines`.
 

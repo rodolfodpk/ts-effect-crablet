@@ -8,6 +8,7 @@
     "./ViewProgressFeed": "./src/ViewProgressFeed.ts",
     "./ViewProgressHub": "./src/ViewProgressHub.ts",
     ".": "./src/ViewsModule.ts",
+    "./ViewsProcessor": "./src/ViewsProcessor.ts",
     "./ViewProjector": "./src/ViewProjector.ts",
     "./ViewSubscription": "./src/ViewSubscription.ts",
     "./ViewsConfig": "./src/ViewsConfig.ts",
@@ -21,7 +22,7 @@
   },
   "crablet": {
     "typeEscapes": { "src": 0, "test": 27 },
-    "internal": ["./ViewProgress", "./ViewProjector", "./ViewSubscription"]
+    "internal": ["./ViewManagementService", "./ViewProgress", "./ViewProjector", "./ViewSubscription", "./ViewsProcessor"]
   },
   "dependencies": {
     "effect": "4.1.4",

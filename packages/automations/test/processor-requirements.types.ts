@@ -5,7 +5,7 @@ import type { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import type { CommandExecutor } from "@crablet/commands";
 import type { ProcessorHandle } from "@crablet/event-poller";
-import type { makeAutomationsProcessor, startAutomationsProcessor, AutomationsRunRequirements } from "../src/AutomationsModule.ts";
+import type { makeAutomationsProcessor, startAutomationsProcessor, AutomationsRunRequirements } from "../src/AutomationsProcessor.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Made = ReturnType<typeof makeAutomationsProcessor>;

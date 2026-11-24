@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/DeadlinesModule.ts",
+    "./DeadlinesProcessor": "./src/DeadlinesProcessor.ts",
     "./DeadlinesManagementService": "./src/DeadlinesManagementService.ts"
   },
   "dependencies": {
@@ -19,5 +20,8 @@
   "devDependencies": {
     "@crablet/test-support": "workspace:*"
   },
-  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
+  "crablet": {
+    "typeEscapes": { "src": 0, "test": 0 },
+    "internal": ["./DeadlinesManagementService", "./DeadlinesProcessor"]
+  }
 }
