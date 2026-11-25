@@ -49,6 +49,7 @@ This is the one full map of the documents. Each folder holds one kind of documen
 | Test a command's decisions without a database | [Test a command](./guides/build/test-a-command.md) |
 | Decide on something the input does not name (a card number names a member) | [Look something up before deciding](./guides/build/look-something-up-first.md) |
 | Close a statement or a shift and open the next one | [Turn a period](./guides/build/turn-a-period.md) |
+| Hold several products in one repository, each cut into slices | [Several products in one repository](./guides/structure/monorepo-with-products.md) |
 | Change an event that is already stored | [Evolving events](./guides/build/evolving-events.md) |
 
 ## Operate: tasks while running it
