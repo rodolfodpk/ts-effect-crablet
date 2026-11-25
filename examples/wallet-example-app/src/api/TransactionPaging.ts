@@ -1,4 +1,7 @@
-// Keyset paging for the wallet's transaction list: the page size and the cursor, as plain functions.
+import { Schema } from "effect";
+import { opaqueCursor } from "./OpaqueCursor.ts";
+
+// Keyset paging for the wallet's transaction list: the page size and the cursor.
 
 export const defaultPageSize = 20;
 export const maxPageSize = 100;
@@ -24,29 +27,20 @@ export interface TransactionCursorKey {
   readonly transactionId: string;
 }
 
-// The cursor is opaque to clients: the key as JSON, base64url, so it is safe in a query string.
-export const encodeTransactionCursor = (key: TransactionCursorKey): string =>
-  Buffer.from(JSON.stringify({ o: key.occurredAt, p: key.eventPosition, t: key.transactionId })).toString("base64url");
-
-const maxCursorLength = 1024;
 const maxBigInt = 9223372036854775807n;
 // What Postgres prints for a timestamptz: `2026-10-03 12:00:00.123456+00`, with optional fractional seconds and a `+hh` or `+hh:mm` offset.
 const timestamptzText = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/;
+// A BIGINT, as decimal text: what `$n::bigint` accepts.
+const bigintText = Schema.makeFilter<string>((s) => (/^[0-9]+$/.test(s) && BigInt(s) <= maxBigInt) || "a non-negative BIGINT, as decimal text");
 
-// null for anything that is not a cursor this module made. Each part is checked against what the SQL will cast it to, so a forged or
-// corrupted cursor is a 400 for the caller and never a Postgres cast error (a 500).
-export const decodeTransactionCursor = (raw: string): TransactionCursorKey | null => {
-  if (raw === "" || raw.length > maxCursorLength || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const { o, p, t } = parsed as { o?: unknown; p?: unknown; t?: unknown };
-  if (typeof o !== "string" || !timestamptzText.test(o)) return null;
-  if (typeof p !== "string" || !/^[0-9]+$/.test(p) || BigInt(p) > maxBigInt) return null;
-  if (typeof t !== "string") return null;
-  return { occurredAt: o, eventPosition: p, transactionId: t };
-};
+// The key on the wire: `{ o, p, t }`, as JSON, base64url (`OpaqueCursor`).
+const TransactionCursorKey = Schema.Struct({
+  occurredAt: Schema.String.check(Schema.isPattern(timestamptzText)),
+  eventPosition: Schema.String.check(bigintText),
+  transactionId: Schema.String
+}).pipe(Schema.encodeKeys({ occurredAt: "o", eventPosition: "p", transactionId: "t" }));
+
+const transactionCursor = opaqueCursor<TransactionCursorKey>(TransactionCursorKey, 1024);
+export const encodeTransactionCursor = transactionCursor.encode;
+// null for anything that is not a cursor this module made.
+export const decodeTransactionCursor = transactionCursor.decode;
