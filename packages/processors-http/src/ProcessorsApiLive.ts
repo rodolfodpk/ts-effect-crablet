@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { isBackedOff } from "@crablet/modules";
+import * as LogPoint from "@crablet/eventstore/LogPoint";
 import type { ProcessorSource } from "@crablet/modules/ProcessorSource";
 import { adminApi } from "./AdminApi.ts";
 import { ProcessorNotFound, type ProcessorInfo } from "./ProcessorsApi.ts";
@@ -28,6 +29,7 @@ export const listProcessors = (sources: ReadonlyArray<ProcessorSource>): Effect.
           errorCount: detail?.errorCount ?? null,
           lastError: detail?.lastError ?? null,
           cursorPosition: backlog === null ? null : backlog.cursor.position.toString(),
+          cursor: backlog === null ? null : LogPoint.format(backlog.cursor),
           pendingEvents: backlog?.pendingEvents ?? null,
           pendingCapped: backlog?.capped ?? false,
           oldestPendingSeconds: backlog?.oldestPendingSeconds ?? null,

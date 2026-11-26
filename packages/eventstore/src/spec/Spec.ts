@@ -41,9 +41,9 @@ const conditionMatches = (query: Query, event: SpecEvent): boolean => query.all 
 export type Verdict = "ok" | "duplicate" | "conflict";
 
 // The cursor is a (transactionId, position) pair, compared in that order (the order a load returns events in);
-// a cursor or an event without a transaction id compares by position alone.
+// an event without a transaction id compares by position alone. A cursor's "0" is compared as a number, as the append function in Postgres does.
 const isAfterCursor = (e: SpecEvent, cursor: LogPosition): boolean =>
-  cursor.transactionId === null || e.transactionId === undefined
+  e.transactionId === undefined
     ? e.position > cursor.position
     : BigInt(e.transactionId) > BigInt(cursor.transactionId) ||
       (BigInt(e.transactionId) === BigInt(cursor.transactionId) && e.position > cursor.position);

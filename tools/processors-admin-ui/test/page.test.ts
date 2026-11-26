@@ -28,7 +28,7 @@ expect.extend(Scene.sceneMatchers as never);
 const start: Model = init().model;
 const info = (over: Partial<ProcessorInfo> = {}): ProcessorInfo => ({
   kind: "views", id: "wallet-balance-view", description: "The balance of each wallet", status: "ACTIVE", errorCount: 0, lastError: null,
-  cursorPosition: "120", pendingEvents: 0, pendingCapped: false, oldestPendingSeconds: null, backedOff: false, ...over
+  cursorPosition: "120", cursor: "9:120", pendingEvents: 0, pendingCapped: false, oldestPendingSeconds: null, backedOff: false, ...over
 });
 const connected = (processors: ReadonlyArray<ProcessorInfo>, over: Partial<Model> = {}): Model => ({ ...start, token: "t0ken", processors: Processors.Success({ data: processors }), ...over });
 

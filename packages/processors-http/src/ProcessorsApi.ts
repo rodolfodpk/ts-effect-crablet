@@ -24,6 +24,9 @@ export const ProcessorInfo = Schema.Struct({
   errorCount: Schema.NullOr(Schema.Finite).annotate({ description: "Errors in a row since the last good batch; null if it has no progress row yet." }),
   lastError: Schema.NullOr(Schema.String).annotate({ description: "The text of the last error; null if none." }),
   cursorPosition: Schema.NullOr(Schema.String).annotate({ description: "The log position the processor has read up to, as a string (a position is a bigint)." }),
+  cursor: Schema.NullOr(Schema.String).annotate({
+    description: "Where the processor has read up to, as \"<transactionId>:<position>\": the form of a write marker, so a view is past a write when its cursor is at or after the marker in (transactionId, position) order."
+  }),
   pendingEvents: Schema.NullOr(Schema.Finite).annotate({ description: "Events the processor selects that are waiting after its cursor, counted up to 100 000." }),
   pendingCapped: Schema.Boolean.annotate({ description: "True when pendingEvents stopped at its cap: the true number is at least that." }),
   oldestPendingSeconds: Schema.NullOr(Schema.Finite).annotate({ description: "Age, by the events' own occurred_at, of the first waiting event; null when none waits." }),

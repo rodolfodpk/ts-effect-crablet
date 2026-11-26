@@ -127,9 +127,9 @@ describe("the admin API: listing", () => {
     expect(body.processors.map((p) => `${p.kind}/${p.id}`)).toEqual(['outbox/["wallet-events","LogPublisher"]', "views/wallet-balance-view", "views/wallet-summary-view"]);
     expect(body.processors[1]).toEqual({
       kind: "views", id: "wallet-balance-view", description: "balances", status: "ACTIVE", errorCount: 0, lastError: null,
-      cursorPosition: "120", pendingEvents: 7, pendingCapped: false, oldestPendingSeconds: 12.5, backedOff: false
+      cursorPosition: "120", cursor: "9:120", pendingEvents: 7, pendingCapped: false, oldestPendingSeconds: 12.5, backedOff: false
     });
-    expect(body.processors[2]).toMatchObject({ status: "FAILED", errorCount: 10, lastError: "boom", cursorPosition: null, pendingEvents: null, backedOff: true, description: null });
+    expect(body.processors[2]).toMatchObject({ status: "FAILED", errorCount: 10, lastError: "boom", cursorPosition: null, cursor: null, pendingEvents: null, backedOff: true, description: null });
     await app.dispose();
   });
 

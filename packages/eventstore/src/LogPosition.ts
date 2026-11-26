@@ -1,11 +1,12 @@
 // A point in the global event log: `position` is the event's sequence number, `transactionId` the
 // Postgres transaction that appended it. There are no per-entity streams in this framework, so this
 // is a position in the ONE shared log (what `load` returns and what an append condition compares
-// against: "fail if anything matching this query appeared after position N").
+// against: "fail if anything matching this query appeared after position N"). A transaction id of "0" is no transaction: the start of the
+// log, or a bound by position alone; it is never null, so "no transaction" has one spelling, as in `LogPoint`.
 export interface LogPosition {
   readonly position: bigint;
   readonly occurredAt: Date | null;
-  readonly transactionId: string | null;
+  readonly transactionId: string;
 }
 
 // A plain function that throws does the validation - there's no
@@ -26,7 +27,7 @@ export const latest = (a: LogPosition, b: LogPosition): LogPosition => (earliest
 
 export const earliest = (a: LogPosition, b: LogPosition): LogPosition => {
   const ax = a.transactionId, bx = b.transactionId;
-  const useXid = ax !== null && ax !== "0" && bx !== null && bx !== "0" && BigInt(ax) !== BigInt(bx);
+  const useXid = ax !== "0" && bx !== "0" && BigInt(ax) !== BigInt(bx);
   // Stryker disable next-line EqualityOperator: `useXid` holds only when the two ids differ, so `<` and `<=` give the same answer here.
   if (useXid) return BigInt(ax) < BigInt(bx) ? a : b;
   return a.position <= b.position ? a : b;
