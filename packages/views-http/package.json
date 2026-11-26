@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/ConsistentRead.ts",
+    "./LiveFeedApi": "./src/LiveFeedApi.ts",
+    "./LiveFeedLive": "./src/LiveFeedLive.ts",
     "./ReadConsistency": "./src/ReadConsistency.ts",
     "./ReadProblems": "./src/ReadProblems.ts",
     "./ReadQuery": "./src/ReadQuery.ts"

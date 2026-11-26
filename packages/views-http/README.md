@@ -8,6 +8,10 @@ write; with no marker it waits for everything committed. The default is strict: 
 - **`makeConsistentRead`** (`/ReadConsistency`, `/ReadQuery`) - wrap a read handler so it honours the marker, with a policy (strict, or bounded and marked stale).
   The waiting itself is `settleViews` from [`@crablet/views`](../views/README.md): one statement for where the log ends and where each view is, then a wait for only the views still behind ([ADR-0015](../../docs/adr/0015-read-consistency-by-marker.md)).
 - Write a read group against the API's own type (`HttpApiBuilder.group(api, "courseQueries", ...)` with `api: CourseApi`), not generic over any API: `consistentRead`'s `parse` and handler are then typed from the endpoint, with nothing annotated.
+- **`liveFeedGroup(name)`** (`/LiveFeedApi`, browser-safe) and **`liveFeedHandler({ views, maxLifetime })`** (`/LiveFeedLive`) - the live feed,
+  `GET /api/views/changes?views=a,b`: server-sent "this view moved" pings, a hint for a page to read again ([ADR-0016](../../docs/adr/0016-one-listen-per-process-for-view-progress.md)).
+  Add the group to your API under your name, and register the handler in one line (the course does it in `src/api/CourseFeedApiLive.ts`); an unknown
+  view name is a `400`, and each connection ends after `maxLifetime` (default 5 minutes) so no proxy holds it for ever.
 - **`ReadProblems`** - the `503` (`ViewsUnavailable`) and the other problem bodies, as schema fragments to add to your endpoints.
 
 ## Depends on
