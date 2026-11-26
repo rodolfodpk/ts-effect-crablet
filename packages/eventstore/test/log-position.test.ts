@@ -2,13 +2,16 @@ import { describe, expect, test } from "bun:test";
 import * as LogPosition from "../src/LogPosition.ts";
 
 const at = (position: bigint, transactionId: string) => LogPosition.of(position, new Date(0), transactionId);
-// A cursor with no transaction id ("0"): what a read with no cursor starts from (eventstore's internal/sql.ts).
-const noXid = (position: bigint): LogPosition.LogPosition => ({ position, occurredAt: null, transactionId: "0" });
 
 describe("LogPosition.of", () => {
   test("refuses a negative position, and takes zero", () => {
     expect(() => LogPosition.of(-1n, new Date(0), "1")).toThrow("LogPosition cannot be negative");
     expect(LogPosition.of(0n, new Date(0), "1").position).toBe(0n);
+  });
+
+  test("refuses a point after the start without its transaction id: \"0\" is the start of the log only", () => {
+    expect(() => LogPosition.of(5n, new Date(0), "0")).toThrow("needs its event's transaction id");
+    expect(LogPosition.of(0n, new Date(0), "0").transactionId).toBe("0");
   });
 });
 
@@ -28,25 +31,11 @@ describe("LogPosition.earliest", () => {
     expect(LogPosition.earliest(b, a)).toBe(a);
   });
 
-  test("by position when a cursor has no transaction id (the zero cursor, or an old-style position)", () => {
+  test("the start of the log (\"0\") sorts before every real point", () => {
     const zero = LogPosition.zero();
     const real = at(5n, "9");
     expect(LogPosition.earliest(zero, real)).toBe(zero);
     expect(LogPosition.earliest(real, zero)).toBe(zero);
-    const early = at(3n, "0");
-    const late = at(8n, "0");
-    expect(LogPosition.earliest(late, early)).toBe(early);
-  });
-
-  test("by position, not by transaction id, when either id is the zero cursor's \"0\" or missing, even where the two orders disagree", () => {
-    // Compared by id, the "0" (or the missing one) would always sort first; by position it is the later one here.
-    const oldStyle = at(10n, "0");
-    const real = at(5n, "9");
-    expect(LogPosition.earliest(oldStyle, real)).toBe(real);
-    expect(LogPosition.earliest(real, oldStyle)).toBe(real);
-    expect(LogPosition.earliest(noXid(10n), real)).toBe(real);
-    expect(LogPosition.earliest(real, noXid(10n))).toBe(real);
-    expect(LogPosition.earliest(noXid(3n), noXid(8n)).position).toBe(3n);
   });
 
   test("equal cursors give the first", () => {
