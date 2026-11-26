@@ -8,7 +8,7 @@ import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import * as Schema from "effect/Schema";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, makeEventStoreLayer } from "@crablet/eventstore";
-import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit } from "@crablet/commands/Command";
 import { defineEvent } from "@crablet/commands/Event";

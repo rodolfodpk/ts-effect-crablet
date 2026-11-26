@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
-import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import * as LogPosition from "@crablet/eventstore/LogPosition";
 import * as Query from "@crablet/eventstore/Query";
 import { CommandExecutorLive } from "@crablet/commands";

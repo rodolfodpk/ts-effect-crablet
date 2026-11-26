@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive, type StoredEvent } from "@crablet/eventstore";
-import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { startTestDb, type TestDb } from "@crablet/test-support";

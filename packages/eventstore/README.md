@@ -37,7 +37,6 @@ framework sits on top of this package.
 - **`Leader`** - a session-level advisory lock for "one process runs this"; **`SessionClients`** - an optional direct connection for the leader and LISTEN when the application's connection goes through a pooler in transaction mode ([ADR-0024](../../docs/adr/0024-session-connections-for-leader-and-listen.md)).
 - **`EventDecoding`** - the typed `EventDecodingError` for a stored event that cannot be read.
 - **`Storage`** - `storageReport()` and `monitorStorage()`: the size of the log and its indexes ([ADR-0019](../../docs/adr/0019-storage-visibility-and-the-tag-table.md)).
-- **`CommandAuditStore`** - the optional audit of commands.
 - **`testing/InMemoryEventStore`** and **`spec/Spec`** - an in-memory store with the same rules as Postgres, and the conformance suite both must pass.
 
 ## Internal

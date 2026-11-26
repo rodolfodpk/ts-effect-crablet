@@ -3,7 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, makeEventStoreLayer, type EventStoreConfig } from "@crablet/eventstore";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "../../src/CommandExecutor.ts";
 import { AuditConfigRef, type AuditConfig } from "../../src/CommandAudit.ts";
 

@@ -8,7 +8,7 @@ import { PgClient } from "@effect/sql-pg";
 import * as Schema from "effect/Schema";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive, type StoredEvent } from "@crablet/eventstore";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { CommandExecutor, CommandExecutorLive, type CommandExecutorService } from "@crablet/commands";
 import * as EventSelection from "@crablet/event-poller/EventSelection";

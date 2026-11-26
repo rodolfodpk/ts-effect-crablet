@@ -9,7 +9,7 @@ import { isDomainProblem } from "@crablet/commands-http/ClientErrors";
 import { FetchHttpClient } from "effect/http";
 import { PgClient } from "@effect/sql-pg";
 import { EventStoreLive } from "@crablet/eventstore";
-import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
 import { startTestDb, type TestDb } from "@crablet/test-support";

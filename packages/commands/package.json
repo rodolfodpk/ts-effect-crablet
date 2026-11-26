@@ -11,6 +11,7 @@
     "./Deadline": "./src/Deadline.ts",
     "./Personal": "./src/Personal.ts",
     "./CommandAudit": "./src/CommandAudit.ts",
+    "./CommandAuditStore": "./src/CommandAuditStore.ts",
     "./Model": "./src/Model.ts",
     "./Period": "./src/Period.ts",
     "./Errors": "./src/Errors.ts",

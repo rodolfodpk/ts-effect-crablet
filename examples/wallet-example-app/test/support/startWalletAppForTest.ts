@@ -5,7 +5,7 @@ import { PgClient } from "@effect/sql-pg";
 import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import type { EventStore } from "@crablet/eventstore";
-import type { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
+import type { CommandAuditStore } from "@crablet/commands/CommandAuditStore";
 import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { PollingFromConfig as Polling } from "@crablet/app";

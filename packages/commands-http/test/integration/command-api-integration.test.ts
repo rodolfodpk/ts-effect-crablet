@@ -10,7 +10,7 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { parseMarker } from "@crablet/eventstore/Marker";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";

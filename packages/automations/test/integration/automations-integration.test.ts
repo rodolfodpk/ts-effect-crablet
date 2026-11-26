@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import * as Schema from "effect/Schema";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
