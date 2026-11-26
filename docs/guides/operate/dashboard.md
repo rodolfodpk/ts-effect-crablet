@@ -46,23 +46,21 @@ handlers, stored events that cannot be read, bytes per event) are in `ops/grafan
 
 Three things, all in the example's entry point.
 
-**1. Export over OTLP**, only when an endpoint is configured. Effect ships the exporter; nothing to install.
+**1. Export over OTLP**, only when an endpoint is configured: `Crablet.observability` (`@crablet/app`), from the standard variables
+(`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_INSTANCE_ID`). Effect ships the exporter; nothing to install. Every instance names
+itself (`service.instance.id`, by default the host name, the pod name on Kubernetes): without it two instances export the same series and `rate()`
+reads 20 to 30 times the real rate.
 
-<!-- file: examples/wallet-example-app/src/Observability.ts#otlp -->
+<!-- file: packages/app/src/Observability.ts#observability -->
 ```ts
-export const observabilityLayer = (env: Readonly<Record<string, string | undefined>> = process.env): Layer.Layer<never> => {
-  const endpoint = env["OTEL_EXPORTER_OTLP_ENDPOINT"];
-  if (endpoint === undefined || endpoint === "") return Layer.empty;
-  return Otlp.layerJson({
-    baseUrl: endpoint,
-    resource: { serviceName: env["OTEL_SERVICE_NAME"] ?? "wallet-example-app", attributes: { "service.instance.id": env["OTEL_SERVICE_INSTANCE_ID"] ?? hostname() } },
-    metricsExportInterval: "5 seconds",
-    loggerMergeWithExisting: true
-  }).pipe(Layer.provide(FetchHttpClient.layer));
-};
+// `Crablet.observability("wallet-example-app")`: the settings read from the configuration, then the exporter. A bad value fails the layer with a
+// `ConfigError` naming the variable. Provide it next to the application layer, once, at the top.
+export const observability = (serviceName: string, options: ObservabilityOptions = {}): Layer.Layer<never, Config.ConfigError> =>
+  Layer.unwrap(Effect.map(Effect.gen(function* () { return yield* observabilityConfig(serviceName); }), (settings) => otlpLayer(settings, options)));
 ```
 
-Provide it next to your application layer: `Effect.provide(Effect.scoped(program), Layer.mergeAll(appLayer, observabilityLayer()))`. Closing the scope flushes what is still buffered.
+Provide it next to your application layer, once: `NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(processes, Crablet.observability("wallet-example-app"))))`.
+Closing the scope flushes what is still buffered.
 With it, the metrics, the spans (`crablet.command`, `crablet.eventstore.append`, `crablet.poller.batch`, [Monitor it](monitor-it.md#traces-and-log-context)) and the logs arrive, and a log line carries the trace id of the request that wrote it.
 
 **2. Report the consumers and storage.** `Crablet.processors` and `Crablet.processorsFor` (`@crablet/app`) do it for the modules a process runs, for as long as its layer
