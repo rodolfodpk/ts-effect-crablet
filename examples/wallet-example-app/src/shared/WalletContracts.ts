@@ -4,7 +4,7 @@
 import * as Schema from "effect/Schema";
 import { defineContract } from "@crablet/commands/Contract";
 import { personal } from "@crablet/commands/Personal";
-import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "./errors/WalletErrors.ts";
+import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "./WalletErrors.ts";
 import { NonBlank, NonNegative, Positive } from "./WalletInputs.ts";
 
 export const OpenWalletContract = defineContract({

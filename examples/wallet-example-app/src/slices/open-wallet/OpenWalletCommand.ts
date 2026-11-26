@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema";
 import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Domain";
-import { OpenWalletContract } from "../WalletContracts.ts";
-import { WalletOpened, WalletOpeningModel } from "../WalletModel.ts";
-import { WalletAlreadyExists } from "../errors/WalletErrors.ts";
+import { OpenWalletContract } from "../../shared/WalletContracts.ts";
+import { WalletOpened, WalletOpeningModel } from "../../shared/WalletModel.ts";
+import { WalletAlreadyExists } from "../../shared/WalletErrors.ts";
 
 export type OpenWalletCommand = Schema.Schema.Type<(typeof OpenWalletContract)["input"]>;
 

@@ -2,11 +2,11 @@
 // uses a schema that renders wrongly (see commands-http/src/InputJsonSchema.ts).
 import { describe, expect, test } from "bun:test";
 import { inputJsonSchema, inputJsonSchemaProblems } from "@crablet/commands-http/InputJsonSchema";
-import { CloseWallet } from "../src/domain/commands/CloseWalletCommand.ts";
-import { Deposit } from "../src/domain/commands/DepositCommand.ts";
-import { OpenWallet } from "../src/domain/commands/OpenWalletCommand.ts";
-import { TransferMoney } from "../src/domain/commands/TransferMoneyCommand.ts";
-import { Withdraw } from "../src/domain/commands/WithdrawCommand.ts";
+import { CloseWallet } from "../src/slices/close-wallet/CloseWalletCommand.ts";
+import { Deposit } from "../src/slices/deposit/DepositCommand.ts";
+import { OpenWallet } from "../src/slices/open-wallet/OpenWalletCommand.ts";
+import { TransferMoney } from "../src/slices/transfer-money/TransferMoneyCommand.ts";
+import { Withdraw } from "../src/slices/withdraw/WithdrawCommand.ts";
 
 const commands = [OpenWallet, Deposit, Withdraw, TransferMoney, CloseWallet];
 

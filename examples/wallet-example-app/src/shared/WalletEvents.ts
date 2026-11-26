@@ -1,4 +1,4 @@
-import * as M from "../WalletModel.ts";
+import * as M from "./WalletModel.ts";
 
 // Event type names and payload types for the READ side (views, automations, tests that build raw
 // events), derived from the event definitions in WalletModel.ts - the single source of truth - so

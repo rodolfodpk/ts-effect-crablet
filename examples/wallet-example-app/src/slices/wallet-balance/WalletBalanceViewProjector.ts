@@ -1,7 +1,7 @@
 import { defineView } from "@crablet/views/ProjectedView";
 import { decimal, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
-import * as WalletTags from "../domain/WalletTags.ts";
-import * as Wallet from "../domain/WalletModel.ts";
+import * as WalletTags from "../../shared/WalletTags.ts";
+import * as Wallet from "../../shared/WalletModel.ts";
 
 export const walletBalanceTable = viewTable("wallet_balance_view", {
   key: { wallet_id: text() },
@@ -14,7 +14,7 @@ export const walletBalanceTable = viewTable("wallet_balance_view", {
 //
 // An increment is not idempotent by itself, but the view's batch and its cursor commit in one transaction (ViewsModule: `atomically`, ADR-0023), so a batch handled twice is applied once.
 //
-// WalletClosed deletes the row - the subscription (WalletViewConfig.ts) deliberately includes it for this view.
+// WalletClosed deletes the row: this view handles it on purpose.
 export const WalletBalanceView = defineView("wallet-balance-view", { tables: [walletBalanceTable], anyOfTags: WalletTags.ANY_WALLET })
   .on(Wallet.WalletOpened, (d) =>
     walletBalanceTable.insert({ wallet_id: d.walletId, owner: d.owner, balance: d.initialBalance, last_updated_at: d.openedAt }, { onConflict: "replace" })

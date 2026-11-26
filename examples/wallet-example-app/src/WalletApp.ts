@@ -6,17 +6,17 @@ import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
 import { eventPayloadMask } from "@crablet/commands/Personal";
-import * as M from "./domain/WalletModel.ts";
-import { WelcomeNotificationSent } from "./domain/notification/WelcomeNotificationSent.ts";
+import * as M from "./shared/WalletModel.ts";
+import { WelcomeNotificationSent } from "./slices/welcome-notification/WelcomeNotificationSent.ts";
 import { serveApi } from "@crablet/commands-http/ServeApi";
 import { walletQueryGroup } from "./api/WalletQueryApi.ts";
 import { makeWalletQueryApiLive } from "./api/WalletQueryApiLive.ts";
-import { OpenWallet } from "./domain/commands/OpenWalletCommand.ts";
-import { walletContracts } from "./domain/WalletContracts.ts";
-import { Deposit } from "./domain/commands/DepositCommand.ts";
-import { Withdraw } from "./domain/commands/WithdrawCommand.ts";
-import { TransferMoney } from "./domain/commands/TransferMoneyCommand.ts";
-import { CloseWallet } from "./domain/commands/CloseWalletCommand.ts";
+import { OpenWallet } from "./slices/open-wallet/OpenWalletCommand.ts";
+import { walletContracts } from "./shared/WalletContracts.ts";
+import { Deposit } from "./slices/deposit/DepositCommand.ts";
+import { Withdraw } from "./slices/withdraw/WithdrawCommand.ts";
+import { TransferMoney } from "./slices/transfer-money/TransferMoneyCommand.ts";
+import { CloseWallet } from "./slices/close-wallet/CloseWalletCommand.ts";
 
 export interface WalletAppConfig {
   readonly basePath?: string | undefined;

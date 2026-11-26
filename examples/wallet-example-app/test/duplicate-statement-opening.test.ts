@@ -3,8 +3,8 @@
 import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { given } from "@crablet/commands/testing/Scenario";
-import { Deposit } from "../src/domain/commands/DepositCommand.ts";
-import { WalletOpened, WalletStatementOpened } from "../src/domain/WalletModel.ts";
+import { Deposit } from "../src/slices/deposit/DepositCommand.ts";
+import { WalletOpened, WalletStatementOpened } from "../src/shared/WalletModel.ts";
 
 const at = DateTime.nowUnsafe();
 const dep = (walletId: string, depositId: string, amount: number) => ({ depositId, walletId, amount, description: "" });

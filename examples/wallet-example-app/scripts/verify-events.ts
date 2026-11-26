@@ -9,8 +9,8 @@
 import { Effect, Redacted } from "effect";
 import * as Crablet from "@crablet/app";
 import { formatEventsReport, verifyEvents } from "@crablet/commands/VerifyEvents";
-import * as M from "../src/domain/WalletModel.ts";
-import { WelcomeNotificationSent } from "../src/domain/notification/WelcomeNotificationSent.ts";
+import * as M from "../src/shared/WalletModel.ts";
+import { WelcomeNotificationSent } from "../src/slices/welcome-notification/WelcomeNotificationSent.ts";
 
 const arg = (name: string): string | undefined => {
   const i = process.argv.indexOf(`--${name}`);

@@ -1,8 +1,8 @@
 import { DateTime } from "effect";
 import { describe, test } from "bun:test";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
-import { walletOpenedAutomation } from "../src/automations/WalletOpenedAutomation.ts";
-import { WalletOpened } from "../src/domain/WalletModel.ts";
+import { walletOpenedAutomation } from "../src/slices/welcome-notification/WalletOpenedAutomation.ts";
+import { WalletOpened } from "../src/shared/WalletModel.ts";
 
 describe("the wallet's automations are idempotent", () => {
   // #region automation-idempotency-test

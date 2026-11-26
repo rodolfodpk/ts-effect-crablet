@@ -29,12 +29,17 @@ Its architecture as C4 diagrams (context, containers, components): [C4 models](.
 
 ## Where things are
 
+The code is cut into vertical slices of the event model, one folder each; `src/processes.ts` and `src/WalletApp.ts` only gather what the slices list
+([several products in one repository](../../docs/guides/structure/monorepo-with-products.md)).
+
 | Path | What |
 |---|---|
-| `src/domain/` | events, `WalletModel`, tags, the commands (one file each), the contracts, errors, statement periods |
-| `src/views/` | four views declared with `defineView` (what each event does to its tables); `WalletSummaryViewProjector` shows `upsert` with `add` and `max`, `WalletStatementViewProjector` routes by tag |
-| `src/automations/` | `WalletOpenedAutomation` - an event issues a follow-up command |
-| `src/WalletApp.ts` | composes the commands, views, automation, outbox (with a logging publisher) and the HTTP API |
+| `src/slices/open-wallet/`, `deposit/`, `withdraw/`, `transfer-money/`, `close-wallet/` | one write command each, served over HTTP |
+| `src/slices/wallet-balance/`, `wallet-transactions/`, `wallet-summary/`, `wallet-statement/` | one view each, declared with `defineView` (what each event does to its tables); `WalletSummaryViewProjector` shows `upsert` with `add` and `max`, `WalletStatementViewProjector` routes by tag |
+| `src/slices/welcome-notification/` | `WalletOpenedAutomation`, the command it runs and the event it records: an event issues a follow-up command |
+| `src/shared/` | what every slice uses: the events and `WalletModel`, tags, statement periods, the contracts (the public write API), errors |
+| `src/processes.ts` | the modules, from what each slice's `index.ts` lists, with the per-view settings and the outbox topic |
+| `src/WalletApp.ts` | composes the commands and the HTTP API, with the admin API |
 | `src/api/` | the read endpoints, keyset paging and problem bodies |
 | `db/migration/` | this app's own tables (V100 and up) |
 | `scripts/` | `generate-openapi.ts` (`bun run docs:api` at the root; writes [`docs/api/wallet-openapi.json`](../../docs/api/wallet-openapi.json)), `verify-events.ts` (decode stored events with the current definitions; run it in CI before a deploy that changes an event), `report-storage.ts` (the space the library's tables use) |

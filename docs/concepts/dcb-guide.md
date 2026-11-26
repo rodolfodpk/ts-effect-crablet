@@ -223,8 +223,8 @@ commands share.
 A command that can safely run in parallel with itself - say a deposit, which only ever adds - can say
 `consistency: () => concurrent({ guard })`: concurrent runs do not conflict with each other, and only the
 `guard` events (for example "is the account closed?") can still refuse the append. The real wallet example uses
-this for deposits; see `examples/wallet-example-app/src/domain/commands/`. The full-size version of the transfer,
-with statement periods and lifecycle checks, is `TransferMoneyCommand.ts` there.
+this for deposits; see `examples/wallet-example-app/src/slices/deposit/`. The full-size version of the transfer,
+with statement periods and lifecycle checks, is `src/slices/transfer-money/TransferMoneyCommand.ts`.
 
 ### A worked example: two deposits, then a withdrawal
 

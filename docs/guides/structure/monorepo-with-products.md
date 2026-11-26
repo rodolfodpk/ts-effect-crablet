@@ -49,8 +49,9 @@ export const courseModules = (options: CourseModulesOptions = {}) =>
     .with(Deadlines.module({ commands: [...paymentsDeadlineCommands, ...confirmCourseDeadlineCommands, ...monthlyFeeDeadlineCommands] }));
 ```
 
-The course is in slices (`src/slices/`, with `src/shared/` for the events several slices emit); its HTTP reads stay in `src/api/`, because one group of read
-endpoints serves two slices' views. The wallet is still organized by technical layer (`domain/`, `views/`, `api/`, `automations/`). Prefer slices for a new product.
+Both examples are laid out this way, with `src/shared/` for the events several slices emit. Their HTTP reads stay in `src/api/`, because one group of
+read endpoints serves the views of several slices. The wallet keeps its contracts together in `src/shared/WalletContracts.ts`, the public write API
+in one file, where the shape above gives each slice its own.
 
 ## 2. Between products
 

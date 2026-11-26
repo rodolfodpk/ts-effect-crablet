@@ -6,8 +6,8 @@ import { describe, test } from "bun:test";
 import path from "node:path";
 import { loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
 import { assertModelImpact, eventFactsFromFixtures, modelFactsOf } from "@crablet/commands/ModelImpact";
-import * as M from "../src/domain/WalletModel.ts";
-import { WelcomeNotificationSent } from "../src/domain/notification/WelcomeNotificationSent.ts";
+import * as M from "../src/shared/WalletModel.ts";
+import { WelcomeNotificationSent } from "../src/slices/welcome-notification/WelcomeNotificationSent.ts";
 
 describe("the wallet's decision models", () => {
   test("every event type that carries a model's binding tag is accounted for, or already in the baseline", () => {

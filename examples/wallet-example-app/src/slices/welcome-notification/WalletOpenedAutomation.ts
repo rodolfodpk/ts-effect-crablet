@@ -1,6 +1,6 @@
 import { defineAutomation } from "@crablet/automations/AutomationHandler";
-import * as Wallet from "../domain/WalletModel.ts";
-import { SendWelcomeNotification } from "../domain/notification/SendWelcomeNotificationCommand.ts";
+import * as Wallet from "../../shared/WalletModel.ts";
+import { SendWelcomeNotification } from "./SendWelcomeNotificationCommand.ts";
 
 // The one automation in this app: WalletOpened -> SendWelcomeNotification -> WelcomeNotificationSent
 // (idempotent per wallet_id, so a redelivered WalletOpened just re-triggers a no-op notification send,

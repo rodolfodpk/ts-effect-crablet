@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema";
 import { byModel, defineCommand, emit, fail, noop } from "@crablet/commands/Domain";
-import { WalletNotFound } from "../errors/WalletErrors.ts";
-import { CloseWalletContract } from "../WalletContracts.ts";
-import { WalletClosed, WalletLifecycleModel } from "../WalletModel.ts";
+import { WalletNotFound } from "../../shared/WalletErrors.ts";
+import { CloseWalletContract } from "../../shared/WalletContracts.ts";
+import { WalletClosed, WalletLifecycleModel } from "../../shared/WalletModel.ts";
 
 export type CloseWalletCommand = Schema.Schema.Type<(typeof CloseWalletContract)["input"]>;
 

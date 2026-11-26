@@ -1,7 +1,7 @@
 import { defineView, type ViewContext } from "@crablet/views/ProjectedView";
 import { decimal, integer, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
-import * as WalletTags from "../domain/WalletTags.ts";
-import * as Wallet from "../domain/WalletModel.ts";
+import * as WalletTags from "../../shared/WalletTags.ts";
+import * as Wallet from "../../shared/WalletModel.ts";
 
 export const walletStatementTable = viewTable("wallet_statement_view", {
   key: { statement_id: text() },

@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Domain";
-import { InsufficientFunds, WalletNotFound } from "../errors/WalletErrors.ts";
-import { WithdrawContract } from "../WalletContracts.ts";
-import { WalletPeriodModel, WithdrawalMade, statementTags } from "../WalletModel.ts";
-import * as WalletTags from "../WalletTags.ts";
+import { InsufficientFunds, WalletNotFound } from "../../shared/WalletErrors.ts";
+import { WithdrawContract } from "../../shared/WalletContracts.ts";
+import { WalletPeriodModel, WithdrawalMade, statementTags } from "../../shared/WalletModel.ts";
+import * as WalletTags from "../../shared/WalletTags.ts";
 
 export type WithdrawCommand = Schema.Schema.Type<(typeof WithdrawContract)["input"]>;
 

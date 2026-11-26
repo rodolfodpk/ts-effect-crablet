@@ -18,8 +18,8 @@ Migrations applied.
 
 If `docker compose up -d` fails because port 5432 is taken, start the database on another port with `COURSES_DB_PORT=5433 docker compose up -d` and put the same `COURSES_DB_PORT=5433` in front of every command in this step and the next ones ([if something fails](README.md#if-something-fails)).
 
-The domain in `src/domain/Enrolment.ts` is the **final** one: step 1's rule plus the student limit. This is the DCB moment - compare
-with step 1. The events and models now look at each other from two sides. The events are in a module of their own, `src/domain/enrolment.events.ts`,
+The domain in `src/slices/enrolment/Enrolment.ts` is the **final** one: step 1's rule plus the student limit. This is the DCB moment - compare
+with step 1. The events and models now look at each other from two sides. The events are in a module of their own, `src/shared/enrolment.events.ts`,
 because the payments read them too:
 
 <!-- file: examples/course-enrolment-app/src/shared/enrolment.events.ts#events -->
@@ -63,10 +63,10 @@ export const StudentModel = defineModel({ by: "student_id", initial: () => ({ co
 ```
 
 A subscription can also be given back: `SubscriptionReleased`, appended when one is left unpaid (the course app's payments,
-`src/domain/Payments.ts`). Both models undo it, and that is all a release takes; the rules below do not change.
+`src/slices/payments/Payments.ts`). Both models undo it, and that is all a release takes; the rules below do not change.
 
 A command has two parts. Its **contract** - its name, its input Schema and the domain errors it can fail with - is the public part. It lives in
-`src/domain/enrolment.contract.ts` (the error classes too), and that file imports nothing that decides anything:
+`src/slices/enrolment/enrolment.contract.ts` (the error classes too), and that file imports nothing that decides anything:
 
 <!-- file: examples/course-enrolment-app/src/slices/enrolment/enrolment.contract.ts#contracts -->
 ```ts
@@ -116,10 +116,10 @@ export const Subscribe = defineCommand({
 `decide` also receives `now`, the instant of this attempt from the clock, and the subscription records it (`subscribedAt`): a rule about time reads
 that business time later, and a test fixes the clock with `at(now)`.
 
-Both models also undo `CourseCancelled`, a course that was not ready in time (`src/domain/CourseStart.ts`): one event tagged with the course and every
+Both models also undo `CourseCancelled`, a course that was not ready in time (`src/slices/confirm-course/CourseStart.ts`): one event tagged with the course and every
 student it had, so each of them gets the seat and the slot back in the same append. `Subscribe` refuses a cancelled course.
 
-The decision also sets a **deadline**: when the payment window closes, three days on, `ReleaseUnpaidSubscription` (in `src/domain/Payments.ts`) runs
+The decision also sets a **deadline**: when the payment window closes, three days on, `ReleaseUnpaidSubscription` (in `src/slices/payments/Payments.ts`) runs
 and gives back a seat that was not paid for; for a paid one it answers that it is paid. It is appended with the subscription, so it exists exactly when
 the subscription does. You do not need it to follow this tutorial: [Set a deadline](../guides/build/set-a-deadline.md) explains it.
 

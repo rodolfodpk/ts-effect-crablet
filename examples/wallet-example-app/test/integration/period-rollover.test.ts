@@ -16,13 +16,13 @@ import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { atClock, pausableDeposit, pausableTransfer, pausableWithdraw } from "../support/clocked-commands.ts";
-import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
-import { Withdraw } from "../../src/domain/commands/WithdrawCommand.ts";
-import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
+import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
+import { Withdraw } from "../../src/slices/withdraw/WithdrawCommand.ts";
+import { OpenWallet } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
 import * as Tag from "@crablet/eventstore/Tag";
-import { DepositMade, WalletModel, WalletOpened, WalletStatementClosed, WalletStatementOpened } from "../../src/domain/WalletModel.ts";
-import { TransferMoney } from "../../src/domain/commands/TransferMoneyCommand.ts";
-import * as WalletTags from "../../src/domain/WalletTags.ts";
+import { DepositMade, WalletModel, WalletOpened, WalletStatementClosed, WalletStatementOpened } from "../../src/shared/WalletModel.ts";
+import { TransferMoney } from "../../src/slices/transfer-money/TransferMoneyCommand.ts";
+import * as WalletTags from "../../src/shared/WalletTags.ts";
 
 // The tests move the Effect clock to other months. The wake-up window (EventStoreConfig.wakeupMode) measures time with that same clock, and a clock in the future makes it schedule a timer for days that keeps the
 // process alive: wake-ups are off here, nothing listens for them.

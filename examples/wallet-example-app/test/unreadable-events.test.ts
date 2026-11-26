@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
-import { walletOpenedAutomation } from "../src/automations/WalletOpenedAutomation.ts";
-import * as WalletEvents from "../src/domain/events/WalletEvents.ts";
+import { walletOpenedAutomation } from "../src/slices/welcome-notification/WalletOpenedAutomation.ts";
+import * as WalletEvents from "../src/shared/WalletEvents.ts";
 
 const event = (data: unknown): StoredEvent => ({
   eventId: crypto.randomUUID(),

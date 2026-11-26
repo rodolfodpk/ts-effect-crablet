@@ -4,8 +4,8 @@
 import { describe, test } from "bun:test";
 import path from "node:path";
 import { assertEventFixtures, loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
-import * as M from "../src/domain/WalletModel.ts";
-import { WelcomeNotificationSent } from "../src/domain/notification/WelcomeNotificationSent.ts";
+import * as M from "../src/shared/WalletModel.ts";
+import { WelcomeNotificationSent } from "../src/slices/welcome-notification/WelcomeNotificationSent.ts";
 
 describe("the wallet's events", () => {
   test("every stored shape still decodes, derives the tags it was stored with, and every event type has a fixture", () => {
