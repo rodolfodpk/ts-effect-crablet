@@ -16,6 +16,9 @@ export interface LogPosition {
 // any Effect, so there's no typed error channel to put it in.
 export const of = (position: bigint, occurredAt: Date, transactionId: string): LogPosition => {
   if (position < 0n) throw new Error("LogPosition cannot be negative");
+  // "0" is no transaction, which only the start of the log has. A later point needs the transaction that appended its event: with "0" a read
+  // would compare by position alone and an append condition by the pair, where every real transaction is after 0, so the two would disagree.
+  if (transactionId === "0" && position > 0n) throw new Error("LogPosition after the start needs its event's transaction id, not \"0\"");
   return { position, occurredAt, transactionId };
 };
 

@@ -18,6 +18,13 @@ import * as Query from "../../src/Query.ts";
 import * as Tag from "../../src/Tag.ts";
 import { append, read, type Harness } from "../conformance/ops.ts";
 
+// A cursor at position k in ONE store: that store's own event k, with its own transaction id (the two stores' ids differ), or the start.
+const cursorAt = async (h: Harness, k: number): Promise<LogPosition.LogPosition> => {
+  if (k === 0) return LogPosition.zero();
+  const event = (await read(h, Query.of([]))).state.find((e) => e.position === BigInt(k))!;
+  return LogPosition.of(event.position, new Date(0), event.transactionId);
+};
+
 let db: TestDb;
 let pg: Harness;
 
@@ -117,15 +124,13 @@ describe("differential: in-memory vs Postgres", () => {
               .data({ step })
               .build()
           );
-          const condition =
-            r.next() < 0.6
-              ? AppendCondition.of(
-                  LogPosition.of(BigInt(r.int(Number(head) + 1)), new Date(0), "0"),
-                  r.next() < 0.75 ? randomQuery(r) : Query.noCondition(),
-                  r.next() < 0.4 ? randomQuery(r) : Query.noCondition()
-                )
-              : undefined;
-          const expected = await append(memH, events, condition);
+          const conditional = r.next() < 0.6;
+          const k = r.int(Number(head) + 1);
+          const concurrency = r.next() < 0.75 ? randomQuery(r) : Query.noCondition();
+          const idempotency = r.next() < 0.4 ? randomQuery(r) : Query.noCondition();
+          const conditionIn = async (h: Harness) => (conditional ? AppendCondition.of(await cursorAt(h, k), concurrency, idempotency) : undefined);
+          const condition = await conditionIn(pg);
+          const expected = await append(memH, events, await conditionIn(memH));
           const actual = await append(pg, events, condition);
           assert.equal(actual, expected, `${where}: append outcome differs (postgres=${actual}, in-memory=${expected})`);
           seen[actual] += 1;
@@ -133,13 +138,13 @@ describe("differential: in-memory vs Postgres", () => {
           if (actual === "ok") head += BigInt(events.length);
         } else {
           const query = randomQuery(r);
-          const after = LogPosition.of(BigInt(r.int(Number(head) + 1)), new Date(0), "0");
+          const k = r.int(Number(head) + 1);
           const summarize = (x: Awaited<ReturnType<typeof read>>) => ({
             position: x.logPosition.position,
             events: x.state.map((e) => [e.position, e.type, e.tags.map((t) => `${t.key}=${t.value}`).sort(), e.data])
           });
-          const fromPostgres = summarize(await read(pg, query, after));
-          assert.deepEqual(fromPostgres, summarize(await read(memH, query, after)), `${where}: read differs`);
+          const fromPostgres = summarize(await read(pg, query, await cursorAt(pg, k)));
+          assert.deepEqual(fromPostgres, summarize(await read(memH, query, await cursorAt(memH, k))), `${where}: read differs`);
           seen.reads += 1;
           if (fromPostgres.events.length > 0) seen.readsWithResults += 1;
         }
