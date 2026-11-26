@@ -16,7 +16,8 @@ import type { Effect } from "effect";
 // exactly like comparing plain strings, because that's all they are.
 export type ProcessorStatus = "ACTIVE" | "PAUSED" | "FAILED";
 
-// How far a processor has read: a point in the log in (transaction_id, position) order.
+// How far a processor has read: a point in the log in (transaction_id, position) order. It is `LogPoint` (`@crablet/eventstore/LogPoint`), the
+// type of a write marker too, declared here so this package depends on no other; `@crablet/event-poller` keeps the two equal by a type test.
 //
 // Not a bare position: `position` is taken from a sequence when a row is inserted and `transaction_id` is the
 // xid of the inserting transaction, and the two can come in opposite orders. A cursor on the position alone can

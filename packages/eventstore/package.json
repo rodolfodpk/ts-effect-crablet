@@ -11,6 +11,7 @@
     "./Tag": "./src/Tag.ts",
     "./Query": "./src/Query.ts",
     "./LogPosition": "./src/LogPosition.ts",
+    "./LogPoint": "./src/LogPoint.ts",
     "./Cursor": "./src/Cursor.ts",
     "./Postgres": "./src/Postgres.ts",
     "./Marker": "./src/Marker.ts",

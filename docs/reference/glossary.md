@@ -29,22 +29,22 @@ Plain-words definitions, in the order you meet them. Each links to where the ter
 ## Positions and delivery
 
 - **Position** - the number an event gets in the log when it is stored. On its own it is not an order: it is taken from a sequence on insert, the transaction id when the transaction starts, and the two can come in opposite orders. Every point below is a `(transaction_id, position)` pair for that reason, so a late-committing transaction is never skipped. [ADR-0012](../adr/0012-transaction-position-cursors.md)
-- **Cursor** - how far a consumer has read: a processor's progress (`ProgressCursor`) or where a paged `read` stopped (`Cursor`). The four types of point in the log are below.
+- **Cursor** - how far a consumer has read: a processor's progress (`ProgressCursor`) or where a paged `read` stopped (`Cursor`). Both are a `LogPoint`, below.
 
-### The four points in the log
+### Points in the log
 
-All four name an event by its `(transaction_id, position)` and compare in that order. They differ in who makes them, who takes them back, and whether they cross the wire.
+Two types name an event by its `(transaction_id, position)` and compare in that order: `LogPoint`, under three names, and `LogPosition`.
 
-| Type | Module | Shape | Made by | Taken by | Crosses the wire |
-|---|---|---|---|---|---|
-| `LogPosition` | `@crablet/eventstore/LogPosition` | `{ position, transactionId \| null, occurredAt \| null }` | `load` (`logPosition`, `horizon`, `latest`) | an append condition's `after`: "fail if a matching event appeared after this" | no |
-| `Marker` | `@crablet/eventstore/Marker` | `{ transactionId, position }`; text `"<transactionId>:<position>"` (`formatMarker`, `parseMarker`) | a command's `ExecutionResult.marker`, where its write ended | a read with `?consistentWith=<marker>`, `waitUntilProcessed(view, marker)` | yes, the client holds it |
-| `Cursor` | `@crablet/eventstore/Cursor` | an opaque string `"<transactionId>/<position>"` (`toString`, `fromString`) | a paged `read` or `stream`, the last event it returned | the next page's `after`; `GET /admin/events?after=` | yes, as `cursor` and `after` |
-| `ProgressCursor` | `@crablet/modules` (helpers in the engine) | `{ transactionId, position }` | a processor, as it moves past what it handled | the processor's progress row; the backlog count | in the admin API, its position only (`cursorPosition`) |
+- **`LogPoint`** (`@crablet/eventstore/LogPoint`) - `{ transactionId, position }`, with one text form, `"<transactionId>:<position>"` (`format`, `parse`), and one order (`compare`). Its names say who holds it:
 
-- **`LogPosition` is the only one whose transaction id may be missing** (`null`, or `"0"` for `zero()`, the start of the log). `earliest` and `latest` then compare positions alone.
-- **A `Marker` is a `ProgressCursor` a client can hold.** Waiting for a write compares the marker with each view's progress cursor (`compare`), so a view has the write once its cursor is at or past the marker.
-- **A `Cursor` is opaque on purpose.** A reader passes it back or stores it; only the stores read its parts. A paged read returns only events whose transaction had finished, so nothing can later appear behind it ([ADR-0050](../adr/0050-the-event-store-used-directly.md)).
+  | Name | Made by | Taken by | Crosses the wire |
+  |---|---|---|---|
+  | `Marker` (`@crablet/eventstore/Marker`) | a command's `ExecutionResult.marker`, where its write ended | a read with `?consistentWith=<marker>`, `waitUntilProcessed(view, marker)` | yes, the client holds it |
+  | `ProgressCursor` (`@crablet/modules`) | a processor, as it moves past what it handled | the processor's progress row; the backlog count | in the admin API, its position only (`cursorPosition`) |
+  | `Cursor` (`@crablet/eventstore/Cursor`), the text of a `LogPoint` kept opaque | a paged `read` or `stream`, the last event it returned | the next page's `after`; `GET /admin/events?after=` | yes, as `cursor` and `after` |
+
+  A `Marker` is a `ProgressCursor` a client can hold: waiting for a write compares it with each view's progress cursor, so a view has the write once its cursor is at or past the marker. `ProgressCursor` is declared in `@crablet/modules`, which depends on no other package, and a type test keeps it equal to `LogPoint`. A `Cursor` is opaque on purpose: a reader passes it back or stores it, and only the stores read its parts. A paged read returns only events whose transaction had finished, so nothing can later appear behind it ([ADR-0050](../adr/0050-the-event-store-used-directly.md)).
+- **`LogPosition`** (`@crablet/eventstore/LogPosition`) - `{ position, transactionId | null, occurredAt | null }`, what `load` returns (`logPosition`, `horizon`, `latest`) and an append condition's `after` takes: "fail if a matching event appeared after this". It never crosses the wire. It is the only point whose transaction id may be missing (`null`, or `"0"` for `zero()`, the start of the log); `earliest` and `latest` then compare positions alone.
 - **Horizon** - a cursor placed before everything a read could have missed. `all(...)` uses the earliest horizon of its members as its cursor. [ADR-0018](../adr/0018-model-snapshots.md) (decision 8)
 - **Poller** - the loop that reads new events after a cursor and hands them to a handler. Views, the outbox and automations are pollers. [Views and delivery](../concepts/views-and-delivery.md)
 - **Leader** - the one process that runs a **module**'s pollers (all the views, or all the automations, or all the outbox publishers, or the deadlines), chosen by a PostgreSQL advisory lock held for the session: one lock per module, not per processor. [Architecture](../concepts/architecture.md#one-lock-per-module-one-leader-per-lock), [ADR-0006](../adr/0006-leader-election-via-sql-reserve.md)
