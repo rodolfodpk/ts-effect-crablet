@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Metric, Schedule } from "effect";
 import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { EventStore } from "@crablet/eventstore";
-import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore } from "./CommandAuditStore.ts";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { type AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors";
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";

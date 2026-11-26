@@ -7,7 +7,7 @@ import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { EventStoreLive, type StoredEvent } from "@crablet/eventstore";
-import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import { VIEWS_LOCK_KEY } from "@crablet/views";
 import { AUTOMATIONS_LOCK_KEY } from "@crablet/automations";

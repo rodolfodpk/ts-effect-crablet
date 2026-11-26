@@ -452,10 +452,10 @@ export const breaks: ReadonlyArray<Break> = [
   },
   {
     id: "audit-command-id-ignored",
-    file: "packages/eventstore/src/CommandAuditStore.ts",
+    file: "packages/commands/src/CommandAuditStore.ts",
     find: "VALUES (COALESCE($1::uuid, gen_random_uuid()), pg_current_xact_id(), $2, $3::jsonb, $4::jsonb, $5::timestamptz)",
     replace: "VALUES (gen_random_uuid(), pg_current_xact_id(), $2, $3::jsonb, $4::jsonb, $5::timestamptz)",
-    tests: [es("append"), cmd("command-audit")],
+    tests: [cmd("command-audit-store"), cmd("command-audit")],
     why: "a command stored twice under its id would be recorded twice"
   }
 ];

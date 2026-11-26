@@ -11,7 +11,7 @@ import { PgClient } from "@effect/sql-pg";
 import { execFileSync } from "node:child_process";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import type { SettleViews, UncaughtView } from "@crablet/views/SettleViews";

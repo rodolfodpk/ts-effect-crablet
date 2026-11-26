@@ -10,7 +10,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { OpenWallet, type OpenWalletCommand } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
 import { Deposit, type DepositCommand } from "../../src/slices/deposit/DepositCommand.ts";

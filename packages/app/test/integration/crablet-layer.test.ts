@@ -8,7 +8,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
-import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore } from "@crablet/commands/CommandAuditStore";
 import * as Crablet from "../../src/index.ts";
 import { CommandExecutor } from "@crablet/commands";
 import { defineCommand, emit } from "@crablet/commands/Command";

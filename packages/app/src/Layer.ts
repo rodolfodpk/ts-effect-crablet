@@ -4,7 +4,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import { PgClient } from "@effect/sql-pg";
 import { EventStore, makeEventStoreLayer, type EventStoreConfig } from "@crablet/eventstore";
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
-import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { AuditConfigRef, type AuditConfig } from "@crablet/commands/CommandAudit";
 

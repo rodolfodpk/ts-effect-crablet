@@ -1,6 +1,6 @@
 import { Clock, Context, Duration, Effect } from "effect";
 import type { SqlError } from "effect/sql/SqlError";
-import { CommandAuditStore } from "@crablet/eventstore/CommandAuditStore";
+import { CommandAuditStore } from "./CommandAuditStore.ts";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import type { Command } from "./Command.ts";
 import { redact } from "./Personal.ts";
