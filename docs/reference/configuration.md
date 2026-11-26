@@ -100,7 +100,9 @@ modules `views` and `deadlines`), the polling and the wake-ups with the prefix `
 | `PORT` | `8080` | The HTTP port. |
 | `WALLET_PERIOD` | `month` | The statement period: `month`, or `minutes:N` (1 to 1440) for the kind lab. Choose it for a new database. |
 | `WALLET_ADMIN_TOKEN` | unset: no admin API | Mounts the admin API at `/admin/processors` and the event log at `/admin/events` (on the `api` role), behind this bearer token. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | Exports metrics, spans and logs over OTLP ([See it on a dashboard](../guides/operate/dashboard.md)). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: nothing exported | Exports metrics, spans and logs over OTLP, through `Crablet.observability` ([See it on a dashboard](../guides/operate/dashboard.md)); the course reads it too. |
+| `OTEL_SERVICE_NAME` | the app's name | The service the series belong to. |
+| `OTEL_SERVICE_INSTANCE_ID` | the host name (the pod's, on Kubernetes) | `service.instance.id`: each instance's own series, so `rate()` is right. |
 
 ## The wallet's health endpoints
 
