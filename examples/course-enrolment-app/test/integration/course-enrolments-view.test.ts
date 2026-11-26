@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The view written with its own SQL (src/views/CourseEnrolmentsViewProjector.ts): nothing checks its SQL text but this test.
+// Runs under Node (Testcontainers). The view written with its own SQL (src/slices/course-enrolments/CourseEnrolmentsViewProjector.ts): nothing checks its SQL text but this test.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
@@ -7,8 +7,8 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../../src/domain/Enrolment.ts";
-import { CourseEnrolmentsView } from "../../src/views/CourseEnrolmentsViewProjector.ts";
+import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../../src/slices/enrolment/Enrolment.ts";
+import { CourseEnrolmentsView } from "../../src/slices/course-enrolments/CourseEnrolmentsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;

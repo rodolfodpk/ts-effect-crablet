@@ -4,7 +4,7 @@
 import { Effect, Redacted } from "effect";
 import * as Crablet from "@crablet/app";
 import { CommandExecutor } from "@crablet/commands";
-import { CourseFull, DefineCourse, StudentAtLimit, Subscribe } from "./domain/Enrolment.ts";
+import { CourseFull, DefineCourse, StudentAtLimit, Subscribe } from "./slices/enrolment/Enrolment.ts";
 import type { DbConnInfo } from "./config.ts";
 
 export interface Step2Summary {

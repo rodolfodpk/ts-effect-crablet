@@ -1,10 +1,10 @@
-// The monthly fee (src/features/monthly-fee): a deadline that repeats (ADR-0043). In memory, no Docker; the deadlines are fired with `fireDue`.
+// The monthly fee (src/slices/monthly-fee): a deadline that repeats (ADR-0043). In memory, no Docker; the deadlines are fired with `fireDue`.
 import { describe, expect, test } from "bun:test";
 import { DateTime } from "effect";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { given, type Scenario } from "@crablet/commands/testing/Scenario";
-import { CourseCancelled, CourseDefined, Subscribe } from "../src/domain/Enrolment.ts";
-import { AlreadyPaid, BilledMonthly, CoursePriced, NotSubscribed, PaymentWindowClosed, PaySubscription, ReleaseUnpaidSubscription } from "../src/domain/Payments.ts";
+import { CourseCancelled, CourseDefined, Subscribe } from "../src/slices/enrolment/Enrolment.ts";
+import { AlreadyPaid, BilledMonthly, CoursePriced, NotSubscribed, PaymentWindowClosed, PaySubscription, ReleaseUnpaidSubscription } from "../src/slices/payments/Payments.ts";
 import {
   InvoiceAlreadyPaid,
   InvoiceNotFound,
@@ -15,11 +15,11 @@ import {
   PayInvoice,
   StartMonthlyFee,
   StopMonthlyFee
-} from "../src/features/monthly-fee/index.ts";
-import { SubscriptionModel, WrongAmount } from "../src/domain/Payments.ts";
+} from "../src/slices/monthly-fee/index.ts";
+import { SubscriptionModel, WrongAmount } from "../src/slices/payments/Payments.ts";
 import { queryMatches } from "@crablet/eventstore/spec/Spec";
 import { all } from "@crablet/commands/Domain";
-import { InvoiceModel, invoiceIdOf } from "../src/features/monthly-fee/billing.ts";
+import { InvoiceModel, invoiceIdOf } from "../src/slices/monthly-fee/billing.ts";
 
 const PRICE = 12000;
 const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");

@@ -3,8 +3,8 @@
 import { describe, expect, test } from "bun:test";
 import { checkImplementations } from "@crablet/commands-http";
 import { courseContracts } from "../src/CourseApi.ts";
-import { DefineCourse, Subscribe } from "../src/domain/Enrolment.ts";
-import { CourseAlreadyDefined, CourseFull, CourseNotFound, CourseWasCancelled, DefineCourseContract, StudentAtLimit, SubscribeContract } from "../src/domain/enrolment.contract.ts";
+import { DefineCourse, Subscribe } from "../src/slices/enrolment/Enrolment.ts";
+import { CourseAlreadyDefined, CourseFull, CourseNotFound, CourseWasCancelled, DefineCourseContract, StudentAtLimit, SubscribeContract } from "../src/slices/enrolment/enrolment.contract.ts";
 
 describe("course contracts", () => {
   test("every contract has its command, built from it", () => {

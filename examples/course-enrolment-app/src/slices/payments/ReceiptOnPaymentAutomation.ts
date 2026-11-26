@@ -1,5 +1,5 @@
 import { defineAutomation } from "@crablet/automations/AutomationHandler";
-import { SendReceipt, SubscriptionPaid } from "../domain/Payments.ts";
+import { SendReceipt, SubscriptionPaid } from "./Payments.ts";
 
 // #region automation
 // One event, one command: a payment asks for its receipt. The handler only maps the event to the command's input; it reads nothing and decides nothing.

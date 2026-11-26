@@ -12,7 +12,7 @@ import { courseModules } from "../../src/processes.ts";
 
 // The course's deadlines module running (the views built, not run), as a process whose roles name `deadlines` runs it.
 const startCourseDeadlines = (instanceId: string) => Layer.build(Crablet.processors(courseModules(), { run: ["deadlines"], instanceId }));
-import { PAYMENT_WINDOW_DAYS } from "../../src/domain/Payments.ts";
+import { PAYMENT_WINDOW_DAYS } from "../../src/slices/payments/Payments.ts";
 
 let db: TestDb;
 let app: RunningCourseApp;

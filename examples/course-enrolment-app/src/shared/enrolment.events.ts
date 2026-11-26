@@ -16,7 +16,7 @@ export const StudentSubscribed = defineEvent("StudentSubscribed", {
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
 
-// A subscription given back (one left unpaid: src/domain/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
+// A subscription given back (one left unpaid: src/slices/payments/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
 export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
   schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
@@ -24,7 +24,7 @@ export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
 // #endregion events
 
 // #region course-cancelled
-// A course that was not ready in time (src/domain/CourseStart.ts, CancelUnreadyCourse). ONE fact about the course AND every student subscribed to it:
+// A course that was not ready in time (src/slices/confirm-course/CourseStart.ts, CancelUnreadyCourse). ONE fact about the course AND every student subscribed to it:
 // tagged with each of them, so each student's model folds it and gives the slot back in the same append, with no command per student. What was
 // missing is the part of the group that never arrived (the Aggregator's partial result).
 export const CourseCancelled = defineEvent("CourseCancelled", {

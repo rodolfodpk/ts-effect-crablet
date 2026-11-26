@@ -5,10 +5,10 @@ import { serveApi } from "@crablet/commands-http/ServeApi";
 import { ViewProgressHubLive, type ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import { courseContracts, makeCourseApi } from "./CourseApi.ts";
 import type { Implementations } from "@crablet/commands-http";
-import { DefineCourse, Subscribe } from "./domain/Enrolment.ts";
+import { DefineCourse, Subscribe } from "./slices/enrolment/Enrolment.ts";
 import { makeCourseFeedApiLive } from "./api/CourseFeedApiLive.ts";
 import { makeCourseQueryApiLive } from "./api/CourseQueryApiLive.ts";
-import { CourseSeatsView } from "./views/CourseSeatsViewProjector.ts";
+import { CourseSeatsView } from "./slices/course-seats/CourseSeatsViewProjector.ts";
 
 // The API definition lives in CourseApi.ts (browser-safe); re-exported so existing imports keep working.
 export { courseApiInfo, makeCourseApi } from "./CourseApi.ts";

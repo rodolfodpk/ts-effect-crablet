@@ -38,7 +38,7 @@ sequenceDiagram
 `deadline(Command, input, { at })` (`@crablet/commands/Domain`) is returned by `decide` with the rest of its events. The input is typed by the command's
 schema, and `at` is a `DateTime.Utc`, usually computed from `now`:
 
-<!-- file: examples/course-enrolment-app/src/domain/Enrolment.ts#subscribe -->
+<!-- file: examples/course-enrolment-app/src/slices/enrolment/Enrolment.ts#subscribe -->
 ```ts
 export const Subscribe = defineCommand({
   ...SubscribeContract,
@@ -71,12 +71,12 @@ It is part of the append, so a deadline exists exactly when the decision that se
 A deadline always fires; there is no cancel. Its command reads the model, like any command, and answers `noop` when the deadline no longer matters. The
 model already knows (the subscription was paid), and a cancel would be a second place to keep that consistent:
 
-<!-- file: examples/course-enrolment-app/src/domain/Payments.ts#release -->
+<!-- file: examples/course-enrolment-app/src/slices/payments/Payments.ts#release -->
 ```ts
 // Gives back a subscription that was not paid once its window has closed. Its boundary is the subscription's events, so a payment and a release that
 // race cannot both happen: the second conflicts, re-runs, and sees the first. The deadline `Subscribe` sets runs it at the window's end; for a paid
 // subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel). One billed monthly is not released here:
-// an overdue invoice releases it (src/features/monthly-fee).
+// an overdue invoice releases it (src/slices/monthly-fee).
 export const ReleaseUnpaidSubscription = defineCommand({
   name: "release_unpaid_subscription",
   input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),
@@ -107,13 +107,13 @@ Declare it with the application's other modules, with the commands deadlines may
 
 <!-- file: examples/course-enrolment-app/src/processes.ts#course-modules -->
 ```ts
-// The course's two modules, declared once (ADR-0054). The views: the seats left (table operations) and who took which seat (its own SQL, through
-// `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release Subscribe set, when a
-// course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the feature lists its own).
-// One instance runs each module; the others wait on its lock.
+// The course's two modules, declared once (ADR-0054), from what each slice lists. The views: the seats left (table operations) and who took which
+// seat (its own SQL, through `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release
+// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates.
+// A new slice is a folder and one entry here. One instance runs each module; the others wait on its lock.
 export const courseModules = (options: CourseModulesOptions = {}) =>
-  Crablet.modules(Views.module({ views: [CourseSeatsView, CourseEnrolmentsView].map(delayedBy(options.viewDelayMs ?? 0)) }))
-    .with(Deadlines.module({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands] }));
+  Crablet.modules(Views.module({ views: [...courseSeatsViews, ...courseEnrolmentsViews].map(delayedBy(options.viewDelayMs ?? 0)) }))
+    .with(Deadlines.module({ commands: [...paymentsDeadlineCommands, ...confirmCourseDeadlineCommands, ...monthlyFeeDeadlineCommands] }));
 ```
 
 A process whose roles name `deadlines` runs it (`Crablet.processorsFor`, `@crablet/app`; [Run it in production](../operate/run-in-production.md#3-start-the-processors-serve-and-fail-loudly)).
@@ -149,7 +149,7 @@ test("subscribing sets the deadline; at the window's end an unpaid seat is relea
 ## 5. A deadline that repeats
 
 A deadline whose command sets the next one is a series: nothing else in the framework is needed. The course app's monthly fee
-(`examples/course-enrolment-app/src/features/monthly-fee`) bills a subscription every 30 days instead of charging it once. Each run issues one invoice and
+(`examples/course-enrolment-app/src/slices/monthly-fee`) bills a subscription every 30 days instead of charging it once. Each run issues one invoice and
 sets two deadlines, the next invoice and this invoice's due date:
 
 ```mermaid
@@ -175,7 +175,7 @@ sequenceDiagram
   I-->>D: noop NOT_BILLED, and no next deadline: the series has ended
 ```
 
-<!-- file: examples/course-enrolment-app/src/features/monthly-fee/issue-invoice.ts#issue-invoice -->
+<!-- file: examples/course-enrolment-app/src/slices/monthly-fee/issue-invoice.ts#issue-invoice -->
 ```ts
 // When the n-th invoice is issued: from the billing's start, never from when the deadline fired. A run that fires late (the processor was down, or
 // behind) does not push the series: the next deadline is still at its planned date, and a series that fell behind catches up by itself, one invoice

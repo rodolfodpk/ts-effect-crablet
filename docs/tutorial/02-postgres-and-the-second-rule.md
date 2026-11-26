@@ -22,7 +22,7 @@ The domain in `src/domain/Enrolment.ts` is the **final** one: step 1's rule plus
 with step 1. The events and models now look at each other from two sides. The events are in a module of their own, `src/domain/enrolment.events.ts`,
 because the payments read them too:
 
-<!-- file: examples/course-enrolment-app/src/domain/enrolment.events.ts#events -->
+<!-- file: examples/course-enrolment-app/src/shared/enrolment.events.ts#events -->
 ```ts
 export const CourseDefined = defineEvent("CourseDefined", {
   schema: Schema.Struct({ courseId: Schema.String, capacity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) }),
@@ -36,14 +36,14 @@ export const StudentSubscribed = defineEvent("StudentSubscribed", {
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
 
-// A subscription given back (one left unpaid: src/domain/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
+// A subscription given back (one left unpaid: src/slices/payments/Payments.ts). Both models undo it, so the seat and the student's slot are free again.
 export const SubscriptionReleased = defineEvent("SubscriptionReleased", {
   schema: Schema.Struct({ studentId: Schema.String, courseId: Schema.String }),
   tags: (d) => ({ student_id: d.studentId, course_id: d.courseId })
 });
 ```
 
-<!-- file: examples/course-enrolment-app/src/domain/Enrolment.ts#models -->
+<!-- file: examples/course-enrolment-app/src/slices/enrolment/Enrolment.ts#models -->
 ```ts
 // Two models over the SAME events, looked at from two sides.
 export const CourseModel = defineModel({
@@ -68,7 +68,7 @@ A subscription can also be given back: `SubscriptionReleased`, appended when one
 A command has two parts. Its **contract** - its name, its input Schema and the domain errors it can fail with - is the public part. It lives in
 `src/domain/enrolment.contract.ts` (the error classes too), and that file imports nothing that decides anything:
 
-<!-- file: examples/course-enrolment-app/src/domain/enrolment.contract.ts#contracts -->
+<!-- file: examples/course-enrolment-app/src/slices/enrolment/enrolment.contract.ts#contracts -->
 ```ts
 export const DefineCourseContract = defineContract({
   name: "define_course",
@@ -87,7 +87,7 @@ Its **behavior** - the model and `decide` - is the private part. You add it by s
 is only where the name, the input and the errors now come from. From step 3 the HTTP API is declared from contracts alone, and so is the page in step 5, so a
 browser can import them without receiving the rules (a test fails if the contract module ever reaches a server-only module). The command decides on **both** the course and the student at once:
 
-<!-- file: examples/course-enrolment-app/src/domain/Enrolment.ts#subscribe -->
+<!-- file: examples/course-enrolment-app/src/slices/enrolment/Enrolment.ts#subscribe -->
 ```ts
 export const Subscribe = defineCommand({
   ...SubscribeContract,

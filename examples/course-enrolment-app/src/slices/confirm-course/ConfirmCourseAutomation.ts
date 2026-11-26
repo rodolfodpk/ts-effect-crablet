@@ -1,6 +1,6 @@
 import { defineAutomation } from "@crablet/automations/AutomationHandler";
-import { StudentSubscribed } from "../domain/Enrolment.ts";
-import { ConfirmCourse, RoomBooked, TeacherAssigned } from "../domain/CourseStart.ts";
+import { StudentSubscribed } from "../enrolment/Enrolment.ts";
+import { ConfirmCourse, RoomBooked, TeacherAssigned } from "./CourseStart.ts";
 
 // #region automation
 // Every event that could complete a course asks ConfirmCourse to look. The handler only names the course (the correlation); whether the

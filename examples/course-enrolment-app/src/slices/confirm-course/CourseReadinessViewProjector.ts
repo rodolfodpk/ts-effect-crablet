@@ -1,7 +1,7 @@
 import { defineView } from "@crablet/views/ProjectedView";
 import { integer, text, viewTable } from "@crablet/views/ViewTable";
-import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
-import { CourseConfirmed, RoomBooked, TeacherAssigned } from "../domain/CourseStart.ts";
+import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../enrolment/Enrolment.ts";
+import { CourseConfirmed, RoomBooked, TeacherAssigned } from "./CourseStart.ts";
 
 export const COURSE_READINESS_VIEW = "course-readiness-view";
 

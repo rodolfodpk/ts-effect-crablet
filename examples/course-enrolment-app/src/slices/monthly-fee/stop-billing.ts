@@ -1,8 +1,8 @@
 // Slice: the student stops the billing and leaves the course.
 import * as Schema from "effect/Schema";
 import { defineCommand, DomainError, emit, fail } from "@crablet/commands/Domain";
-import { SubscriptionReleased } from "../../domain/enrolment.events.ts";
-import { SubscriptionModel } from "../../domain/Payments.ts";
+import { SubscriptionReleased } from "../../shared/enrolment.events.ts";
+import { SubscriptionModel } from "../payments/Payments.ts";
 import { billedBy } from "./billing.ts";
 import { BillingStopped } from "./monthly-fee.events.ts";
 

@@ -3,8 +3,8 @@
 import * as Schema from "effect/Schema";
 import { byModel, defineCommand, defineEvent, defineModel, emit, noop } from "@crablet/commands/Domain";
 // The events, not the rules: Enrolment.ts's DefineCourse sets the deadline of CancelUnreadyCourse below, so this module must not import it.
-import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
-import { CoursePriced, SubscriptionPaid } from "./Payments.ts";
+import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../../shared/enrolment.events.ts";
+import { CoursePriced, SubscriptionPaid } from "../payments/Payments.ts";
 
 // #region events
 // Facts that arrive in any order, from different commands, about one course: the `course_id` tag correlates them. The third kind is

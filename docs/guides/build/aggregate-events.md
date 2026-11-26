@@ -35,7 +35,7 @@ What the log does in place of the Aggregator's store:
 Each event is tagged with what correlates it, here the course. `TeacherAssigned` and `RoomBooked` are new; the third kind is the existing
 `StudentSubscribed`, which is tagged with the course too. `CourseConfirmed` is the aggregate.
 
-<!-- file: examples/course-enrolment-app/src/domain/CourseStart.ts#events -->
+<!-- file: examples/course-enrolment-app/src/slices/confirm-course/CourseStart.ts#events -->
 ```ts
 // Facts that arrive in any order, from different commands, about one course: the `course_id` tag correlates them. The third kind is
 // StudentSubscribed (Enrolment.ts), counted until the course has enough students.
@@ -64,7 +64,7 @@ does here ([Evolving events](evolving-events.md)).
 One `.on` per kind of event, and one for the aggregate itself, so the model knows the group is done. `.ignores(CourseDefined)` says the course's
 definition carries the tag but does not matter to its start.
 
-<!-- file: examples/course-enrolment-app/src/domain/CourseStart.ts#model -->
+<!-- file: examples/course-enrolment-app/src/slices/confirm-course/CourseStart.ts#model -->
 ```ts
 // The aggregator's state: what has arrived for one course so far. It is a fold of events already in the log, so there is no store of
 // partial groups to keep, clean up or migrate, and the order they arrive in does not matter.
@@ -98,7 +98,7 @@ const missingOf = (s: { readonly teacherId: string | null; readonly room: string
 Done already: `noop`. Something missing: `noop("WAITING")`, nothing appended. Complete: emit the aggregate. `byModel()` is the right `idempotentBy`,
 because the model shows whether it was done.
 
-<!-- file: examples/course-enrolment-app/src/domain/CourseStart.ts#command -->
+<!-- file: examples/course-enrolment-app/src/slices/confirm-course/CourseStart.ts#command -->
 ```ts
 // The completeness condition and the aggregation: once everything is there, one CourseConfirmed; until then, nothing.
 // Its boundary is the course's readiness events, so two runs that race append one CourseConfirmed: the second conflicts, re-runs and sees it.
@@ -122,7 +122,7 @@ export const ConfirmCourse = defineCommand({
 
 The handlers only name the group. They do not count or check anything: the command does, on the log, where it is consistent.
 
-<!-- file: examples/course-enrolment-app/src/automations/ConfirmCourseAutomation.ts#automation -->
+<!-- file: examples/course-enrolment-app/src/slices/confirm-course/ConfirmCourseAutomation.ts#automation -->
 ```ts
 // Every event that could complete a course asks ConfirmCourse to look. The handler only names the course (the correlation); whether the
 // course is complete is decided by the command, on the log, so the order the events are delivered in does not matter.
@@ -142,7 +142,7 @@ The partial group as a table: one row per course, and each event fills in its ow
 still lacks is a `WHERE` on that table. The migration is
 [`V103__course_readiness_view.sql`](../../../examples/course-enrolment-app/db/migration/V103__course_readiness_view.sql); the rest is as in [Add a view](add-a-view.md).
 
-<!-- file: examples/course-enrolment-app/src/views/CourseReadinessViewProjector.ts#view -->
+<!-- file: examples/course-enrolment-app/src/slices/confirm-course/CourseReadinessViewProjector.ts#view -->
 ```ts
 // The table, as the migration (db/migration/V103) made it; `checkViewTables` compares the two (test/integration/course-seats-table.test.ts).
 export const courseReadinessTable = viewTable("course_readiness_view", {
@@ -218,7 +218,7 @@ An EIP Aggregator also says when to stop waiting ("confirm with what is there af
 `decide` reads the same model and decides what to do with a group that is not complete, or answers `noop` for one that completed in time. In the course
 app, `DefineCourse` sets `deadline(CancelUnreadyCourse, { courseId }, { at: now + 14 days })`, and:
 
-<!-- file: examples/course-enrolment-app/src/domain/CourseStart.ts#expiry -->
+<!-- file: examples/course-enrolment-app/src/slices/confirm-course/CourseStart.ts#expiry -->
 ```ts
 // The Aggregator's expiry: what the deadline DefineCourse set asks once READINESS_DAYS have passed. A course confirmed in time answers CONFIRMED and
 // nothing happens; one still waiting is cancelled, with what it lacked and the students it had, so every one of them gets the slot back in the same

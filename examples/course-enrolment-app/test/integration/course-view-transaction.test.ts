@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The seats view is declared with defineView (src/views/CourseSeatsViewProjector.ts). Its writes must join the transaction of the `sql` the projector is given
+// Runs under Node (Testcontainers). The seats view is declared with defineView (src/slices/course-seats/CourseSeatsViewProjector.ts). Its writes must join the transaction of the `sql` the projector is given
 // (what makes a failed batch roll back with its cursor).
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -8,8 +8,8 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { CourseDefined } from "../../src/domain/Enrolment.ts";
-import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";
+import { CourseDefined } from "../../src/slices/enrolment/Enrolment.ts";
+import { CourseSeatsView } from "../../src/slices/course-seats/CourseSeatsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;

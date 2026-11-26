@@ -26,7 +26,7 @@ A view is a list of what each event does to its tables: `defineView(name, { tabl
 operations (`insert`, `update`, `upsert`, `remove`; `add` changes a column by an amount, which is the shape that keeps the view right in any order). The framework reads each payload through the event's own definition (an event it cannot read
 fails the batch with a typed `EventDecodingError`, never projected wrongly), runs the operations on the `sql` of the view's cursor, and listens to the event types of your handlers. You declare the table once, with `viewTable`, as the migration made it.
 
-<!-- file: examples/course-enrolment-app/src/views/CourseSeatsViewProjector.ts#projector -->
+<!-- file: examples/course-enrolment-app/src/slices/course-seats/CourseSeatsViewProjector.ts#projector -->
 ```ts
 // The table, as the migration (db/migration/V100, V101) made it. `checkViewTables` compares this declaration with the migrated database (test/integration/course-seats-table.test.ts), so a column a migration renames fails a test.
 export const courseSeatsTable = viewTable("course_seats_view", {
@@ -57,7 +57,7 @@ once), and takes the event types from the handlers. Declare the table anyway, so
 ([`course-enrolments-view.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments-view.test.ts)).
 The course app declares it next to the seats view (`courseModules` in `processes.ts`, as in step 4) and reads it with `SqlSchema` (`GET /api/courses/:courseId/enrolments`, tested end to end in [`course-enrolments.test.ts`](../../../examples/course-enrolment-app/test/integration/course-enrolments.test.ts)), so this approach has a write and a query on the same view.
 
-<!-- file: examples/course-enrolment-app/src/views/CourseEnrolmentsViewProjector.ts#hand-written -->
+<!-- file: examples/course-enrolment-app/src/slices/course-enrolments/CourseEnrolmentsViewProjector.ts#hand-written -->
 ```ts
 // The table, as the migration (db/migration/V102) made it, so the drift check covers it (test/integration/course-seats-table.test.ts).
 export const courseEnrolmentsTable = viewTable("course_enrolments_view", {

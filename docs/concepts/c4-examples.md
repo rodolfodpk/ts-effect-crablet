@@ -91,7 +91,7 @@ C4Component
   Rel(hub, db, "LISTEN crablet_view_progress", "SQL")
 ```
 
-Where to read the code: the contracts and commands in `src/domain/`, the API in `src/CourseApi.ts` and `src/CourseApp.ts`, the reads in `src/api/`, the projectors in `src/views/`, the monthly fee in `src/features/monthly-fee/`.
+Where to read the code: one folder per slice in `src/slices/` (the contracts and commands in `enrolment/`, the projectors in `course-seats/` and `course-enrolments/`, the monthly fee in `monthly-fee/`), the API in `src/CourseApi.ts` and `src/CourseApp.ts`, the reads in `src/api/`.
 The page's own structure (Model, Messages, `update`, `view`, subscriptions) is in [tutorial step 5](../tutorial/05-a-page-that-uses-it.md).
 
 ## Wallet

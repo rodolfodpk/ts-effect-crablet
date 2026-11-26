@@ -4,10 +4,10 @@ import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, byModel, defineCommand, defineEvent, defineModel, DomainError, emit, fail, Instant, noop } from "@crablet/commands/Domain";
 // The enrolment's events and errors, not its rules (Enrolment.ts): Enrolment.ts may import this module.
-import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
-import { CourseNotFound } from "./enrolment.contract.ts";
-// The one event of the monthly fee (src/features/monthly-fee) the subscription folds: a subscription is paid once, or billed monthly.
-import { BillingStarted } from "../features/monthly-fee/monthly-fee.events.ts";
+import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../../shared/enrolment.events.ts";
+import { CourseNotFound } from "../enrolment/enrolment.contract.ts";
+// The one event of the monthly fee (src/slices/monthly-fee) the subscription folds: a subscription is paid once, or billed monthly.
+import { BillingStarted } from "../monthly-fee/monthly-fee.events.ts";
 
 // #region events
 // A price in cents. A separate event, not a field added to CourseDefined: stored CourseDefined events stay as they are.
@@ -116,7 +116,7 @@ export const PaySubscription = defineCommand({
 // Gives back a subscription that was not paid once its window has closed. Its boundary is the subscription's events, so a payment and a release that
 // race cannot both happen: the second conflicts, re-runs, and sees the first. The deadline `Subscribe` sets runs it at the window's end; for a paid
 // subscription it answers PAID, and that is all a deadline that no longer matters costs (there is no cancel). One billed monthly is not released here:
-// an overdue invoice releases it (src/features/monthly-fee).
+// an overdue invoice releases it (src/slices/monthly-fee).
 export const ReleaseUnpaidSubscription = defineCommand({
   name: "release_unpaid_subscription",
   input: Schema.Struct({ courseId: Schema.String, studentId: Schema.String }),

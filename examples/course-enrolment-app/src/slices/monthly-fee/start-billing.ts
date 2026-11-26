@@ -2,7 +2,7 @@
 import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, deadline, defineCommand, emit, fail, noop } from "@crablet/commands/Domain";
-import { AlreadyPaid, CourseNotPriced, CoursePricing, NotSubscribed, PaymentWindowClosed, SubscriptionModel } from "../../domain/Payments.ts";
+import { AlreadyPaid, CourseNotPriced, CoursePricing, NotSubscribed, PaymentWindowClosed, SubscriptionModel } from "../payments/Payments.ts";
 import { MONTHLY_FEE_PERIOD_DAYS } from "./billing.ts";
 import { BillingStarted } from "./monthly-fee.events.ts";
 import { IssueInvoice } from "./issue-invoice.ts";

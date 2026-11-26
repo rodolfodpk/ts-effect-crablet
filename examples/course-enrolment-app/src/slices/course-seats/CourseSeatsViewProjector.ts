@@ -1,7 +1,7 @@
 import { defineView } from "@crablet/views/ProjectedView";
 import { integer, text, viewTable } from "@crablet/views/ViewTable";
-import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
-import { COURSE_SEATS_VIEW } from "../CourseApi.ts";
+import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../enrolment/Enrolment.ts";
+import { COURSE_SEATS_VIEW } from "../../CourseApi.ts";
 
 // The name is defined next to the API (CourseApi.ts), which must not import this server-side file.
 export { COURSE_SEATS_VIEW };

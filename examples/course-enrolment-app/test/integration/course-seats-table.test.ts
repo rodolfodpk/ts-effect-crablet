@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The views' declared tables (src/views/CourseSeatsViewProjector.ts, CourseEnrolmentsViewProjector.ts, CourseReadinessViewProjector.ts) must match the migrated database: a migration that renames or retypes a column fails here, not at the first event.
+// Runs under Node (Testcontainers). The views' declared tables (src/slices/course-seats/CourseSeatsViewProjector.ts, CourseEnrolmentsViewProjector.ts, CourseReadinessViewProjector.ts) must match the migrated database: a migration that renames or retypes a column fails here, not at the first event.
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
@@ -7,9 +7,9 @@ import { PgClient } from "@effect/sql-pg";
 import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { checkViewTables } from "@crablet/views/ViewTableCheck";
-import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";
-import { CourseEnrolmentsView } from "../../src/views/CourseEnrolmentsViewProjector.ts";
-import { CourseReadinessView } from "../../src/views/CourseReadinessViewProjector.ts";
+import { CourseSeatsView } from "../../src/slices/course-seats/CourseSeatsViewProjector.ts";
+import { CourseEnrolmentsView } from "../../src/slices/course-enrolments/CourseEnrolmentsViewProjector.ts";
+import { CourseReadinessView } from "../../src/slices/confirm-course/CourseReadinessViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;
