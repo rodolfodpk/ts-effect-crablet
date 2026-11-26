@@ -353,6 +353,6 @@ export const defineCommand = <
 
 // A read position as a marker, or null when it points at nothing (the start of the log).
 const markerOf = (position: LogPosition | undefined): CD.NoOp["marker"] =>
-  position === undefined || position.position === 0n || position.transactionId === null || position.transactionId === "0"
+  position === undefined || position.position === 0n || position.transactionId === "0"
     ? null
     : { position: position.position, transactionId: position.transactionId };

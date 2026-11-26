@@ -54,7 +54,7 @@ export const breaks: ReadonlyArray<Break> = [
   {
     id: "cursor-without-transaction",
     file: SQL,
-    find: "concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null),",
+    find: "concurrencyItems === null ? null : condition.afterPosition.transactionId,",
     replace: "null,",
     tests: [es("append-cursor-inversion"), es("union-boundary-cursor"), es("conformance-postgres")],
     why: "the condition's cursor compared by position only: an event committed later at a lower position is missed (ADR-0016)"

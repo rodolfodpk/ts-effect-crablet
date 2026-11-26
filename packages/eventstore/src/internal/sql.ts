@@ -141,8 +141,8 @@ export const appendEventsIf = (
       // commit, ADR-0021 and ADR-0028). They stay in the SQL signature, so no migration rewrites the function.
       null,
       null,
-      // The cursor is a (transaction_id, position) pair; null (an old-style position) compares by position only.
-      concurrencyItems === null ? null : (condition.afterPosition.transactionId ?? null),
+      // The cursor is a (transaction_id, position) pair; "0" (no transaction, the start of the log) compares by position only.
+      concurrencyItems === null ? null : condition.afterPosition.transactionId,
       requireFresh,
       fingerprint,
       // What the read could see: with it, only an event the read could not see is a conflict (ADR-0048).
@@ -203,7 +203,7 @@ const whereOf = (query: Query, after: LogPosition): { readonly whereSql: string;
 
   let positionClause = "";
   if (after.position > 0n) {
-    if (after.transactionId !== null && after.transactionId !== "0") {
+    if (after.transactionId !== "0") {
       // A cursor from a previous load: (transaction_id, position) order, the order its events came back in.
       positionClause = `(transaction_id, position) > ($${paramIndex++}::xid8, $${paramIndex++}::bigint)`;
       params.push(after.transactionId, after.position.toString());
@@ -239,7 +239,7 @@ const whereOf = (query: Query, after: LogPosition): { readonly whereSql: string;
 // Is there at least one event matching the query? The database stops at the first match: no rows are fetched, ordered or built.
 export const existsEvents = (sql: SqlClient.SqlClient, query: Query): Effect.Effect<boolean, SqlError> =>
   Effect.gen(function* () {
-    const { whereSql, params } = whereOf(query, { position: 0n, occurredAt: null, transactionId: null });
+    const { whereSql, params } = whereOf(query, { position: 0n, occurredAt: null, transactionId: "0" });
     const rows = yield* sql.unsafe<{ found: boolean }>(`SELECT EXISTS (SELECT 1 FROM crablet_events${whereSql}) AS found`, params);
     return rows[0]!.found;
   });

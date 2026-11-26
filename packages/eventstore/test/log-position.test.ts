@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import * as LogPosition from "../src/LogPosition.ts";
 
 const at = (position: bigint, transactionId: string) => LogPosition.of(position, new Date(0), transactionId);
-// A cursor with no transaction id at all: what a read with no cursor starts from (eventstore's internal/sql.ts).
-const noXid = (position: bigint): LogPosition.LogPosition => ({ position, occurredAt: null, transactionId: null });
+// A cursor with no transaction id ("0"): what a read with no cursor starts from (eventstore's internal/sql.ts).
+const noXid = (position: bigint): LogPosition.LogPosition => ({ position, occurredAt: null, transactionId: "0" });
 
 describe("LogPosition.of", () => {
   test("refuses a negative position, and takes zero", () => {
