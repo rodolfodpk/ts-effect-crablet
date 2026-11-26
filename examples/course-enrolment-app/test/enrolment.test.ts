@@ -1,8 +1,8 @@
-// The final two-rule domain (src/domain/Enrolment.ts) in memory: no Docker.
+// The final two-rule domain (src/slices/enrolment/Enrolment.ts) in memory: no Docker.
 import { describe, expect, test } from "bun:test";
 import { InvalidInput } from "@crablet/commands/Errors";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
-import { CourseAlreadyDefined, CourseDefined, CourseFull, CourseNotFound, DefineCourse, StudentAtLimit, Subscribe } from "../src/domain/Enrolment.ts";
+import { CourseAlreadyDefined, CourseDefined, CourseFull, CourseNotFound, DefineCourse, StudentAtLimit, Subscribe } from "../src/slices/enrolment/Enrolment.ts";
 
 const define = (courseId: string, capacity: number) => ({ courseId, capacity });
 const sub = (studentId: string, courseId: string) => ({ studentId, courseId });

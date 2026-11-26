@@ -4,7 +4,7 @@ import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { all, byModel, deadline, defineCommand, emit, noop } from "@crablet/commands/Domain";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
-import { SubscriptionModel } from "../../domain/Payments.ts";
+import { SubscriptionModel } from "../payments/Payments.ts";
 import { BillingModel, billedBy, INVOICE_DUE_DAYS, invoiceIdOf } from "./billing.ts";
 import { InvoiceIssued } from "./monthly-fee.events.ts";
 import { ReleaseOverdueInvoice } from "./release-overdue.ts";

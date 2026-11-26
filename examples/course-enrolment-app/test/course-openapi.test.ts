@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { validate } from "@readme/openapi-parser";
 import { inputJsonSchema, inputJsonSchemaProblems } from "@crablet/commands-http/InputJsonSchema";
 import { courseOpenApiDocument, courseOpenApiFile } from "../src/api/CourseOpenApi.ts";
-import { DefineCourse, Subscribe } from "../src/domain/Enrolment.ts";
+import { DefineCourse, Subscribe } from "../src/slices/enrolment/Enrolment.ts";
 
 const text = courseOpenApiDocument();
 const spec = JSON.parse(text) as any;

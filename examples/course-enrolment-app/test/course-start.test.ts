@@ -1,4 +1,4 @@
-// The course-start aggregator (src/domain/CourseStart.ts, the "aggregate events" guide): in memory, no Docker.
+// The course-start aggregator (src/slices/confirm-course/CourseStart.ts, the "aggregate events" guide): in memory, no Docker.
 import { describe, expect, test } from "bun:test";
 import { DateTime, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
@@ -6,12 +6,12 @@ import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
 import { applyInMemory, rowsOf } from "@crablet/views/ViewMemory";
-import { CourseCancelled, CourseDefined, CourseWasCancelled, DefineCourse, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/domain/Enrolment.ts";
-import { CoursePriced, NotSubscribed, PaySubscription, ReleaseUnpaidSubscription } from "../src/domain/Payments.ts";
-import { CourseSeatsView, courseSeatsTable } from "../src/views/CourseSeatsViewProjector.ts";
-import { CancelUnreadyCourse, ConfirmCourse, CourseConfirmed, READINESS_DAYS, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
-import { confirmCourseWhenReady } from "../src/automations/ConfirmCourseAutomation.ts";
-import { CourseReadinessView, courseReadinessTable } from "../src/views/CourseReadinessViewProjector.ts";
+import { CourseCancelled, CourseDefined, CourseWasCancelled, DefineCourse, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/slices/enrolment/Enrolment.ts";
+import { CoursePriced, NotSubscribed, PaySubscription, ReleaseUnpaidSubscription } from "../src/slices/payments/Payments.ts";
+import { CourseSeatsView, courseSeatsTable } from "../src/slices/course-seats/CourseSeatsViewProjector.ts";
+import { CancelUnreadyCourse, ConfirmCourse, CourseConfirmed, READINESS_DAYS, RoomBooked, TeacherAssigned } from "../src/slices/confirm-course/CourseStart.ts";
+import { confirmCourseWhenReady } from "../src/slices/confirm-course/ConfirmCourseAutomation.ts";
+import { CourseReadinessView, courseReadinessTable } from "../src/slices/confirm-course/CourseReadinessViewProjector.ts";
 
 const parts = (courseId: string): ReadonlyArray<AppendEvent> => [
   TeacherAssigned({ courseId, teacherId: "t-1" }),

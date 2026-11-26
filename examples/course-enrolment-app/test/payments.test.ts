@@ -1,15 +1,15 @@
-// Prices, payments and releases (src/domain/Payments.ts): in memory, no Docker.
+// Prices, payments and releases (src/slices/payments/Payments.ts): in memory, no Docker.
 import { describe, expect, test } from "bun:test";
 import { DateTime, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
 import { applyInMemory, rowsOf } from "@crablet/views/ViewMemory";
-import { CourseDefined, CourseFull, CourseNotFound, StudentAtLimit, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/domain/Enrolment.ts";
+import { CourseDefined, CourseFull, CourseNotFound, StudentAtLimit, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/slices/enrolment/Enrolment.ts";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
-import { AlreadyPaid, CourseNotPriced, CoursePriced, NotSubscribed, PAYMENT_WINDOW_DAYS, PaymentWindowClosed, PaySubscription, PriceCourse, ReleaseUnpaidSubscription, SendReceipt, SubscriptionPaid, WrongAmount } from "../src/domain/Payments.ts";
-import { receiptOnPayment } from "../src/automations/ReceiptOnPaymentAutomation.ts";
-import { CourseSeatsView, courseSeatsTable } from "../src/views/CourseSeatsViewProjector.ts";
+import { AlreadyPaid, CourseNotPriced, CoursePriced, NotSubscribed, PAYMENT_WINDOW_DAYS, PaymentWindowClosed, PaySubscription, PriceCourse, ReleaseUnpaidSubscription, SendReceipt, SubscriptionPaid, WrongAmount } from "../src/slices/payments/Payments.ts";
+import { receiptOnPayment } from "../src/slices/payments/ReceiptOnPaymentAutomation.ts";
+import { CourseSeatsView, courseSeatsTable } from "../src/slices/course-seats/CourseSeatsViewProjector.ts";
 
 const PAYMENT_WINDOW_MS = PAYMENT_WINDOW_DAYS * 24 * 60 * 60_000;
 

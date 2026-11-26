@@ -8,8 +8,8 @@ import { PgClient } from "@effect/sql-pg";
 import type { StoredEvent } from "@crablet/eventstore";
 import * as Crablet from "@crablet/app";
 import { startTestDb, type TestDb } from "@crablet/test-support";
-import { CourseDefined, StudentSubscribed } from "../../src/domain/Enrolment.ts";
-import { CourseSeatsView } from "../../src/views/CourseSeatsViewProjector.ts";
+import { CourseDefined, StudentSubscribed } from "../../src/slices/enrolment/Enrolment.ts";
+import { CourseSeatsView } from "../../src/slices/course-seats/CourseSeatsViewProjector.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 let db: TestDb;

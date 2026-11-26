@@ -7,7 +7,7 @@
 Projections are updated asynchronously, a moment after the write. A client that subscribes a student and immediately asks "how many seats
 are left?" could see the old answer. Add a **view** - a table kept up to date by a small projector, declared as what each event does to the table:
 
-<!-- file: examples/course-enrolment-app/src/views/CourseSeatsViewProjector.ts#projector -->
+<!-- file: examples/course-enrolment-app/src/slices/course-seats/CourseSeatsViewProjector.ts#projector -->
 ```ts
 // The table, as the migration (db/migration/V100, V101) made it. `checkViewTables` compares this declaration with the migrated database (test/integration/course-seats-table.test.ts), so a column a migration renames fails a test.
 export const courseSeatsTable = viewTable("course_seats_view", {
@@ -48,7 +48,7 @@ export const CoursePage = Schema.Struct({
   next: Schema.NullOr(Schema.String)
 });
 
-// Who took which seat, in the order they subscribed (the enrolments view, written with its own SQL through `raw`: src/views/CourseEnrolmentsViewProjector.ts).
+// Who took which seat, in the order they subscribed (the enrolments view, written with its own SQL through `raw`: src/slices/course-enrolments/CourseEnrolmentsViewProjector.ts).
 export const EnrolmentsResponse = Schema.Struct({
   courseId: Schema.String,
   students: Schema.Array(Schema.Struct({ studentId: Schema.String, seatNumber: Schema.Int }))

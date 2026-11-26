@@ -5,10 +5,10 @@ import { CommandApiBadRequest, problemOf } from "@crablet/commands-http/ProblemD
 import { makeConsistentRead } from "@crablet/views-http";
 import { defaultReadConsistency, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
 import type { CourseApi } from "../CourseApi.ts";
-import { CourseNotFound } from "../domain/enrolment.contract.ts";
+import { CourseNotFound } from "../slices/enrolment/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
-import { CourseSeatsView } from "../views/CourseSeatsViewProjector.ts";
-import { CourseEnrolmentsView } from "../views/CourseEnrolmentsViewProjector.ts";
+import { CourseSeatsView } from "../slices/course-seats/CourseSeatsViewProjector.ts";
+import { CourseEnrolmentsView } from "../slices/course-enrolments/CourseEnrolmentsViewProjector.ts";
 
 // `text` as a SQL LIKE pattern that matches ids STARTING with it: `\`, `%` and `_` are escaped, or "a_" would also match "ab".
 export const likePrefix = (text: string): string => `${text.replace(/[\\%_]/g, "\\$&")}%`;

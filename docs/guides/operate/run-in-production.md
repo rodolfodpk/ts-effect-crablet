@@ -207,13 +207,13 @@ with the roles in the code). The course's two modules:
 
 <!-- file: examples/course-enrolment-app/src/processes.ts#course-modules -->
 ```ts
-// The course's two modules, declared once (ADR-0054). The views: the seats left (table operations) and who took which seat (its own SQL, through
-// `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release Subscribe set, when a
-// course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the feature lists its own).
-// One instance runs each module; the others wait on its lock.
+// The course's two modules, declared once (ADR-0054), from what each slice lists. The views: the seats left (table operations) and who took which
+// seat (its own SQL, through `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release
+// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates.
+// A new slice is a folder and one entry here. One instance runs each module; the others wait on its lock.
 export const courseModules = (options: CourseModulesOptions = {}) =>
-  Crablet.modules(Views.module({ views: [CourseSeatsView, CourseEnrolmentsView].map(delayedBy(options.viewDelayMs ?? 0)) }))
-    .with(Deadlines.module({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands] }));
+  Crablet.modules(Views.module({ views: [...courseSeatsViews, ...courseEnrolmentsViews].map(delayedBy(options.viewDelayMs ?? 0)) }))
+    .with(Deadlines.module({ commands: [...paymentsDeadlineCommands, ...confirmCourseDeadlineCommands, ...monthlyFeeDeadlineCommands] }));
 ```
 
 The processes layer sits on the application layer, so closing it interrupts the processors' fibers, releases their leader locks and announces it before the

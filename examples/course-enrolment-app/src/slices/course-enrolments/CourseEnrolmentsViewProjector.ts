@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { defineView } from "@crablet/views/ProjectedView";
 import { integer, raw, text, viewTable } from "@crablet/views/ViewTable";
-import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../domain/Enrolment.ts";
+import { CourseCancelled, StudentSubscribed, SubscriptionReleased } from "../enrolment/Enrolment.ts";
 
 export const COURSE_ENROLMENTS_VIEW = "course-enrolments-view";
 

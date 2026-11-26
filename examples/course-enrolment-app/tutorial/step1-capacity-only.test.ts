@@ -1,7 +1,7 @@
 // TUTORIAL STEP 1 - in memory, no Docker, no database. Run it:   bun test examples/course-enrolment-app/tutorial/step1-capacity-only.test.ts
 //
 // One rule only: a course holds at most `capacity` students. Everything here is defined in this file so you can read
-// it top to bottom; the full two-rule domain (src/domain/Enrolment.ts) is step 2.
+// it top to bottom; the full two-rule domain (src/slices/enrolment/Enrolment.ts) is step 2.
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { defineCommand, defineEvent, defineModel, DomainError, emit, fail } from "@crablet/commands/Domain";

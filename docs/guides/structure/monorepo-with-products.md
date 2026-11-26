@@ -34,22 +34,23 @@ monorepo/
 
 **The slice is the unit of code, the app is the unit of deploy.** A deployment cuts across the slices: a slice has code that runs in the api (its command,
 its read) and code that runs in the workers (its projector, its automation). `processes.ts` and `serveApi` only gather what the slices export, so a new slice
-is a folder and one line in each list. There is no `slice` concept in the framework; the course's monthly fee already works this way, listing its own deadline
-commands for the app to spread ([`features/monthly-fee/index.ts`](../../../examples/course-enrolment-app/src/features/monthly-fee/index.ts)):
+is a folder and one line in each list. There is no `slice` concept in the framework: the course is laid out this way, each slice's `index.ts` listing
+the views and deadline commands it brings ([`slices/payments/index.ts`](../../../examples/course-enrolment-app/src/slices/payments/index.ts)), and
+`processes.ts` spreading them:
 
 <!-- file: examples/course-enrolment-app/src/processes.ts#course-modules -->
 ```ts
-// The course's two modules, declared once (ADR-0054). The views: the seats left (table operations) and who took which seat (its own SQL, through
-// `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release Subscribe set, when a
-// course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates (the feature lists its own).
-// One instance runs each module; the others wait on its lock.
+// The course's two modules, declared once (ADR-0054), from what each slice lists. The views: the seats left (table operations) and who took which
+// seat (its own SQL, through `raw`), off the same events. The deadlines (ADR-0043): when a subscription's payment window closes they run the release
+// Subscribe set, when a course's readiness period ends the cancellation DefineCourse set, and the monthly fee's invoices and their due dates.
+// A new slice is a folder and one entry here. One instance runs each module; the others wait on its lock.
 export const courseModules = (options: CourseModulesOptions = {}) =>
-  Crablet.modules(Views.module({ views: [CourseSeatsView, CourseEnrolmentsView].map(delayedBy(options.viewDelayMs ?? 0)) }))
-    .with(Deadlines.module({ commands: [ReleaseUnpaidSubscription, CancelUnreadyCourse, ...monthlyFeeDeadlineCommands] }));
+  Crablet.modules(Views.module({ views: [...courseSeatsViews, ...courseEnrolmentsViews].map(delayedBy(options.viewDelayMs ?? 0)) }))
+    .with(Deadlines.module({ commands: [...paymentsDeadlineCommands, ...confirmCourseDeadlineCommands, ...monthlyFeeDeadlineCommands] }));
 ```
 
-The examples are not all there yet: the wallet is organized by technical layer (`domain/`, `views/`, `api/`, `automations/`) and the course mixes layers with
-one slice (`features/monthly-fee/`). Prefer slices for a new product.
+The course is in slices (`src/slices/`, with `src/shared/` for the events several slices emit); its HTTP reads stay in `src/api/`, because one group of read
+endpoints serves two slices' views. The wallet is still organized by technical layer (`domain/`, `views/`, `api/`, `automations/`). Prefer slices for a new product.
 
 ## 2. Between products
 

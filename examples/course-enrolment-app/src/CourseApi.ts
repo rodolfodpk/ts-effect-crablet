@@ -3,7 +3,7 @@
 // code that builds the OpenAPI description. Serving it is CourseApp.ts.
 import { HttpApi } from "effect/http-api";
 import { makeCommandApiGroup, withApiInfo } from "@crablet/commands-http";
-import { DefineCourseContract, SubscribeContract } from "./domain/enrolment.contract.ts";
+import { DefineCourseContract, SubscribeContract } from "./slices/enrolment/enrolment.contract.ts";
 import { courseQueryGroup } from "./api/CourseQueryApi.ts";
 import { courseFeedGroup } from "./api/CourseFeedApi.ts";
 
@@ -12,7 +12,7 @@ import { courseFeedGroup } from "./api/CourseFeedApi.ts";
 export { CoursePage, CourseResponse } from "./api/CourseQueryApi.ts";
 export { CommandCreatedResponse, CommandIdempotentResponse } from "@crablet/commands-http";
 export { ViewAdvanced } from "./api/CourseFeedApi.ts";
-export { CourseFull, CourseNotFound, StudentAtLimit } from "./domain/enrolment.contract.ts";
+export { CourseFull, CourseNotFound, StudentAtLimit } from "./slices/enrolment/enrolment.contract.ts";
 
 // The seat map: the one view the course reads use and the live feed watches. Its projector and subscription are in
 // views/CourseSeatsViewProjector.ts, which re-exports this name.

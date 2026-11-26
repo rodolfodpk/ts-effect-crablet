@@ -5,10 +5,10 @@ import { describe, test } from "bun:test";
 import path from "node:path";
 import { loadEventFixtures } from "@crablet/commands/testing/EventFixtures";
 import { assertModelImpact, eventFactsFromFixtures, modelFactsOf } from "@crablet/commands/ModelImpact";
-import { CourseCancelled, CourseDefined, CourseModel, StudentModel, StudentSubscribed, SubscriptionReleased } from "../src/domain/Enrolment.ts";
-import { CoursePriced, CoursePricing, ReceiptSent, SubscriptionModel, SubscriptionPaid } from "../src/domain/Payments.ts";
-import { CourseConfirmed, CourseReadiness, RoomBooked, TeacherAssigned } from "../src/domain/CourseStart.ts";
-import { BillingModel, BillingStarted, BillingStopped, InvoiceIssued, InvoiceModel, InvoiceOverdue, InvoicePaid } from "../src/features/monthly-fee/index.ts";
+import { CourseCancelled, CourseDefined, CourseModel, StudentModel, StudentSubscribed, SubscriptionReleased } from "../src/slices/enrolment/Enrolment.ts";
+import { CoursePriced, CoursePricing, ReceiptSent, SubscriptionModel, SubscriptionPaid } from "../src/slices/payments/Payments.ts";
+import { CourseConfirmed, CourseReadiness, RoomBooked, TeacherAssigned } from "../src/slices/confirm-course/CourseStart.ts";
+import { BillingModel, BillingStarted, BillingStopped, InvoiceIssued, InvoiceModel, InvoiceOverdue, InvoicePaid } from "../src/slices/monthly-fee/index.ts";
 
 describe("the course decision models", () => {
   test("every event type that carries a model's binding tag is accounted for", () => {

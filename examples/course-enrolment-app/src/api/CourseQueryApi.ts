@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadQuery";
 import { problemSchemaOf } from "@crablet/commands-http/ProblemDetail";
-import { CourseNotFound } from "../domain/enrolment.contract.ts";
+import { CourseNotFound } from "../slices/enrolment/enrolment.contract.ts";
 
 // #region query-api
 // A read endpoint, hand-written: the response schema is declared here (reads are not derived from the domain model). Both reads take the
@@ -22,7 +22,7 @@ export const CoursePage = Schema.Struct({
   next: Schema.NullOr(Schema.String)
 });
 
-// Who took which seat, in the order they subscribed (the enrolments view, written with its own SQL through `raw`: src/views/CourseEnrolmentsViewProjector.ts).
+// Who took which seat, in the order they subscribed (the enrolments view, written with its own SQL through `raw`: src/slices/course-enrolments/CourseEnrolmentsViewProjector.ts).
 export const EnrolmentsResponse = Schema.Struct({
   courseId: Schema.String,
   students: Schema.Array(Schema.Struct({ studentId: Schema.String, seatNumber: Schema.Int }))

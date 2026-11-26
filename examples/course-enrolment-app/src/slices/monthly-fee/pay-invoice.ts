@@ -2,7 +2,7 @@
 import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, DomainError, emit, fail, Instant } from "@crablet/commands/Domain";
-import { WrongAmount } from "../../domain/Payments.ts";
+import { WrongAmount } from "../payments/Payments.ts";
 import { InvoiceModel, invoiceIdOf } from "./billing.ts";
 import { InvoicePaid } from "./monthly-fee.events.ts";
 

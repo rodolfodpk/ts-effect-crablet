@@ -6,13 +6,13 @@
 import { DateTime } from "effect";
 import { all, byModel, deadline, defineCommand, defineModel, emit, fail, noop } from "@crablet/commands/Domain";
 import { CourseAlreadyDefined, CourseFull, CourseNotFound, CourseWasCancelled, DefineCourseContract, StudentAtLimit, SubscribeContract } from "./enrolment.contract.ts";
-import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
-import { CancelUnreadyCourse, READINESS_DAYS } from "./CourseStart.ts";
-import { PAYMENT_WINDOW_DAYS, ReleaseUnpaidSubscription } from "./Payments.ts";
+import { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../../shared/enrolment.events.ts";
+import { CancelUnreadyCourse, READINESS_DAYS } from "../confirm-course/CourseStart.ts";
+import { PAYMENT_WINDOW_DAYS, ReleaseUnpaidSubscription } from "../payments/Payments.ts";
 
-// The events are in enrolment.events.ts, so the payments (src/domain/Payments.ts) can read them without importing these rules, and these rules can
+// The events are in enrolment.events.ts, so the payments (src/slices/payments/Payments.ts) can read them without importing these rules, and these rules can
 // name a payment command (a deadline, ADR-0043) without an import cycle. Re-exported for the rest of the app.
-export { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "./enrolment.events.ts";
+export { CourseCancelled, CourseDefined, StudentSubscribed, SubscriptionReleased } from "../../shared/enrolment.events.ts";
 
 export const MAX_COURSES_PER_STUDENT = 3;
 

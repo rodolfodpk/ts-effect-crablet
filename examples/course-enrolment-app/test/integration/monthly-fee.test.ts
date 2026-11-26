@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The monthly fee (src/features/monthly-fee) on Postgres:
+// Runs under Node (Testcontainers). The monthly fee (src/slices/monthly-fee) on Postgres:
 // - a payment and the release of the same invoice, run at the same time, never both happen: their appends conflict over the invoice's events;
 // - end to end with the deadlines processor: starting the billing issues invoice 1, and past its due date the unpaid seat is released and the seats
 //   view frees it.
@@ -17,9 +17,9 @@ import { courseModules } from "../../src/processes.ts";
 
 // The course's deadlines module running (the views built, not run), as a process whose roles name `deadlines` runs it.
 const startCourseDeadlines = (instanceId: string) => Layer.build(Crablet.processors(courseModules(), { run: ["deadlines"], instanceId }));
-import { DefineCourse, Subscribe } from "../../src/domain/Enrolment.ts";
-import { PriceCourse } from "../../src/domain/Payments.ts";
-import { INVOICE_DUE_DAYS, invoiceIdOf, IssueInvoice, PayInvoice, ReleaseOverdueInvoice, StartMonthlyFee } from "../../src/features/monthly-fee/index.ts";
+import { DefineCourse, Subscribe } from "../../src/slices/enrolment/Enrolment.ts";
+import { PriceCourse } from "../../src/slices/payments/Payments.ts";
+import { INVOICE_DUE_DAYS, invoiceIdOf, IssueInvoice, PayInvoice, ReleaseOverdueInvoice, StartMonthlyFee } from "../../src/slices/monthly-fee/index.ts";
 
 let db: TestDb;
 let app: RunningCourseApp;

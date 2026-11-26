@@ -1,8 +1,8 @@
 // Slice: an invoice not paid by its due date gives the seat back. Run by the deadline issue-invoice.ts sets at the due date.
 import * as Schema from "effect/Schema";
 import { all, byModel, defineCommand, emit, noop } from "@crablet/commands/Domain";
-import { SubscriptionReleased } from "../../domain/enrolment.events.ts";
-import { SubscriptionModel } from "../../domain/Payments.ts";
+import { SubscriptionReleased } from "../../shared/enrolment.events.ts";
+import { SubscriptionModel } from "../payments/Payments.ts";
 import { billedBy, InvoiceModel, invoiceIdOf } from "./billing.ts";
 import { InvoiceOverdue } from "./monthly-fee.events.ts";
 
