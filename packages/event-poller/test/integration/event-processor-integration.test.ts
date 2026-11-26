@@ -14,9 +14,10 @@ import { makePostgresProgressTracker } from "../../src/PostgresProgressTracker.t
 import { makeSqlEventFetcher } from "../../src/SqlEventFetcher.ts";
 import { processorConfigOf } from "../../src/ProcessorConfig.ts";
 import * as EventSelection from "../../src/EventSelection.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 
 // PATTERN PRIMER - `ManagedRuntime`, vs. `Layer.Layer` + `Effect.provide` used everywhere else in
 // this codebase. A plain `Layer.Layer` is rebuilt (a fresh connection pool!) on every single
@@ -40,7 +41,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const layer = Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie);
+  const layer = Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
 }, { timeout: 60_000 });
 
@@ -49,7 +50,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) =>
   runtime.runPromise(effect);
 
 const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => boolean, timeoutMs = 10_000) => {

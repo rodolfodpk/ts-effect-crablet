@@ -19,6 +19,7 @@ import { walletOpenApiFile } from "../../src/api/WalletOpenApi.ts";
 import { makeWalletApi } from "../../src/WalletApp.ts";
 import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
 import { WalletBalanceView } from "../../src/slices/wallet-balance/WalletBalanceViewProjector.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -34,7 +35,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive));
   const layer = Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
   app = await startWalletAppForTest(runtime);

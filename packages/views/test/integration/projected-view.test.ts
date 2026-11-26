@@ -16,8 +16,9 @@ import { applyInMemory, normalizeRow, rowsOf } from "../../src/ViewMemory.ts";
 import { checkViewTables } from "../../src/ViewTableCheck.ts";
 import { bigint, decimal, integer, text, timestamptz, viewTable } from "../../src/ViewTable.ts";
 import type { ViewsConfig } from "../../src/ViewsConfig.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
-type Env = EventStore | SqlClient.SqlClient | PgClient.PgClient;
+type Env = EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections;
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<Env, never>;
 
@@ -66,7 +67,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie));
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie));
   await runtime.runPromise(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

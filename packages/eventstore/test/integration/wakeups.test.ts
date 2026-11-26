@@ -9,6 +9,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EVENTS_CHANNEL, makeEventStoreLayer, type EventStoreConfig } from "../../src/EventStore.ts";
 import { wakeupStream } from "../../src/Listen.ts";
 import * as AppendEvent from "../../src/AppendEvent.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 let db: TestDb;
 let pgLayer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
@@ -18,8 +19,8 @@ before(async () => {
 }, { timeout: 60_000 });
 after(async () => { await db.stop(); });
 
-const run = <A>(config: EventStoreConfig, effect: Effect.Effect<A, unknown, EventStore | SqlClient.SqlClient | PgClient.PgClient>) =>
-  Effect.runPromise(Effect.provide(effect, Layer.provideMerge(makeEventStoreLayer(config), pgLayer)));
+const run = <A>(config: EventStoreConfig, effect: Effect.Effect<A, unknown, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) =>
+  Effect.runPromise(Effect.provide(effect, Layer.provideMerge(Layer.merge(makeEventStoreLayer(config), ProcessConnectionsLive), pgLayer)));
 
 // Collects what the listener hears: every batch with the time it arrived and what was committed at that moment, per type.
 const listen = (committedCount: (type: string) => Effect.Effect<number, unknown, SqlClient.SqlClient>) =>

@@ -9,6 +9,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader } from "../../src/Leader.ts";
+import { ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 let db: TestDb;
 before(async () => { db = await startTestDb(); }, { timeout: 60_000 });
@@ -16,9 +17,9 @@ after(async () => { await db.stop(); });
 
 const newKey = () => BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);
 const runtimeWithPool = (maxConnections: number) =>
-  ManagedRuntime.make(
+  ManagedRuntime.make(Layer.merge(
     PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections }).pipe(Layer.orDie)
-  );
+  , ProcessConnectionsLive));
 
 describe("a leader whose pool has no connection to give", () => {
   it("fails within the limit, saying the pool is the reason, and a later attempt works once a connection is free", { timeout: 30_000 }, async () => {

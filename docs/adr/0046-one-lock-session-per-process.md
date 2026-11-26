@@ -2,7 +2,8 @@
 
 ## Status
 
-**Accepted** (2026-10-25). Built in `Leader.ts` and `SharedListen.ts`, tested against Postgres and run in the kind lab (see "Result").
+**Accepted** (2026-10-25). Built in `Leader.ts` and `SharedListen.ts`, tested against Postgres and run in the kind lab (see "Result"). **Amended by
+[ADR-0055](0055-the-process-connections-are-a-service.md)** (2026-11-26): the session and the LISTEN connection live in the `ProcessConnections` service, not in module `WeakMap`s.
 
 ## Context
 

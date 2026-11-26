@@ -13,9 +13,10 @@ import * as LogPosition from "../../src/LogPosition.ts";
 import { Duplicate, MAX_APPEND_EVENTS } from "../../src/AppendErrors.ts";
 import * as AppendCondition from "../../src/AppendCondition.ts";
 import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 let db: TestDb;
-let layer: Layer.Layer<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let layer: Layer.Layer<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 
 before(async () => {
   db = await startTestDb();
@@ -27,7 +28,7 @@ before(async () => {
     password: Redacted.make(db.connInfo.password)
   });
   // provideMerge (not provide) so SqlClient itself stays in the output, for the tests that use it directly.
-  layer = Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie);
+  layer = Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie);
 }, { timeout: 60_000 });
 
 after(async () => {
@@ -186,7 +187,7 @@ describe("EventStore public API parity (Phase 1)", () => {
     const spikeId = crypto.randomUUID();
 
     const runWithPg = <A, E>(
-      effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>
+      effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>
     ) => Effect.runPromise(Effect.provide(effect, layer));
 
     const batch = await runWithPg(

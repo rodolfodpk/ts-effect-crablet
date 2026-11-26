@@ -1,6 +1,7 @@
 import { Effect, Exit, type Queue, Scope, Semaphore } from "effect";
 import { PgConnection, type PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
+import { ProcessConnections } from "./internal/ProcessConnectionsService.ts";
 
 // ONE LISTEN CONNECTION PER PROCESS. With @effect/sql-pg, `pg.listen(channel)` reserves a pooled connection for each call, so a process whose views,
 // automations and outbox wake on `crablet_events`, beside the views' progress hub, kept four connections for LISTEN, and the server sent every
@@ -20,6 +21,8 @@ export interface Listener {
 export interface SharedListener {
   // LISTEN on `channel`, on the shared connection, for as long as the caller's scope lasts.
   readonly listen: (channel: string) => Effect.Effect<Queue.Dequeue<{ readonly payload: string }, SqlError>, SqlError, Scope.Scope>;
+  // Closes the connection, if one is open.
+  readonly close: Effect.Effect<void>;
 }
 
 // The shared connection over `connect`, which opens one in the scope it is given.
@@ -70,16 +73,35 @@ export const makeSharedListener = (connect: Effect.Effect<Listener, SqlError, Sc
       );
     });
 
-  return { listen };
+  return { listen, close: Semaphore.withPermit(permit, drop) };
 };
 
-// The shared LISTEN connection of `pg`: one per client, opened with the client's own settings.
-const byClient = new WeakMap<PgClient.PgClient, SharedListener>();
-export const sharedListen = (pg: PgClient.PgClient, channel: string): Effect.Effect<Queue.Dequeue<{ readonly payload: string }, SqlError>, SqlError, Scope.Scope> => {
-  let shared = byClient.get(pg);
-  if (shared === undefined) {
-    shared = makeSharedListener(Effect.flatMap(PgConnection.make(pg.config), (connection) => connection.pin));
-    byClient.set(pg, shared);
-  }
-  return shared.listen(channel);
+// The shared LISTEN connections of a process, one per client, opened with the client's own settings. They live in the process's `ProcessConnections`
+// service (ProcessConnections.ts), built once by the application's layer and closed with it; not module state.
+export interface SharedListens {
+  readonly listen: (pg: PgClient.PgClient, channel: string) => Effect.Effect<Queue.Dequeue<{ readonly payload: string }, SqlError>, SqlError, Scope.Scope>;
+  // When the layer closes: a connection still open is closed. Normally every listen ended already, and with the last the connection.
+  readonly close: Effect.Effect<void>;
+}
+
+export const makeSharedListens = (): SharedListens => {
+  const byClient = new Map<PgClient.PgClient, SharedListener>();
+  return {
+    listen: (pg, channel) => {
+      let shared = byClient.get(pg);
+      if (shared === undefined) {
+        shared = makeSharedListener(Effect.flatMap(PgConnection.make(pg.config), (connection) => connection.pin));
+        byClient.set(pg, shared);
+      }
+      return shared.listen(channel);
+    },
+    close: Effect.suspend(() => Effect.forEach([...byClient.values()], (shared) => shared.close, { discard: true }))
+  };
 };
+
+// LISTEN on `channel` on the process's LISTEN connection for `pg` (`ProcessConnections`).
+export const sharedListen = (
+  pg: PgClient.PgClient,
+  channel: string
+): Effect.Effect<Queue.Dequeue<{ readonly payload: string }, SqlError>, SqlError, Scope.Scope | ProcessConnections> =>
+  Effect.flatMap(ProcessConnections, (connections) => connections.listens.listen(pg, channel));

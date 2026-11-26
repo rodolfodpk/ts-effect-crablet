@@ -2,7 +2,7 @@ import { Duration, Effect, Queue, Ref, type Scope, Stream } from "effect";
 import type { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
 import { decodePayload, type DecodedPayload } from "./NotifyPayload.ts";
-import { sharedListen } from "./SharedListen.ts";
+import { ProcessConnections } from "./internal/ProcessConnectionsService.ts";
 
 export { makeSharedListener, sharedListen, type Listener, type SharedListener } from "./SharedListen.ts";
 
@@ -97,7 +97,8 @@ export const wakeupStream = (
   pg: PgClient.PgClient,
   channel: string,
   options: WakeupOptions = {}
-): Stream.Stream<WakeupBatch, SqlError> => wakeupStreamFrom(sharedListen(pg, channel), options);
+): Stream.Stream<WakeupBatch, SqlError, ProcessConnections> =>
+  Stream.unwrap(Effect.map(ProcessConnections, (connections) => wakeupStreamFrom(connections.listens.listen(pg, channel), options)));
 
 function mergeBatch(payloads: ReadonlyArray<DecodedPayload>): WakeupBatch {
   if (payloads.some((p) => p.wildcard)) {

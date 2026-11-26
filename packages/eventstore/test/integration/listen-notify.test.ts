@@ -7,9 +7,10 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { wakeupStream, type WakeupBatch } from "../../src/Listen.ts";
 import { encodePayload } from "../../src/NotifyPayload.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 let db: TestDb;
-let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient, never>;
+let layer: Layer.Layer<PgClient.PgClient | SqlClient.SqlClient | ProcessConnections, never>;
 
 const CHANNEL = "crablet_events_spike";
 
@@ -21,7 +22,7 @@ before(async () => {
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }).pipe(Layer.orDie);
+  }).pipe(Layer.orDie, Layer.merge(ProcessConnectionsLive));
 }, { timeout: 60_000 });
 
 after(async () => {

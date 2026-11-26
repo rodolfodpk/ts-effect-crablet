@@ -11,6 +11,7 @@ import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -19,7 +20,7 @@ before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: "wallet-off" });
-  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie));
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive, ProcessConnectionsLive)), pgLayer).pipe(Layer.orDie));
   app = await startWalletAppForTest(runtime, undefined, undefined, { polling: { pollingIntervalMs: 200, backoffMaxSeconds: 1 } });
 }, { timeout: 60_000 });
 after(async () => { await app.stop(); await runtime.dispose(); await db.stop(); });

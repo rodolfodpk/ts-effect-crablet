@@ -1,6 +1,7 @@
 // The automations processor itself: build it (`makeAutomationsProcessor`) or build and start it (`startAutomationsProcessor`). Internal (`crablet.internal`): an application
 // runs the module through `@crablet/app` (`Automations.module(...)`); the package's tests and the module build on this.
 import { Effect, type Scope, Stream } from "effect";
+import type { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
@@ -46,7 +47,7 @@ export interface AutomationsDeps {
 //
 // Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. What running needs (the
 // `CommandExecutor` its commands go through, the `PgClient` its wake-ups LISTEN on) is the handle's run requirement, given where it starts.
-export type AutomationsRunRequirements = CommandExecutor | PgClient.PgClient;
+export type AutomationsRunRequirements = CommandExecutor | PgClient.PgClient | ProcessConnections;
 
 export const makeAutomationsProcessor = (
   deps: AutomationsDeps

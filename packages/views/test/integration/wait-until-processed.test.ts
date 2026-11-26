@@ -13,9 +13,10 @@ import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import { makeTransactionalViewProjector } from "../../src/ViewProjector.ts";
 import { ViewFailed, WaitTimeout, waitUntilProcessed } from "../../src/WaitUntilProcessed.ts";
 import type { ViewsConfig } from "../../src/ViewsConfig.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 
 before(async () => {
   db = await startTestDb();
@@ -27,7 +28,7 @@ before(async () => {
     password: Redacted.make(db.connInfo.password)
   });
   runtime = ManagedRuntime.make(
-    Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie)
+    Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie)
   );
   await runtime.runPromise(
     Effect.gen(function* () {
@@ -42,7 +43,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) => runtime.runPromise(effect);
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) => runtime.runPromise(effect);
 
 // A slow poll, so that "just appended" is reliably BEFORE the view has seen the event.
 const slowViews: ViewsConfig = {

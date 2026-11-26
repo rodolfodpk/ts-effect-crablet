@@ -12,9 +12,10 @@ import { makeViewsProcessor } from "../../src/ViewsProcessor.ts";
 import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import { makeTransactionalViewProjector, type ViewProjector } from "../../src/ViewProjector.ts";
 import type { ViewsConfig } from "../../src/ViewsConfig.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 
 // ManagedRuntime, not plain Layer + Effect.provide, since makeViewsProcessor()'s handle.service.start
 // forks long-lived daemon fibers that must keep using the same connection pool across many separate
@@ -28,7 +29,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const layer = Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie);
+  const layer = Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
 
   await runtime.runPromise(
@@ -44,7 +45,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) =>
   runtime.runPromise(effect);
 
 const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => boolean, timeoutMs = 10_000) => {

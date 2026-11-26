@@ -1,5 +1,5 @@
 import { Context, Duration, Effect, Latch, Layer, Queue, Scope } from "effect";
-import { sharedListen } from "@crablet/eventstore/Listen";
+import { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 import { sessionPg } from "@crablet/eventstore/SessionClients";
 import { PgClient } from "@effect/sql-pg";
 import type { SqlError } from "effect/sql/SqlError";
@@ -144,10 +144,11 @@ export const makeViewProgressHub = (options: ViewProgressHubOptions): Effect.Eff
 
 // The hub for an app: one LISTEN on `crablet_view_progress` over the app's PgClient, for the life of the layer, on the process's one LISTEN connection
 // (`sharedListen`). Build it ONCE and provide it to everything that needs it (the feed, the read wrapper): Effect shares one layer value within a build.
-export const ViewProgressHubLive: Layer.Layer<ViewProgressHub, never, PgClient.PgClient> = Layer.effect(
+export const ViewProgressHubLive: Layer.Layer<ViewProgressHub, never, PgClient.PgClient | ProcessConnections> = Layer.effect(
   ViewProgressHub,
   Effect.gen(function* () {
     const pg = yield* sessionPg; // the session client when the application provides one (a pooler in transaction mode does not keep a LISTEN)
-    return yield* makeViewProgressHub({ source: sharedListen(pg, VIEW_PROGRESS_CHANNEL) });
+    const connections = yield* ProcessConnections;
+    return yield* makeViewProgressHub({ source: connections.listens.listen(pg, VIEW_PROGRESS_CHANNEL) });
   })
 );

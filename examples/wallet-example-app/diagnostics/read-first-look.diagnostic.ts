@@ -22,6 +22,7 @@ import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts"
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import { WalletBalanceView } from "../src/slices/wallet-balance/WalletBalanceViewProjector.ts";
 import { WalletSummaryView } from "../src/slices/wallet-summary/WalletSummaryViewProjector.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 const QUICK = process.env["QUICK"] !== undefined;
 
@@ -52,7 +53,7 @@ after(async () => { if (sidecar) try { sh("stop", "-t", "1", sidecar); } catch {
 describe("DIAG", () => {
   it("the first look of a consistent read: before and after, under a network delay", { timeout: 1_200_000 }, async () => {
     const rt = ManagedRuntime.make(
-      Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)),
+      Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)),
         PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })).pipe(Layer.orDie)
     );
     const run = <A, E>(e: Effect.Effect<A, E, any>) => rt.runPromise(e);

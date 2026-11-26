@@ -9,6 +9,7 @@ import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { ViewProgressHub, ViewProgressHubLive } from "../../src/ViewProgressHub.ts";
 import { VIEW_PROGRESS_CHANNEL } from "../../src/ViewProgress.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let admin: Client;
@@ -25,7 +26,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  runtime = ManagedRuntime.make(Layer.provide(ViewProgressHubLive, pgLayer).pipe(Layer.orDie));
+  runtime = ManagedRuntime.make(Layer.provide(ViewProgressHubLive, Layer.merge(pgLayer, ProcessConnectionsLive)).pipe(Layer.orDie));
   await runtime.runPromise(Effect.flatMap(ViewProgressHub, () => Effect.void)); // build it
 }, { timeout: 60_000 });
 after(async () => {

@@ -168,7 +168,8 @@ for a follower or the api alone. (It was 7 for all three workers and the api whe
 lead. A smaller pool does not fail: what does not fit waits, and a module can be left without a leader (a leader gives up after 10 s and logs why). The framework counts the lock session when the first module
 starts, and warns once when the pool is smaller. The wallet reads the connection from `WALLET_DB_SESSION_HOST` (and `_PORT`, `_NAME`, `_USER`, `_PASSWORD`, `_POOL`, each defaulting to the main one).
 The pods need a route and a credential to the direct endpoint; if the database only accepts the pooler, this is not possible.
-Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it.
+Applications that build the layers themselves provide `sessionClientsLayer(config)` (`@crablet/eventstore/SessionClients`) and `ViewProgressHubLive` finds it, and
+`ProcessConnectionsLive` (`@crablet/eventstore/ProcessConnections`), which holds the lock session and the LISTEN connection and which `Crablet.layer` provides ([ADR-0055](../../adr/0055-the-process-connections-are-a-service.md)).
 
 **RDS Proxy** does not break these but pins them: per the AWS documentation, LISTEN and session-level advisory locks pin a connection to the proxy, and transaction-level locks do not. `session` keeps
 those few connections off the proxy. Not tested against a real RDS Proxy. Aurora Limitless supports neither LISTEN nor RDS Proxy. After a failover of the direct endpoint the leader notices through its heartbeat

@@ -13,6 +13,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { rolesFromValue } from "../support/roles.ts";
 import { startWalletAppForTest } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let monitor: Client;
@@ -31,7 +32,7 @@ after(async () => {
 const make = () =>
   ManagedRuntime.make(
     Layer.provideMerge(
-      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)),
+      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)),
       PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: "wallet" })
     ).pipe(Layer.orDie)
   );

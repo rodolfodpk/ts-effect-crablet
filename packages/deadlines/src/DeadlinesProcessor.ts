@@ -1,6 +1,7 @@
 // The deadlines processor itself: build it (`makeDeadlinesProcessor`) or build and start it (`startDeadlinesProcessor`). Internal (`crablet.internal`): an application
 // runs the module through `@crablet/app` (`Deadlines.module(...)`); the package's tests and the module build on this.
 import { Effect, type Scope, Stream } from "effect";
+import type { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 import { SqlClient } from "effect/sql";
 import { EventStore } from "@crablet/eventstore";
 import { tryAcquireGlobalLeader, type LeaderOptions } from "@crablet/eventstore/Leader";
@@ -55,7 +56,7 @@ export interface DeadlinesDeps {
 
 // What running the deadlines processor needs, given where it starts (decision V1): the executor its commands go through, and the event store its firings are
 // appended to. Building it needs only the SQL client: a handle that is not running is read and controlled through the database.
-export type DeadlinesRunRequirements = CommandExecutor | EventStore;
+export type DeadlinesRunRequirements = CommandExecutor | EventStore | ProcessConnections;
 
 // Builds the deadlines processor without starting it (a handle for status and the admin API, or a test that drives `start` and `stop` itself).
 export const makeDeadlinesProcessor = (

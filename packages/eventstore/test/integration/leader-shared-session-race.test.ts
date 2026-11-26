@@ -9,6 +9,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader, type LeaderHandle } from "../../src/Leader.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 // Four modules' locks: the mechanism is what is tested here, so any four distinct keys (the modules own theirs).
 const VIEWS_LOCK_KEY = 9100000000000000001n;
@@ -16,14 +17,14 @@ const AUTOMATIONS_LOCK_KEY = 9100000000000000002n;
 const OUTBOX_LOCK_KEY = 9100000000000000003n;
 const DEADLINES_LOCK_KEY = 9100000000000000004n;
 
-type Rt = ManagedRuntime.ManagedRuntime<SqlClient.SqlClient, never>;
+type Rt = ManagedRuntime.ManagedRuntime<SqlClient.SqlClient | ProcessConnections, never>;
 let db: TestDb;
 let processA: Rt;
 let probe: Rt;
 const runtime = (name: string): Rt =>
-  ManagedRuntime.make(PgClient.layer({
+  ManagedRuntime.make(Layer.merge(PgClient.layer({
     host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: name
-  }).pipe(Layer.orDie));
+  }).pipe(Layer.orDie), ProcessConnectionsLive));
 
 before(async () => {
   db = await startTestDb();

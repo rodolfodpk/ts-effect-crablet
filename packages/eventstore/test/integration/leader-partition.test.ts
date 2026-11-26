@@ -10,16 +10,17 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader, type LeaderHandle, type LeaderOptions } from "../../src/Leader.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
-type Rt = ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient, never>;
+type Rt = ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient | ProcessConnections, never>;
 let db: TestDb;
 let direct: Rt;
 
 const runtimeTo = (host: string, port: number, maxConnections?: number): Rt =>
-  ManagedRuntime.make(PgClient.layer({
+  ManagedRuntime.make(Layer.merge(PgClient.layer({
     host, port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password),
     ...(maxConnections === undefined ? {} : { maxConnections })
-  }).pipe(Layer.orDie));
+  }).pipe(Layer.orDie), ProcessConnectionsLive));
 
 before(async () => {
   db = await startTestDb();
