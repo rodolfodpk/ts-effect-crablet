@@ -20,6 +20,12 @@ tutorial.
 | Close a statement or a shift and open the next one | [Turn a period](build/turn-a-period.md) |
 | Change an event that is already stored | [Evolving events](build/evolving-events.md) |
 
+## Structure: how a repository is laid out
+
+| I want to... | Guide |
+|---|---|
+| Hold several products in one repository, cut each into slices, deploy one as one image or as separate apps | [Several products in one repository](structure/monorepo-with-products.md) |
+
 ## Operate: while running it
 
 | I want to... | Guide |
