@@ -14,11 +14,11 @@ import { Conflict } from "@crablet/eventstore/AppendErrors";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import type { Command } from "@crablet/commands/Command";
 import { all } from "@crablet/commands/Model";
-import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
-import { Withdraw } from "../../src/domain/commands/WithdrawCommand.ts";
-import { TransferMoney } from "../../src/domain/commands/TransferMoneyCommand.ts";
-import { WalletModel } from "../../src/domain/WalletModel.ts";
+import { OpenWallet } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
+import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
+import { Withdraw } from "../../src/slices/withdraw/WithdrawCommand.ts";
+import { TransferMoney } from "../../src/slices/transfer-money/TransferMoneyCommand.ts";
+import { WalletModel } from "../../src/shared/WalletModel.ts";
 
 let db: TestDb;
 let layer: Layer.Layer<CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient, never>;

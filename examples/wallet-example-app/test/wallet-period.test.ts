@@ -2,7 +2,7 @@
 import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { Period } from "@crablet/commands/Period";
-import { minutesPeriod, periodFromEnv } from "../src/domain/WalletPeriod.ts";
+import { minutesPeriod, periodFromEnv } from "../src/shared/WalletPeriod.ts";
 
 const at = (iso: string) => DateTime.makeUnsafe(iso);
 

@@ -1,4 +1,4 @@
-// The declarative wallet model (src/domain/WalletModel.ts): its boundary queries and its state fold.
+// The declarative wallet model (src/shared/WalletModel.ts): its boundary queries and its state fold.
 // (While the hand-written WalletQueryPatterns/WalletBalanceProjector still existed, this file proved the
 // model equal to them; they are gone, so the expectations are now written out directly.)
 import { describe, expect, test } from "bun:test";
@@ -7,7 +7,7 @@ import * as Query from "@crablet/eventstore/Query";
 import * as Tag from "@crablet/eventstore/Tag";
 import { all } from "@crablet/commands/Model";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
-import * as M from "../src/domain/WalletModel.ts";
+import * as M from "../src/shared/WalletModel.ts";
 
 const Y = 2026;
 const MO = 9;

@@ -12,11 +12,11 @@ import { CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
-import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
-import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { DepositMade, WalletModel, WalletStatementOpened } from "../../src/domain/WalletModel.ts";
+import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
+import { OpenWallet } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
+import { DepositMade, WalletModel, WalletStatementOpened } from "../../src/shared/WalletModel.ts";
 import * as Tag from "@crablet/eventstore/Tag";
-import * as WalletTags from "../../src/domain/WalletTags.ts";
+import * as WalletTags from "../../src/shared/WalletTags.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CommandExecutor | EventStore | SqlClient.SqlClient, never>;

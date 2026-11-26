@@ -13,10 +13,10 @@ import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { atClock } from "../support/clocked-commands.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
-import { OpenWallet } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
-import { Withdraw } from "../../src/domain/commands/WithdrawCommand.ts";
-import { TransferMoney } from "../../src/domain/commands/TransferMoneyCommand.ts";
+import { OpenWallet } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
+import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
+import { Withdraw } from "../../src/slices/withdraw/WithdrawCommand.ts";
+import { TransferMoney } from "../../src/slices/transfer-money/TransferMoneyCommand.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CommandExecutor, never>;

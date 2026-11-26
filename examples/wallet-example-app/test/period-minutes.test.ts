@@ -3,10 +3,10 @@
 import { DateTime } from "effect";
 import { describe, expect, test } from "bun:test";
 import { given } from "@crablet/commands/testing/Scenario";
-import { Deposit } from "../src/domain/commands/DepositCommand.ts";
-import { TransferMoney } from "../src/domain/commands/TransferMoneyCommand.ts";
-import { Withdraw } from "../src/domain/commands/WithdrawCommand.ts";
-import { WalletOpened } from "../src/domain/WalletModel.ts";
+import { Deposit } from "../src/slices/deposit/DepositCommand.ts";
+import { TransferMoney } from "../src/slices/transfer-money/TransferMoneyCommand.ts";
+import { Withdraw } from "../src/slices/withdraw/WithdrawCommand.ts";
+import { WalletOpened } from "../src/shared/WalletModel.ts";
 
 const on = process.env["WALLET_PERIOD"] === "minutes:5";
 const t = on ? test : test.skip;

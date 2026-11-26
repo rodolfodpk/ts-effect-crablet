@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
 import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Domain";
-import { WalletNotFound } from "../errors/WalletErrors.ts";
-import { DepositContract } from "../WalletContracts.ts";
-import { DepositMade, WalletPeriodModel, statementTags } from "../WalletModel.ts";
-import * as WalletTags from "../WalletTags.ts";
+import { WalletNotFound } from "../../shared/WalletErrors.ts";
+import { DepositContract } from "../../shared/WalletContracts.ts";
+import { DepositMade, WalletPeriodModel, statementTags } from "../../shared/WalletModel.ts";
+import * as WalletTags from "../../shared/WalletTags.ts";
 
 export type DepositCommand = Schema.Schema.Type<(typeof DepositContract)["input"]>;
 

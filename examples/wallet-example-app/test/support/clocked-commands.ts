@@ -5,10 +5,10 @@ import { Clock, Effect, DateTime } from "effect";
 import { concurrent, defineCommand, emit, fail } from "@crablet/commands/Command";
 import { all } from "@crablet/commands/Model";
 import * as Tag from "@crablet/eventstore/Tag";
-import { InsufficientFunds, WalletNotFound } from "../../src/domain/errors/WalletErrors.ts";
-import { DepositContract, TransferMoneyContract, WithdrawContract } from "../../src/domain/WalletContracts.ts";
-import { DepositMade, MoneyTransferred, WalletPeriodModel, WithdrawalMade, statementTags, statementIdOf } from "../../src/domain/WalletModel.ts";
-import * as WalletTags from "../../src/domain/WalletTags.ts";
+import { InsufficientFunds, WalletNotFound } from "../../src/shared/WalletErrors.ts";
+import { DepositContract, TransferMoneyContract, WithdrawContract } from "../../src/shared/WalletContracts.ts";
+import { DepositMade, MoneyTransferred, WalletPeriodModel, WithdrawalMade, statementTags, statementIdOf } from "../../src/shared/WalletModel.ts";
+import * as WalletTags from "../../src/shared/WalletTags.ts";
 
 export type Pause = Effect.Effect<void> | undefined;
 

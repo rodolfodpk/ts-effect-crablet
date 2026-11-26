@@ -13,7 +13,7 @@ that declares no `idempotentBy`. The example is the wallet's welcome notificatio
 `idempotentBy` names the event that means "already done"; a repeat is answered as an idempotent success and appends nothing. This command is not exposed over HTTP,
 because only the automation issues it.
 
-<!-- file: examples/wallet-example-app/src/domain/notification/SendWelcomeNotificationCommand.ts#automation-command -->
+<!-- file: examples/wallet-example-app/src/slices/welcome-notification/SendWelcomeNotificationCommand.ts#automation-command -->
 ```ts
 export const SendWelcomeNotification = defineCommand({
   name: "SendWelcomeNotificationCommand",
@@ -30,7 +30,7 @@ input, one request, an array of them, or `undefined` for none (for a command who
 recorded against the automation rather than a wrong action. The handler is pure: if deciding needs state, the command reads it (`model`, `resolve`), where
 it is consistent. Building the input from the trigger also makes a redelivery the same request.
 
-<!-- file: examples/wallet-example-app/src/automations/WalletOpenedAutomation.ts#automation -->
+<!-- file: examples/wallet-example-app/src/slices/welcome-notification/WalletOpenedAutomation.ts#automation -->
 ```ts
 export const walletOpenedAutomation = defineAutomation("wallet-opened-welcome-notification", SendWelcomeNotification).on(Wallet.WalletOpened, (d) => ({
   walletId: d.walletId,

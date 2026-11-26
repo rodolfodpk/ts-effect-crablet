@@ -20,8 +20,8 @@ import { makeConsistentRead } from "@crablet/views-http";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
-import { WalletBalanceView } from "../src/views/WalletBalanceViewProjector.ts";
-import { WalletSummaryView } from "../src/views/WalletSummaryViewProjector.ts";
+import { WalletBalanceView } from "../src/slices/wallet-balance/WalletBalanceViewProjector.ts";
+import { WalletSummaryView } from "../src/slices/wallet-summary/WalletSummaryViewProjector.ts";
 
 const QUICK = process.env["QUICK"] !== undefined;
 

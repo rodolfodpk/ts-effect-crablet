@@ -13,8 +13,8 @@ import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
-import { WALLET_OPENED, DEPOSIT_MADE } from "../../src/domain/events/WalletEvents.ts";
-import { WELCOME_NOTIFICATION_SENT } from "../../src/domain/notification/WelcomeNotificationSent.ts";
+import { WALLET_OPENED, DEPOSIT_MADE } from "../../src/shared/WalletEvents.ts";
+import { WELCOME_NOTIFICATION_SENT } from "../../src/slices/welcome-notification/WelcomeNotificationSent.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;

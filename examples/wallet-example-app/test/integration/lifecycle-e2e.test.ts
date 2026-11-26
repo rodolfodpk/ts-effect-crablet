@@ -17,8 +17,8 @@ import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from 
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { walletOpenApiFile } from "../../src/api/WalletOpenApi.ts";
 import { makeWalletApi } from "../../src/WalletApp.ts";
-import { Deposit } from "../../src/domain/commands/DepositCommand.ts";
-import { WalletBalanceView } from "../../src/views/WalletBalanceViewProjector.ts";
+import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
+import { WalletBalanceView } from "../../src/slices/wallet-balance/WalletBalanceViewProjector.ts";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;

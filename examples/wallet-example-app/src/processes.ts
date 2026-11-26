@@ -5,8 +5,21 @@ import * as Automations from "@crablet/automations";
 import * as Outbox from "@crablet/outbox";
 import { defineTopic } from "@crablet/outbox/TopicConfig";
 import { makeLogPublisher, type OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
-import { walletViewOverrides, walletViews } from "./views/WalletViewConfig.ts";
-import { walletOpenedAutomation } from "./automations/WalletOpenedAutomation.ts";
+import { walletBalanceViews } from "./slices/wallet-balance/index.ts";
+import { walletTransactionsViews } from "./slices/wallet-transactions/index.ts";
+import { walletSummaryViews } from "./slices/wallet-summary/index.ts";
+import { walletStatementViews } from "./slices/wallet-statement/index.ts";
+import { welcomeNotificationAutomations } from "./slices/welcome-notification/index.ts";
+
+// The wallet's views, from what each slice lists: a new slice is a folder and one entry here. Each reads any of the wallet tags (`anyOfTags` in its
+// definition); its event types come from its handlers.
+export const walletViews = [...walletBalanceViews, ...walletTransactionsViews, ...walletSummaryViews, ...walletStatementViews];
+
+// Per-view runtime settings, by name: deployment settings, kept out of the views' definitions. These match the global defaults this app also
+// uses; they are here to show the mechanism.
+export const walletViewOverrides = {
+  "wallet-statement-view": { pollingIntervalMs: 1000, batchSize: 100 }
+};
 
 // What each module's processors are for, as the admin API shows it.
 const purposes: Readonly<Record<string, string>> = {
@@ -26,7 +39,7 @@ export const walletTopics = [
 // What each module runs: the four views with a per-view setting by name (polling and batch size are deployment settings, not part of a view), the
 // welcome automation, the topic. A test that needs a module's own handle builds one from these (`makeViewsProcessor({ ...walletViewsOptions, instanceId })`, the views package's internal `ViewsProcessor`).
 export const walletViewsOptions = { views: walletViews, overrides: walletViewOverrides };
-export const walletAutomationsOptions = { automations: [walletOpenedAutomation] };
+export const walletAutomationsOptions = { automations: welcomeNotificationAutomations };
 
 // The wallet's three modules, declared once (ADR-0054): a plain value, which every process builds and runs the part its roles say.
 // #region wallet-modules

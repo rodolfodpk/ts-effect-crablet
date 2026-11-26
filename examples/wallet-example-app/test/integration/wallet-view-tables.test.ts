@@ -12,11 +12,11 @@ import { applyInMemory, normalizeRow, rowsOf } from "@crablet/views/ViewMemory";
 import type { ProjectedView } from "@crablet/views/ProjectedView";
 import { checkViewTables } from "@crablet/views/ViewTableCheck";
 import type { ViewTableDef } from "@crablet/views/ViewTable";
-import { WalletBalanceView, walletBalanceTable } from "../../src/views/WalletBalanceViewProjector.ts";
-import { WalletSummaryView, walletSummaryTable } from "../../src/views/WalletSummaryViewProjector.ts";
-import { WalletTransactionView, walletTransactionTable } from "../../src/views/WalletTransactionViewProjector.ts";
-import { WalletStatementView, walletStatementTable } from "../../src/views/WalletStatementViewProjector.ts";
-import * as WalletEvents from "../../src/domain/events/WalletEvents.ts";
+import { WalletBalanceView, walletBalanceTable } from "../../src/slices/wallet-balance/WalletBalanceViewProjector.ts";
+import { WalletSummaryView, walletSummaryTable } from "../../src/slices/wallet-summary/WalletSummaryViewProjector.ts";
+import { WalletTransactionView, walletTransactionTable } from "../../src/slices/wallet-transactions/WalletTransactionViewProjector.ts";
+import { WalletStatementView, walletStatementTable } from "../../src/slices/wallet-statement/WalletStatementViewProjector.ts";
+import * as WalletEvents from "../../src/shared/WalletEvents.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 type Env = SqlClient.SqlClient | PgClient.PgClient;

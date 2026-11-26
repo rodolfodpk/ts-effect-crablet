@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, personal } from "@crablet/commands/Domain";
-import * as WalletTags from "../WalletTags.ts";
+import * as WalletTags from "../../shared/WalletTags.ts";
 import { WelcomeNotificationSent } from "./WelcomeNotificationSent.ts";
 
 const input = Schema.Struct({ walletId: Schema.String, owner: personal(Schema.String) });

@@ -1,9 +1,9 @@
 import type { DateTime } from "effect";
 import { defineView } from "@crablet/views/ProjectedView";
 import { bigint, decimal, text, timestamptz, viewTable } from "@crablet/views/ViewTable";
-import * as WalletTags from "../domain/WalletTags.ts";
-import * as Wallet from "../domain/WalletModel.ts";
-import * as WalletEvents from "../domain/events/WalletEvents.ts";
+import * as WalletTags from "../../shared/WalletTags.ts";
+import * as Wallet from "../../shared/WalletModel.ts";
+import * as WalletEvents from "../../shared/WalletEvents.ts";
 
 export const walletTransactionTable = viewTable("wallet_transaction_view", {
   key: { transaction_id: text(), event_position: bigint() },

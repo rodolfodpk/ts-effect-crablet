@@ -12,12 +12,12 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/eventstore/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
-import { OpenWallet, type OpenWalletCommand } from "../../src/domain/commands/OpenWalletCommand.ts";
-import { Deposit, type DepositCommand } from "../../src/domain/commands/DepositCommand.ts";
-import { Withdraw, type WithdrawCommand } from "../../src/domain/commands/WithdrawCommand.ts";
-import { TransferMoney, type TransferMoneyCommand } from "../../src/domain/commands/TransferMoneyCommand.ts";
-import { CloseWallet, type CloseWalletCommand } from "../../src/domain/commands/CloseWalletCommand.ts";
-import { WalletAlreadyExists, WalletNotFound, InsufficientFunds } from "../../src/domain/errors/WalletErrors.ts";
+import { OpenWallet, type OpenWalletCommand } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
+import { Deposit, type DepositCommand } from "../../src/slices/deposit/DepositCommand.ts";
+import { Withdraw, type WithdrawCommand } from "../../src/slices/withdraw/WithdrawCommand.ts";
+import { TransferMoney, type TransferMoneyCommand } from "../../src/slices/transfer-money/TransferMoneyCommand.ts";
+import { CloseWallet, type CloseWalletCommand } from "../../src/slices/close-wallet/CloseWalletCommand.ts";
+import { WalletAlreadyExists, WalletNotFound, InsufficientFunds } from "../../src/shared/WalletErrors.ts";
 
 // Deliberately no applyAppMigrations() here (unlike statement-view.test.ts and the E2E suite) -
 // these tests only touch EventStore/CommandExecutor, never the app-specific view tables

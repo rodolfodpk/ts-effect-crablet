@@ -1,4 +1,4 @@
-// Runs under Node (Testcontainers). The statement period of N minutes (WALLET_PERIOD=minutes:5, src/domain/WalletPeriod.ts) on a real Postgres: a turn closes the slot and opens the next one with the balance carried,
+// Runs under Node (Testcontainers). The statement period of N minutes (WALLET_PERIOD=minutes:5, src/shared/WalletPeriod.ts) on a real Postgres: a turn closes the slot and opens the next one with the balance carried,
 // a command that decided in a slot that closed before it appended conflicts and retries into the open one, and the statement view holds the closed and the open statement.
 //
 // The period model is read when WalletModel.ts is loaded, so the variable is set first and the wallet's modules are imported after it (static imports are hoisted, these are not). `node --test` runs each file in its own
@@ -27,11 +27,11 @@ let m: {
 };
 before(async () => {
   m = {
-    Deposit: (await import("../../src/domain/commands/DepositCommand.ts")).Deposit,
-    Withdraw: (await import("../../src/domain/commands/WithdrawCommand.ts")).Withdraw,
-    OpenWallet: (await import("../../src/domain/commands/OpenWalletCommand.ts")).OpenWallet,
-    WalletPeriodModel: (await import("../../src/domain/WalletModel.ts")).WalletPeriodModel,
-    WalletStatementView: (await import("../../src/views/WalletStatementViewProjector.ts")).WalletStatementView,
+    Deposit: (await import("../../src/slices/deposit/DepositCommand.ts")).Deposit,
+    Withdraw: (await import("../../src/slices/withdraw/WithdrawCommand.ts")).Withdraw,
+    OpenWallet: (await import("../../src/slices/open-wallet/OpenWalletCommand.ts")).OpenWallet,
+    WalletPeriodModel: (await import("../../src/shared/WalletModel.ts")).WalletPeriodModel,
+    WalletStatementView: (await import("../../src/slices/wallet-statement/WalletStatementViewProjector.ts")).WalletStatementView,
     atClock: (await import("../support/clocked-commands.ts")).atClock,
     pausableDeposit: (await import("../support/clocked-commands.ts")).pausableDeposit
   };
