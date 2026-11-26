@@ -6,12 +6,13 @@ import type { PgClient } from "@effect/sql-pg";
 import type { CommandExecutor } from "@crablet/commands";
 import type { ProcessorHandle } from "@crablet/event-poller";
 import type { makeAutomationsProcessor, startAutomationsProcessor, AutomationsRunRequirements } from "../src/AutomationsProcessor.ts";
+import type { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Made = ReturnType<typeof makeAutomationsProcessor>;
 type Started = ReturnType<typeof startAutomationsProcessor>;
 
 export const buildingNeedsOnlyTheSqlClient: Equal<Effect.Services<Made>, SqlClient.SqlClient> = true;
-export const runningNeeds: Equal<AutomationsRunRequirements, PgClient.PgClient | CommandExecutor> = true;
+export const runningNeeds: Equal<AutomationsRunRequirements, PgClient.PgClient | CommandExecutor | ProcessConnections> = true;
 export const theHandleCarriesIt: Equal<Effect.Success<Made>, ProcessorHandle<AutomationsRunRequirements>> = true;
 export const startingNeedsBoth: Equal<Effect.Services<Started>, SqlClient.SqlClient | AutomationsRunRequirements | Scope.Scope> = true;

@@ -16,10 +16,11 @@ import { defineEvent } from "@crablet/commands/Event";
 import { makeAutomationsProcessor } from "../../src/AutomationsProcessor.ts";
 import { defineAutomation } from "../../src/AutomationHandler.ts";
 import type { AutomationsConfig } from "../../src/AutomationsConfig.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<
-  CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient,
+  CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections,
   never
 >;
 
@@ -35,7 +36,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive));
   const layer = Layer.provideMerge(appLayers, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
 }, { timeout: 60_000 });
@@ -46,7 +47,7 @@ after(async () => {
 });
 
 const run = <A, E>(
-  effect: Effect.Effect<A, E, CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient>
+  effect: Effect.Effect<A, E, CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>
 ) => runtime.runPromise(effect);
 
 const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => boolean, timeoutMs = 10_000) => {

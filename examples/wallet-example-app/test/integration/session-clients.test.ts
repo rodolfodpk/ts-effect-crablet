@@ -17,6 +17,7 @@ import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let probe: Client;
@@ -55,7 +56,7 @@ const whoHolds = async () => {
 };
 
 const withApp = async (session: boolean, body: (app: RunningWalletApp) => Promise<void>) => {
-  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ...(session ? [sessionClientsLayer({ ...pgConfig("crablet-session"), maxConnections: 10 })] : [])));
+  const appLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive, ...(session ? [sessionClientsLayer({ ...pgConfig("crablet-session"), maxConnections: 10 })] : [])));
   const runtime = ManagedRuntime.make(Layer.provideMerge(appLayers, PgClient.layer({ ...pgConfig("crablet-main"), maxConnections: 10 })).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime);
   try {

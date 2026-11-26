@@ -5,6 +5,7 @@ import { PgClient } from "@effect/sql-pg";
 import { EventStore, makeEventStoreLayer, type EventStoreConfig } from "@crablet/eventstore";
 import { sessionClientsLayer } from "@crablet/eventstore/SessionClients";
 import { CommandAuditStore, CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
+import { ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { AuditConfigRef, type AuditConfig } from "@crablet/commands/CommandAudit";
 
@@ -16,8 +17,8 @@ import { AuditConfigRef, type AuditConfig } from "@crablet/commands/CommandAudit
 //     });
 //     Effect.runPromise(Effect.provide(program, AppLive));
 //
-// It provides `CommandExecutor`, `EventStore`, `CommandAuditStore` and the database clients
-// (`SqlClient`, and `PgClient` for LISTEN/NOTIFY - which views, outbox and automations modules need).
+// It provides `CommandExecutor`, `EventStore`, `CommandAuditStore`, the process's lock session and LISTEN connection (`ProcessConnections`, which
+// the modules and the views' progress hub use) and the database clients (`SqlClient`, and `PgClient` for LISTEN/NOTIFY).
 //
 // Why a layer and not three `Layer.provide`s at every call site: the executor, the event store and the
 // audit store all need the SAME `SqlClient`, and the clients must stay in the OUTPUT so that code
@@ -27,7 +28,7 @@ import { AuditConfigRef, type AuditConfig } from "@crablet/commands/CommandAudit
 
 export type PgConfig = PgClient.PgPoolConfig;
 
-export type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
+export type Services = CommandExecutor | EventStore | CommandAuditStore | ProcessConnections | SqlClient.SqlClient | PgClient.PgClient;
 
 // `options.audit` sets what the command audit stores (see CommandAudit.ts): `{ payload: "redacted" | "none" | "full" | "off" }`,
 // "redacted" by default.
@@ -48,6 +49,8 @@ export const layer = (pg: PgConfig, options: CrabletOptions = {}): Layer.Layer<S
       // The executor is built from the event store and the audit store, so it is provided with them, not merged beside them.
       Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer(options.eventStore), CommandAuditStoreLive)),
       Layer.succeed(AuditConfigRef, { payload: options.audit?.payload ?? "redacted" }),
+      // Built after the pool and closed before it: the modules and the hub built on this layer give their locks and listens back first.
+      ProcessConnectionsLive,
       options.session === undefined ? Layer.empty : sessionClientsLayer(options.session)
     ),
     PgClient.layer(pg)

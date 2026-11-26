@@ -16,6 +16,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
 import type { PollingFromConfig as Polling } from "@crablet/app";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 const QUICK = process.env["QUICK"] !== undefined;
 const profiles: Record<string, Polling> = {
@@ -45,7 +46,7 @@ const run = async (profileName: string, loadName: string, wakeups: boolean) => {
   const rate = loads[loadName]!;
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), applicationName: "wallet" });
   const eventStore = makeEventStoreLayer(wakeups ? {} : { wakeupMode: "off" });
-  const runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(eventStore, CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie));
+  const runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(eventStore, CommandAuditStoreLive, ProcessConnectionsLive)), pgLayer).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime, undefined, undefined, { polling });
   const post = (walletId: string) =>
     fetch(`${app.baseUrl}/api/commands/open_wallet`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ walletId, owner: "x", initialBalance: 1 }) });

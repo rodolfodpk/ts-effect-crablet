@@ -1,12 +1,7 @@
 import { createServer } from "node:http";
 import { Context, Effect, Exit, Layer, ManagedRuntime, Redacted, Scope } from "effect";
-import { SqlClient } from "effect/sql";
-import { PgClient } from "@effect/sql-pg";
 import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
-import type { EventStore } from "@crablet/eventstore";
-import type { CommandAuditStore } from "@crablet/commands/CommandAuditStore";
-import type { CommandExecutor } from "@crablet/commands";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { PollingFromConfig as Polling } from "@crablet/app";
 import type { LeaderOptions } from "@crablet/eventstore/Leader";
@@ -16,7 +11,8 @@ import { makeWalletApiLayer, makeWalletAdminApiLayer } from "../../src/WalletApp
 import { walletProcesses } from "../../src/processes.ts";
 import { rolesFromValue } from "./roles.ts";
 
-export type CoreServices = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
+// What the wallet's runtime provides: what Crablet.layer does.
+export type CoreServices = Crablet.Services;
 
 export interface RunningWalletApp {
   readonly baseUrl: string;

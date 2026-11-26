@@ -23,15 +23,16 @@ import { makeDeadlinesManagementService } from "../../src/DeadlinesManagementSer
 import { makeDeadlineEventHandler } from "../../src/internal/DeadlineEventHandler.ts";
 import type { HandledPrefix } from "@crablet/event-poller/EventHandler";
 import { makeDeadlineFetcher, makeRecordFiring } from "../../src/internal/DeadlineStore.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
-type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient;
+type Services = CommandExecutor | EventStore | CommandAuditStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections;
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<Services, never>;
 
 before(async () => {
   db = await startTestDb();
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie));
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)), pgLayer).pipe(Layer.orDie));
 }, { timeout: 60_000 });
 
 after(async () => {

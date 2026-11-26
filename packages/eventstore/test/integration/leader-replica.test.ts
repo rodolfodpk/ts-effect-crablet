@@ -11,6 +11,7 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { tryAcquireGlobalLeader } from "../../src/Leader.ts";
+import { ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 const PASSWORD = "replica-test";
 let container: string;
@@ -47,7 +48,7 @@ const client = async (port: number) => {
   return c;
 };
 const runtimeOn = (port: number) =>
-  ManagedRuntime.make(PgClient.layer({ host: "127.0.0.1", port, database: "postgres", username: "postgres", password: Redacted.make(PASSWORD) }).pipe(Layer.orDie));
+  ManagedRuntime.make(Layer.merge(PgClient.layer({ host: "127.0.0.1", port, database: "postgres", username: "postgres", password: Redacted.make(PASSWORD) }).pipe(Layer.orDie), ProcessConnectionsLive));
 const fast = { heartbeat: "200 millis", verifyTimeout: "500 millis", failuresBeforeLost: 2 } as const;
 
 describe("a leader leads only on a primary (ADR-0045)", () => {

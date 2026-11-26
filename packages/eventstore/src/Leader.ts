@@ -3,6 +3,7 @@ import { EVENTS_CHANNEL } from "./EventStore.ts";
 import type { SqlClient } from "effect/sql";
 import type { Connection } from "effect/sql/SqlConnection";
 import { ConnectionError, SqlError } from "effect/sql/SqlError";
+import { ProcessConnections } from "./internal/ProcessConnectionsService.ts";
 
 // Session-level pg_try_advisory_lock/pg_advisory_unlock on a
 // dedicated connection that is held open indefinitely on success (never returned to the pool
@@ -156,17 +157,65 @@ interface Sessions {
   current: Session | null;
 }
 
-const sessionsByClient = new WeakMap<SqlClient.SqlClient, Map<string, Sessions>>();
-const sessionsFor = (sql: SqlClient.SqlClient, options: LeaderOptions): Sessions => {
-  const byOptions = sessionsByClient.get(sql) ?? new Map<string, Sessions>();
-  sessionsByClient.set(sql, byOptions);
-  // Leaders share a session only with the same options: one heartbeat and one idle timeout serve them all.
-  const id = JSON.stringify([options.heartbeat, options.verifyTimeout, options.failuresBeforeLost, options.serverIdleTimeout, options.reserveTimeout]);
-  const existing = byOptions.get(id);
-  if (existing !== undefined) return existing;
-  const created: Sessions = { permit: Semaphore.makeUnsafe(1), current: null };
-  byOptions.set(id, created);
-  return created;
+// Where the sessions live: in the process's `ProcessConnections` service (ProcessConnections.ts), built once by the application's layer and closed with
+// it, keyed by client and by options. Not module state: a test or a second runtime in one process builds its own.
+export interface LeaderSessions {
+  // Lead `lockKey` on the session of `sql` with these options, sharing it with the other leaders of the process (ADR-0046).
+  readonly tryLead: (sql: SqlClient.SqlClient, lockKey: bigint, options?: LeaderOptions) => Effect.Effect<LeaderHandle | null, SqlError>;
+  // When the layer closes: a session still open is given back and its leaders are lost. Normally every leader released its lock already (the
+  // processors are built on this layer, so they close first) and there is nothing to do.
+  readonly close: Effect.Effect<void>;
+}
+
+// How long closing the layer waits for a session's unlock before it gives the connection back anyway.
+const closeBound = Duration.seconds(2);
+
+export const makeLeaderSessions = (): LeaderSessions => {
+  const byClient = new Map<SqlClient.SqlClient, Map<string, Sessions>>();
+  const sessionsFor = (sql: SqlClient.SqlClient, options: LeaderOptions): Sessions => {
+    const byOptions = byClient.get(sql) ?? new Map<string, Sessions>();
+    byClient.set(sql, byOptions);
+    // Leaders share a session only with the same options: one heartbeat and one idle timeout serve them all.
+    const id = JSON.stringify([options.heartbeat, options.verifyTimeout, options.failuresBeforeLost, options.serverIdleTimeout, options.reserveTimeout]);
+    const existing = byOptions.get(id);
+    if (existing !== undefined) return existing;
+    const created: Sessions = { permit: Semaphore.makeUnsafe(1), current: null };
+    byOptions.set(id, created);
+    return created;
+  };
+  const close = Effect.suspend(() =>
+    Effect.forEach(
+      [...byClient.values()].flatMap((byOptions) => [...byOptions.values()]),
+      (sessions) =>
+        Semaphore.withPermit(
+          sessions.permit,
+          Effect.suspend(() => {
+            const session = sessions.current;
+            sessions.current = null;
+            if (session === null) return Effect.void;
+            for (const member of session.members.values()) member.state = afterRelease(member.state);
+            session.members.clear();
+            // Its locks are given back before its connection: back in the pool, the connection would keep them (they belong to the session, not to the
+            // reservation). Bounded and ignored on a dead connection, whose locks are gone with it. An abandoned session is being given back already.
+            const unlock = session.abandoned
+              ? Effect.void
+              : within(
+                  closeBound,
+                  Effect.andThen(
+                    session.connection.execute("SELECT pg_advisory_unlock_all()", [], undefined),
+                    session.leased ? session.connection.execute("RESET idle_session_timeout", [], undefined) : Effect.void
+                  )
+                ).pipe(Effect.ignore);
+            return unlock.pipe(
+              Effect.andThen(session.monitor === null ? Effect.void : Fiber.interrupt(session.monitor)),
+              Effect.andThen(session.abandoned ? Effect.void : Scope.close(session.scope, Exit.void))
+            );
+          })
+        ),
+      { discard: true }
+    )
+  );
+  return { tryLead: (sql, lockKey, options = {}) => tryLeadIn(sessionsFor(sql, options), sql, lockKey, options), close };
 };
 
 // The keys this session holds an advisory lock for, on a primary; None when the check did not answer in time or failed. Not `SELECT 1`: after the session
@@ -186,10 +235,18 @@ const heldKeys = (connection: Connection, verifyTimeout: Duration.Duration): Eff
     Effect.catch(() => Effect.succeed(Option.none()))
   );
 
+// Lead `lockKey` on the process's lock session (`ProcessConnections`): what every module asks for its lock.
 export const tryAcquireGlobalLeader = (
   sql: SqlClient.SqlClient,
   lockKey: bigint,
   options: LeaderOptions = {}
+): Effect.Effect<LeaderHandle | null, SqlError, ProcessConnections> => Effect.flatMap(ProcessConnections, (connections) => connections.leaders.tryLead(sql, lockKey, options));
+
+const tryLeadIn = (
+  sessions: Sessions,
+  sql: SqlClient.SqlClient,
+  lockKey: bigint,
+  options: LeaderOptions
 ): Effect.Effect<LeaderHandle | null, SqlError> =>
   Effect.gen(function* () {
     // A configuration that breaks the safety rule is a defect, found on the first attempt.
@@ -198,7 +255,6 @@ export const tryAcquireGlobalLeader = (
     const heartbeat = Duration.fromInputUnsafe(options.heartbeat ?? "1 second");
     const verifyTimeout = Duration.fromInputUnsafe(options.verifyTimeout ?? "2 seconds");
     const failuresBeforeLost = Math.max(1, options.failuresBeforeLost ?? 2);
-    const sessions = sessionsFor(sql, options);
     const key = lockKey.toString();
 
     // Gives the session's connection back, without its lease: an idle pooled connection would otherwise be ended under the pool. On a dead connection

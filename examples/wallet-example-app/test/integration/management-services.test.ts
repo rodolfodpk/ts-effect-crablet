@@ -18,6 +18,7 @@ import { makeOutboxProcessor } from "@crablet/outbox/OutboxProcessor";
 import { walletAutomationsOptions, walletTopics, walletViewsOptions } from "../../src/processes.ts";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -30,7 +31,7 @@ before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  const layer = Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie);
+  const layer = Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)), pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
   app = await startWalletAppForTest(runtime);
   // the services read the progress tables of the running app's processors

@@ -15,6 +15,7 @@ import { defineTopic } from "@crablet/outbox/TopicConfig";
 import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { RunnableModule } from "@crablet/modules/Module";
 import * as Crablet from "../src/index.ts";
+import type { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Needs<L> = L extends Layer.Layer<Processors, never, infer R> ? R : "not a Processors layer that cannot fail";
@@ -32,14 +33,14 @@ export const catalogOfAllNeeds: Equal<Needs<typeof catalogOfAll>, SqlClient.SqlC
 
 // Running needs what each module's run needs: the executor only because automations and deadlines run commands, the publishers only because of the outbox.
 export const processorsOfAll = Crablet.processors(all);
-export const processorsOfAllNeed: Equal<Needs<typeof processorsOfAll>, SqlClient.SqlClient | PgClient.PgClient | CommandExecutor | EventStore | OutboxPublishers> = true;
+export const processorsOfAllNeed: Equal<Needs<typeof processorsOfAll>, SqlClient.SqlClient | PgClient.PgClient | CommandExecutor | EventStore | OutboxPublishers | ProcessConnections> = true;
 export const viewsProcessors = Crablet.processors(viewsOnly);
-export const anAppOfViewsNeedsNoExecutor: Equal<Needs<typeof viewsProcessors>, SqlClient.SqlClient | PgClient.PgClient> = true;
+export const anAppOfViewsNeedsNoExecutor: Equal<Needs<typeof viewsProcessors>, SqlClient.SqlClient | PgClient.PgClient | ProcessConnections> = true;
 
 // A process that runs a fixed subset declares only those modules (ADR-0054, interface segregation): a deadlines worker needs what the deadlines need, and no
 // publisher, while the API lists everything with a catalog of the whole declaration.
 export const deadlinesWorker = Crablet.processors(Crablet.modules(Deadlines.module({ commands: [] })));
-export const aDeadlinesWorkerNeedsNoPublisher: Equal<Needs<typeof deadlinesWorker>, SqlClient.SqlClient | CommandExecutor | EventStore> = true;
+export const aDeadlinesWorkerNeedsNoPublisher: Equal<Needs<typeof deadlinesWorker>, SqlClient.SqlClient | CommandExecutor | EventStore | ProcessConnections> = true;
 
 declare const kafka: OutboxPublisher;
 declare const custom: RunnableModule<string, never, never, ProcessSettings>;

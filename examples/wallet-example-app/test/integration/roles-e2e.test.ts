@@ -17,6 +17,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { rolesFromValue } from "../support/roles.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 const TOKEN = "admin-token-for-tests";
 
@@ -41,7 +42,7 @@ const startInstance = async (name: string, roles: string): Promise<Instance> => 
     password: Redacted.make(db.connInfo.password),
     applicationName: `wallet-${name}`
   });
-  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive));
   const runtime = ManagedRuntime.make(Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime, capturing(name), TOKEN, { roles: rolesFromValue(roles), instanceId: name });
   const instance = { name, runtime, app };

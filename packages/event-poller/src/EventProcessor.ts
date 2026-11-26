@@ -84,7 +84,7 @@ export interface EventProcessorDeps<C extends ProcessorConfig<I>, I extends stri
   readonly progressTracker: ProgressTracker<I>;
   readonly selectionOf: (config: C) => EventSelection;
   readonly instanceId: string;
-  readonly acquireLeader: Effect.Effect<LeaderHandle | null, unknown>;
+  readonly acquireLeader: Effect.Effect<LeaderHandle | null, unknown, R>;
   readonly wakeupStream: Stream.Stream<WakeupBatch, unknown, R>;
   // How often a follower tries to take the module's leader lock (the module's `leaderElectionRetryIntervalMs`). Default: `defaultPollingConfig`'s.
   readonly leaderRetryIntervalMs?: number;
@@ -393,7 +393,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
 
     const leaderRetryIntervalMs = deps.leaderRetryIntervalMs ?? defaultPollingConfig.leaderElectionRetryIntervalMs;
 
-    const acquireLeaderSafe: Effect.Effect<LeaderHandle | null> = deps.acquireLeader.pipe(
+    const acquireLeaderSafe: Effect.Effect<LeaderHandle | null, never, R> = deps.acquireLeader.pipe(
       Effect.catch((e) => Effect.andThen(Effect.logError("acquireLeader failed", e), Effect.succeed(null)))
     );
 
@@ -409,7 +409,7 @@ export const makeEventProcessor = <C extends ProcessorConfig<I>, I extends strin
     // One shared retry fiber per module (not per-processorId) - a single fiber attempts
     // acquisition for the whole module, so many per-processor tasks never hammer pg_try_advisory_lock
     // simultaneously.
-    const leaderRetryLoop: Effect.Effect<void> = Effect.forever(
+    const leaderRetryLoop: Effect.Effect<void, never, R> = Effect.forever(
       Effect.gen(function* () {
         const current = yield* Ref.get(leaderRef);
         if (current === null || !current.isLeader()) {

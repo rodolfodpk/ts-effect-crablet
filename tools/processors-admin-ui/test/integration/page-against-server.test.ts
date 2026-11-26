@@ -17,6 +17,7 @@ import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from 
 import { applyAppMigrations } from "../../../../examples/wallet-example-app/test/support/applyAppMigrations.ts";
 import { Message, init, update, type Model } from "../../src/main.ts";
 import type { ProcessorInfo } from "../../src/api.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 const TOKEN = "page-test-token";
 let db: TestDb;
@@ -27,7 +28,7 @@ before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  const layer = Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)), pgLayer).pipe(Layer.orDie);
+  const layer = Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)), pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
   app = await startWalletAppForTest(runtime, undefined, TOKEN);
   (globalThis as { location?: unknown }).location = new URL(app.baseUrl);

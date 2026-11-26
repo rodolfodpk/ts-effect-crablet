@@ -12,6 +12,7 @@ import { CommandExecutorLive } from "@crablet/commands";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -27,7 +28,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive));
   const layer = Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
   app = await startWalletAppForTest(runtime);

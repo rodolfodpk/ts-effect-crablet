@@ -1,6 +1,7 @@
 // The outbox processor itself: build it (`makeOutboxProcessor`) or build and start it (`startOutboxProcessor`). Internal (`crablet.internal`): an application
 // runs the module through `@crablet/app` (`Outbox.module(...)`); the package's tests and the module build on this.
 import { Effect, type Scope, Stream } from "effect";
+import type { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 import { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
@@ -41,7 +42,7 @@ export interface OutboxDeps {
 // views uses - so this reuses @crablet/event-poller's generic engine as-is.
 // Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. Running needs the `PgClient`
 // its wake-ups LISTEN on and the publishers its topics name, given where it starts.
-export type OutboxRunRequirements = PgClient.PgClient | OutboxPublishers;
+export type OutboxRunRequirements = PgClient.PgClient | OutboxPublishers | ProcessConnections;
 
 export const makeOutboxProcessor = (
   deps: OutboxDeps
@@ -109,5 +110,5 @@ export const startChecked = (handle: ProcessorHandle<OutboxRunRequirements>, top
 // `start`/`stop` itself and provides `OutboxPublishers`).
 export const startOutboxProcessor = <const T extends ReadonlyArray<TopicConfig>>(
   deps: OutboxStartDeps<T>
-): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient | PgClient.PgClient | Scope.Scope> =>
+): Effect.Effect<ProcessorHandle<OutboxRunRequirements>, never, SqlClient.SqlClient | PgClient.PgClient | ProcessConnections | Scope.Scope> =>
   Effect.tap(makeOutboxProcessor(deps), (handle) => Effect.provideService(startChecked(handle, deps.topics), OutboxPublishers, deps.publishers));

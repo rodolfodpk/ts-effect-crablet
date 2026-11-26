@@ -15,6 +15,7 @@ import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from 
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { WALLET_OPENED, DEPOSIT_MADE } from "../../src/shared/WalletEvents.ts";
 import { WELCOME_NOTIFICATION_SENT } from "../../src/slices/welcome-notification/WelcomeNotificationSent.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let runtime: ManagedRuntime.ManagedRuntime<CoreServices, never>;
@@ -38,7 +39,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive));
+  const coreLayers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive));
   const layer = Layer.provideMerge(coreLayers, pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
   app = await startWalletAppForTest(runtime, capturingPublisher);

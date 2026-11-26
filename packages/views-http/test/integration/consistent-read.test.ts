@@ -25,6 +25,7 @@ import { makeConsistentRead } from "../../src/ConsistentRead.ts";
 import type { ConsistencyParams } from "../../src/ReadConsistency.ts";
 import { ViewsUnavailable } from "../../src/ReadProblems.ts";
 import { ReadSuccess, consistencyQuery, readProblems } from "../../src/ReadQuery.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 // Three views of one event type. Each waits `delayMs` before it applies a batch, so right after a write none of the slow ones has it.
 const views = [
@@ -95,7 +96,7 @@ const viewsConfig: ViewsConfig = {
 };
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | HttpServer.HttpServer, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections | HttpServer.HttpServer, never>;
 let stopViews: () => Promise<unknown>;
 let base: string;
 
@@ -108,7 +109,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const core = Layer.provideMerge(EventStoreLive, pgLayer);
+  const core = Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer);
   const server = Layer.provideMerge(HttpRouter.serve(HttpApiBuilder.layer(Api).pipe(Layer.provide(GroupLive))), NodeHttpServer.layer(createServer, { port: 0 }));
   runtime = ManagedRuntime.make(Layer.provideMerge(server, core).pipe(Layer.orDie));
 

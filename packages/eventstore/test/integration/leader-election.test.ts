@@ -6,20 +6,21 @@ import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader } from "../../src/Leader.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 let db: TestDb;
 // One runtime (one pool) for the whole file: a pool built and closed around each call would wait on the connection a leader still holds (@effect/sql-pg 4.0.2).
-let rt: ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient, never>;
+let rt: ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient | ProcessConnections, never>;
 
 before(async () => {
   db = await startTestDb();
-  rt = ManagedRuntime.make(PgClient.layer({
+  rt = ManagedRuntime.make(Layer.merge(PgClient.layer({
     host: db.connInfo.host,
     port: db.connInfo.port,
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }).pipe(Layer.orDie));
+  }).pipe(Layer.orDie), ProcessConnectionsLive));
 }, { timeout: 60_000 });
 
 after(async () => {
@@ -27,7 +28,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient | ProcessConnections>) =>
   rt.runPromise(effect);
 
 describe("advisory-lock leader election parity (Phase 0, Risk B part 2)", () => {

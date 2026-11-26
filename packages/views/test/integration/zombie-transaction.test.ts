@@ -16,8 +16,9 @@ import { viewsOf } from "../fixtures/viewsOf.ts";
 import { makeViewsProcessor } from "../../src/ViewsProcessor.ts";
 import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import type { ViewProjector } from "../../src/ViewProjector.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
-type Services = EventStore | SqlClient.SqlClient | PgClient.PgClient;
+type Services = EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections;
 type Rt = ManagedRuntime.ManagedRuntime<Services, never>;
 let db: TestDb;
 let direct: Rt;
@@ -25,7 +26,7 @@ let direct: Rt;
 const runtimeTo = (port: number, startupParameters?: Record<string, string>): Rt =>
   ManagedRuntime.make(
     Layer.provideMerge(
-      EventStoreLive,
+      Layer.merge(EventStoreLive, ProcessConnectionsLive),
       PgClient.layer({
         host: port === db.connInfo.port ? db.connInfo.host : "127.0.0.1",
         port,

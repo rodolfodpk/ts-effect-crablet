@@ -16,9 +16,10 @@ import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import { makeTransactionalViewProjector } from "../../src/ViewProjector.ts";
 import { VIEW_PROGRESS_CHANNEL, decodeViewProgressPing } from "../../src/ViewProgress.ts";
 import type { ViewsConfig } from "../../src/ViewsConfig.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 let listener: Client;
 const pings: Array<string> = [];
 
@@ -32,7 +33,7 @@ before(async () => {
     password: Redacted.make(db.connInfo.password)
   });
   runtime = ManagedRuntime.make(
-    Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie)
+    Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie)
   );
   await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("CREATE TABLE IF NOT EXISTS ping_rows (id text primary key)")));
   listener = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });

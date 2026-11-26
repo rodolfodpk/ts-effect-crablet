@@ -11,9 +11,10 @@ import { makeOutboxProcessor, startOutboxProcessor } from "../../src/OutboxProce
 import { defineTopic } from "../../src/TopicConfig.ts";
 import type { OutboxConfig } from "../../src/OutboxConfig.ts";
 import { OutboxPublishers, type OutboxPublisher } from "../../src/OutboxPublisher.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 
 // ManagedRuntime, not plain Layer + Effect.provide - see views-integration.test.ts's primer on why
 // makeOutboxProcessor()'s handle.service.start (forks long-lived daemon fibers) needs this.
@@ -26,7 +27,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const layer = Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie);
+  const layer = Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie);
   runtime = ManagedRuntime.make(layer);
 }, { timeout: 60_000 });
 
@@ -35,7 +36,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) =>
   runtime.runPromise(effect);
 
 const waitUntilAsync = async <A>(check: () => Promise<A>, predicate: (a: A) => boolean, timeoutMs = 10_000) => {

@@ -32,6 +32,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import { dataChecks } from "../../../../tools/chaos-ui/server/checks.ts";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
+import { ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
 let probe: Client;
@@ -77,7 +78,7 @@ interface Instance { readonly name: string; readonly app: RunningWalletApp; read
 const startInstance = async (name: string): Promise<Instance> => {
   const direct = { host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) };
   const pooled = { host: "127.0.0.1", port: bouncer.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) };
-  const layers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, sessionClientsLayer({ ...direct, applicationName: `session-${name}`, maxConnections: 10 })));
+  const layers = Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive, sessionClientsLayer({ ...direct, applicationName: `session-${name}`, maxConnections: 10 })));
   const runtime = ManagedRuntime.make(Layer.provideMerge(layers, PgClient.layer({ ...pooled, applicationName: `main-${name}`, maxConnections: 10 })).pipe(Layer.orDie));
   const app = await startWalletAppForTest(runtime, undefined, undefined, { instanceId: name, polling: { pollingIntervalMs: 100, backoffMaxSeconds: 1 } });
   return { name, app, runtime };

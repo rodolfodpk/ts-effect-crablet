@@ -10,27 +10,28 @@ import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { tryAcquireGlobalLeader, type LeaderHandle } from "../../src/Leader.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "../../src/ProcessConnections.ts";
 
 let db: TestDb;
 // One runtime (one pool) for the whole file: a pool built and closed around each call would wait on the connection a leader still holds (@effect/sql-pg 4.0.2).
-let rt: ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient, never>;
+let rt: ManagedRuntime.ManagedRuntime<PgClient.PgClient | SqlClient.SqlClient | ProcessConnections, never>;
 
 before(async () => {
   db = await startTestDb();
-  rt = ManagedRuntime.make(PgClient.layer({
+  rt = ManagedRuntime.make(Layer.merge(PgClient.layer({
     host: db.connInfo.host,
     port: db.connInfo.port,
     database: db.connInfo.database,
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
-  }).pipe(Layer.orDie));
+  }).pipe(Layer.orDie), ProcessConnectionsLive));
 }, { timeout: 60_000 });
 after(async () => {
   await rt.dispose();
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => rt.runPromise(effect);
+const run = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient | ProcessConnections>) => rt.runPromise(effect);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const newKey = () => BigInt(`0x${crypto.randomUUID().replace(/-/g, "").slice(0, 15)}`);
 const fast = { heartbeat: "100 millis", verifyTimeout: "1 second", failuresBeforeLost: 2 } as const;

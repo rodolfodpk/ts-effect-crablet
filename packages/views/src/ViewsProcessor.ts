@@ -1,6 +1,7 @@
 // The views processor itself: build it (`makeViewsProcessor`) or build and start it (`startViewsProcessor`). Internal (`crablet.internal`): an application
 // runs the module through `@crablet/app` (`Views.module(...)`); the package's tests and the module build on this.
 import { Effect, type Scope, Stream } from "effect";
+import type { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 import { SqlClient } from "effect/sql";
 import type { PgClient } from "@effect/sql-pg";
 import { EVENTS_CHANNEL, Wakeups } from "@crablet/eventstore";
@@ -51,7 +52,7 @@ export interface ViewsDeps {
 // the shared VIEWS_LOCK_KEY and EVENTS_CHANNEL, to that engine.
 // Built needing only the SQL client (decision V1): a handle that is not running is read and controlled through the database. Running needs the `PgClient`
 // its wake-ups LISTEN on, given where it starts.
-export type ViewsRunRequirements = PgClient.PgClient;
+export type ViewsRunRequirements = PgClient.PgClient | ProcessConnections;
 
 export const makeViewsProcessor = (
   deps: ViewsDeps

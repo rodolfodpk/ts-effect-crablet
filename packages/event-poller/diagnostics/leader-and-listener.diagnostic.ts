@@ -19,16 +19,17 @@ import { makeSqlEventFetcher } from "../src/SqlEventFetcher.ts";
 import { processorConfigOf } from "../src/ProcessorConfig.ts";
 import * as EventSelection from "../src/EventSelection.ts";
 import * as ProgressCursor from "../src/ProgressCursor.ts";
+import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
 before(async () => {
   db = await startTestDb();
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie));
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie));
 }, { timeout: 60_000 });
 after(async () => { await runtime.dispose(); await db.stop(); });
-const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) => runtime.runPromise(e);
+const run = <A, E>(e: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) => runtime.runPromise(e);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sql = <A>(f: (s: SqlClient.SqlClient) => Effect.Effect<A, unknown, never>) => run(Effect.flatMap(SqlClient.SqlClient, f));
 
