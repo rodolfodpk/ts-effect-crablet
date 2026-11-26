@@ -1,25 +1,5 @@
 {
   "tolerancePoints": 0.3,
   "fileFloor": 90,
-  "fileExclusions": {},
-  "overall": 99.6,
-  "packages": {
-    "automations": 100,
-    "deadlines": 100,
-    "app": 100,
-    "commands": 99.4,
-    "commands-http": 100,
-    "db-migrations": 95.2,
-    "event-poller": 100,
-    "eventstore": 99.4,
-    "metrics-otel": 100,
-    "outbox": 100,
-    "processors-http": 100,
-    "test-support": 96.4,
-    "views": 100,
-    "views-http": 100
-  },
-  "notes": {
-    "test-support": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08."
-  }
+  "overall": 99.6
 }

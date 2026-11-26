@@ -22,5 +22,5 @@
     "@crablet/commands": "workspace:*",
     "@effect/platform-node": "4.1.4"
   },
-  "crablet": { "typeEscapes": { "src": 0, "test": 2 } }
+  "crablet": { "coverage": { "lines": 100 }, "typeEscapes": { "src": 0, "test": 2 } }
 }

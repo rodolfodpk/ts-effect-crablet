@@ -21,6 +21,7 @@
     "./ViewTableCheck": "./src/ViewTableCheck.ts"
   },
   "crablet": {
+    "coverage": { "lines": 100 },
     "typeEscapes": { "src": 0, "test": 27 },
     "internal": ["./ViewManagementService", "./ViewProgress", "./ViewProjector", "./ViewSubscription", "./ViewsProcessor"]
   },
