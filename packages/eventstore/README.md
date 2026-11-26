@@ -27,7 +27,7 @@ framework sits on top of this package.
 - **`AppendContext`** - what the store records about an append besides its events ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)):
   `withCorrelationId(uuid)`, `causedBy(storedEvent)` (only a stored event can be a cause) and `withMetadata(object)`, each around the appends of an
   effect. An event's own metadata is `AppendEvent.metadata`; a read returns it as `StoredEvent.metadata`.
-- **Building blocks** - `Tag`, `Query` (`Query.match(types, tags)`), `AppendEvent` (`AppendEvent.make(type, data, tags)`), `AppendCondition`, `LogPosition`, `Cursor`, `Marker`, `AppendResult` (what an append returns) and `AppendErrors` (`Conflict`, `Duplicate`, `AppendTooLarge`), each its own import (`@crablet/eventstore/Query`, ...).
+- **Building blocks** - `Tag`, `Query` (`Query.match(types, tags)`), `AppendEvent` (`AppendEvent.make(type, data, tags)`), `AppendCondition`, `LogPosition`, `LogPoint` (a point in the log, the type of a `Marker` and of a processor's progress, `Cursor` its text), `Cursor`, `Marker`, `AppendResult` (what an append returns) and `AppendErrors` (`Conflict`, `Duplicate`, `AppendTooLarge`), each its own import (`@crablet/eventstore/Query`, ...).
   A query item targets events by type and/or tags; one with neither is refused. A tag's key and value may hold any characters (the key is encoded
   when stored), and a tag repeated on an event is stored once. One append takes at most `maxAppendEvents` events (`EventStoreConfig`, default 50).
   An append is not refused for events its own transaction appended earlier: if your next decision depends on what you just wrote, read again, or
