@@ -9,7 +9,7 @@ import type { ProgressCursor } from "../ProgressCursor.ts";
 // exactTags = ALL key=value pairs match. requiredTags/anyOfTags query crablet_event_tag_keys (the
 // framework's key-presence lookup table: one row per tag key of an event, documented as existing for exactly this purpose);
 // exactTags reuses the same `tags @> ARRAY[...]::text[]` containment technique EventStore's own
-// queryEvents (packages/eventstore/src/internal/sql.ts) uses against crablet_events.tags directly.
+// readEvents (packages/eventstore/src/internal/sql.ts) uses against crablet_events.tags directly.
 //
 // The fetch is a keyset on (transaction_id, position) bounded by `transaction_id < pg_snapshot_xmin(...)`.
 // `position` is assigned by nextval() when a row is inserted and `transaction_id` is the xid of the inserting

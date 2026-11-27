@@ -244,22 +244,34 @@ export const existsEvents = (sql: SqlClient.SqlClient, query: Query): Effect.Eff
     return rows[0]!.found;
   });
 
-// Reads the events matching a query after a position.
-export const queryEvents = (
+// A row of `readEvents`: the statement's snapshot, and an event, or no event (all its columns null) when nothing matched.
+interface ReadRow extends Omit<StoredEventRow, "event_id"> {
+  readonly snapshot: string;
+  readonly event_id: string | null;
+}
+const isEventRow = (row: ReadRow): row is ReadRow & StoredEventRow => row.event_id !== null;
+
+// Reads the events matching a query after a position, and the snapshot the read was taken in, in ONE statement (ADR-0048, status update): in read
+// committed, every function of a statement sees the statement's own snapshot, so `pg_current_snapshot()` here is exactly what the read could see, and
+// it costs no round trip of its own. The LEFT JOIN keeps the snapshot when no event matches (one row, its event columns null).
+export const readEvents = (
   sql: SqlClient.SqlClient,
   query: Query,
   after: LogPosition
-): Effect.Effect<ReadonlyArray<StoredEventRow>, SqlError> =>
+): Effect.Effect<{ readonly snapshot: ReadSnapshot; readonly rows: ReadonlyArray<StoredEventRow> }, SqlError> =>
   Effect.gen(function* () {
     const { whereSql, params } = whereOf(query, after);
 
     const sqlText =
-      // transaction_id is xid8, which the Postgres client has no binary codec for: read it as text.
-      // ORDER BY uses the qualified column so it sorts by the real xid8, not the text alias.
+      // transaction_id is xid8, which the Postgres client has no codec for: it is read as text, and the rows are sorted by the real xid8 (`sort_xid`),
+      // which is not returned.
+      "SELECT s.snapshot, e.event_id, e.type, e.tags, e.data, e.transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id, e.metadata, e.settled " +
+      "FROM (SELECT pg_current_snapshot()::text AS snapshot) s LEFT JOIN LATERAL (" +
       "SELECT event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, metadata, " +
-      "(transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled " +
-      `FROM crablet_events${whereSql} ORDER BY crablet_events.transaction_id, position ASC`;
-    return (yield* sql.unsafe<StoredEventRow>(sqlText, params)) as ReadonlyArray<StoredEventRow>;
+      "(transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled, crablet_events.transaction_id AS sort_xid " +
+      `FROM crablet_events${whereSql}) e ON true ORDER BY e.sort_xid, e.position ASC`;
+    const rows = yield* sql.unsafe<ReadRow>(sqlText, params);
+    return { snapshot: ReadSnapshotNS.fromText(rows[0]!.snapshot), rows: rows.filter(isEventRow) };
   });
 
 // One page of the events matching a query after a cursor, for a paged read (ADR-0050): only events whose transaction had finished (below the
@@ -281,10 +293,3 @@ export const queryPage = (
     return (yield* sql.unsafe<StoredEventRow>(sqlText, [...params, limit])) as ReadonlyArray<StoredEventRow>;
   });
 
-// The current snapshot: which transactions had finished (below its xmin, and those between xmin and xmax not listed as running). Its xmin is the
-// oldest transaction id still running (or the next one to be assigned): everything below it has finished, committed or not.
-export const currentSnapshot = (sql: SqlClient.SqlClient): Effect.Effect<ReadSnapshot, SqlError> =>
-  Effect.map(
-    sql.unsafe<{ snapshot: string }>("SELECT pg_current_snapshot()::text AS snapshot"),
-    (rows) => ReadSnapshotNS.fromText(rows[0]!.snapshot)
-  );

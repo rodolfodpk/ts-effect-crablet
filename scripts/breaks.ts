@@ -166,8 +166,8 @@ export const breaks: ReadonlyArray<Break> = [
   {
     id: "read-order-by-position",
     file: SQL,
-    find: "ORDER BY crablet_events.transaction_id, position ASC`;",
-    replace: "ORDER BY position ASC`;",
+    find: "e ON true ORDER BY e.sort_xid, e.position ASC`;",
+    replace: "e ON true ORDER BY e.position ASC`;",
     tests: [es("append-cursor-inversion")],
     why: "the events come back out of the order their cursor is taken in, so the next cursor skips some"
   },
@@ -178,6 +178,14 @@ export const breaks: ReadonlyArray<Break> = [
     replace: "true AS settled",
     tests: [es("append-cursor-inversion"), es("project-horizon"), es("union-boundary-cursor")],
     why: "a model's horizon would move past events of transactions still running"
+  },
+  {
+    id: "read-snapshot-lost-on-empty-boundary",
+    file: SQL,
+    find: "s LEFT JOIN LATERAL (",
+    replace: "s JOIN LATERAL (",
+    tests: [es("conformance-postgres"), cmd("long-transaction-postgres")],
+    why: "a read that matches no event would come back with no row, so no snapshot: the first command over a new boundary fails (ADR-0048)"
   },
   {
     id: "fingerprint-not-sent",

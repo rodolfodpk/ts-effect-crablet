@@ -4,7 +4,7 @@ import type { Tag } from "../Tag.ts";
 import type { LogPosition } from "../LogPosition.ts";
 // The SPECIFICATION of reads and conditional appends, as pure functions over a list of events.
 //
-// The Postgres implementation (`append_events_if` and `queryEvents`) and the in-memory store both
+// The Postgres implementation (`append_events_if` and `readEvents`) and the in-memory store both
 // implement this; the conformance suite (test/conformance) runs the same cases against both, and a
 // differential test feeds them identical random histories. If they ever disagree, one of them (or this
 // file) is wrong - which is the point of having it written down once.
