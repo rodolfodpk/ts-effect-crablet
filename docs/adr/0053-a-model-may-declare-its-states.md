@@ -24,7 +24,7 @@ refused, draw the table as Mermaid, and generate test paths covering every trans
 ## Decision
 
 Not adopted. States and transitions stay in `decide`. A model whose entity moves through states writes its state as a discriminated union in
-the fold, as `CourseReadiness` (`examples/course-enrolment-app/src/domain/CourseStart.ts`) already does with its `status`:
+the fold, as `CourseReadiness` (`examples/course-enrolment-app/src/slices/confirm-course/CourseStart.ts`) already does with its `status`:
 
 ```ts
 type Course =
