@@ -35,8 +35,10 @@ Flyway's naming (the framework's are V1 to V7, so number your own from V100 and 
 <!-- file: examples/course-enrolment-app/src/index.ts#crablet-layer -->
 ```ts
 // COURSES_DB_POOL: at most this many connections; unset, the library's default. COURSES_DB_SESSION_HOST: a direct connection for the leader locks and LISTEN.
+// The product names the connections (`course/<instance>` in pg_stat_activity), and a lock held by another product's process is logged as an error.
 const appLayer = Crablet.layer(database.pg, {
   eventStore: { wakeupMode: settings.wakeupMode },
+  ...(settings.product === undefined ? {} : { product: settings.product }),
   ...(database.session === undefined ? {} : { session: database.session })
 });
 ```

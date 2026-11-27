@@ -8,6 +8,7 @@ import type { PollingSettings } from "@crablet/event-poller/ProcessorConfig";
 import type { ProcessSettings } from "@crablet/event-poller/ProcessSettings";
 import type { BuiltModule, RunnableModule } from "@crablet/modules/Module";
 import { Processors } from "@crablet/modules/Processors";
+import { ProcessIdentityRef, type ProcessIdentity } from "./Product.ts";
 
 
 // The modules of an application, declared once and shared by every process that builds them: a plain value (it opens no connection and builds no
@@ -45,9 +46,11 @@ export interface ProcessOptions {
   readonly monitorEvery?: Duration.Input | undefined;
 }
 
-const settingsOf = (options: ProcessOptions): ProcessSettings => ({
-  instanceId: options.instanceId ?? defaultInstanceId(),
-  leader: options.leader,
+// With the process's identity (`Crablet.layer(pg, { product })`), its instance is the modules' instance id and its product is given to their leaders,
+// which report a lock held by another product's session.
+const settingsOf = (options: ProcessOptions, identity: ProcessIdentity | null): ProcessSettings => ({
+  instanceId: options.instanceId ?? identity?.instance ?? defaultInstanceId(),
+  leader: identity === null ? options.leader : { ...options.leader, application: identity.product },
   polling: options.polling
 });
 
@@ -68,7 +71,7 @@ export const processors = <Kind extends string, MakeR, RunR>(
   Layer.effect(
     Processors,
     Effect.gen(function* () {
-      const settings = settingsOf(options);
+      const settings = settingsOf(options, yield* ProcessIdentityRef);
       const running = new Set<string>(options.run ?? declared.map((m) => m.kind));
       // the modules take independent locks, so they are built and started together: the start is the slowest one, not the sum
       const built = yield* Effect.forEach(declared, (m) => (running.has(m.kind) ? m.start(settings) : m.make(settings)), { concurrency: "unbounded" });
@@ -90,8 +93,9 @@ export const catalog = <Kind extends string, MakeR, RunR>(
 ): Layer.Layer<Processors, never, MakeR> =>
   Layer.effect(
     Processors,
-    Effect.map(
-      Effect.forEach(declared, (m) => m.make(settingsOf(options)), { concurrency: "unbounded" }),
-      (built) => serviceOf(built, new Set())
-    )
+    Effect.gen(function* () {
+      const settings = settingsOf(options, yield* ProcessIdentityRef);
+      const built = yield* Effect.forEach(declared, (m) => m.make(settings), { concurrency: "unbounded" });
+      return serviceOf(built, new Set());
+    })
   );

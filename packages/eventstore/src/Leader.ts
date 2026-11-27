@@ -47,6 +47,10 @@ export interface LeaderOptions {
   // the TCP keepalives). It must be longer than the leader's own loss detection, `failuresBeforeLost x (heartbeat + verifyTimeout)`, so the old leader has
   // stopped before the lock is free; a shorter one is refused. The takeover after a silent partition is about this plus the followers' retry interval.
   readonly serverIdleTimeout?: Duration.Input | "off" | undefined;
+  // The application this process belongs to, as its connections name it (`application_name` is `<application>/<instance>`; `Crablet.layer` sets both).
+  // Given, a lock held by a session of ANOTHER application is reported, once per holder: two products on one database fight over the same locks, and
+  // the second would otherwise stand by for ever, without an error (ADR-0054, one database per product). Not given, nothing is looked up.
+  readonly application?: string | undefined;
 }
 
 // When the leader has surely stopped after its connection went silent: `failuresBeforeLost` checks of `heartbeat` and `verifyTimeout` each.
@@ -155,6 +159,8 @@ interface Session {
 interface Sessions {
   readonly permit: Semaphore.Semaphore;
   current: Session | null;
+  // per lock key, the holder last reported as another application's (`reportForeignHolder`), so each holder is reported once
+  readonly reported: Map<string, string>;
 }
 
 // Where the sessions live: in the process's `ProcessConnections` service (ProcessConnections.ts), built once by the application's layer and closed with
@@ -179,7 +185,7 @@ export const makeLeaderSessions = (): LeaderSessions => {
     const id = JSON.stringify([options.heartbeat, options.verifyTimeout, options.failuresBeforeLost, options.serverIdleTimeout, options.reserveTimeout]);
     const existing = byOptions.get(id);
     if (existing !== undefined) return existing;
-    const created: Sessions = { permit: Semaphore.makeUnsafe(1), current: null };
+    const created: Sessions = { permit: Semaphore.makeUnsafe(1), current: null, reported: new Map() };
     byOptions.set(id, created);
     return created;
   };
@@ -234,6 +240,41 @@ const heldKeys = (connection: Connection, verifyTimeout: Duration.Duration): Eff
     Effect.map(Option.map((rows) => new Set((rows as ReadonlyArray<{ key: string }>).map((r) => r.key)) as ReadonlySet<string>)),
     Effect.catch(() => Effect.succeed(Option.none()))
   );
+
+// Who holds `lockKey`, when this process did not get it: a standby of the same application is the normal case and says nothing; a session of another
+// application is logged as an error, once per holder (its backend pid and name), since this process will stand by for as long as that one runs. Another
+// database user's session shows its `application_name` too (only its query is hidden without `pg_read_all_stats`; checked on Postgres 18.6). A holder
+// that names no application (a process given no product) cannot be told apart and is reported at warning level. The look is best effort: it never
+// fails the attempt.
+const reportForeignHolder = (sessions: Sessions, sql: SqlClient.SqlClient, lockKey: bigint, application: string): Effect.Effect<void> =>
+  sql
+    .unsafe<{ pid: number; name: string | null }>(
+      `SELECT l.pid, a.application_name AS name FROM pg_locks l LEFT JOIN pg_stat_activity a USING (pid)
+        WHERE l.locktype = 'advisory' AND l.granted AND ((l.classid::bigint << 32) | l.objid::bigint) = $1::bigint`,
+      [lockKey.toString()]
+    )
+    .pipe(
+      Effect.flatMap((rows) => {
+        const holder = rows[0];
+        if (holder === undefined) return Effect.void;
+        const name = holder.name === null || holder.name === "" ? null : holder.name;
+        if (name !== null && name.startsWith(`${application}/`)) return Effect.void;
+        const id = `${holder.pid}:${name ?? ""}`;
+        const key = lockKey.toString();
+        if (sessions.reported.get(key) === id) return Effect.void;
+        sessions.reported.set(key, id);
+        return name === null
+          ? Effect.logWarning(
+              `lock ${key} is held by a process that names no application (backend ${holder.pid}): if it is another product's, this "${application}" ` +
+                `process stands by for as long as it runs (one database per product, ADR-0054; name every product's processes, Crablet.layer's product)`
+            )
+          : Effect.logError(
+              `lock ${key} is held by "${name}" (backend ${holder.pid}), not by an instance of "${application}": two products share this database, and this ` +
+                `process stands by for as long as that one runs (one database per product, ADR-0054)`
+            );
+      }),
+      Effect.ignore
+    );
 
 // Lead `lockKey` on the process's lock session (`ProcessConnections`): what every module asks for its lock.
 export const tryAcquireGlobalLeader = (
@@ -393,8 +434,10 @@ const tryLeadIn = (
       );
       if (!acquired) {
         if (fresh) yield* closeSession(live);
+        if (options.application !== undefined) yield* reportForeignHolder(sessions, sql, lockKey, options.application);
         return null;
       }
+      sessions.reported.delete(key);
 
       // The lease, set with the session's first lock: from now on the server ends this session if it stays idle longer than this, and the heartbeat
       // keeps it from being idle. If the setting cannot be made the lock is given back, and the attempt fails and is retried.

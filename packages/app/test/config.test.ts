@@ -114,3 +114,17 @@ test("plainConnection gives the password in the clear, for a plain pg client", a
   const s = await value(wallet, { WALLET_DB_PASSWORD: "s3cret" });
   expect(Crablet.plainConnection(s.pg)).toEqual({ host: "localhost", port: 5432, database: "wallet_db", username: "postgres", password: "s3cret" });
 });
+
+describe("Crablet.config: the product (decision V5)", () => {
+  const named = Crablet.config("WALLET", { product: "wallet", database: { name: "wallet_db", username: "postgres", password: "postgres" } });
+  test("the call names it; PRODUCT, under the prefix, overrides it; neither leaves the process unnamed", async () => {
+    expect((await value(named)).options.product).toBe("wallet");
+    expect((await value(named, { WALLET_PRODUCT: "wallet-eu" })).options.product).toBe("wallet-eu");
+    expect((await value(wallet)).options.product).toBeUndefined();
+  });
+
+  test("a name with a slash, or blank, fails naming the variable (a connection is named <product>/<instance>)", async () => {
+    expect(await failure(named, { WALLET_PRODUCT: "wallet/eu" })).toContain("PRODUCT");
+    expect(await failure(named, { WALLET_PRODUCT: "  " })).toContain("PRODUCT");
+  });
+});

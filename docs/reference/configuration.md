@@ -82,6 +82,7 @@ A blank variable counts as unset. A bad value is a `ConfigError` that names the 
 | `DB_SESSION_POOL` | `10` | The session pool, at least 1. It must cover what the roles keep for good. |
 | `ROLES` | `all` | What this process runs ([ADR-0022](../adr/0022-runtime-roles.md)): a comma-separated list of the application's own roles (`options.roles`) and module kinds, or `all`. `Crablet.processorsFor(modules, settings.roles)` checks the kinds against the declaration and fails with `UnknownRole` (the name, and every valid role). An empty entry is a `ConfigError`. |
 | `MIGRATE` | `on` | `off`: this process applies no migration; a pre-deploy job does ([ADR-0022](../adr/0022-runtime-roles.md), decision 6). |
+| `PRODUCT` | the call's `product` | The product this process belongs to: its connections are named `<product>/<instance>` in `pg_stat_activity`, and a module that finds its lock held by another product's process logs an error naming it ([ADR-0054](../adr/0054-the-modules-declared-once-run-or-listed.md), V5). No `/`. Unset with no `product` in the call: the process is not named. |
 | `POLL_MS` | `1000` | How often the processors poll while there are events, at least 50. |
 | `BACKOFF_MAX_SECONDS` | `10` | The most an idle processor waits between polls, at least 1. |
 | `WAKEUPS` | `coalesced` | `coalesced` or `off` (see `eventStore.wakeupMode`). |
@@ -92,8 +93,8 @@ and `migrateIfFresh(Crablet.plainConnection(settings.pg), app)` when `settings.m
 ## The wallet's environment variables
 
 The wallet example reads the table above with the prefix `WALLET` (`examples/wallet-example-app/src/config.ts`: `api` is its own role, `views`,
-`automations` and `outbox` its modules; the database defaults are `wallet_db`, `postgres`, `postgres`). The course reads the connection, the roles (`api`, and its
-modules `views` and `deadlines`), the polling and the wake-ups with the prefix `COURSES` (`courses_db`), and not `COURSES_MIGRATE`: it migrates with its script. The wallet also reads these of its own:
+`automations` and `outbox` its modules; the database defaults are `wallet_db`, `postgres`, `postgres`; the product is `wallet`). The course reads the connection, the roles (`api`, and its
+modules `views` and `deadlines`), the polling, the wake-ups and the product (`course`) with the prefix `COURSES` (`courses_db`), and not `COURSES_MIGRATE`: it migrates with its script. The wallet also reads these of its own:
 
 | Variable | Default | What it does |
 |---|---|---|

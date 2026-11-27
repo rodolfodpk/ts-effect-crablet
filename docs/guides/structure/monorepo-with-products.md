@@ -58,7 +58,9 @@ in one file, where the shape above gives each slice its own.
 1. **One database per product.** Inside one database everything that names something is shared: the advisory locks are fixed per kind of module (a second
    product's views would wait on the first one's lock for good, without an error), the `crablet_events` and `crablet_view_progress` channels are
    database-wide, and so are the names in the progress tables and the event types in the log. A schema per product (`search_path`) does not isolate them
-   either: the locks and channels stay shared. The wallet uses `wallet_db`, the course `courses_db`.
+   either: the locks and channels stay shared. The wallet uses `wallet_db`, the course `courses_db`. Name each product's processes
+   (`Crablet.layer(pg, { product })`, or `PRODUCT`): their connections show as `<product>/<instance>` in `pg_stat_activity`, and a module that finds its
+   lock held by another product's process logs an error naming it, so the mistake is not a silent standby.
 2. **One product per Effect context.** Two products' `Crablet.layer` in one context provide the same services (`EventStore`, `CommandExecutor`), and one
    hides the other. In practice, one product per process; a "shared workers" deployment for several small products is not supported.
 3. **Products talk by messages only.** Product A publishes through its outbox ([ADR-0039](../../adr/0039-a-topic-takes-its-publishers.md)); product B consumes
