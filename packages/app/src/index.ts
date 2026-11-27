@@ -14,3 +14,5 @@ export { observability, observabilityConfig, otlpLayer, resourceOf, type Observa
 export { polling as pollingConfig, type PollingFromConfig } from "@crablet/event-poller/Config";
 export { defaultPollingConfig, type PollingConfig, type PollingSettings } from "@crablet/event-poller/ProcessorConfig";
 export { wakeups as wakeupsConfig } from "@crablet/eventstore/Config";
+// What `Crablet.processors(..., { leader })` takes: the lock sessions' timings. The mechanism is the event store's (ADR-0046, ADR-0055), and plumbing there.
+export type { LeaderOptions } from "@crablet/eventstore/Leader";

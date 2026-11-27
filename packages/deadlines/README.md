@@ -4,6 +4,9 @@ Deadlines: when a time has passed, run a command. A deadline is an event in the 
 this module fires the due ones on the same poller as views, automations and the outbox, with its own lock ([ADR-0043](../../docs/adr/0043-a-deadline-is-an-event-in-the-log.md)).
 It shares no code with the other modules.
 
+Setting a deadline is not here: `deadline(...)` and the two events are `@crablet/commands`' (`@crablet/commands/Domain`), because `decide` returns one
+and the command's append writes it into `crablet_deadlines`. This package depends on the commands, not the other way round.
+
 ## What it gives you
 
 - **`module({ commands, config, describe })`** (the package entry point) - the deadlines module, which `@crablet/app` runs: it fires the deadlines commands

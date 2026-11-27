@@ -39,7 +39,7 @@
   "crablet": {
     "coverage": { "lines": 99.4 },
     "typeEscapes": { "src": 10, "test": 35 },
-    "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ReadSnapshot", "./ServerSettings", "./TagCodec"]
+    "internal": ["./CorrelationContext", "./Leader", "./Listen", "./NotifyPayload", "./ReadSnapshot", "./ServerSettings", "./TagCodec"]
   },
   "dependencies": {
     "effect": "4.1.4",

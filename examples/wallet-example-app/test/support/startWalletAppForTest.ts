@@ -4,7 +4,6 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { NodeHttpServer } from "@effect/platform-node";
 import type { OutboxPublisher } from "@crablet/outbox/OutboxPublisher";
 import type { PollingFromConfig as Polling } from "@crablet/app";
-import type { LeaderOptions } from "@crablet/eventstore/Leader";
 import type * as Crablet from "@crablet/app";
 import { Processors, type ProcessorsService } from "@crablet/modules/Processors";
 import { makeWalletApiLayer, makeWalletAdminApiLayer } from "../../src/WalletApp.ts";
@@ -34,7 +33,7 @@ export const startWalletAppForTest = async (
   // When given, the admin API is mounted behind this bearer token, as the entry point does with WALLET_ADMIN_TOKEN.
   adminToken?: string,
   // The roles this instance runs (ADR-0022); default all, one process. Without `api` no HTTP server starts (baseUrl is ""), and the admin API is only mounted with `api`, as in the entry point.
-  options: { readonly roles?: Crablet.Roles<"api">; readonly instanceId?: string; readonly polling?: Polling; readonly leader?: LeaderOptions } = {}
+  options: { readonly roles?: Crablet.Roles<"api">; readonly instanceId?: string; readonly polling?: Polling; readonly leader?: Crablet.LeaderOptions } = {}
 ): Promise<RunningWalletApp> => {
   const roles = options.roles ?? rolesFromValue("all");
   const runsApi = roles.app.has("api");
