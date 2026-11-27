@@ -60,7 +60,8 @@ in one file, where the shape above gives each slice its own.
    database-wide, and so are the names in the progress tables and the event types in the log. A schema per product (`search_path`) does not isolate them
    either: the locks and channels stay shared. The wallet uses `wallet_db`, the course `courses_db`. Name each product's processes
    (`Crablet.layer(pg, { product })`, or `PRODUCT`): their connections show as `<product>/<instance>` in `pg_stat_activity`, and a module that finds its
-   lock held by another product's process logs an error naming it, so the mistake is not a silent standby.
+   lock held by another product's process logs an error naming it, so the mistake is not a silent standby. Give the same name to
+   `Crablet.observability(serviceName, { product })`: it exports it as `service.namespace`, so one collector groups a product's deployments.
 2. **One product per Effect context.** Two products' `Crablet.layer` in one context provide the same services (`EventStore`, `CommandExecutor`), and one
    hides the other. In practice, one product per process; a "shared workers" deployment for several small products is not supported.
 3. **Products talk by messages only.** Product A publishes through its outbox ([ADR-0039](../../adr/0039-a-topic-takes-its-publishers.md)); product B consumes

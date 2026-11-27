@@ -23,8 +23,8 @@ process imports only the modules it declares.
   prefix (`WALLET_DB_HOST`, `WALLET_ROLES`...): the connection (or `DB_URL`), the pool, the session connection, the polling, the wake-ups, the roles,
   whether to migrate and the product (`PRODUCT`). Each part comes from its owner and can be read alone (`databaseConfig`, `rolesConfig`, `migrateConfig`, `pollingConfig`,
   `wakeupsConfig`). The variables are in the [configuration reference](../../docs/reference/configuration.md#crabletconfigprefix-options-the-settings-from-the-environment).
-- **`Crablet.observability(serviceName)`** - metrics, spans and logs over OTLP from the standard `OTEL_*` variables, off without an endpoint; every
-  instance names itself (`service.instance.id`, default the host name). A bad value is a `ConfigError` in the layer's `E`.
+- **`Crablet.observability(serviceName, { product })`** - metrics, spans and logs over OTLP from the standard `OTEL_*` variables, off without an
+  endpoint; every instance names itself (`service.instance.id`, default the host name) and its product (`service.namespace`). A bad value is a `ConfigError` in the layer's `E`.
 - **`Crablet.processorsFor(modules, settings.roles, options)`** - `Crablet.processors` with `run` from the configuration. A role that is neither the
   application's nor a declared kind fails the layer with `UnknownRole`, naming it and the valid ones, before anything is built.
 

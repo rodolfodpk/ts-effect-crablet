@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   // gauges for the modules it runs. Set OTEL_EXPORTER_OTLP_ENDPOINT to export metrics, spans and logs over OTLP (docs/guides/operate/dashboard.md).
   // `runMain` turns SIGINT and SIGTERM into an interrupt; a failure is logged and ends the process with a non-zero code.
   const processes = walletProcesses(settings.roles, { polling }).pipe(Layer.provideMerge(appLayer));
-  NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(processes, Crablet.observability("wallet-example-app"))));
+  NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(processes, Crablet.observability("wallet-example-app", { product: settings.options.product }))));
 }
 
 main().catch((error) => {

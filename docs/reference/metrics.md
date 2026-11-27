@@ -6,6 +6,9 @@ Every metric and span the packages record, from `@crablet/metrics-otel` and the 
 exporter, so wire one in your application ([See it on a dashboard](../guides/operate/dashboard.md) uses OpenTelemetry). Which ones to alert on is in
 [Monitor it](../guides/operate/monitor-it.md#what-to-watch).
 
+What a series came from is in the export's resource, not on each series: `service.name` (the deployment), `service.instance.id` (the instance) and
+`service.namespace` (the product), set by `Crablet.observability(serviceName, { product })`.
+
 ## Commands
 
 | Metric | What it counts or measures |

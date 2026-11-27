@@ -252,7 +252,7 @@ const program = Effect.gen(function* () {
 // `runMain` turns SIGINT and SIGTERM into an interrupt: the program's scope closes, then the processes, then the pool. A failure is logged and ends the
 // process with a non-zero code.
 // Set OTEL_EXPORTER_OTLP_ENDPOINT to export metrics, spans and logs over OTLP (docs/guides/operate/dashboard.md); unset, nothing is exported.
-NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(processes, Crablet.observability("course-enrolment-app"))));
+NodeRuntime.runMain(Effect.provide(Effect.scoped(program), Layer.mergeAll(processes, Crablet.observability("course-enrolment-app", { product: settings.product }))));
 ```
 
 The wallet does the same with three modules ([`processes.ts`](../../../examples/wallet-example-app/src/processes.ts)). Underneath, each module builds its
