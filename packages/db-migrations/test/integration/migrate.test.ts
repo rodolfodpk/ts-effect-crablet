@@ -48,6 +48,23 @@ describe("migrate and migrateIfFresh", () => {
     assert.strictEqual(await migrateIfFresh(db.connInfo, app), "applied");
   });
 
+  it("instances started together against an empty database take turns: one applies the schema, the others find it, none fails", { timeout: 60_000 }, async () => {
+    await reset();
+    const outcomes = await Promise.allSettled(Array.from({ length: 6 }, () => migrateIfFresh(db.connInfo, app)));
+    const rejected = outcomes.filter((o) => o.status === "rejected").map((o) => String((o as PromiseRejectedResult).reason));
+    assert.deepStrictEqual(rejected, [], "no instance failed");
+    const results = outcomes.map((o) => (o.status === "fulfilled" ? o.value : "failed")).sort();
+    assert.deepStrictEqual(results, ["applied", "present", "present", "present", "present", "present"]);
+    assert.ok((await tables()).includes("app_log"));
+  });
+
+  it("a start whose files fail rolls back and releases the lock: the next start applies it all", { timeout: 60_000 }, async () => {
+    await reset();
+    await assert.rejects(migrateIfFresh(db.connInfo, { dir: appDir, files: [...app.files, "V102__broken.sql"] }), /no_such_function/);
+    assert.deepStrictEqual(await tables(), [], "nothing was left");
+    assert.strictEqual(await migrateIfFresh(db.connInfo, app), "applied", "and it did not wait on a lock left behind");
+  });
+
   it("with no application set, apply the framework's schema only", async () => {
     await reset();
     await migrate(db.connInfo);

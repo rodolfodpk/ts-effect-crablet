@@ -127,8 +127,8 @@ export const rolesConfig = <const AppRole extends string = never>(declared: Read
     })
   );
 
-// MIGRATE: whether the process applies the schema at start-up (`on`, the default) or leaves it to a pre-deploy job (`off`, as it must be when several
-// instances start together: ADR-0022, decision 6).
+// MIGRATE: whether the process applies the schema at start-up (`on`, the default) or leaves it to a pre-deploy job (`off`, as production should:
+// ADR-0022, decision 6). Instances that start together with it on take turns (`migrateIfFresh` takes a transaction lock).
 export const migrateConfig: Config.Config<boolean> = Config.Literals(["on", "off"], "MIGRATE").pipe(
   Config.withDefault("on" as const),
   Config.map((value) => value === "on")

@@ -25,8 +25,11 @@ leaves the database as it was. `migrateIfFresh(conn, app)` does the same only wh
 existing database you apply only the files it has not had, in order, with your own deployment tooling. A database created before the files were consolidated (V1 to V19)
 cannot be upgraded to them and is recreated ([ADR-0047](../../adr/0047-the-migrations-are-the-schemas-shape.md)).
 
-**Do not let every instance run the migration at start-up.** Five instances starting at once on an empty database raced: some failed with `relation ... already exists`, and which ones changed from run to run ([the kind lab](../../history/plans/kind-lab.md)).
-Run the schema from **one pre-deploy job**, and start the application with the migration off (the wallet: `WALLET_MIGRATE=off`). A migration tool with a history table and a lock removes the race: the files here already follow
+**Instances that start together take turns.** Five instances starting at once on an empty database used to race: some failed with `relation ... already exists`, and which ones changed from run to run ([the kind lab](../../history/plans/kind-lab.md)).
+Since 2026-11-27 `migrateIfFresh` takes a transaction-level advisory lock before it looks: the first applies the schema, the others wait and find it
+(a test starts six at once). That makes a start-up migration safe for a fresh database, nothing more: it still records nothing and cannot upgrade one.
+For production, still run the schema from **one pre-deploy job** and start the application with the migration off (the wallet: `WALLET_MIGRATE=off`),
+so a long or failing migration is a failed deploy and not pods that do not start. A migration tool with a history table and a lock removes the race: the files here already follow
 Flyway's naming (the framework's are V1 to V7, so number your own from V100 and keep the range below 100 for the framework), and Flyway 13.10.0 applied both sets, in order, from five pods at once, three times out of three, on Postgres 18.6, when the framework's files were V1 to V14
 (`examples/wallet-example-app/Dockerfile.migrations`). An existing database needs a baseline so the tool accepts the versions it already has; that was not tried.
 

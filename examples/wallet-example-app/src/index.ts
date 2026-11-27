@@ -20,7 +20,8 @@ async function main(): Promise<void> {
   const settings = await readWalletConfig();
   const { polling } = settings; // WALLET_POLL_MS, WALLET_BACKOFF_MAX_SECONDS; with WALLET_WAKEUPS=off the processors do not LISTEN (they follow the event store)
   const poolSize = settings.pg.maxConnections;
-  // WALLET_MIGRATE=off: the schema is applied by a pre-deploy job (`node src/migrate.ts`), as it must be when several instances start together (ADR-0022, decision 6).
+  // WALLET_MIGRATE=off: the schema is applied by a pre-deploy job (`node src/migrate.ts`), as production should (ADR-0022, decision 6); instances that start
+  // together with it on take turns (a transaction lock), so a fresh database is migrated once.
   if (!settings.migrate) console.log("migrations: not applied by this process (WALLET_MIGRATE=off)");
   else console.log(`migrations: ${(await migrateIfFresh(Crablet.plainConnection(settings.pg), walletMigrations)) === "applied" ? "applied to a fresh database" : "the schema is already there, left as it is"}`);
 

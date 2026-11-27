@@ -32,7 +32,7 @@ What the code and the measurements say about that shape:
    - **The admin API** (`processors-http`) builds its sources from the processor handles in the process. An `api` pod has no running loops. The state it needs is in the database, so the handles may be constructible without starting them (creating one opens no connection and runs no loop); this is to be **verified** before relying on it. If it holds, the `api` role serves the admin API for all modules, with the backoff flag always false (it is local to the process that runs the loop; the response says so). If it does not, the admin API is served by the worker roles, one per module.
    - **The metric samplers** (`monitorProcessors`, `monitorStorage`) stay with the roles that have handles (the workers); in `all` they run as today.
 5. **Workers get a health endpoint, not an API.** A minimal HTTP server with `/healthz` (the process is alive and its event loop answers) for the Kubernetes liveness probe. It does not report leadership: a standby is healthy.
-6. **Migrations are not the roles' job.** In `all` the start-up keeps `migrateIfFresh` (development, tests). In the separate roles the schema is applied by a pre-deploy job (`migrateIfFresh`, in `@crablet/db-migrations/Migrate` since phase 2c of ADR-0054, is not safe when several instances start at once: they can all see an empty database).
+6. **Migrations are not the roles' job.** In `all` the start-up keeps `migrateIfFresh` (development, tests). In the separate roles the schema is applied by a pre-deploy job (`migrateIfFresh`, in `@crablet/db-migrations/Migrate` since phase 2c of ADR-0054, was not safe when several instances start at once: they could all see an empty database. Since 2026-11-27 they take turns: see the update at the end).
 7. **Kubernetes keeps the desired state; Postgres keeps the exclusion.** One Deployment per role. Replicas of a worker role give a warm standby, because the module lock stays the mutual exclusion (and what is meant to make a rolling update gap-free: the new pod waits as a follower, the old one releases the lock on SIGTERM; a graceful exit and the release were observed, the handover time was not measured and is a scenario of arrangement C). Delegating mutual exclusion to Kubernetes alone (replicas of 1, or a StatefulSet) was considered and rejected: it gives liveness, not exclusion, and loses the fence where the work happens.
 8. **Out of the process model, deliberately.** The UI is a static bundle deployed on its own, not a role. Splitting the write API from the read API into two roles is **deferred** until write and read scale apart or read replicas are used. The outbox role is defined like the others, and exercised in arrangement B since 2026-10-25.
 
@@ -80,3 +80,15 @@ What a local lab cannot reproduce, as arrangement C says: RDS Multi-AZ failover,
 - Fewer held connections per process: one `LISTEN` connection and one lock session per process instead of one per module. Both are built ([ADR-0046](0046-one-lock-session-per-process.md)).
 - Separating the held connections from the work pool in the connection configuration, so the web role can use a pooler.
 - Splitting the write API from the read API; a lock per processor.
+
+## Update: instances that migrate at start-up take turns (2026-11-27)
+
+Decision 6 said `migrateIfFresh` was not safe when several instances start at once, as the kind lab measured. It now takes a transaction-level advisory
+lock (`pg_advisory_xact_lock(MIGRATE_LOCK_KEY)`, `@crablet/db-migrations/Migrate`) before it looks for the event log, in the same transaction as the
+files: the first instance applies the schema, the others wait and find it, and a commit or a rollback releases the lock, so an instance that dies while
+migrating holds nothing. `packages/db-migrations/test/integration/migrate.test.ts` starts six at once on an empty database (one applies, five find it,
+none fails; without the lock it fails every time) and checks that a failed start leaves no lock behind.
+
+The recommendation stands for production: a pre-deploy job (Flyway, or `node src/migrate.ts`) and `MIGRATE=off` in the pods, so that a long or failing
+migration fails the deploy instead of the start of every pod. What changed is that a start-up migration with several instances (development, a
+staging namespace, the separate roles started together) is no longer a race.
