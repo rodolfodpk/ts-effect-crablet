@@ -42,6 +42,17 @@ const listening = () =>
   probe.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql.unsafe<{ n: number }>("SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name = 'process-connections' AND query LIKE 'LISTEN%'")
   )).then((r) => r[0]!.n);
+// What a closed connection held is seen gone a moment after the close: its backend leaves pg_locks and pg_stat_activity when it exits, which the
+// server does after the client's socket closes, not before `close` returns.
+const eventually = async <A>(read: () => Promise<A>, expected: A, message: string): Promise<void> => {
+  const deadline = Date.now() + 5_000;
+  let seen = await read();
+  while (seen !== expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    seen = await read();
+  }
+  assert.strictEqual(seen, expected, message);
+};
 
 describe("ProcessConnections (ADR-0055)", () => {
   it("closing the layer gives back a lock session and a LISTEN connection that were left open", { timeout: 30_000 }, async () => {
@@ -63,8 +74,8 @@ describe("ProcessConnections (ADR-0055)", () => {
     assert.strictEqual(await listening(), 1, "one LISTEN connection while the layer lives");
 
     await proc.runPromise(Scope.close(layerScope, Exit.void));
-    assert.strictEqual(await lockHeld(), false, "the layer closed the lock session");
-    assert.strictEqual(await listening(), 0, "the layer closed the LISTEN connection");
+    await eventually(lockHeld, false, "the layer closed the lock session");
+    await eventually(listening, 0, "the layer closed the LISTEN connection");
     await proc.runPromise(Scope.close(callerScope, Exit.void));
   });
 
@@ -84,6 +95,6 @@ describe("ProcessConnections (ADR-0055)", () => {
     await proc.runPromise(Scope.close(second, Exit.void));
     assert.strictEqual(await lockHeld(), true, "closing the second leaves the first's lock alone");
     await proc.runPromise(Scope.close(first, Exit.void));
-    assert.strictEqual(await lockHeld(), false);
+    await eventually(lockHeld, false, "closing the first gives the lock back");
   });
 });
