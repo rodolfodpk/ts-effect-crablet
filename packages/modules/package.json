@@ -12,5 +12,5 @@
   "dependencies": {
     "effect": "4.1.4"
   },
-  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }
+  "crablet": { "coverage": { "lines": 100 }, "typeEscapes": { "src": 0, "test": 0 } }
 }

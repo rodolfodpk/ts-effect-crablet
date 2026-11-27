@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { check, checkFiles, measure, raise, type Baseline } from "./coverage-gate.ts";
+import { existsSync, readdirSync } from "node:fs";
+import { assemble, check, checkFiles, measure, raise, readPackages, withLines, type Baseline } from "./coverage-gate.ts";
 import { parseLcov } from "./merge-coverage.ts";
 
 const baseline: Baseline = { tolerancePoints: 0.3, overall: 85, packages: { a: 95, b: 80 } };
@@ -81,5 +82,28 @@ describe("per-file floor", () => {
     const next = raise(measure(parseLcov(lcov("packages/a/src/x.ts", 100, 100), "/repo")), { ...floorBaseline, fileExclusions: { "packages/a/src/y.ts": "why" } });
     expect(next.fileFloor).toBe(90);
     expect(next.fileExclusions).toEqual({ "packages/a/src/y.ts": "why" });
+  });
+});
+
+describe("where the baselines are: each package's own, and the repository's policy", () => {
+  test("the baseline is put together from the policy and the packages' records, notes and exclusions included", () => {
+    const b = assemble({ tolerancePoints: 0.3, fileFloor: 90, overall: 85 }, new Map([
+      ["b", { lines: 80, fileExclusions: { "packages/b/src/low.ts": "why" } }],
+      ["a", { lines: 95, note: "why 95" }]
+    ]));
+    expect(b).toEqual({ tolerancePoints: 0.3, fileFloor: 90, overall: 85, packages: { a: 95, b: 80 }, notes: { a: "why 95" }, fileExclusions: { "packages/b/src/low.ts": "why" } });
+  });
+
+  test("raising writes a package's number into its package.json and leaves the rest of the file as written", () => {
+    const text = '{\n  "name": "x",\n  "crablet": { "coverage": { "lines": 95, "note": "n" }, "typeEscapes": { "src": 0, "test": 0 } }\n}\n';
+    expect(withLines(text, 96.2)).toBe(text.replace('"lines": 95', '"lines": 96.2'));
+    expect(withLines('{\n  "name": "x",\n  "crablet": { "typeEscapes": { "src": 0, "test": 0 } }\n}\n', 90)).toContain('"crablet": { "coverage": { "lines": 90 }, "typeEscapes"');
+    expect(withLines('{\n  "name": "x"\n}\n', 90)).toBe('{\n  "name": "x",\n  "crablet": { "coverage": { "lines": 90 } }\n}\n');
+  });
+
+  test("every package with sources in this repository records its baseline", () => {
+    const recorded = readPackages(".");
+    const withSources = readdirSync("packages").filter((name) => existsSync(`packages/${name}/src`));
+    expect(withSources.filter((name) => !recorded.has(name))).toEqual([]);
   });
 });

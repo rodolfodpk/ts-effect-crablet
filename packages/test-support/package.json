@@ -17,5 +17,5 @@
   "devDependencies": {
     "@testcontainers/postgresql": "12.2.1"
   },
-  "crablet": { "typeEscapes": { "src": 2, "test": 0 } }
+  "crablet": { "coverage": { "lines": 96.4, "note": "96.4, not 100: CI (Linux, Node 24) covers about three fewer lines of packages/test-support/src/index.ts than a local macOS run. Set from the first CI run, 2026-10-08." }, "typeEscapes": { "src": 2, "test": 0 } }
 }

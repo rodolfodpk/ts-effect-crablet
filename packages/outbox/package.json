@@ -24,6 +24,7 @@
     "@crablet/test-support": "workspace:*"
   },
   "crablet": {
+    "coverage": { "lines": 100 },
     "typeEscapes": { "src": 0, "test": 1 },
     "internal": ["./OutboxManagementService", "./OutboxProcessor"]
   }

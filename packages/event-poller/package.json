@@ -23,6 +23,7 @@
     "./MonitorProcessors": "./src/MonitorProcessors.ts"
   },
   "crablet": {
+    "coverage": { "lines": 100 },
     "typeEscapes": { "src": 1, "test": 21 },
     "internal": ["./BackoffState", "./EventFetcher", "./EventHandler", "./InstanceId", "./MonitorProcessors", "./PostgresProgressTracker", "./ProcessSettings", "./ProcessorConfig", "./ProgressPing", "./ProgressTracker", "./SqlEventFetcher"]
   },

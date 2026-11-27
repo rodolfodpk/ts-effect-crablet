@@ -19,7 +19,7 @@ many runs it rests on; the full experiments, with what was wrong before each fix
 | **Reads are never silently stale** | A read with a marker includes the write, or answers `503`. | The read-consistency tests in `packages/views-http` and the wallet's end-to-end test. |
 | **A stored event that no longer fits is never misread** | It fails with a typed `EventDecodingError` naming it, and is never skipped. | The event-evolution tests and experiment E7 ([ADR-0017](./adr/0017-event-evolution-by-compatibility.md)). |
 
-**How good the tests are.** Line coverage of the packages (not the examples), merged from the unit and the integration suites, is gated in CI against a committed baseline (`scripts/coverage-gate.ts`, `coverage-baseline.json`): 99.7 % when the gate was set.
+**How good the tests are.** Line coverage of the packages (not the examples), merged from the unit and the integration suites, is gated in CI against committed baselines, one per package in its `package.json` (`scripts/coverage-gate.ts`): 99.7 % when the gate was set.
 Coverage only says a line ran, so the correctness core was also broken by hand on purpose, 17 times: three breaks survived, and all three were real
 gaps, now closed ([test coverage](./history/plans/test-coverage.md)). Mutation testing by a tool ([plan](./history/plans/mutation-testing.md)) covers the code the unit tests reach in `eventstore`, `commands` and `event-poller`: 92.0 % of its mutants are
 killed, held by a ratchet that CI runs weekly (`scripts/mutation-gate.ts`). The database-bound code is broken on purpose instead, 35 times from a list

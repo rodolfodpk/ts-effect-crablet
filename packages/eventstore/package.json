@@ -33,6 +33,7 @@
     "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
   },
   "crablet": {
+    "coverage": { "lines": 99.4 },
     "typeEscapes": { "src": 1, "test": 24 },
     "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ReadSnapshot", "./ServerSettings", "./TagCodec"]
   },

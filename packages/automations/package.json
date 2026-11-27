@@ -25,6 +25,7 @@
     "@crablet/test-support": "workspace:*"
   },
   "crablet": {
+    "coverage": { "lines": 100 },
     "typeEscapes": { "src": 0, "test": 4 },
     "internal": ["./AutomationDecision", "./AutomationManagementService", "./AutomationsProcessor"]
   }
