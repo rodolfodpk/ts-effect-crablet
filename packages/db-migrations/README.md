@@ -20,7 +20,7 @@ The SQL schema, as a plain file bundle. This repository owns the schema; applica
 - **`sqlDir`** - the directory holding the `.sql` files.
 - **`migrate(conn, app?)`**, **`migrateIfFresh(conn, app?)`**, **`migrateApp(conn, app)`** (`/Migrate`) - apply the framework's files, then the application's
   (`{ dir, files }`, numbered from V100), in one transaction, with a plain `pg` client: deploy-time bootstrapping, before any layer exists. `migrateIfFresh` applies
-  only to a database without the event log (a restart leaves it alone); `migrateApp` applies only the application's, on top of a test database. The
+  only to a database without the event log (a restart leaves it alone), and instances that start together take turns on a transaction lock; `migrateApp` applies only the application's, on top of a test database. The
   application's list is checked first (`problemsWith`): a file below V100, out of order or missing stops it before connecting.
 
 They record nothing, so they are for a fresh database. An existing one needs a migration tool with a history table (Flyway applies these files as they are; see

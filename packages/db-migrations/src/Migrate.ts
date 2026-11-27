@@ -92,16 +92,30 @@ export async function migrateApp(conn: MigrateConnInfo, app: AppMigrations): Pro
   await withClient(conn, (client) => applyAll(client, files));
 }
 
+// The transaction lock `migrateIfFresh` takes, the same in every process of every version, so instances that start together take turns. A value
+// of its own: the modules' leader locks are 4856221667890123456n to ...459n.
+export const MIGRATE_LOCK_KEY = 4856221667890123500n;
+
 // `migrate`, only on a database without the event log; one that has it is left as it is, which is what lets an application restart against it.
-// It does not detect a half-applied or an older schema (a half-applied one cannot happen here: `migrate` is one transaction). Several processes
-// started together against an empty database can all find it empty, and all but one then fail: in a deployment of several instances, apply the
-// schema with a pre-deploy job instead (ADR-0022, decision 6).
+// It does not detect a half-applied or an older schema (a half-applied one cannot happen here: `migrate` is one transaction).
+//
+// Instances started together against an empty database take turns (ADR-0022, decision 6, update of 2026-11-27): the look and the files are one
+// transaction that first takes a transaction-level advisory lock (`MIGRATE_LOCK_KEY`). The first applies the schema and commits, which releases the
+// lock; the others wait for it, then find the event log and answer "present". The lock is released by the commit or the rollback, so a process that
+// dies while migrating holds nothing.
 export async function migrateIfFresh(conn: MigrateConnInfo, app?: AppMigrations): Promise<"applied" | "present"> {
   const files = [...coreFiles(), ...checked(app)];
   return withClient(conn, async (client) => {
-    const present = (await client.query<{ present: boolean }>("SELECT to_regclass('public.crablet_events') IS NOT NULL AS present")).rows[0]?.present === true;
-    if (present) return "present";
-    await applyAll(client, files);
-    return "applied";
+    await client.query("BEGIN");
+    try {
+      await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [MIGRATE_LOCK_KEY.toString()]);
+      const present = (await client.query<{ present: boolean }>("SELECT to_regclass('public.crablet_events') IS NOT NULL AS present")).rows[0]?.present === true;
+      if (!present) for (const file of files) await client.query(readFileSync(file, "utf-8"));
+      await client.query("COMMIT");
+      return present ? "present" : "applied";
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
   });
 }
