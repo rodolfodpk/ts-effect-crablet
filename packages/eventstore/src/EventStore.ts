@@ -238,11 +238,10 @@ export const makeEventStoreLayer = (config: EventStoreConfig = {}) => Layer.merg
         if (projectors.length === 0) {
           return yield* Effect.die("At least one projector is required");
         }
-        // BEFORE the read: a snapshot taken earlier sees no more than the read's own (xmin never decreases, and a transaction it saw finished is still
-        // finished), so the horizon is never above what the read could miss, and `seen` never treats as seen an event the read did not see (ADR-0048).
-        const seen = yield* Sql.currentSnapshot(sql);
+        // The read's own snapshot, from the same statement: the horizon is never above what the read could miss, and `seen` treats as seen exactly
+        // the events the read could see (ADR-0048).
+        const { snapshot: seen, rows } = yield* Sql.readEvents(sql, query, after);
         const xmin = ReadSnapshot.parse(seen).xmin.toString();
-        const rows = yield* Sql.queryEvents(sql, query, after);
 
         let state = projectors[0]!.initialState;
         let lastLogPosition = after;

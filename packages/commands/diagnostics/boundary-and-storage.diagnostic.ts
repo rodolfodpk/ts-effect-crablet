@@ -1,6 +1,6 @@
 // DIAGNOSTIC EXPERIMENTS (docs/history/plans/reliability-and-scale-diagnostic.md), not tests: they measure, they do not assert. Real Postgres (Testcontainers, needs Docker).
 // Run with:  node --test packages/commands/diagnostics/boundary-and-storage.diagnostic.ts   and read the `DIAG` lines.
-// E5: command latency against the number of events in its boundary. E5f: what reading fewer columns saves. E5h: where the gap between the raw fetch and `project` goes. E5g: `exists` against the events its query matches. E7: what a command does when an event in its boundary no longer matches its schema.
+// E5: command latency against the number of events in its boundary. E5f: what reading fewer columns saves. E5h: where the gap between the raw fetch and `project` goes. E5g: `exists` against the events its query matches. E5i: what one statement for the snapshot and the read would save. E7: what a command does when an event in its boundary no longer matches its schema.
 // E8: what an event costs on disk (events heap and indexes, the tag table). The folder is outside the test globs, so CI does not run it.
 import { after, before, describe, it } from "node:test";
 import { performance } from "node:perf_hooks";
@@ -169,9 +169,9 @@ describe("DIAG", () => {
     const noopProjectors = [{ eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s }];
     const loop = () => { let state = 0; let last: unknown = null; for (const event of parsed) { for (const projector of noopProjectors) { if (projector.eventTypes.length === 0 || projector.eventTypes.includes(event.type)) state = projector.transition(state); } last = { position: event.position, occurredAt: event.occurredAt, transactionId: event.transactionId }; } return [state, last]; };
     console.log(`DIAG E5h   the projector loop and a LogPosition per row, over parsed events: ${spread(await timed(loop))}`);
-    // the extra query `project` runs first
+    // the query `project` ran first, before the snapshot moved into the read's own statement (E5i, ADR-0048 status update)
     const xmin = await timed(() => run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT pg_current_snapshot()::text AS snapshot"))));
-    console.log(`DIAG E5h the extra currentSnapshot query: ${spread(xmin)}`);
+    console.log(`DIAG E5h a snapshot query of its own (no longer run by project): ${spread(xmin)}`);
     // end to end, interleaved so a slow moment hits both: the raw fetch and `project` with a do-nothing projector
     const noop = { eventTypes: [] as ReadonlyArray<string>, initialState: 0, transition: (s: number) => s };
     const q = Query.forEventAndTag("Ticked", "entity_id", "parsebig");
@@ -212,6 +212,45 @@ describe("DIAG", () => {
     await go();
     for (let i = 0; i < 15; i++) { const t0 = performance.now(); await go(); xs.push(performance.now() - t0); }
     console.log(`DIAG E5d transfer between an account with 100,000 events and an empty one: p50 ${pct(xs, 50).toFixed(0)} ms, p95 ${pct(xs, 95).toFixed(0)} ms`);
+  });
+
+  it("E5i: what reading the snapshot in the read's own statement would save (ADR-0048: one round trip), against a command's latency", { timeout: 600_000 }, async () => {
+    // `project` takes the snapshot in a statement of its own, then reads (two round trips). One statement could return both: the snapshot joined to the
+    // read by LATERAL. Both are timed inside a transaction, as a command runs them, over the boundaries a command typically has, next to the command.
+    const cols = "event_id::text AS event_id, type, tags, data, transaction_id::text AS transaction_id, position, occurred_at, correlation_id, causation_id, metadata, " +
+      "(transaction_id < pg_snapshot_xmin(pg_current_snapshot())) AS settled";
+    const read = `SELECT ${cols} FROM crablet_events WHERE (type = ANY($1) AND tags @> $2::text[]) ORDER BY crablet_events.transaction_id, position ASC`;
+    // the statement `readEvents` runs (eventstore/src/internal/sql.ts): the order is the outer query's, by the real xid8
+    const joined = `SELECT s.snapshot, e.event_id, e.type, e.tags, e.data, e.transaction_id, e.position, e.occurred_at, e.correlation_id, e.causation_id, e.metadata, e.settled FROM (SELECT pg_current_snapshot()::text AS snapshot) s LEFT JOIN LATERAL (SELECT ${cols}, crablet_events.transaction_id AS sort_xid ` +
+      "FROM crablet_events WHERE (type = ANY($1) AND tags @> $2::text[])) e ON true ORDER BY e.sort_xid, e.position ASC";
+    const reps = 300;
+    const inTx = (f: (sql: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>) => () =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.orDie(sql.withTransaction(f(sql)))));
+    const time = async (f: () => Promise<unknown>) => {
+      const xs: number[] = [];
+      for (let i = 0; i < 20; i++) await f();
+      for (let i = 0; i < reps; i++) { const t0 = performance.now(); await f(); xs.push(performance.now() - t0); }
+      return `p50 ${pct(xs, 50).toFixed(3)} p95 ${pct(xs, 95).toFixed(3)} ms`;
+    };
+    await insertRaw("snap-other", 100_000, '{"entityId":"snap-other"}'); // a log of 100,000 events outside the boundaries below
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("VACUUM ANALYZE crablet_events"))); // the GIN index's pending list flushed
+    console.log(`DIAG E5i a round trip (SELECT 1) in a transaction: ${await time(inTx((sql) => sql.unsafe("SELECT 1")))}`);
+    for (const n of [1, 10, 100, 1_000]) {
+      const entity = `snap-${n}`;
+      await insertRaw(entity, n, `{"entityId":"${entity}"}`);
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("ANALYZE crablet_events")));
+      const params = [["Ticked"], [`entity_id=${entity}`]];
+      const two = inTx((sql) => Effect.andThen(sql.unsafe("SELECT pg_current_snapshot()::text AS snapshot"), sql.unsafe(read, params)));
+      const one = inTx((sql) => sql.unsafe(joined, params));
+      if (n === 10) {
+        // the plans, over a log where the boundary is a small part of it: the lateral form must find its events the way the read alone does
+        for (const [name, text] of [["the read alone", read], ["the one statement", joined]] as const) {
+          const plan = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe<{ "QUERY PLAN": string }>(`EXPLAIN ${text}`, params)));
+          console.log(`DIAG E5i plan of ${name}:\n${plan.map((r) => r["QUERY PLAN"]).join("\n")}`);
+        }
+      }
+      console.log(`DIAG E5i boundary of ${String(n).padStart(5)}: snapshot then read ${await time(two)}  | one statement ${await time(one)}  | the command ${await time(() => tick(entity))}`);
+    }
   });
 
   it("E7: an event whose stored payload no longer matches its schema is in a boundary", { timeout: 60_000 }, async () => {

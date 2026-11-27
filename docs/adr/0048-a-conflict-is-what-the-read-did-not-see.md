@@ -58,3 +58,19 @@ below it.
   that keeps only the last read. Tests: the regression above; the snapshot against Postgres (`read-snapshot.test.ts`: the append's test agrees with
   `pg_visible_in_snapshot`, an intersection is read by Postgres and sees what both see); the intersection against its sets
   (`packages/eventstore/test/read-snapshot.test.ts`).
+
+## Update: the snapshot is the read's own (2026-11-27)
+
+The snapshot is now taken in the read's own statement, not in one just before it (decision 1): `readEvents` (`eventstore/src/internal/sql.ts`)
+returns `pg_current_snapshot()` joined to the matching events by `LEFT JOIN LATERAL`, so one row carries it when nothing matches. In read committed
+every function of a statement sees the statement's snapshot, so `seen` is exactly what the read could see, and decision 3's argument holds unchanged
+(the snapshot is no earlier than before, and no later than the read). It removes the first conservative case under Consequences (an event committed
+between the snapshot and the read is no longer a conflict) and a round trip per read.
+
+Measured first (`boundary-and-storage.diagnostic.ts`, E5i: Postgres in Docker on the same machine, inside a transaction, p50 of 300, over a log of
+100,000 other events): two statements 1.12 ms against one 0.72 ms over a boundary of 1 event, 1.09 against 0.80 over 10, 1.53 against 1.38 over 100,
+beside a whole command of 2.7 to 3.8 ms. Over 1,000 events the two are within noise (2.94 against 3.29 in this run, 2.94 against 2.70 in another):
+the snapshot is repeated on every row. Both forms have the same plan (the tags index, then the sort), printed by E5i. Locally the saving is 5 to
+15 % of a typical command; across a network it is one round trip per read, and `all(...)`, a period and `resolve` read more than once. The rows are
+sorted by the real xid8 (`sort_xid`), which is not returned: the client has no codec for it. A new break (`read-snapshot-lost-on-empty-boundary`)
+turns the LEFT JOIN into a JOIN.
