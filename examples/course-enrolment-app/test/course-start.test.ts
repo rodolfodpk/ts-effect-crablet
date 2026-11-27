@@ -4,6 +4,7 @@ import { DateTime, Effect } from "effect";
 import type { StoredEvent } from "@crablet/eventstore";
 import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
+import { automationScenario } from "@crablet/automations/testing/AutomationScenario";
 import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario";
 import { applyInMemory, rowsOf } from "@crablet/views/ViewMemory";
 import { CourseCancelled, CourseDefined, CourseWasCancelled, DefineCourse, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/slices/enrolment/Enrolment.ts";
@@ -69,6 +70,21 @@ describe("the automation that asks it", () => {
     expect(report.effects).toBe(2);
   });
   // #endregion automation-test
+
+  // #region automation-spec
+  test("delivered one at a time: every event asks ConfirmCourse to look, and only the last one confirms", async () => {
+    const s = automationScenario(confirmCourseWhenReady).given(CourseDefined({ courseId: "math", capacity: 30 }));
+    const events = parts("math");
+    for (const event of events.slice(0, -1)) {
+      const result = await s.when(event);
+      expect(result.inputs).toEqual([{ courseId: "math" }]);
+      expect(result.runs[0]!.result.reason).toBe("WAITING");
+    }
+    const confirmed = await s.when(events[events.length - 1]!);
+    expect(confirmed.events.map((e) => e.type)).toEqual(["CourseConfirmed"]);
+    expect((await s.redeliver()).events).toEqual([]);
+  });
+  // #endregion automation-spec
 });
 
 describe("the readiness view", () => {

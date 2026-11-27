@@ -180,7 +180,7 @@ test("in every order the events can arrive in, it waits until the last one, then
 });
 ```
 
-And the automation, with the idempotency check of [Add an automation](add-an-automation.md#4-test-that-it-is-idempotent): ten triggers, two courses,
+And the automation, with the idempotency check of [Add an automation](add-an-automation.md#5-test-that-it-is-idempotent): ten triggers, two courses,
 two confirmations, and handling them all again appends nothing.
 
 <!-- file: examples/course-enrolment-app/test/course-start.test.ts#automation-test -->
@@ -189,6 +189,25 @@ test("each course is confirmed once, however many of its events wake the automat
   // Ten triggers, two courses: two confirmations. The log is ahead of the deliveries, so the first trigger of a course may already see all of it.
   const report = await assertAutomationIdempotent(confirmCourseWhenReady, [...parts("math"), ...parts("art")]);
   expect(report.effects).toBe(2);
+});
+```
+
+Delivered one event at a time, with `automationScenario` ([Add an automation](add-an-automation.md#4-specify-what-it-does)): each event asks
+`ConfirmCourse` to look, every look but the last answers `WAITING`, and the last confirms.
+
+<!-- file: examples/course-enrolment-app/test/course-start.test.ts#automation-spec -->
+```ts
+test("delivered one at a time: every event asks ConfirmCourse to look, and only the last one confirms", async () => {
+  const s = automationScenario(confirmCourseWhenReady).given(CourseDefined({ courseId: "math", capacity: 30 }));
+  const events = parts("math");
+  for (const event of events.slice(0, -1)) {
+    const result = await s.when(event);
+    expect(result.inputs).toEqual([{ courseId: "math" }]);
+    expect(result.runs[0]!.result.reason).toBe("WAITING");
+  }
+  const confirmed = await s.when(events[events.length - 1]!);
+  expect(confirmed.events.map((e) => e.type)).toEqual(["CourseConfirmed"]);
+  expect((await s.redeliver()).events).toEqual([]);
 });
 ```
 
