@@ -57,7 +57,8 @@ const subscribersOf = (courseId: string) =>
 const coursesOf = (studentId: string) =>
   Effect.flatMap(EventStore, (es) => Effect.map(StudentModel.of({ id: studentId }).load(es), (l) => l.state.courses.length));
 const errorOf = (exit: any) => exit.cause?.reasons?.find((r: any) => r._tag === "Fail")?.error;
-const exitAll = (effects: ReadonlyArray<Effect.Effect<any, any, any>>) =>
+// the effects may fail differently (each command its own errors); what each needs stays checked
+const exitAll = <A, R>(effects: ReadonlyArray<Effect.Effect<A, unknown, R>>) =>
   Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length });
 
 describe("enrolment against Postgres", () => {

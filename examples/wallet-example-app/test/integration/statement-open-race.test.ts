@@ -26,7 +26,7 @@ before(async () => {
     Layer.provideMerge(
       Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)),
       PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })
-    ) as never
+    ).pipe(Layer.orDie)
   );
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();
@@ -37,7 +37,7 @@ after(async () => {
   await db.stop();
 });
 
-const exec = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.exit(effect as never)) as Promise<Exit.Exit<unknown, { _tag?: string }>>;
+const exec = <A, E>(effect: Effect.Effect<A, E, ManagedRuntime.ManagedRuntime.Services<typeof runtime>>) => runtime.runPromise(Effect.exit(effect));
 const openWallet = (walletId: string) => exec(Effect.flatMap(CommandExecutor, (ex) => ex.run(OpenWallet, { walletId, owner: "x", initialBalance: 5 })));
 const deposit = (walletId: string, depositId: string) => exec(Effect.flatMap(CommandExecutor, (ex) => ex.run(Deposit, { depositId, walletId, amount: 3, description: "race" })));
 

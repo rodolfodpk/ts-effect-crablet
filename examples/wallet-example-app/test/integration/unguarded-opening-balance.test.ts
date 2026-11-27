@@ -10,6 +10,8 @@ import { Client } from "pg";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import type { Command, RawInput } from "@crablet/commands/Command";
+import type { InputSchema } from "@crablet/commands/Contract";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
@@ -29,7 +31,7 @@ before(async () => {
     Layer.provideMerge(
       Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive)),
       PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })
-    ) as never
+    ).pipe(Layer.orDie)
   );
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();
@@ -58,12 +60,12 @@ const unguardedDeposit = (c: DepositInput) =>
     })));
   });
 
-const exec = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.exit(effect as never)) as Promise<Exit.Exit<unknown, unknown>>;
-const run = (command: any, input: unknown) => exec(Effect.flatMap(CommandExecutor, (ex) => (ex as any).run(command, input)));
-const viaCommand = (command: any) => (input: DepositInput) => run(command, input);
+const exec = <A, E>(effect: Effect.Effect<A, E, ManagedRuntime.ManagedRuntime.Services<typeof runtime>>) => runtime.runPromise(Effect.exit(effect));
+const run = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: RawInput<I>) => exec(Effect.flatMap(CommandExecutor, (ex) => ex.run(command, input)));
+const viaCommand = <In, Err, I extends InputSchema>(command: Command<In, Err, I>) => (input: RawInput<I>) => run(command, input);
 
 const balanceOf = (id: string) =>
-  runtime.runPromise(Effect.flatMap(EventStore, (es) => WalletModel.of({ id, year, month }).load(es)) as never).then((r: any) => r.state.balance as number);
+  runtime.runPromise(Effect.flatMap(EventStore, (es) => WalletModel.of({ id, year, month }).load(es))).then((r) => r.state.balance);
 
 // Four deposits of different amounts race on each of 60 fresh wallets; returns the wallets whose balance is not initial + their sum, and those with more than one opening.
 const race = async (deposit: (input: DepositInput) => Promise<Exit.Exit<unknown, unknown>>) => {

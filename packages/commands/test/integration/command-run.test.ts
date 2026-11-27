@@ -96,7 +96,7 @@ const eventsOnSeat = (seatId: string) =>
     )
   );
 
-const exitsOf = <A, E>(effects: ReadonlyArray<Effect.Effect<A, E, any>>) =>
+const exitsOf = <A, E>(effects: ReadonlyArray<Effect.Effect<A, E, CommandExecutor>>) =>
   run(Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length })) as Promise<
     ReadonlyArray<{ _tag: "Success"; value: A } | { _tag: "Failure"; cause: { reasons: ReadonlyArray<{ _tag: string; error?: unknown }> } }>
   >;

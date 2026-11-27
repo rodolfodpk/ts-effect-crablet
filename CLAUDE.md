@@ -9,7 +9,8 @@ Using Effect and TypeScript only makes sense if the types tell the truth: an Eff
 really fail. A cast that erases them turns "does not compile" into "service not found" at run time.
 
 1. **No cast to an Effect type.** Never write `as Effect.Effect<…>`, `as Layer.Layer<…>`, `as Stream.Stream<…>` or `as ManagedRuntime<…>`, with or without
-   `unknown`, nor an `as any` / `as never` that stands in for one. A wrong `R` or `E` is fixed in the code. `scripts/effect-casts.test.ts` enforces it
+   `unknown`, nor an `as any` / `as never` that stands in for one. Nor take one with `any` requirements (`run(e: Effect.Effect<A, E, any>)`,
+   `ManagedRuntime<any, any>`): that erases the `R` as a cast does. A wrong `R` or `E` is fixed in the code. `scripts/effect-casts.test.ts` enforces it
    everywhere (sources, tests, diagnostics, scripts), with no exception. To run an Effect in a test, use `runWith(layer)` from
    `@crablet/test-support/RunWith`, whose `run` takes exactly what the layer provides.
 2. **An honest `E`.** A layer that can fail to build (`SqlError`, `ConfigError`) says so. `orDie` is not a cast: it is allowed where the failure really is a
