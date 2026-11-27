@@ -45,6 +45,7 @@ These records are for the history of each decision: its context, the options wei
 - [ADR-0050: The event store, used directly](0050-the-event-store-used-directly.md) - **accepted**: a paged read of finished events and a stream; `readToDecide` and `failIfEventsMatch` with an opaque position that carries the read's snapshot; `Query.all()` as its own variant; `transaction`; primitives on the service, the rest as functions
 - [ADR-0051: Client metadata, and correlation and causation for direct use](0051-client-metadata-correlation-and-causation.md) - **accepted**: a `metadata` JSONB column the client fills (per event, or around an append), withheld from the event log without a mask; `AppendContext` sets the correlation (a uuid) and the causation (only from a stored event)
 - [ADR-0052: Short forms for direct use](0052-short-forms-for-direct-use.md) - **accepted**: `Query.match` (a missing tag value refused) and `AppendEvent.make` (one not added); `decision.append` from `readToDecide`; `append`, `read` and `transaction` as functions; `@crablet/eventstore/Postgres`
+- [ADR-0053: A model may declare its states, and the framework checks, draws and explores them](0053-a-model-may-declare-its-states.md) - **rejected**: states and transitions stay in `decide`; an entity's state is a discriminated union in the fold; a second declaration beside the handlers could drift, and with DCB no table can be enforced
 
 ## Reading, delivery and the pollers
 
