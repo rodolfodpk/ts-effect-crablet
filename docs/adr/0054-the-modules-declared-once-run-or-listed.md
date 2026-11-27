@@ -99,5 +99,23 @@ Rules this records, for every application:
 
 ## Not done here
 
-- The product name in the connections and the detection of two products in one database (V5): undecided.
+- The product name in the connections and the detection of two products in one database (V5): decided (a) and done on 2026-11-27, see the update at the end.
 - Merging partial declarations, one per vertical slice: with phase 3.
+
+## Update: the product names the process, and a lock held by another product is reported (V5, 2026-11-27)
+
+Decision V5 (a): the product is the application's configuration, and the event store takes only a name, as a parameter.
+
+- **`Crablet.layer(pg, { product, instance })`** gives the process an identity (`ProcessIdentityRef`, `@crablet/app`; a `Context.Reference` with none
+  by default). Its connections, the pool and the session ones, are named `<product>/<instance>` in `pg_stat_activity` (unless `pg.applicationName` is
+  given), its modules use `instance` as their instance id (default `<hostname>-<pid>`, as before), and `Crablet.processors` gives the product to their
+  leaders. `Crablet.config(prefix, { product })` reads `PRODUCT` over the name the call gives. A name that is blank or holds a `/` is refused.
+- **`LeaderOptions.application`** (`@crablet/eventstore/Leader`): given, a module that does not get its lock looks who holds it. A session of another
+  application is logged as an error naming it, once per holder (not on every retry); a standby of the same product says nothing; a holder that names
+  no application is a warning. The look is best effort and never fails the attempt. The event store knows no product: it compares the holder's
+  `application_name` with the name it is given.
+- **Verified:** another database user's session shows its `application_name` without `pg_read_all_stats` (only its query is hidden; Postgres 18.6),
+  so the detection works across database users (`packages/eventstore/test/integration/leader-foreign-holder.test.ts`).
+- **Not done:** views of one product split across two deployments look like a normal standby and are not reported; isolation of products sharing a
+  database (locks and channels derived from the product) stays a future ADR. The metrics carry the service name and instance from
+  `Crablet.observability`; a `product` attribute on the poller's metrics was not added.

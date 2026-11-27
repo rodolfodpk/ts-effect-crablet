@@ -7,6 +7,8 @@ process imports only the modules it declares.
 
 - **`Crablet.layer(pg, options)`** - the database clients, the event store, the command audit store and the command executor, in one layer (moved here from
   `@crablet/commands/Crablet`, which no longer exists).
+  `{ product, instance }` gives the process an identity (`ProcessIdentityRef`): its connections are named `<product>/<instance>`, its modules use the
+  instance as their id, and their leaders log an error when another product's process holds their lock (decision V5, ADR-0054).
 - **`Crablet.modules(Views.module(...)).with(Automations.module(...))`** - the background modules, declared once: a plain value (no connection, no publisher),
   shared by every process. Built one module at a time, so the kinds and what building and running need are read off the modules, and a second module of a kind
   already declared does not compile.
@@ -17,9 +19,9 @@ process imports only the modules it declares.
 - **`Crablet.catalog(modules)`** - every module built and none run, as the same `Processors` service: for a process that serves the admin API and the status of
   modules other processes run (an API deployment, [ADR-0022](../../docs/adr/0022-runtime-roles.md)). It needs only the SQL client, and builds no publisher.
 
-- **`Crablet.config(prefix, { roles, database })`** (`/Config`) - one process's settings from its environment, with Effect's `Config`, under the product's
-  prefix (`WALLET_DB_HOST`, `WALLET_ROLES`...): the connection (or `DB_URL`), the pool, the session connection, the polling, the wake-ups, the roles and
-  whether to migrate. Each part comes from its owner and can be read alone (`databaseConfig`, `rolesConfig`, `migrateConfig`, `pollingConfig`,
+- **`Crablet.config(prefix, { roles, database, product })`** (`/Config`) - one process's settings from its environment, with Effect's `Config`, under the product's
+  prefix (`WALLET_DB_HOST`, `WALLET_ROLES`...): the connection (or `DB_URL`), the pool, the session connection, the polling, the wake-ups, the roles,
+  whether to migrate and the product (`PRODUCT`). Each part comes from its owner and can be read alone (`databaseConfig`, `rolesConfig`, `migrateConfig`, `pollingConfig`,
   `wakeupsConfig`). The variables are in the [configuration reference](../../docs/reference/configuration.md#crabletconfigprefix-options-the-settings-from-the-environment).
 - **`Crablet.observability(serviceName)`** - metrics, spans and logs over OTLP from the standard `OTEL_*` variables, off without an endpoint; every
   instance names itself (`service.instance.id`, default the host name). A bad value is a `ConfigError` in the layer's `E`.

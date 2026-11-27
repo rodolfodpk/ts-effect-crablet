@@ -1,6 +1,6 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { Context, Effect, Exit, Layer, Redacted, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Logger, Redacted, Scope } from "effect";
 import { SqlClient } from "effect/sql";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { Processors } from "@crablet/modules/Processors";
@@ -20,8 +20,8 @@ after(async () => {
   await db.stop();
 });
 
-const base = () =>
-  Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) }).pipe(
+const base = (options: Crablet.CrabletOptions = {}) =>
+  Crablet.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) }, options).pipe(
     // a test that cannot reach its database is a defect of the test, not a failure to handle
     Layer.orDie
   );
@@ -165,6 +165,35 @@ describe("Crablet.processors and Crablet.catalog (ADR-0022)", () => {
     } finally {
       await running.close();
       await catalog.close();
+    }
+  });
+
+  it("a named product names its connections <product>/<instance>, and its module standing by for another product's lock says so (decision V5)", { timeout: 30_000 }, async () => {
+    const views = Crablet.modules(Views.module({ views: [], describe: () => "a view" }));
+    const alpha = await open(Crablet.processors(views, { polling }).pipe(Layer.provideMerge(base({ product: "alpha", instance: "a-1" }))));
+    const lines: Array<string> = [];
+    const capture = Logger.layer([Logger.make((options) => void lines.push(String(options.message)))], { mergeWithExisting: false });
+    let beta: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      const deadline = Date.now() + 15_000;
+      while (!(await Effect.runPromise(alpha.processors.status)).every((s) => s.leads) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+      const names = await Effect.runPromise(
+        Effect.provide(
+          Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ name: string }>`SELECT DISTINCT application_name AS name FROM pg_stat_activity WHERE application_name LIKE 'alpha/%'`),
+          base()
+        )
+      );
+      assert.deepStrictEqual(names.map((r) => r.name), ["alpha/a-1"], "the pool and the lock session are named");
+      beta = await open(Crablet.processors(views, { polling }).pipe(Layer.provideMerge(base({ product: "beta", instance: "b-1" })), Layer.provide(capture)));
+      const reported = () => lines.filter((l) => l.includes(`lock ${Views.VIEWS_LOCK_KEY}`));
+      while (reported().length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 600)); // three more retries of the standby
+      assert.strictEqual(reported().length, 1, "reported once, not on every retry");
+      assert.match(reported()[0]!, /held by "alpha\/a-1"/u);
+      assert.deepStrictEqual(await Effect.runPromise(beta.processors.status), [{ kind: "views", runs: true, leads: false }]);
+    } finally {
+      await beta?.close();
+      await alpha.close();
     }
   });
 });

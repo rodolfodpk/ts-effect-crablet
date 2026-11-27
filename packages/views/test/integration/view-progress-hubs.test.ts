@@ -80,11 +80,12 @@ for (const [name, hub] of hubs) {
           const view = yield* aView;
           const pings = yield* Effect.flatMap(ViewProgressHub, (h) => h.subscribe(new Set([view.name])));
           yield* advance(view.name, view.write);
-          // the first batch after subscribing may only be the resync of the hub's connect; the ping follows
+          // Before it: the resync of the hub's connect, and, from the table, the view's new row at the start (the polling hub announces a row it has
+          // not seen, so a view registered and advanced within one interval is not missed). The ping for the write follows.
           for (;;) {
             const batch = yield* Effect.timeoutOption(pings.next, "5 seconds");
             assert.ok(Option.isSome(batch), "a batch within 5 s");
-            const ping = batch.value.pings.find((p) => p.id === view.name);
+            const ping = batch.value.pings.find((p) => p.id === view.name && p.position === String(view.write.position));
             if (ping === undefined) continue;
             assert.deepStrictEqual(ping, { id: view.name, transactionId: view.write.transactionId, position: String(view.write.position) });
             return;

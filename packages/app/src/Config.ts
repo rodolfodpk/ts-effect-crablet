@@ -1,6 +1,7 @@
 import { Config, Option, Redacted, Schema } from "effect";
 import { polling as pollingConfig, type PollingFromConfig } from "@crablet/event-poller/Config";
 import { wakeups as wakeupsConfig } from "@crablet/eventstore/Config";
+import { isProductName } from "./Product.ts";
 
 // One process's settings, read from its configuration (the environment, by default) under the product's prefix: what `Crablet.layer`,
 // `Crablet.processors` and the start-up need. Each part has its owner: the connection here, beside the `layer` that opens it; the polling in
@@ -134,10 +135,15 @@ export const migrateConfig: Config.Config<boolean> = Config.Literals(["on", "off
   Config.map((value) => value === "on")
 );
 
+// PRODUCT: the product this process belongs to (`Crablet.layer`'s `product`, decision V5), over the one the call names. Neither: no identity.
+const productName = Schema.Trim.check(Schema.makeFilter((name: string) => (isProductName(name) ? true : 'a name with no "/"')));
+export const productConfig = (named: string | undefined): Config.Config<string | undefined> =>
+  optional(Config.schema(productName, "PRODUCT")).pipe(Config.map((fromEnv) => fromEnv ?? named));
+
 export interface Settings<AppRole extends string> {
   // `Crablet.layer(settings.pg, settings.options)`.
   readonly pg: Connection;
-  readonly options: { readonly eventStore: { readonly wakeupMode: "coalesced" | "off" }; readonly session?: Connection };
+  readonly options: { readonly eventStore: { readonly wakeupMode: "coalesced" | "off" }; readonly session?: Connection; readonly product?: string };
   // `Crablet.processorsFor(declaration, settings.roles, { polling: settings.polling })`.
   readonly polling: PollingFromConfig;
   readonly roles: Roles<AppRole>;
@@ -148,6 +154,8 @@ export interface ConfigOptions<AppRole extends string> {
   // The application's own roles, beside the module kinds (the wallet: ["api"]).
   readonly roles?: ReadonlyArray<AppRole> | undefined;
   readonly database?: DatabaseDefaults | undefined;
+  // The product, which PRODUCT overrides (the wallet: "wallet"): it names the process's connections and lets its leaders report another product's lock.
+  readonly product?: string | undefined;
 }
 
 // Every part, under `prefix` (the product: WALLET_DB_HOST, WALLET_ROLES...). An application with names of its own composes the parts instead
@@ -158,11 +166,16 @@ export const config = <const AppRole extends string = never>(prefix: string, opt
     wakeupMode: wakeupsConfig,
     polling: pollingConfig,
     roles: rolesConfig<AppRole>(options.roles),
-    migrate: migrateConfig
+    migrate: migrateConfig,
+    product: productConfig(options.product)
   }).pipe(
-    Config.map(({ database, wakeupMode, polling, roles, migrate }) => ({
+    Config.map(({ database, wakeupMode, polling, roles, migrate, product }) => ({
       pg: database.pg,
-      options: database.session === undefined ? { eventStore: { wakeupMode } } : { eventStore: { wakeupMode }, session: database.session },
+      options: {
+        eventStore: { wakeupMode },
+        ...(database.session === undefined ? {} : { session: database.session }),
+        ...(product === undefined ? {} : { product })
+      },
       polling,
       roles,
       migrate
