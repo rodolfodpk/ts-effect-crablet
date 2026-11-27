@@ -2,6 +2,7 @@ import { Context, Duration, Effect, Latch, Layer, Queue, Scope } from "effect";
 import { ProcessConnections } from "@crablet/eventstore/ProcessConnections";
 import { sessionPg } from "@crablet/eventstore/SessionClients";
 import { PgClient } from "@effect/sql-pg";
+import { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import { VIEW_PROGRESS_CHANNEL, decodeViewProgressPing, type ViewProgressPing } from "./ViewProgress.ts";
 
@@ -152,3 +153,47 @@ export const ViewProgressHubLive: Layer.Layer<ViewProgressHub, never, PgClient.P
     return yield* makeViewProgressHub({ source: connections.listens.listen(pg, VIEW_PROGRESS_CHANNEL) });
   })
 );
+
+// Where pings come from when there is no LISTEN: the progress table, read every `interval` by ONE fiber for the process. Each read announces every
+// view whose progress changed since the previous one, as the ping its tracker would have sent. The first read only records where the views are (the
+// hub's resync on connect already tells every subscriber to look). A failed read fails the queue, and the hub starts again, as after a lost LISTEN.
+export const pollingProgressSource = (sql: SqlClient.SqlClient, interval: Duration.Input): ListenSource =>
+  Effect.gen(function* () {
+    const read = Effect.suspend(() =>
+      sql.unsafe<{ id: string; transactionId: string; position: string }>(
+        `SELECT view_name AS id, last_transaction_id::text AS "transactionId", last_position::text AS position FROM crablet_view_progress`
+      )
+    );
+    const seen = new Map<string, string>();
+    const changed = (rows: ReadonlyArray<ViewProgressPing>): ReadonlyArray<ViewProgressPing> =>
+      rows.filter((row) => {
+        const at = `${row.transactionId}:${row.position}`;
+        const moved = seen.get(row.id) !== at;
+        seen.set(row.id, at);
+        return moved;
+      });
+    changed(yield* read);
+    const queue = yield* Queue.unbounded<{ readonly payload: string }, SqlError>();
+    const poll = Effect.gen(function* () {
+      for (;;) {
+        yield* Effect.sleep(interval);
+        for (const ping of changed(yield* read)) yield* Queue.offer(queue, { payload: JSON.stringify(ping) });
+      }
+    });
+    yield* Effect.forkScoped(Effect.catch(poll, (error) => Queue.fail(queue, error)));
+    return queue;
+  });
+
+export interface ViewProgressPollingOptions {
+  // How often the process reads the progress table (default 100 ms). One query per interval for the whole process, however many reads wait.
+  readonly interval?: Duration.Input | undefined;
+}
+
+// The hub without LISTEN: the same service as `ViewProgressHubLive`, fed by reading the progress table (`pollingProgressSource`). For a process that
+// cannot keep a LISTEN (a pooler in transaction mode and no session client) and for tests that run no LISTEN connection. The feed and the reads'
+// wait behave the same on both; a ping only arrives up to one `interval` later.
+export const viewProgressPolling = (options: ViewProgressPollingOptions = {}): Layer.Layer<ViewProgressHub, never, SqlClient.SqlClient> =>
+  Layer.effect(
+    ViewProgressHub,
+    Effect.flatMap(SqlClient.SqlClient, (sql) => makeViewProgressHub({ source: pollingProgressSource(sql, options.interval ?? "100 millis") }))
+  );

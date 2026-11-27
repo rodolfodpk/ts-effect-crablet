@@ -2,8 +2,7 @@ import { Effect, Option, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
-import { makeConsistentRead } from "@crablet/views-http";
-import { defaultReadConsistency, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
+import { defaultReadConsistency, makeConsistentRead, type ReadConsistencyConfig } from "@crablet/views-http/ReadsLive";
 import type { WalletApi } from "../WalletApp.ts";
 import { WalletBalanceView } from "../slices/wallet-balance/WalletBalanceViewProjector.ts";
 import { WalletSummaryView } from "../slices/wallet-summary/WalletSummaryViewProjector.ts";
@@ -101,13 +100,14 @@ const findSummary = (sql: SqlClient.SqlClient) =>
 // for that write. If a view is not there in time the read is a 503, never a stale answer; a client cannot ask for a looser read
 // (`clientMayRelax` is off).
 export const walletReadConsistency: ReadConsistencyConfig = defaultReadConsistency;
-const consistentRead = makeConsistentRead({ config: walletReadConsistency });
+// Made where the group is built, which gives it the database and the view progress hub the reads wait on.
+const consistentReads = makeConsistentRead({ config: walletReadConsistency });
 // #endregion read-consistency
 
 // The read group, implemented against the wallet API itself: each handler's request and response are checked against its endpoint.
 export const makeWalletQueryApiLive = (api: WalletApi) =>
   HttpApiBuilder.group(api, "walletQueries", (handlers) =>
-    Effect.succeed(
+    Effect.map(consistentReads, (consistentRead) =>
       handlers
         // The list of wallets, from the balance view, by keyset on wallet_id (no OFFSET, so a wallet that appears between two requests cannot shift the pages). Like every read it waits for its view.
         .handle(

@@ -4,7 +4,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import { hasPendingSelectedEvents } from "@crablet/event-poller/SqlEventFetcher";
 import * as ProgressCursorNS from "@crablet/event-poller/ProgressCursor";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
-import type { ViewSubscription } from "./ViewSubscription.ts";
+import { subscriptionOf, type ViewOrSubscription } from "./ViewSubscription.ts";
 import { ViewProgressHub } from "./ViewProgressHub.ts";
 import { viewVerdict } from "./internal/ViewVerdict.ts";
 
@@ -13,11 +13,10 @@ import { viewVerdict } from "./internal/ViewVerdict.ts";
 // Views are updated by a background processor, a little after the events they project are appended. A
 // caller that just ran a command and now wants to read the view (say, the HTTP response that shows the
 // new balance) would otherwise see the old state. The command's result carries the point in the log its
-// events reached (`ExecutionResult.lastPosition` and `lastTransactionId`); this waits until the view's progress
-// has passed it.
+// events reached (`ExecutionResult.marker`); this waits until the view's progress has passed it.
 //
 //     const result = yield* executor.run(Deposit, input);
-//     yield* waitUntilProcessed(walletBalanceViewSubscription, { transactionId: result.lastTransactionId!, position: result.lastPosition! });
+//     yield* waitUntilProcessed(WalletBalanceView, result.marker);
 //     // ... the view now includes that deposit
 //
 // `write` is null when the run appended nothing (an idempotent repeat): there is nothing to wait for.
@@ -52,7 +51,7 @@ export class ViewFailed extends Data.TaggedError("ViewFailed")<{
 export interface WaitOptions {
   // How long to wait before giving up (default 5 seconds).
   readonly timeout?: Duration.Input;
-  // How often to look at the view's progress when polling (default 25 ms): with no hub, or while the hub's LISTEN is down.
+  // How often to look at the view's progress while the hub is not connected (default 25 ms).
   readonly interval?: Duration.Input;
   // With a hub, how long to wait for a ping before looking anyway (default 1 second): the net for a ping that was lost. A ping, a reconnect of the
   // hub and the deadline each end the pause sooner.
@@ -60,12 +59,13 @@ export interface WaitOptions {
 }
 
 export const waitUntilProcessed = (
-  subscription: ViewSubscription,
+  view: ViewOrSubscription,
   write: ProgressCursor | null,
   options: WaitOptions = {}
-): Effect.Effect<void, WaitTimeout | ViewFailed | SqlError, SqlClient.SqlClient> =>
+): Effect.Effect<void, WaitTimeout | ViewFailed | SqlError, SqlClient.SqlClient | ViewProgressHub> =>
   Effect.gen(function* () {
     if (write === null) return;
+    const subscription = subscriptionOf(view);
     const viewName = subscription.viewName;
     const sql = yield* SqlClient.SqlClient;
     const timeoutMs = Duration.toMillis(Duration.fromInputUnsafe(options.timeout ?? "5 seconds"));
@@ -108,12 +108,9 @@ export const waitUntilProcessed = (
         }
       });
 
-    // With a hub in the context the wait is woken by the view's progress ping (ADR-0016): subscribe BEFORE the first look, so a ping that arrives
-    // meanwhile is already waiting for us, then look, and between looks wait for a ping, a reconnect of the hub, the safety interval or the
-    // deadline, whichever comes first. With no hub, or while its LISTEN is down, poll every `interval`, exactly as before.
-    const hub = yield* Effect.serviceOption(ViewProgressHub);
-    if (Option.isNone(hub)) return yield* loop(() => Effect.as(Effect.sleep(interval), false));
-    const progress = hub.value;
+    // Subscribe BEFORE the first look, so a ping that arrives meanwhile is already waiting for us, then look, and between looks wait for a ping, a
+    // reconnect of the hub, the safety interval or the deadline, whichever comes first. While the hub is not connected, poll every `interval`.
+    const progress = yield* ViewProgressHub;
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const pings = yield* progress.subscribe(new Set([viewName]));

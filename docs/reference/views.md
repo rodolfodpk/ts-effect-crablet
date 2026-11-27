@@ -51,5 +51,5 @@ view's polling interval, batch size and backoff are given to the processor by th
 
 ## Reads over views
 
-A read endpoint wrapped with `makeConsistentRead` (`@crablet/views-http`) declares the views it reads and a read-consistency policy; the options are
+A read endpoint wrapped with `makeConsistentRead` (`@crablet/views-http/ReadsLive`) declares the views it reads and a read-consistency policy; the options are
 in [HTTP](./http.md#read-consistency).

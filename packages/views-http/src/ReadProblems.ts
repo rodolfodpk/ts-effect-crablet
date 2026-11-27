@@ -9,7 +9,7 @@ const UncaughtViewProblem = Schema.Struct({
   reason: Schema.Literals(["lagging", "view_failed"]),
   // How far the view's progress had got, as a log position; null for a FAILED view.
   reachedPosition: Schema.NullOr(Schema.String)
-}).annotate({ identifier: "UncaughtView" } as never);
+}).annotate({ identifier: "UncaughtView" });
 
 // A strict read could not be answered consistently: a view it reads had not caught up in time (`lagging`: try again, `Retry-After` says
 // when) or is FAILED (`view_failed`: it will not catch up until someone resets it, so there is no `Retry-After`). RFC 7807, status 503.

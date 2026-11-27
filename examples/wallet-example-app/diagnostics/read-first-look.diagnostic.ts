@@ -1,6 +1,6 @@
 // DIAGNOSTIC EXPERIMENT (docs/adr/0015-read-consistency-by-marker.md, update of 2026-10-09), not a test: it measures, it does not assert. Needs Docker (Testcontainers, and the image `alpine` for the delay).
 // Run with:  node --test examples/wallet-example-app/diagnostics/read-first-look.diagnostic.ts   and read the `DIAG` lines.   QUICK=1 for fewer reads.
-// The real consistent read (`makeConsistentRead`) of the wallet's balance view, before and after the first look became one statement: "before" is the wrapper with the steps it had
+// The real consistent read (`makeConsistentRead`, here `makeConsistentReadWith(settleViews)`, the same wrapper) of the wallet's balance view, before and after the first look became one statement: "before" is the wrapper with the steps it had
 // (the end of the log, then a wait per view, rebuilt below as a `settle`), "after" is the wrapper as it is now. The database's container gets a network delay (`tc netem`, on the packets that leave it), so the cost of a round
 // trip shows. What is timed is the wrapper plus the application's query, not the HTTP stack. Reads alternate between the two so drift cancels; the state is the usual default read: the view is
 // caught up and the last event of the log is one it does not handle, so the pending check runs.
@@ -14,9 +14,10 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutorLive } from "@crablet/commands";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
-import type { SettleViews, UncaughtView } from "@crablet/views/SettleViews";
+import { settleViews, type SettleViews, type UncaughtView } from "@crablet/views/SettleViews";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
-import { makeConsistentRead } from "@crablet/views-http";
+import { makeConsistentReadWith } from "@crablet/views-http/ReadsLive";
+import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest } from "../test/support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../test/support/applyAppMigrations.ts";
@@ -53,10 +54,11 @@ after(async () => { if (sidecar) try { sh("stop", "-t", "1", sidecar); } catch {
 describe("DIAG", () => {
   it("the first look of a consistent read: before and after, under a network delay", { timeout: 1_200_000 }, async () => {
     const rt = ManagedRuntime.make(
-      Layer.provideMerge(Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)),
+      // the reads' wait is woken by the view progress hub, as in the app
+      Layer.provideMerge(Layer.provideMerge(Layer.merge(CommandExecutorLive, ViewProgressHubLive), Layer.mergeAll(EventStoreLive, CommandAuditStoreLive, ProcessConnectionsLive)),
         PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })).pipe(Layer.orDie)
     );
-    const run = <A, E>(e: Effect.Effect<A, E, any>) => rt.runPromise(e);
+    const run: typeof rt.runPromise = (effect, options) => rt.runPromise(effect, options);
     try {
       // wallets, with the views caught up by a full instance that then stops; one marker per wallet
       const full = await startWalletAppForTest(rt);
@@ -74,11 +76,11 @@ describe("DIAG", () => {
 
       interface Req { readonly query: { readonly consistentWith?: string; readonly id?: string } }
       const endpointFor = (reads: ReadonlyArray<typeof WalletBalanceView>, after_: boolean) => {
-        const read = after_ ? makeConsistentRead() : makeConsistentRead({ settle: settleBefore });
+        const read = makeConsistentReadWith(after_ ? settleViews : settleBefore);
         return read(
           { reads, parse: (req: Req) => Effect.succeed(req.query.id!) },
           (id: string) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe("SELECT * FROM wallet_balance_view WHERE wallet_id = $1", [id]))
-        ) as (req: Req) => Effect.Effect<unknown, unknown, SqlClient.SqlClient>;
+        );
       };
       const scenarios: ReadonlyArray<readonly [string, ReadonlyArray<typeof WalletBalanceView>, boolean]> = [
         ["default read, one view", [WalletBalanceView], false],

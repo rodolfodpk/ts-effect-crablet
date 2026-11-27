@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
+import { type ViewProgressHub, viewProgressPolling } from "../../src/ViewProgressHub.ts";
 import { Client } from "pg";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
@@ -14,13 +15,13 @@ import { viewSubscriptionOf } from "../../src/ViewSubscription.ts";
 import { settleViews, type Settlement } from "../../src/SettleViews.ts";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ViewProgressHub, never>;
 let probe: Client;
 
 before(async () => {
   db = await startTestDb();
   const pgLayer = PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password) });
-  runtime = ManagedRuntime.make(Layer.provideMerge(EventStoreLive, pgLayer).pipe(Layer.orDie));
+  runtime = ManagedRuntime.make(Layer.provideMerge(Layer.merge(EventStoreLive, viewProgressPolling()), pgLayer).pipe(Layer.orDie));
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();
 }, { timeout: 60_000 });
@@ -30,7 +31,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient>) => runtime.runPromise(effect);
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ViewProgressHub>) => runtime.runPromise(effect);
 const settle = (...args: Parameters<typeof settleViews>): Promise<Settlement> => run(settleViews(...args));
 const caughtUp: Settlement = { _tag: "Settled", outcome: { _tag: "CaughtUp" } };
 

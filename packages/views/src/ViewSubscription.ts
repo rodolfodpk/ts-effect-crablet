@@ -21,3 +21,7 @@ export const viewSubscriptionOf = (
   backoffMultiplier: fields.backoffMultiplier,
   backoffMaxSeconds: fields.backoffMaxSeconds
 });
+
+// What a wait takes to know a view: the view itself (`defineView`'s result) or its subscription.
+export type ViewOrSubscription = ViewSubscription | { readonly subscription: () => ViewSubscription };
+export const subscriptionOf = (view: ViewOrSubscription): ViewSubscription => ("subscription" in view ? view.subscription() : view);

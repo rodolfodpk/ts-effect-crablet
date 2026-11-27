@@ -70,6 +70,9 @@ interface Scenario {
   readonly waitExit: (options?: WaitOptions) => Promise<unknown>;
 }
 
+// A hub whose LISTEN is not connected: the wait polls at `interval` (what it did with no hub at all, before the hub was required).
+const disconnected: ViewProgressHubService = { connected: Effect.succeed(false), subscribe: () => Effect.succeed({ next: Effect.never }), subscriberCount: Effect.succeed(0) };
+
 // A view at the start of the log and a write it has not reached: one event of the view's type, appended now. Every query `waitUntilProcessed`
 // makes through `wait` is counted.
 const scenario = async (body: (s: Scenario) => Promise<void>, options: { readonly withHub?: boolean } = {}): Promise<void> => {
@@ -97,7 +100,7 @@ const scenario = async (body: (s: Scenario) => Promise<void>, options: { readonl
         });
         const waitEffect = (opts?: WaitOptions) => {
           const base = waitUntilProcessed(view, write, opts).pipe(Effect.provideService(SqlClient.SqlClient, counting));
-          return options.withHub === false ? base : base.pipe(Effect.provideService(ViewProgressHub, hub));
+          return base.pipe(Effect.provideService(ViewProgressHub, options.withHub === false ? disconnected : hub));
         };
         const scenarioValue: Scenario = {
           view,
@@ -249,7 +252,7 @@ describe("waitUntilProcessed with a hub", () => {
   });
 });
 
-describe("waitUntilProcessed without a hub, or with one that is not connected", () => {
+describe("waitUntilProcessed with a hub that is not connected", () => {
   it("polls as before", { timeout: 30_000 }, async () => {
     await scenario(
       async (s) => {

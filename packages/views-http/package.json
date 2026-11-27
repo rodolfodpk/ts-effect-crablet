@@ -4,12 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/ConsistentRead.ts",
     "./LiveFeedApi": "./src/LiveFeedApi.ts",
     "./LiveFeedLive": "./src/LiveFeedLive.ts",
-    "./ReadConsistency": "./src/ReadConsistency.ts",
-    "./ReadProblems": "./src/ReadProblems.ts",
-    "./ReadQuery": "./src/ReadQuery.ts"
+    "./ReadsApi": "./src/ReadsApi.ts",
+    "./ReadsLive": "./src/ReadsLive.ts"
   },
   "dependencies": {
     "effect": "4.1.4",
@@ -25,5 +23,5 @@
     "@effect/sql-pg": "4.1.4",
     "pg": "8.23.1"
   },
-  "crablet": { "coverage": { "lines": 100 }, "typeEscapes": { "src": 5, "test": 4 } }
+  "crablet": { "coverage": { "lines": 100 }, "typeEscapes": { "src": 0, "test": 3 } }
 }

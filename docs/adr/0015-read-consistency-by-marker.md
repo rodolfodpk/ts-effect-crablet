@@ -101,7 +101,7 @@ Decisions the implementation made that the text above leaves open:
 - **A polling reader costs about 68 queries/s while it waits**: measured directly, one waiter polling for 1.5 s made 102 queries against 8 with the hub (`wait-until-processed-hub.test.ts`). (First written as "up to about 80 queries/s", supported by the database's transaction counter in scenario 3; that counter included the unrelated probe reader's own ~1,200 reads/s and did not show it. The direct count does.) At scale it adds up: with connections warmed, 200 readers waiting at once made about 300 transactions/s polling and about 33 with the hub, and an unrelated read's p95 was 49 ms polling against 7 ms with the hub (ADR-0016 "Measured results").
 - **A burst of simultaneous waiters is not slow in itself.** (An earlier version of this section reported a stretch of +200 ms at 50 waiters and +500-800 ms at 200 over the 400 ms lag, "not caused by polling", and unrelated reads staying fast. Both were wrong: the burst was opening N FRESH TCP connections in the one process that also runs the app, the view's own batch and the load generator, which took CPU from all three and delayed the view's batch with it; with the connections warmed, 200 waiters complete at the view's own time, about 475-505 ms for a 400 ms lag, polling or hub. The "unrelated reads stayed fast" came from a probe looping flat out whose thousands of reads fell outside the burst.)
 - **Decision.** Keep the polling wait: it is simple and correct, and these numbers fit the scale envelope for a few hundred reads per second per instance. The replacement, when many readers wait at once or the 25 ms floor matters, is to wait on the progress ping that views already send after each commit (ADR-0014) through ONE `LISTEN` per instance and an in-process hub, checking the table only at the start and on a ping. That is the same shared listener that removes the one-connection-per-open-page limit of the live feed, so the two should be one piece of work. Until then `waitUntilProcessed`'s `interval` is the knob (a longer interval halves the polling load and raises the floor); the wrapper does not expose it yet.
-  **Update (ADR-0016, measured).** The shared listener was built and measured (ADR-0016 "Measured results"): read-your-own-write p50 30.7 ms to 14.7 ms, about 3 times fewer queries from waiting readers, and live feeds that hold no connection each. The polling wait remains the fallback when no hub is provided or its LISTEN is down.
+  **Update (ADR-0016, measured).** The shared listener was built and measured (ADR-0016 "Measured results"): read-your-own-write p50 30.7 ms to 14.7 ms, about 3 times fewer queries from waiting readers, and live feeds that hold no connection each. The polling wait remains the fallback while the hub's LISTEN is down; since 2026-11-27 a hub is required (ADR-0016, last update).
 
 ## Update: the first look is one statement (2026-10-09)
 
@@ -128,3 +128,15 @@ The saving is about two round trips for a default read, so it grows with the lat
 
 **The metric moves.** `crablet.read.consistency.wait.duration` now covers the combined first look and any wait (it used to start after the end of the log was read), so its p95 on the dashboard drops when this is deployed. The drop is this change, not a faster database.
 
+
+## Update: the read wrapper takes its services where the group is built (2026-11-27)
+
+- **`makeConsistentRead(options)` is an `Effect`** that takes the database and the `ViewProgressHub` (ADR-0016, now required) from where it runs, the
+  read group's construction, as a group takes its other services (ADR-0042). The handler it gives needs nothing more to settle the views, and an API
+  whose reads have no hub does not compile. The hub provided to the API layer is the one the live feed uses too. Before, the default `settle` was
+  given the caller's `R` by a cast (`settleViews as unknown as SettleViews<R>`), so `makeConsistentRead<never>()` claimed to need nothing.
+- **`makeConsistentReadWith(settle, options)`** is the same wrapper over another `settle` (the wrapper's tests pass fakes); the `settle` option is gone.
+- **Two entries, split as the live feed's are:** `@crablet/views-http/ReadsApi` (browser-safe: `consistencyQuery`, `ReadSuccess`, `readProblems`,
+  `ViewsUnavailable`), what an endpoint declares and a client checks, and `@crablet/views-http/ReadsLive` (`makeConsistentRead`, `ReadConsistencyConfig`,
+  `defaultReadConsistency`). `@crablet/views-http` (`.`), `/ReadQuery`, `/ReadConsistency` and `/ReadProblems` are removed (pre-release, ADR-0013).
+- **`waitUntilProcessed` takes the view** (`defineView`'s result) or its subscription, as the wrapper does: `waitUntilProcessed(WalletBalanceView, result.marker)`.
