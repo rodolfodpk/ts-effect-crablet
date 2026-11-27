@@ -14,6 +14,12 @@
 //     removed, which showed a `query: {}` the endpoints do not have and an error union read without narrowing.
 // A cast through a function type or through `never`/`any` is not caught by a text scan; those are counted
 // by the type-escape ratchet instead.
+//
+// An Effect or a runtime TAKEN with `any` requirements erases them as a cast does, without one: a helper `run(e: Effect.Effect<A, E, any>)` accepts an
+// effect that needs a service the runtime does not have, and `ManagedRuntime<any, any>` says nothing of what it provides. Fifteen helpers like these
+// (tests and diagnostics) took the runtime's exact services instead (`ManagedRuntime.ManagedRuntime.Services<typeof runtime>`, a runtime typed from
+// its layer, or `typeof runtime.runPromise`), and the `runPromise(x as never)` they forced went with them. A type-level pattern match
+// (`T extends (...a: any[]) => Effect.Effect<any, infer E, any>`) is not a requirement erased, and is left alone.
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -35,6 +41,10 @@ const isSource = (f: string) => /[\\/]src[\\/]/u.test(f);
 // Any cast to an Effect type: `as Effect.Effect<`, `as unknown as Layer.Layer<`, `as Layer<`, `as Stream.Stream<`, `as ManagedRuntime<`..., across line breaks.
 export const effectCast =
   /\bas\s+(?:unknown\s+as\s+)?(?:Effect\.Effect|Effect|Layer\.Layer|Layer|Stream\.Stream|Stream|ManagedRuntime\.ManagedRuntime|ManagedRuntime)\s*</u;
+
+// `Effect.Effect<…, any>` and `ManagedRuntime<…, any>` / `ManagedRuntime<any, …>` outside a conditional type (a line with `extends`).
+export const anyRequirements =
+  /^(?![^\n]*\bextends\b)[^\n]*(?:\bEffect\.Effect<[^\n;]*?,\s*any\s*>|\bManagedRuntime(?:\.ManagedRuntime)?<\s*any\b|\bManagedRuntime(?:\.ManagedRuntime)?<[^\n;]*?,\s*any\s*>)/mu;
 
 const offendersOf = (pattern: RegExp, files: ReadonlyArray<string>) =>
   files.filter((f) => pattern.test(readFileSync(f, "utf8"))).map((f) => path.relative(root, f));
@@ -62,5 +72,23 @@ describe("casts to Effect types", () => {
 
   test("no file casts to an Effect type", () => {
     expect(offendersOf(effectCast, sources)).toEqual([]);
+  });
+
+  test("the requirements pattern catches an Effect or a runtime taken with any requirements, and leaves type-level matches alone", () => {
+    for (const erased of [
+      "const run = <A, E>(e: Effect.Effect<A, E, any>) => runtime.runPromise(e);",
+      "const exitAll = (effects: ReadonlyArray<Effect.Effect<any, any, any>>) =>",
+      "let runtime: ManagedRuntime.ManagedRuntime<any, any>;",
+      "let runtime: ManagedRuntime<Services, any>;"
+    ]) expect(anyRequirements.test(erased)).toBe(true);
+    for (const fine of [
+      "const run = <A, E>(e: Effect.Effect<A, E, Services>) => runtime.runPromise(e);",
+      "type HandlerErr<C extends { handler: (...a: any[]) => Effect.Effect<any, any, any> }> = Effect.Error<ReturnType<C[\"handler\"]>>;",
+      "const exitAll = <A, R>(effects: ReadonlyArray<Effect.Effect<A, unknown, R>>) =>"
+    ]) expect(anyRequirements.test(fine)).toBe(false);
+  });
+
+  test("no file takes an Effect or a runtime with any requirements", () => {
+    expect(offendersOf(anyRequirements, sources)).toEqual([]);
   });
 });

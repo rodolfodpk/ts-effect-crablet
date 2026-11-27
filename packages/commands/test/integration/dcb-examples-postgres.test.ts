@@ -69,7 +69,8 @@ const AppLive = () =>
   });
 const { run } = runWith(AppLive);
 const errorOf = (exit: any) => exit.cause?.reasons?.find((r: any) => r._tag === "Fail")?.error;
-const exitAll = (effects: ReadonlyArray<Effect.Effect<any, any, any>>) =>
+// the effects may fail differently (each command its own errors); what each needs stays checked
+const exitAll = <A, R>(effects: ReadonlyArray<Effect.Effect<A, unknown, R>>) =>
   Effect.all(effects.map((e) => Effect.exit(e)), { concurrency: effects.length });
 const uid = () => crypto.randomUUID().slice(0, 8);
 // Every racer has LOADED (a barrier right after its load) before any appends, so the commands really overlap. The recorded
@@ -79,7 +80,7 @@ const retriesOf = (commandType: string) =>
 
 // The other race: `command` loads and pauses, `meanwhile` runs to the end, then `command` appends. Its append is refused and it is
 // re-decided on what `meanwhile` wrote: proof that what it read was in its condition.
-const pausedAround = <A, E, R>(command: (wait: Effect.Effect<void>) => Effect.Effect<A, E, R>, meanwhile: Effect.Effect<unknown, unknown, any>) =>
+const pausedAround = <A, E, R, R2>(command: (wait: Effect.Effect<void>) => Effect.Effect<A, E, R>, meanwhile: Effect.Effect<unknown, unknown, R2>) =>
   Effect.gen(function* () {
     const p = yield* pause;
     const fiber = yield* Effect.forkChild(Effect.exit(command(p.wait)));

@@ -10,6 +10,8 @@ import { Client } from "pg";
 import { makeEventStoreLayer } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import type { Command, RawInput } from "@crablet/commands/Command";
+import type { InputSchema } from "@crablet/commands/Contract";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { atClock } from "../support/clocked-commands.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
@@ -19,18 +21,21 @@ import { Withdraw } from "../../src/slices/withdraw/WithdrawCommand.ts";
 import { TransferMoney } from "../../src/slices/transfer-money/TransferMoneyCommand.ts";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<CommandExecutor, never>;
+// what the runtime provides is read off its layer; a database that cannot be reached is a defect of the test
+const runtimeFor = (c: TestDb["connInfo"]) =>
+  ManagedRuntime.make(
+    Layer.provideMerge(
+      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive)),
+      PgClient.layer({ host: c.host, port: c.port, database: c.database, username: c.username, password: Redacted.make(c.password), maxConnections: 20 })
+    ).pipe(Layer.orDie)
+  );
+let runtime: ReturnType<typeof runtimeFor>;
 let probe: Client;
 
 before(async () => {
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
-  runtime = ManagedRuntime.make(
-    Layer.provideMerge(
-      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive)),
-      PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })
-    ) as never
-  );
+  runtime = runtimeFor(db.connInfo);
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();
 }, { timeout: 60_000 });
@@ -40,10 +45,10 @@ after(async () => {
   await db.stop();
 });
 
-const exec = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.exit(effect as never)) as Promise<Exit.Exit<unknown, unknown>>;
-const run = (command: any, input: unknown) => exec(Effect.flatMap(CommandExecutor, (ex) => (ex as any).run(command, input)));
+const exec = <A, E>(effect: Effect.Effect<A, E, CommandExecutor>) => runtime.runPromise(Effect.exit(effect));
+const run = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: RawInput<I>) => exec(Effect.flatMap(CommandExecutor, (ex) => ex.run(command, input)));
 const openWallet = (walletId: string, initialBalance = 100) => run(OpenWallet, { walletId, owner: "x", initialBalance });
-const okOrConflict = (e: Exit.Exit<unknown, unknown>) => Exit.isSuccess(e) || String((e as any).cause).includes("Conflict");
+const okOrConflict = (e: Exit.Exit<unknown, unknown>) => Exit.isSuccess(e) || String(e.cause).includes("Conflict");
 
 const countOf = async (type: string, ids: ReadonlyArray<string>) =>
   (await probe.query<{ wallet_id: string; n: number }>(`SELECT data->>'walletId' AS wallet_id, count(*)::int AS n FROM crablet_events WHERE type = $1 AND data->>'walletId' = ANY($2) GROUP BY 1`, [type, ids])).rows;
@@ -90,7 +95,7 @@ describe("what a `prepare` that appends leaves behind when its command ends idem
     for (const id of ids) { await openWallet(id); await run(Deposit, { depositId: crypto.randomUUID(), walletId: id, amount: 1, description: "this month" }); }
     for (const id of ids) {
       const depositId = crypto.randomUUID();
-      const exits = await Promise.all([1, 2, 3].map(() => exec(atClock(() => next, Effect.flatMap(CommandExecutor, (ex) => (ex as any).run(Deposit, { depositId, walletId: id, amount: 2, description: "next month" }))))));
+      const exits = await Promise.all([1, 2, 3].map(() => exec(atClock(() => next, Effect.flatMap(CommandExecutor, (ex) => ex.run(Deposit, { depositId, walletId: id, amount: 2, description: "next month" }))))));
       for (const e of exits) assert.ok(okOrConflict(e), String(e));
     }
     const closed = await countOf("WalletStatementClosed", ids);

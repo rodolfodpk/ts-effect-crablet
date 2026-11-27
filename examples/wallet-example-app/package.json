@@ -27,5 +27,5 @@
     "@crablet/event-poller": "workspace:*",
     "@crablet/test-support": "workspace:*"
   },
-  "crablet": { "typeEscapes": { "src": 4, "test": 78 } }
+  "crablet": { "typeEscapes": { "src": 4, "test": 30 } }
 }

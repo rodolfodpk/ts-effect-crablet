@@ -13,6 +13,8 @@ import { Client } from "pg";
 import { EventStore, makeEventStoreLayer } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import type { Command, RawInput } from "@crablet/commands/Command";
+import type { InputSchema } from "@crablet/commands/Contract";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 import { atClock, pausableDeposit, pausableTransfer, pausableWithdraw } from "../support/clocked-commands.ts";
@@ -20,6 +22,7 @@ import { Deposit } from "../../src/slices/deposit/DepositCommand.ts";
 import { Withdraw } from "../../src/slices/withdraw/WithdrawCommand.ts";
 import { OpenWallet } from "../../src/slices/open-wallet/OpenWalletCommand.ts";
 import * as Tag from "@crablet/eventstore/Tag";
+import type * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { DepositMade, WalletModel, WalletOpened, WalletStatementClosed, WalletStatementOpened } from "../../src/shared/WalletModel.ts";
 import { TransferMoney } from "../../src/slices/transfer-money/TransferMoneyCommand.ts";
 import * as WalletTags from "../../src/shared/WalletTags.ts";
@@ -36,7 +39,7 @@ before(async () => {
     Layer.provideMerge(
       Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive)),
       PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })
-    ) as never
+    ).pipe(Layer.orDie)
   );
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();
@@ -48,15 +51,16 @@ const thisMonth = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 15));
 const nextMonth = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 15));
 const ym = (d: Date) => ({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 });
 
-const exec = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.exit(effect as never)) as Promise<Exit.Exit<unknown, unknown>>;
+const exec = <A, E>(effect: Effect.Effect<A, E, ManagedRuntime.ManagedRuntime.Services<typeof runtime>>) => runtime.runPromise(Effect.exit(effect));
 // Runs a command with the clock reading `now()`.
-const runAt = (now: () => Date, command: any, input: unknown) => exec(atClock(now, Effect.flatMap(CommandExecutor, (ex) => (ex as any).run(command, input))));
-const balance = (id: string, d: Date) => runtime.runPromise(Effect.flatMap(EventStore, (es) => WalletModel.of({ id, ...ym(d) }).load(es)) as never).then((r: any) => r.state.balance as number);
+const runAt = <In, Err, I extends InputSchema>(now: () => Date, command: Command<In, Err, I>, input: RawInput<I>) => exec(atClock(now, Effect.flatMap(CommandExecutor, (ex) => ex.run(command, input))));
+const balance = (id: string, d: Date) => runtime.runPromise(Effect.flatMap(EventStore, (es) => WalletModel.of({ id, ...ym(d) }).load(es))).then((r) => r.state.balance);
 const newWallet = () => `w-${crypto.randomUUID()}`;
 const open = (id: string) => runAt(() => thisMonth, OpenWallet, { walletId: id, owner: "x", initialBalance: 100 });
 const dep = (walletId: string, amount: number, depositId = crypto.randomUUID()) => ({ depositId, walletId, amount, description: "" });
 const wd = (walletId: string, amount: number) => ({ withdrawalId: crypto.randomUUID(), walletId, amount, description: "" });
 const ok = (e: Exit.Exit<unknown, unknown>) => Exit.isSuccess(e);
+const causeOf = (e: Exit.Exit<unknown, unknown>) => (Exit.isFailure(e) ? String(e.cause) : "success");
 
 // A wallet with this month's statement open and 10 deposited: 110 in this month.
 const warmWallet = async () => {
@@ -69,14 +73,14 @@ const warmWallet = async () => {
 // Pauses the FIRST attempt of a command after its model is loaded; later attempts (after a conflict) run straight through. The paused command reads "this month" until it is released and "next month" after:
 // by then the month has turned.
 const pausedOnce = async () => {
-  const [reached, resume] = (await runtime.runPromise(Effect.all([Deferred.make<void>(), Deferred.make<void>()]) as never)) as [Deferred.Deferred<void>, Deferred.Deferred<void>];
+  const [reached, resume] = await runtime.runPromise(Effect.all([Deferred.make<void>(), Deferred.make<void>()]));
   const state = { calls: 0, released: false };
   const pause = Effect.suspend(() => (state.calls++ === 0 ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(resume)) : Effect.void));
   return {
     pause,
     clock: () => (state.released ? nextMonth : thisMonth),
-    reached: () => runtime.runPromise(Deferred.await(reached) as never),
-    release: () => { state.released = true; return runtime.runPromise(Deferred.succeed(resume, undefined) as never); }
+    reached: () => runtime.runPromise(Deferred.await(reached)),
+    release: () => { state.released = true; return runtime.runPromise(Deferred.succeed(resume, undefined)); }
   };
 };
 
@@ -123,7 +127,7 @@ describe("a command that decided on a month which closed before it appended", ()
     const id = newWallet();
     await open(id);
     // this month's statement opened and nothing done on it (what an OpenWallet that opens the first statement would leave)
-    await runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append([WalletStatementOpened({ walletId: id, statementId: `wallet:${id}:${ym(thisMonth).year}-${String(ym(thisMonth).month).padStart(2, "0")}`, ...ym(thisMonth), openingBalance: 100, openedAt: DateTime.fromDateUnsafe(thisMonth) })]))) as never);
+    await runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append([WalletStatementOpened({ walletId: id, statementId: `wallet:${id}:${ym(thisMonth).year}-${String(ym(thisMonth).month).padStart(2, "0")}`, ...ym(thisMonth), openingBalance: 100, openedAt: DateTime.fromDateUnsafe(thisMonth) })]))));
     const p = await pausedOnce();
     const aRun = runAt(p.clock, pausableDeposit(p.pause), dep(id, 7));
     await p.reached();
@@ -170,7 +174,7 @@ describe("the month turns while several commands run", () => {
 
 const monthsBefore = (d: Date, n: number) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 15));
 const stmtId = (id: string, d: Date) => `wallet:${id}:${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-const append = (events: ReadonlyArray<any>) => runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append(events))) as never);
+const append = (events: ReadonlyArray<AppendEvent.AppendEvent>) => runtime.runPromise(Effect.flatMap(EventStore, (es) => es.withWakeups(es.append(events))));
 const periodTagsOf = (id: string, d: Date) => [Tag.of(WalletTags.YEAR, String(ym(d).year)), Tag.of(WalletTags.MONTH, String(ym(d).month)), Tag.of(WalletTags.STATEMENT_ID, stmtId(id, d))];
 const opening = (id: string, d: Date, openingBalance: number) => WalletStatementOpened({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance, openedAt: DateTime.fromDateUnsafe(d) });
 const closing = (id: string, d: Date, balance: number) => WalletStatementClosed({ walletId: id, statementId: stmtId(id, d), ...ym(d), openingBalance: balance, closingBalance: balance, closedAt: DateTime.fromDateUnsafe(d) });
@@ -196,7 +200,7 @@ describe("a transfer that turns the month of both its wallets", () => {
     for (let i = 0; i < 3; i++) pairs.push([await warmWallet(), await warmWallet()]);
     for (const [a, b] of pairs) {
       const exits = await Promise.all([runAt(() => nextMonth, TransferMoney, transfer(a, b, 7)), runAt(() => nextMonth, TransferMoney, transfer(b, a, 3))]);
-      for (const e of exits) assert.ok(ok(e), String((e as any).cause));
+      for (const e of exits) assert.ok(ok(e), causeOf(e));
       assert.strictEqual(await balance(a, nextMonth), 110 - 7 + 3);
       assert.strictEqual(await balance(b, nextMonth), 110 + 7 - 3);
       assert.strictEqual(await countOf(a, "WalletStatementClosed"), 1);
@@ -265,25 +269,24 @@ describe("the instant of a turn", () => {
 describe("many commands at once on the same wallet", () => {
   // N commands of three kinds race on ONE wallet: a fresh one (the first period is opened) and one whose month just turned (the old one is closed, the new one opened). Whatever order they take, the log
   // must hold exactly one opening (and one closing) per period, the balance must be the sum of what the commands that went through did, and a command may fail only with a Conflict that ran out of retries.
-  const kinds = (id: string, other: string, i: number) =>
-    i % 3 === 0 ? [Deposit, dep(id, 1 + i)] : i % 3 === 1 ? [Withdraw, wd(id, 1)] : [TransferMoney, transfer(id, other, 1)];
+  const kinds = (id: string, other: string, i: number, clock: () => Date) =>
+    i % 3 === 0 ? runAt(clock, Deposit, dep(id, 1 + i)) : i % 3 === 1 ? runAt(clock, Withdraw, wd(id, 1)) : runAt(clock, TransferMoney, transfer(id, other, 1));
 
   const race = async (n: number, setup: () => Promise<{ id: string; other: string; clock: () => Date; period: Date; start: number }>) => {
     const { id, other, clock, period, start: startBalance } = await setup();
     const jobs = Array.from({ length: n }, (_, i) => {
-      const [command, input] = kinds(id, other, i);
-      return runAt(clock, command, input).then((exit) => ({ exit, i }));
+      return kinds(id, other, i, clock).then((exit) => ({ exit, i }));
     });
     const results = await Promise.all(jobs);
     const failed = results.filter((r) => !ok(r.exit));
-    const notConflicts = failed.filter((r) => !String((r.exit as any).cause).includes("Conflict"));
+    const notConflicts = failed.filter((r) => !causeOf(r.exit).includes("Conflict"));
     // what the commands that went through did to this wallet
     let expected = startBalance;
     for (const r of results) {
       if (!ok(r.exit)) continue;
       expected += r.i % 3 === 0 ? 1 + r.i : -1;
     }
-    return { id, failed: failed.length, notConflicts: notConflicts.map((r) => String((r.exit as any).cause)), expected, got: await balance(id, period) };
+    return { id, failed: failed.length, notConflicts: notConflicts.map((r) => causeOf(r.exit)), expected, got: await balance(id, period) };
   };
 
   it("16 commands on a fresh wallet: one opening, the right balance, no failure but a Conflict out of retries", { timeout: 120_000 }, async () => {

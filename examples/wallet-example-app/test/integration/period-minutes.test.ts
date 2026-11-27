@@ -6,24 +6,38 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Deferred, Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
-import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
 import { Client } from "pg";
 import { EventStore, makeEventStoreLayer, type StoredEvent } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
+import type { Command, RawInput } from "@crablet/commands/Command";
+import type { InputSchema } from "@crablet/commands/Contract";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
 
 process.env["WALLET_PERIOD"] = "minutes:5";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<CommandExecutor | EventStore | SqlClient.SqlClient, never>;
+// what the runtime provides is read off its layer; a database that cannot be reached is a defect of the test
+const runtimeFor = (c: TestDb["connInfo"]) =>
+  ManagedRuntime.make(
+    Layer.provideMerge(
+      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive)),
+      PgClient.layer({ host: c.host, port: c.port, database: c.database, username: c.username, password: Redacted.make(c.password), maxConnections: 20 })
+    ).pipe(Layer.orDie)
+  );
+let runtime: ReturnType<typeof runtimeFor>;
 let probe: Client;
-// the wallet's modules, imported after the variable is set
+// the wallet's modules, imported after the variable is set (`typeof import` is a type only: it loads nothing)
 let m: {
-  Deposit: any; Withdraw: any; OpenWallet: any; WalletPeriodModel: any; WalletStatementView: any;
-  atClock: any; pausableDeposit: any;
+  Deposit: typeof import("../../src/slices/deposit/DepositCommand.ts").Deposit;
+  Withdraw: typeof import("../../src/slices/withdraw/WithdrawCommand.ts").Withdraw;
+  OpenWallet: typeof import("../../src/slices/open-wallet/OpenWalletCommand.ts").OpenWallet;
+  WalletPeriodModel: typeof import("../../src/shared/WalletModel.ts").WalletPeriodModel;
+  WalletStatementView: typeof import("../../src/slices/wallet-statement/WalletStatementViewProjector.ts").WalletStatementView;
+  atClock: typeof import("../support/clocked-commands.ts").atClock;
+  pausableDeposit: typeof import("../support/clocked-commands.ts").pausableDeposit;
 };
 before(async () => {
   m = {
@@ -37,12 +51,7 @@ before(async () => {
   };
   db = await startTestDb();
   await applyAppMigrations(db.connInfo);
-  runtime = ManagedRuntime.make(
-    Layer.provideMerge(
-      Layer.provideMerge(CommandExecutorLive, Layer.mergeAll(makeEventStoreLayer({ wakeupMode: "off" }), CommandAuditStoreLive)),
-      PgClient.layer({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, username: db.connInfo.username, password: Redacted.make(db.connInfo.password), maxConnections: 20 })
-    ) as never
-  ) as never;
+  runtime = runtimeFor(db.connInfo);
   probe = new Client({ host: db.connInfo.host, port: db.connInfo.port, database: db.connInfo.database, user: db.connInfo.username, password: db.connInfo.password });
   await probe.connect();
 }, { timeout: 60_000 });
@@ -53,11 +62,12 @@ const slotA = new Date(Date.UTC(2026, 9, 11, 12, 1));
 const slotB = new Date(Date.UTC(2026, 9, 11, 12, 6));
 const bucketOf = (d: Date) => Math.floor(d.getTime() / 300_000);
 
-const exec = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.exit(effect as never)) as Promise<Exit.Exit<unknown, unknown>>;
-const runAt = (now: () => Date, command: any, input: unknown) => exec(m.atClock(now, Effect.flatMap(CommandExecutor, (ex) => (ex as any).run(command, input))));
+const exec = <A, E>(effect: Effect.Effect<A, E, ManagedRuntime.ManagedRuntime.Services<typeof runtime>>) => runtime.runPromise(Effect.exit(effect));
+const runAt = <In, Err, I extends InputSchema>(now: () => Date, command: Command<In, Err, I>, input: RawInput<I>) =>
+  exec(m.atClock(now, Effect.flatMap(CommandExecutor, (ex) => ex.run(command, input))));
 // the wallet's balance in the period open at `at`
 const balance = (id: string, at: Date) =>
-  runtime.runPromise(m.atClock(() => at, Effect.flatMap(EventStore, (es) => m.WalletPeriodModel.of({ id }).load(es))) as never).then((r: any) => r.state.balance as number);
+  runtime.runPromise(m.atClock(() => at, Effect.flatMap(EventStore, (es) => m.WalletPeriodModel.of({ id }).load(es)))).then((r) => r.state.balance);
 const newWallet = () => `w-${crypto.randomUUID()}`;
 const open = (id: string) => runAt(() => slotA, m.OpenWallet, { walletId: id, owner: "x", initialBalance: 100 });
 const dep = (walletId: string, amount: number, depositId = crypto.randomUUID()) => ({ depositId, walletId, amount, description: "" });
@@ -75,14 +85,14 @@ const eventsOf = async (id: string, type: string) =>
 
 // Pauses the FIRST attempt of a command after its model is loaded; later attempts run straight through. The paused command reads slot A until it is released and slot B after.
 const pausedOnce = async () => {
-  const [reached, resume] = (await runtime.runPromise(Effect.all([Deferred.make<void>(), Deferred.make<void>()]) as never)) as [Deferred.Deferred<void>, Deferred.Deferred<void>];
+  const [reached, resume] = await runtime.runPromise(Effect.all([Deferred.make<void>(), Deferred.make<void>()]));
   const state = { calls: 0, released: false };
   const pause = Effect.suspend(() => (state.calls++ === 0 ? Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(resume)) : Effect.void));
   return {
     pause,
     clock: () => (state.released ? slotB : slotA),
-    reached: () => runtime.runPromise(Deferred.await(reached) as never),
-    release: () => { state.released = true; return runtime.runPromise(Deferred.succeed(resume, undefined) as never); }
+    reached: () => runtime.runPromise(Deferred.await(reached)),
+    release: () => { state.released = true; return runtime.runPromise(Deferred.succeed(resume, undefined)); }
   };
 };
 
@@ -164,7 +174,7 @@ describe("a statement period of 5 minutes, on Postgres", () => {
     await runtime.runPromise(Effect.gen(function* () {
       const projector = yield* m.WalletStatementView.projector;
       yield* projector.handle(stored);
-    }) as never);
+    }));
     const view = (await probe.query<{ statement_id: string; month: number | null; year: number; opening_balance: string; closing_balance: string | null; closed_at: Date | null; total_deposits: string }>(
       `SELECT * FROM wallet_statement_view WHERE wallet_id = $1 ORDER BY opened_at, statement_id`, [id])).rows;
     assert.strictEqual(view.length, 2);
