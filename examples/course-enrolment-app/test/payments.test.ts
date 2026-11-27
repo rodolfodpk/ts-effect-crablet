@@ -7,6 +7,7 @@ import { assertRepeatHarmless, given } from "@crablet/commands/testing/Scenario"
 import { applyInMemory, rowsOf } from "@crablet/views/ViewMemory";
 import { CourseDefined, CourseFull, CourseNotFound, StudentAtLimit, StudentSubscribed, Subscribe, SubscriptionReleased } from "../src/slices/enrolment/Enrolment.ts";
 import { assertAutomationIdempotent } from "@crablet/automations/testing/AutomationIdempotency";
+import { automationScenario } from "@crablet/automations/testing/AutomationScenario";
 import { AlreadyPaid, CourseNotPriced, CoursePriced, NotSubscribed, PAYMENT_WINDOW_DAYS, PaymentWindowClosed, PaySubscription, PriceCourse, ReleaseUnpaidSubscription, SendReceipt, SubscriptionPaid, WrongAmount } from "../src/slices/payments/Payments.ts";
 import { receiptOnPayment } from "../src/slices/payments/ReceiptOnPaymentAutomation.ts";
 import { CourseSeatsView, courseSeatsTable } from "../src/slices/course-seats/CourseSeatsViewProjector.ts";
@@ -173,6 +174,13 @@ describe("the receipt", () => {
     expect(report.effects).toBe(2);
   });
   // #endregion receipt-test
+
+  test("a payment asks for its receipt, with the payment's own fields", async () => {
+    const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");
+    const result = await automationScenario(receiptOnPayment).given().at(t0).when(SubscriptionPaid({ courseId: "math", studentId: "ann", paymentId: "p-1", amount: 12000 }));
+    expect(result.inputs).toEqual([{ paymentId: "p-1", courseId: "math", studentId: "ann", amount: 12000 }]);
+    expect(result.events.map((e) => e.type)).toEqual(["ReceiptSent"]);
+  });
 
   test("the receipt carries the payment and the time it was sent", async () => {
     const t0 = DateTime.makeUnsafe("2026-11-02T09:00:00.000Z");

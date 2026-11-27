@@ -61,7 +61,27 @@ Polling and batch settings for one automation go to the processor by name, `over
 into its definition. Only one process runs the automations at a time (the leader of the automations module, one advisory lock for all of them); the others take over if it stops. Reference for the package:
 [`@crablet/automations`](../../../packages/automations/README.md).
 
-## 4. Test that it is idempotent
+## 4. Specify what it does
+
+`automationScenario` (`@crablet/automations/testing/AutomationScenario`) is a spec with no database and no poller: given the log, when the trigger events
+are appended, then what the automation asked its command for (`inputs`), what each command did (`runs`: outcome, error, reason) and what it appended
+(`events`, caused by the trigger). The command runs through the real pipeline on the in-memory store, as `given(...).when(...)` runs one by hand;
+`redeliver()` hands it the same triggers again, and `at(now)` fixes the clock.
+
+<!-- file: examples/wallet-example-app/test/wallet-automation-idempotency.test.ts#automation-spec -->
+```ts
+test("a wallet opened asks for one welcome to its owner, and the command sends it", async () => {
+  const s = automationScenario(walletOpenedAutomation).given();
+  const result = await s.when(WalletOpened({ walletId: "w1", owner: "Ana", initialBalance: 0, openedAt: DateTime.makeUnsafe("2026-10-09T00:00:00Z") }));
+  expect(result.inputs).toEqual([{ walletId: "w1", owner: "Ana" }]); // what the handler built from the event
+  expect(result.events.map((e) => e.type)).toEqual(["WelcomeNotificationSent"]); // what the command appended, caused by the trigger
+  expect((await s.redeliver()).events).toEqual([]); // delivered again: nothing more
+});
+```
+
+What it does not show is the poller (which batches wake the automation, the cursor) and races; the next check covers the key across many triggers.
+
+## 5. Test that it is idempotent
 
 `idempotentBy` is yours to write, and a wrong query fails quietly: too narrow and a redelivered event does its work twice, too broad and a legitimate event is
 dropped. `assertAutomationIdempotent` runs the automation against an in-memory event store, with no database, and reports both. Give it triggers that should

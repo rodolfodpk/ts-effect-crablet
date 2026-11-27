@@ -59,6 +59,9 @@ export interface Scenario {
   readonly log: ReadonlyArray<StoredEvent>;
   // Run a command with its input before decoding, like a request arriving: typed from the command's schema, and validated as `run` does.
   readonly when: <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: RawInput<I>) => Promise<ScenarioResult<Err>>;
+  // Run a command with input that is already its typed input, as an automation or the deadlines processor runs one (`runDecoded`: not validated
+  // again), under `cause` (the position of the event that caused it) when one is given. What `@crablet/automations/testing/AutomationScenario` runs.
+  readonly whenDecoded: <In, Err>(command: Command<In, Err>, input: In, options?: { readonly cause?: bigint | undefined }) => Promise<ScenarioResult<Err>>;
   // The same scenario (same store, same log) with the clock fixed at `now`: what `decide` gets as `now`, and what a model with a period reads (`.period`, Period.ts).
   // Without it the real clock is used.
   readonly at: (now: DateTime.Utc) => Scenario;
@@ -122,6 +125,7 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
   };
 
   const when: Scenario["when"] = async (command, rawInput) => (await run(command, command.decodeInput(rawInput), null)).result;
+  const whenDecoded: Scenario["whenDecoded"] = async (command, input, options = {}) => (await run(command, Effect.succeed(input), options.cause ?? null)).result;
 
   const fireDue: Scenario["fireDue"] = async (...commands) => {
     const byName = checkDeadlineCommands(commands);
@@ -150,7 +154,7 @@ const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario 
     return results;
   };
 
-  return { store, get log() { return store.log; }, when, at: (now) => scenarioOver(store, DateTime.toEpochMillis(now)), fireDue };
+  return { store, get log() { return store.log; }, when, whenDecoded, at: (now) => scenarioOver(store, DateTime.toEpochMillis(now)), fireDue };
 };
 
 export const given = (...events: ReadonlyArray<AppendEvent>): Scenario => {

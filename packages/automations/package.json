@@ -10,7 +10,8 @@
     "./AutomationDecision": "./src/AutomationDecision.ts",
     "./AutomationsConfig": "./src/AutomationsConfig.ts",
     "./AutomationManagementService": "./src/AutomationManagementService.ts",
-    "./testing/AutomationIdempotency": "./src/testing/AutomationIdempotency.ts"
+    "./testing/AutomationIdempotency": "./src/testing/AutomationIdempotency.ts",
+    "./testing/AutomationScenario": "./src/testing/AutomationScenario.ts"
   },
   "dependencies": {
     "effect": "4.1.4",
