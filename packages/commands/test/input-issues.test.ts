@@ -4,8 +4,8 @@ import { describe, expect, test } from "bun:test";
 import { Cause, Effect, Exit, Schema } from "effect";
 import { defineCommand, emit } from "../src/Command.ts";
 import { DomainErrorKind, InvalidInput, inputIssuesOf, kindOf } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
-import { personal } from "../src/Personal.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
+import { personal } from "@crablet/eventstore/Personal";
 
 const Done = defineEvent("InputIssuesDone", { schema: Schema.Struct({ id: Schema.String }), tags: (d) => ({ id: d.id }) });
 const Register = defineCommand({

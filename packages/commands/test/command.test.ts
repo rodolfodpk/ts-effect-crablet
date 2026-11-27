@@ -9,7 +9,7 @@ import * as Tag from "@crablet/eventstore/Tag";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
 import { concurrent, defineCommand, emit, fail, noop, strict } from "../src/Command.ts";
 import { DomainError, IdempotencyMismatch, InvalidInput } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../src/Model.ts";
 
 // A tiny domain: a counter that can be opened and incremented; incrementing needs it open.

@@ -1,11 +1,11 @@
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import { Effect } from "effect";
-import { EventDecodingFailure, decodingErrorOf, reportDecodingError, type DecodingIssue, type EventDecodingError } from "@crablet/eventstore/EventDecoding";
-import type { StoredEvent } from "@crablet/eventstore";
-import * as AppendEvent from "@crablet/eventstore/AppendEvent";
-import * as Query from "@crablet/eventstore/Query";
-import * as Tag from "@crablet/eventstore/Tag";
+import { EventDecodingFailure, decodingErrorOf, reportDecodingError, type DecodingIssue, type EventDecodingError } from "./EventDecoding.ts";
+import type { StoredEvent } from "./EventStore.ts";
+import * as AppendEvent from "./AppendEvent.ts";
+import * as Query from "./Query.ts";
+import * as Tag from "./Tag.ts";
 import { hasPersonalData, personalValues } from "./Personal.ts";
 
 // An event definition is the single source of truth for one kind of event: its type name, its

@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as Crablet from "../support/CommandsLayer.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { formatEventsReport, verifyEvents } from "../../src/VerifyEvents.ts";
 
 // Deposit as it is now: `fee` was added with a default (compatible); `currency` was added as REQUIRED (not compatible: events written before it cannot be read)

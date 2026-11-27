@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { Effect } from "effect";
 import type { EventStore } from "../../src/EventStore.ts";
-import { CopyNotAvailable, lendAtTheDesk, lendCopy, lendTwo, loanCount, loansOf, returnCopy } from "./direct-use.ts";
+import { copiesBorrowedBy, CopyNotAvailable, lendAtTheDesk, lendCopy, lendCopyTyped, lendTwo, loanCount, loansOf, returnCopy } from "./direct-use.ts";
 
 export const directUseScenario = (run: <A, E>(effect: Effect.Effect<A, E, EventStore>) => Promise<A>) => async () => {
   const id = crypto.randomUUID().slice(0, 8);
@@ -24,4 +24,10 @@ export const directUseScenario = (run: <A, E>(effect: Effect.Effect<A, E, EventS
   await run(lendAtTheDesk(`c-${id}`, deskMember, request));
   const [loan] = await run(loansOf(deskMember));
   assert.deepStrictEqual([loan!.correlationId, loan!.metadata], [request, { source: "front-desk" }]);
+  // the typed lend reads and appends the same events as the untyped one
+  const typedMember = `typed-${id}`;
+  await run(lendCopyTyped(`t-${id}`, typedMember));
+  assert.ok((await run(Effect.flip(lendCopyTyped(`t-${id}`, typedMember)))) instanceof CopyNotAvailable, "the typed lend refuses a copy that is out");
+  assert.ok((await run(Effect.flip(lendCopy(`t-${id}`, typedMember)))) instanceof CopyNotAvailable, "and the untyped lend sees its loan");
+  assert.deepStrictEqual(await run(copiesBorrowedBy(typedMember)), [`t-${id}`], "decoded through the schema");
 };

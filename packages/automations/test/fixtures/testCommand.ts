@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { defineCommand, noop } from "@crablet/commands/Command";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 
 const TestCommandDone = defineEvent("TestCommandDone", { schema: Schema.Struct({}), tags: () => ({ test: "x" }) });
 

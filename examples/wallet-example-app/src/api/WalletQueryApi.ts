@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
-import { Instant } from "@crablet/commands/Instant";
+import { Instant } from "@crablet/eventstore/Instant";
 import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadsApi";
 import { WalletNotFoundProblem } from "./WalletProblems.ts";
 import { defaultPageSize, maxPageSize } from "./TransactionPaging.ts";

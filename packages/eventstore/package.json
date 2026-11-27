@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./Event": "./src/Event.ts",
+    "./Instant": "./src/Instant.ts",
+    "./Personal": "./src/Personal.ts",
     ".": "./src/EventStore.ts",
     "./Storage": "./src/Storage.ts",
     "./Config": "./src/Config.ts",
@@ -35,7 +38,7 @@
   },
   "crablet": {
     "coverage": { "lines": 99.4 },
-    "typeEscapes": { "src": 1, "test": 24 },
+    "typeEscapes": { "src": 10, "test": 35 },
     "internal": ["./CorrelationContext", "./Listen", "./NotifyPayload", "./ReadSnapshot", "./ServerSettings", "./TagCodec"]
   },
   "dependencies": {

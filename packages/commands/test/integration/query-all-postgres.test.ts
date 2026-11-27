@@ -12,7 +12,7 @@ import * as Crablet from "../support/CommandsLayer.ts";
 import { runWith } from "@crablet/test-support/RunWith";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../../src/Command.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { pause } from "../support/barrier.ts";
 
 let db: TestDb;

@@ -12,7 +12,7 @@ import { CommandAuditStore } from "@crablet/commands/CommandAuditStore";
 import * as Crablet from "../../src/index.ts";
 import { CommandExecutor } from "@crablet/commands";
 import { defineCommand, emit } from "@crablet/commands/Command";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 
 let db: TestDb;
 before(async () => {

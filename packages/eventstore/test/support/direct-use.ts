@@ -4,9 +4,11 @@
 // It imports the package by its own name, as an application does.
 // #region imports
 import { Data, Effect, Layer, Schedule, Stream } from "effect";
+import * as Schema from "effect/Schema";
 import { append, EventStore, read, readToDecide, stream, transaction } from "@crablet/eventstore";
 import * as AppendContext from "@crablet/eventstore/AppendContext";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { Conflict } from "@crablet/eventstore/AppendErrors";
 import * as Postgres from "@crablet/eventstore/Postgres";
 import * as Query from "@crablet/eventstore/Query";
@@ -78,3 +80,31 @@ export const lendAtTheDesk = (copyId: string, memberId: string, requestId: strin
 // Two appends that stand or fall together: one transaction, and the processors are woken once it has committed.
 export const lendTwo = (first: string, second: string, memberId: string) => transaction(Effect.andThen(lendCopy(first, memberId), lendCopy(second, memberId)));
 // #endregion transaction
+
+// #region typed
+// The same two events, defined once: the type, the payload's schema and the tags. An event is built from its payload (`CopyLent(data)`), a query
+// names only tag keys the event declares (`CopyLent.where({ copy_id })`), and a stored event is read through the schema (`decodeStored`), never cast.
+export const CopyLent = defineEvent("CopyLent", {
+  schema: Schema.Struct({ copyId: Schema.String, memberId: Schema.String }),
+  tags: (d) => ({ copy_id: d.copyId, member_id: d.memberId })
+});
+export const CopyReturned = defineEvent("CopyReturned", {
+  schema: Schema.Struct({ copyId: Schema.String, memberId: Schema.String }),
+  tags: (d) => ({ copy_id: d.copyId, member_id: d.memberId })
+});
+
+// The lend again, with them: what it reads, what it appends.
+export const lendCopyTyped = (copyId: string, memberId: string) =>
+  Effect.gen(function* () {
+    const decision = yield* readToDecide(Query.union(CopyLent.where({ copy_id: copyId }), CopyReturned.where({ copy_id: copyId })));
+    const lent = decision.events.filter((e) => e.type === CopyLent.type).length > decision.events.filter((e) => e.type === CopyReturned.type).length;
+    if (lent) return yield* new CopyNotAvailable({ copyId });
+    return yield* decision.append([CopyLent({ copyId, memberId })]);
+  }).pipe(Effect.retry({ while: (error) => error instanceof Conflict, schedule: Schedule.recurs(3) }));
+
+// The copies a member has borrowed, decoded: a payload the schema does not accept fails with EventDecodingError, naming the event.
+export const copiesBorrowedBy = (memberId: string) =>
+  Effect.flatMap(read(CopyLent.where({ member_id: memberId }), { limit: 100 }), (page) =>
+    Effect.forEach(page.events, (event) => Effect.map(CopyLent.decodeStored(event), (loan) => loan.copyId))
+  );
+// #endregion typed

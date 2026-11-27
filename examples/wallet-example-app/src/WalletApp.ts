@@ -5,7 +5,7 @@ import { ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { makeCommandApiGroup, withApiInfo, type Implementations } from "@crablet/commands-http";
 import { authorizationFrom } from "@crablet/processors-http/Authorization";
 import { adminApiLayer } from "@crablet/processors-http/AdminApiLive";
-import { eventPayloadMask } from "@crablet/commands/Personal";
+import { eventPayloadMask } from "@crablet/eventstore/Personal";
 import * as M from "./shared/WalletModel.ts";
 import { WelcomeNotificationSent } from "./slices/welcome-notification/WelcomeNotificationSent.ts";
 import { serveApi } from "@crablet/commands-http/ServeApi";

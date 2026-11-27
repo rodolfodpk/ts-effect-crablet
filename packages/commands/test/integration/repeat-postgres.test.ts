@@ -12,7 +12,7 @@ import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { byModel, defineCommand, emit } from "../../src/Command.ts";
 import { defineModel } from "../../src/Model.ts";
 import { IdempotencyMismatch } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { EventStore } from "@crablet/eventstore";
 import * as Tag from "@crablet/eventstore/Tag";
 

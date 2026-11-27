@@ -9,7 +9,7 @@ import * as Crablet from "../support/CommandsLayer.ts";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../../src/Model.ts";
 
 // ---- the smallest command ----

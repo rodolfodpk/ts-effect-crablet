@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
-import * as Tag from "@crablet/eventstore/Tag";
-import * as Query from "@crablet/eventstore/Query";
+import * as Tag from "../src/Tag.ts";
+import * as Query from "../src/Query.ts";
 import { defineEvent } from "../src/Event.ts";
 
 const DepositMade = defineEvent("DepositMade", {

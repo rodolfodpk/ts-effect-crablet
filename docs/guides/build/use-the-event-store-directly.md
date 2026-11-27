@@ -33,9 +33,11 @@ What this guide uses, and the entry point each comes from:
 <!-- file: packages/eventstore/test/support/direct-use.ts#imports -->
 ```ts
 import { Data, Effect, Layer, Schedule, Stream } from "effect";
+import * as Schema from "effect/Schema";
 import { append, EventStore, read, readToDecide, stream, transaction } from "@crablet/eventstore";
 import * as AppendContext from "@crablet/eventstore/AppendContext";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { Conflict } from "@crablet/eventstore/AppendErrors";
 import * as Postgres from "@crablet/eventstore/Postgres";
 import * as Query from "@crablet/eventstore/Query";
@@ -93,6 +95,42 @@ export const lendCopy = (copyId: string, memberId: string) =>
 condition is not the read's query, build it with `AppendCondition.failIfEventsMatch(query, { after: decision.position })` and `append(events,
 condition)`; without `after`, it refuses the append if *any* matching event exists (a "this must be the first" rule). `readToDecide` reads every
 matching event into memory, which is right for what a decision depends on (an entity, a few) and wrong for the whole log: for that, read in pages.
+
+## Typed events
+
+`defineEvent` (`@crablet/eventstore/Event`) defines an event once: its type, its payload's schema and its tags. Then the event is built from its
+payload, a query names only the tag keys the event declares (a misspelt key does not compile), and a stored event is read through the schema with
+`decodeStored`, which fails with `EventDecodingError` instead of passing a wrong payload on. Commands use the same definitions
+(`@crablet/commands/Domain` re-exports it), so a script and a command share them.
+
+<!-- file: packages/eventstore/test/support/direct-use.ts#typed -->
+```ts
+// The same two events, defined once: the type, the payload's schema and the tags. An event is built from its payload (`CopyLent(data)`), a query
+// names only tag keys the event declares (`CopyLent.where({ copy_id })`), and a stored event is read through the schema (`decodeStored`), never cast.
+export const CopyLent = defineEvent("CopyLent", {
+  schema: Schema.Struct({ copyId: Schema.String, memberId: Schema.String }),
+  tags: (d) => ({ copy_id: d.copyId, member_id: d.memberId })
+});
+export const CopyReturned = defineEvent("CopyReturned", {
+  schema: Schema.Struct({ copyId: Schema.String, memberId: Schema.String }),
+  tags: (d) => ({ copy_id: d.copyId, member_id: d.memberId })
+});
+
+// The lend again, with them: what it reads, what it appends.
+export const lendCopyTyped = (copyId: string, memberId: string) =>
+  Effect.gen(function* () {
+    const decision = yield* readToDecide(Query.union(CopyLent.where({ copy_id: copyId }), CopyReturned.where({ copy_id: copyId })));
+    const lent = decision.events.filter((e) => e.type === CopyLent.type).length > decision.events.filter((e) => e.type === CopyReturned.type).length;
+    if (lent) return yield* new CopyNotAvailable({ copyId });
+    return yield* decision.append([CopyLent({ copyId, memberId })]);
+  }).pipe(Effect.retry({ while: (error) => error instanceof Conflict, schedule: Schedule.recurs(3) }));
+
+// The copies a member has borrowed, decoded: a payload the schema does not accept fails with EventDecodingError, naming the event.
+export const copiesBorrowedBy = (memberId: string) =>
+  Effect.flatMap(read(CopyLent.where({ member_id: memberId }), { limit: 100 }), (page) =>
+    Effect.forEach(page.events, (event) => Effect.map(CopyLent.decodeStored(event), (loan) => loan.copyId))
+  );
+```
 
 ## Read in pages, or as a stream
 

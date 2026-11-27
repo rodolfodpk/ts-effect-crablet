@@ -10,7 +10,7 @@ import * as AppendContext from "@crablet/eventstore/AppendContext";
 import * as Crablet from "../support/CommandsLayer.ts";
 import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../../src/Command.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 
 let db: TestDb;
 before(async () => {

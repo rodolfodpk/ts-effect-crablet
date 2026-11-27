@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import { REDACTED, eventPayloadMask, exposed, hasPersonalData, personal, personalPaths, personalValues, redact } from "../src/Personal.ts";
-import * as Tag from "@crablet/eventstore/Tag";
+import * as Tag from "../src/Tag.ts";
 import { defineEvent } from "../src/Event.ts";
 
 const Address = Schema.Struct({ street: personal(Schema.String), city: Schema.String });

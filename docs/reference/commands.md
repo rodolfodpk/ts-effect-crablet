@@ -122,8 +122,8 @@ From `@crablet/commands/Model`.
 
 ## `defineEvent`
 
-From `@crablet/commands/Event`. `defineEvent(name, { schema, tags })`: a name, a payload `Schema`, and `tags: (data) => ({ key: value })`, the tags the
-event is found by. Mark personal fields with `personal(...)` from `@crablet/commands/Personal`, and keep personal data out of tags
+From `@crablet/eventstore/Event`. `defineEvent(name, { schema, tags })`: a name, a payload `Schema`, and `tags: (data) => ({ key: value })`, the tags the
+event is found by. Mark personal fields with `personal(...)` from `@crablet/eventstore/Personal`, and keep personal data out of tags
 ([events over time](../concepts/events-over-time.md#personal-data)).
 
 Tag keys are snake_case (`course_id`) while the data is camelCase (`courseId`): tags are stored as `key=value` text and
@@ -134,7 +134,7 @@ declares), and names the payload's type: `type Deposit = typeof DepositMade.Type
 
 The payload is stored **encoded** by its schema and read back decoded, so a field may transform: `Instant` (an instant, stored as ISO-8601 text in
 UTC, read as an Effect `DateTime.Utc`) is built with a `DateTime` and read as one, and a plain string where an `Instant` is declared does not compile.
-It is also `@crablet/commands/Instant`, which imports only Effect (for a contract or an API declaration a browser imports), and an OpenAPI description
+It is also `@crablet/eventstore/Instant`, which imports only Effect (for a contract or an API declaration a browser imports), and an OpenAPI description
 declares it as `{ "type": "string", "format": "date-time" }`.
 A payload that does not fit its schema fails where the event is built, with a message that names the paths, not the values.
 

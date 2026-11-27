@@ -6,7 +6,7 @@ import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/h
 import { defineCommand, emit } from "@crablet/commands/Command";
 import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { makeCommandApiGroup } from "../src/CommandApi.ts";
 import type { CommandApiRequirements } from "../src/CommandApiLive.ts";
 import { problemOf, problemSchemaOf } from "../src/ProblemDetail.ts";

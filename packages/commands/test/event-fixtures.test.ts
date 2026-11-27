@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineCommand, emit } from "../src/Command.ts";
 import { assertEventFixtures, checkEventFixtures, fixtureOf, formatFixtureReport, loadEventFixtures, type EventFixture } from "../src/testing/EventFixtures.ts";
 

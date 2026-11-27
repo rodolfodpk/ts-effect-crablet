@@ -14,9 +14,9 @@ import { formatMarker } from "@crablet/eventstore/Marker";
 import type { Command } from "./Command.ts";
 import type { InputSchema } from "./Contract.ts";
 import { IdempotencyMismatch, kindOf } from "./Errors.ts";
-import { defineEvent, Instant } from "./Event.ts";
+import { defineEvent, Instant } from "@crablet/eventstore/Event";
 import type { ExecutionResult } from "./ExecutionResult.ts";
-import { hasPersonalData } from "./Personal.ts";
+import { hasPersonalData } from "@crablet/eventstore/Personal";
 
 // No tags: an append locks each (type, tag) pair of its events, so a shared tag would make every append that sets a deadline wait on one lock; and an
 // entity tag would put the deadline in that entity's models. Nothing reads deadlines by tag: `crablet_deadlines` is their index.

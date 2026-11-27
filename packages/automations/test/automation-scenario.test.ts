@@ -3,7 +3,7 @@ import { DateTime } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "@crablet/commands/Model";
 import { defineAutomation } from "../src/AutomationHandler.ts";
 import { automationScenario } from "../src/testing/AutomationScenario.ts";

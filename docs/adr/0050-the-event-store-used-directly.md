@@ -68,3 +68,11 @@ building the Decision Model"*, and a query that *"represent[s] a query that matc
   under a transaction-id inversion (`read-page.test.ts`); a direct decision under an open transaction (`decide-direct.test.ts`); a command whose
   lookup reads every event (`query-all-postgres.test.ts`); `transaction` and its wake-ups (`wakeups.test.ts`); the guide's code, with a race
   (`direct-use.test.ts`).
+
+## Update: typed events are the event store's (2026-11-27)
+
+`defineEvent`, `personal` and `Instant` moved from `@crablet/commands` (`/Event`, `/Personal`, `/Instant`) to `@crablet/eventstore` (`/Event`,
+`/Personal`, `/Instant`): they depend only on the event store and know nothing of commands, and code that uses the store directly can now define its
+events once (`CopyLent(data)`, `CopyLent.where({ copy_id })`, `decodeStored`) without importing the command framework. `@crablet/commands/Domain`
+re-exports all three (ADR-0040's one domain import is unchanged); the old entry points are gone (pre-release, ADR-0013). The guide's code shows a
+typed lend beside the untyped one, run in memory and on Postgres.

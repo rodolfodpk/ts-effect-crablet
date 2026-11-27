@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Cause, Effect, Exit } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, noop } from "@crablet/commands/Command";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import * as Tag from "@crablet/eventstore/Tag";
 import type { StoredEvent } from "@crablet/eventstore";
 import { defineAutomation } from "../src/AutomationHandler.ts";
