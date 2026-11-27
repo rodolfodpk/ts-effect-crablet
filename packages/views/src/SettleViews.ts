@@ -3,6 +3,7 @@ import type { SqlClient } from "effect/sql";
 import type { SqlError } from "effect/sql/SqlError";
 import type { ProgressCursor } from "@crablet/event-poller/ProgressCursor";
 import type { ViewSubscription } from "./ViewSubscription.ts";
+import type { ViewProgressHub } from "./ViewProgressHub.ts";
 import { waitUntilProcessed } from "./WaitUntilProcessed.ts";
 import { readCheck } from "./internal/ReadCheck.ts";
 import { makeSettleViews } from "./internal/SettleViews.ts";
@@ -12,7 +13,7 @@ import { makeSettleViews } from "./internal/SettleViews.ts";
 //   1. one statement says where the log ends and, for each view, where it is and whether anything it handles is pending up to the write (`marker`, or the end of the log when null);
 //   2. a marker beyond the end of the log is `Beyond`: it can only be forged or from another log, and nothing waits;
 //   3. a view that has caught up is not waited for, one that is FAILED is reported at once, and the others are waited for at the same time (`waitUntilProcessed`, woken by the
-//      view progress hub when one is in the context), with `timeoutMs` as one shared deadline;
+//      view progress hub, which it requires), with `timeoutMs` as one shared deadline;
 //   4. the outcome names every view that had not caught up, in the order given (the same view twice gives two entries).
 //
 // No views: only step 2, and the outcome is `CaughtUp`. A database error is not a verdict about the views: it fails the effect.
@@ -36,10 +37,10 @@ export type Settlement =
   | { readonly _tag: "Settled"; readonly outcome: ViewsOutcome };
 
 // The shape of `settleViews`, for a caller that takes it as a dependency (the read wrapper's tests pass fakes that need no database).
-export type SettleViews<R = SqlClient.SqlClient> = (
+export type SettleViews<R = SqlClient.SqlClient | ViewProgressHub> = (
   subscriptions: ReadonlyArray<ViewSubscription>,
   marker: ProgressCursor | null,
   timeoutMs: number
 ) => Effect.Effect<Settlement, SqlError, R>;
 
-export const settleViews: SettleViews = makeSettleViews({ check: readCheck, wait: waitUntilProcessed });
+export const settleViews: SettleViews = makeSettleViews<SqlClient.SqlClient | ViewProgressHub>({ check: readCheck, wait: waitUntilProcessed });

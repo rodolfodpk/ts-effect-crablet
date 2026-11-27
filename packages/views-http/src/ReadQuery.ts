@@ -10,16 +10,16 @@ export const consistencyQuery = {
     Schema.String.annotate({
       description:
         'Read at least as fresh as a write: the `marker` a command returned (`"<transactionId>:<position>"`), or `latest` for everything committed when the request arrived. Waits for the views this read uses.'
-    } as never)
+    })
   ),
   consistency: Schema.optionalKey(
     Schema.String.annotate({
       description:
         "What to do if a view has not caught up in time: `strict` fails with 503, `bounded` answers anyway with the header `Crablet-Consistency: stale`, `eventual` does not wait. A request may ask for a stricter mode than the endpoint's, and a looser one only where the server allows it."
-    } as never)
+    })
   ),
   waitTimeout: Schema.optionalKey(
-    Schema.String.annotate({ description: "How long to wait for the views, in milliseconds (a whole number from 1 up to the endpoint's maximum)." } as never)
+    Schema.String.annotate({ description: "How long to wait for the views, in milliseconds (a whole number from 1 up to the endpoint's maximum)." })
   )
 };
 

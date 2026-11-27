@@ -11,7 +11,7 @@ The endpoints the packages give you, the statuses they answer with, and the read
 |---|---|---|
 | `POST /api/commands/<name>` | `@crablet/commands-http` | Runs one command. One route per command contract you list. |
 | `GET /openapi.json` | `@crablet/commands-http` | The generated OpenAPI 3.1 description: every command's input, and every failure as `application/problem+json`. |
-| your read endpoints | `@crablet/views-http` (`makeConsistentRead`) | Any `GET` you write over a view, made to honour a marker. |
+| your read endpoints | `@crablet/views-http/ReadsLive` (`makeConsistentRead`; the endpoint declarations in `/ReadsApi`) | Any `GET` you write over a view, made to honour a marker. |
 | `GET /admin/processors` | `@crablet/processors-http` | Every processor: status, failures, cursor and backlog. Closed until the application provides an authorization ([ADR-0020](../adr/0020-processors-admin-api.md)). |
 | `POST /admin/processors/:kind/:id/pause`, `.../resume`, `.../reset` | `@crablet/processors-http` | Pause, resume or reset one processor. |
 
@@ -59,7 +59,7 @@ A read made with `makeConsistentRead` accepts three query parameters.
 | `consistency` | `strict`, `bounded`, `eventual` | Ask for a mode. A stricter one than the endpoint's is always allowed; a looser one only with `clientMayRelax`. |
 | `waitTimeout` | milliseconds, 1 to `maxTimeoutMs` | How long to wait. |
 
-The server's settings (`ReadConsistencyConfig`, `@crablet/views-http/ReadConsistency`), for the whole API or per endpoint:
+The server's settings (`ReadConsistencyConfig`, `@crablet/views-http/ReadsLive`), for the whole API or per endpoint:
 
 | Setting | Default | What it does |
 |---|---|---|

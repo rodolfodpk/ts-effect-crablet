@@ -12,6 +12,7 @@ import { EventStoreLive } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { waitUntilProcessed } from "@crablet/views/WaitUntilProcessed";
+import { viewProgressPolling } from "@crablet/views/ViewProgressHub";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { startWalletAppForTest, type CoreServices, type RunningWalletApp } from "../support/startWalletAppForTest.ts";
 import { applyAppMigrations } from "../support/applyAppMigrations.ts";
@@ -139,7 +140,8 @@ describe("wallet lifecycle E2E (real Postgres + real HTTP server)", () => {
     );
     assert.ok(result.marker !== null, "a command that appended events reports where its write ended");
 
-    await runtime.runPromise(waitUntilProcessed(WalletBalanceView.subscription(), result.marker));
+    // in the process, not over HTTP: the wait takes the view and the write's marker, and a hub (here the one that reads the progress table)
+    await runtime.runPromise(Effect.provide(waitUntilProcessed(WalletBalanceView, result.marker), viewProgressPolling()));
     const body = await getJson(`/api/wallets/${walletId}`); // a single read, no retry loop
     assert.strictEqual(body["balance"], 60);
   });

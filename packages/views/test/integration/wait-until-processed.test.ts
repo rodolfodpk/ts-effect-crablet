@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
+import { type ViewProgressHub, viewProgressPolling } from "../../src/ViewProgressHub.ts";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore, EventStoreLive } from "@crablet/eventstore";
 import * as AppendEvent from "@crablet/eventstore/AppendEvent";
@@ -16,7 +17,7 @@ import type { ViewsConfig } from "../../src/ViewsConfig.ts";
 import { type ProcessConnections, ProcessConnectionsLive } from "@crablet/eventstore/ProcessConnections";
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections | ViewProgressHub, never>;
 
 before(async () => {
   db = await startTestDb();
@@ -28,7 +29,7 @@ before(async () => {
     password: Redacted.make(db.connInfo.password)
   });
   runtime = ManagedRuntime.make(
-    Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer).pipe(Layer.orDie)
+    Layer.provideMerge(Layer.mergeAll(EventStoreLive, ProcessConnectionsLive, viewProgressPolling()), pgLayer).pipe(Layer.orDie)
   );
   await runtime.runPromise(
     Effect.gen(function* () {
@@ -43,7 +44,7 @@ after(async () => {
   await db.stop();
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections>) => runtime.runPromise(effect);
+const run = <A, E>(effect: Effect.Effect<A, E, EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections | ViewProgressHub>) => runtime.runPromise(effect);
 
 // A slow poll, so that "just appended" is reliably BEFORE the view has seen the event.
 const slowViews: ViewsConfig = {

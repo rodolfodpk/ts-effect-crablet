@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiClient, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
-import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpRouter, HttpServer } from "effect/http";
+import { type ViewProgressHub, ViewProgressHubLive } from "@crablet/views/ViewProgressHub";
 import { NodeHttpServer } from "@effect/platform-node";
 import { SqlClient } from "effect/sql";
 import { PgClient } from "@effect/sql-pg";
@@ -53,9 +54,8 @@ interface ThingRequest {
   readonly query: ConsistencyParams & { readonly limit?: string | undefined };
 }
 
-const read = makeConsistentRead();
 const GroupLive = HttpApiBuilder.group(Api, "reads", (handlers) =>
-  Effect.succeed(
+  Effect.map(makeConsistentRead(), (read) =>
     handlers.handle(
       "getThing",
       read(
@@ -96,7 +96,7 @@ const viewsConfig: ViewsConfig = {
 };
 
 let db: TestDb;
-let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections | HttpServer.HttpServer, never>;
+let runtime: ManagedRuntime.ManagedRuntime<EventStore | SqlClient.SqlClient | PgClient.PgClient | ProcessConnections | ViewProgressHub | HttpServer.HttpServer, never>;
 let stopViews: () => Promise<unknown>;
 let base: string;
 
@@ -109,7 +109,7 @@ before(async () => {
     username: db.connInfo.username,
     password: Redacted.make(db.connInfo.password)
   });
-  const core = Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer);
+  const core = Layer.provideMerge(ViewProgressHubLive, Layer.provideMerge(Layer.merge(EventStoreLive, ProcessConnectionsLive), pgLayer));
   const server = Layer.provideMerge(HttpRouter.serve(HttpApiBuilder.layer(Api).pipe(Layer.provide(GroupLive))), NodeHttpServer.layer(createServer, { port: 0 }));
   runtime = ManagedRuntime.make(Layer.provideMerge(server, core).pipe(Layer.orDie));
 
@@ -254,7 +254,7 @@ describe("the contract: what the OpenAPI description promises and the derived cl
   it("the derived client resolves { body, headers }, and a refused strict read fails with the decoded ViewsUnavailable", { timeout: 20_000 }, async () => {
     const id = newId();
     const marker = await write(id);
-    const run = <A, E>(effect: Effect.Effect<A, E, any>) => runtime.runPromise(Effect.provide(effect, FetchHttpClient.layer) as never) as Promise<A>;
+    const run = <A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>) => runtime.runPromise(Effect.provide(effect, FetchHttpClient.layer));
     const client = await run(HttpApiClient.make(Api, { baseUrl: base }));
 
     const stale = await run(client.reads.getThing({ params: { id }, query: { consistentWith: marker, consistency: "bounded", waitTimeout: "50" } }));

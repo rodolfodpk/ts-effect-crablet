@@ -61,3 +61,17 @@ Both are waiting for the same event, "a view's progress moved", which the databa
 - **Open live feeds** (one run): database sessions held, 0 feeds 4; 50 feeds 4; 200 feeds 5; **1,000 feeds 5** (the extra one is the hub's LISTEN). One write reached all of them in 75 ms (50), 55 ms (200) and 207 ms (1,000); opening 1,000 feeds from the one client process took 6.4 s. Before the hub the 11th open feed on a pool of 10 could not start.
 - **An idle log** (scenario 1): no difference, as expected (the view is caught up, so a wait returns after its first look): `latest` 855 against 879 reads/s on one connection, 3,079 against 3,041 on eight.
 - **What this leaves open:** the p99 of `latest` under writes is inconclusive (the baseline's own p99 varied 3 times between runs on a loaded machine, and the hub's was better once and worse twice). Nothing else from these runs is known to be wrong with the hub.
+
+## Update: the hub is required, and has a second implementation (2026-11-27)
+
+The wait looked the hub up with `serviceOption` and polled the table every 25 ms per waiting reader when there was none. The types did not say so: an
+application that forgot `ViewProgressHubLive` compiled and silently paid the polling cost this ADR set out to remove.
+
+- **`waitUntilProcessed` and `settleViews` require `ViewProgressHub`** in their `R`. A wait without a hub does not compile.
+- **`viewProgressPolling({ interval })`** is the second implementation of the same service: one fiber reads `crablet_view_progress` every `interval`
+  (default 100 ms) and announces each view that moved, as the ping its tracker would have sent; a failed read fails the source, and the hub resyncs
+  its subscribers as after a lost LISTEN. It is for a process that cannot keep a LISTEN (a pooler in transaction mode and no session client) and for
+  tests. One query per interval for the process, however many readers wait, where the old fallback was one per reader every 25 ms.
+- **The two are interchangeable** (CLAUDE.md, Liskov): `test/integration/view-progress-hubs.test.ts` runs the same scenarios against both (a
+  subscriber hears the view that moved, the feed opens and follows, a wait is woken).
+- The wait still polls at `interval` while the hub it has is not connected (a LISTEN that dropped and is reconnecting).

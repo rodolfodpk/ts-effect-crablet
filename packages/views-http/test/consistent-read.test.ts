@@ -4,7 +4,7 @@ import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import type { Settlement, SettleViews, UncaughtView } from "@crablet/views/SettleViews";
 import { viewSubscriptionOf } from "@crablet/views/ViewSubscription";
-import { makeConsistentRead, type ReadSpec } from "../src/ConsistentRead.ts";
+import { makeConsistentReadWith, type ReadSpec } from "../src/ConsistentRead.ts";
 import { defaultReadConsistency, type ConsistencyParams, type ReadConsistencyConfig } from "../src/ReadConsistency.ts";
 import { ViewsUnavailable } from "../src/ReadProblems.ts";
 
@@ -39,10 +39,9 @@ const harness = (options: {
   const calls = { settles: [] as Array<{ views: string[]; marker: ProgressCursor.ProgressCursor | null; timeoutMs: number }>, handled: [] as Array<Parsed> };
   const settle: SettleViews<never> = (subscriptions, marker, timeoutMs) =>
     Effect.sync(() => (calls.settles.push({ views: subscriptions.map((s) => s.viewName), marker, timeoutMs }), options.settlement ?? caughtUp));
-  const read = makeConsistentRead<never>({
+  const read = makeConsistentReadWith(settle, {
     config: options.config ?? defaultReadConsistency,
-    ...(options.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: options.retryAfterSeconds }),
-    settle
+    ...(options.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: options.retryAfterSeconds })
   });
   const endpoint = read(
     {
@@ -217,7 +216,7 @@ describe("bounded when a view has not caught up", () => {
 
 describe("a database failure while settling is a defect, not a verdict about the views", () => {
   it("is not reported as a 503", async () => {
-    const read = makeConsistentRead<never>({ settle: () => Effect.fail({ _tag: "SqlError", message: "connection lost" } as never) });
+    const read = makeConsistentReadWith<never>(() => Effect.fail({ _tag: "SqlError", message: "connection lost" } as never));
     const exit = await Effect.runPromiseExit(read({ reads: [view("a")], parse: () => Effect.succeed({}) }, () => Effect.succeed("ok"))({ query: {} }));
     expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
     expect(JSON.stringify(exit)).not.toContain("ViewsUnavailable");

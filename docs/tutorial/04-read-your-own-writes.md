@@ -117,7 +117,8 @@ waiting, `@crablet/views-http`, is the only place that knows about both views an
 // is not there in time the read is a 503, never a wrong answer. This app lets a client loosen a read (`clientMayRelax`):
 // `?consistency=eventual` answers at once and may be stale, `?consistency=bounded` waits up to the timeout and then answers marked stale.
 export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadConsistency, clientMayRelax: true };
-const consistentRead = makeConsistentRead({ config: courseReadConsistency });
+// Made where the group is built, which gives it the database and the view progress hub the reads wait on.
+const consistentReads = makeConsistentRead({ config: courseReadConsistency });
 ```
 
 (The server you started already includes all of this: the views module (`courseModules` in `src/processes.ts`) runs the view processor, woken by Postgres `LISTEN/NOTIFY`.)

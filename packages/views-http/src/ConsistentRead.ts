@@ -5,8 +5,8 @@ import { CommandApiBadRequest } from "@crablet/commands-http/ProblemDetail";
 import * as ProgressCursor from "@crablet/event-poller/ProgressCursor";
 import * as ReadConsistencyMetrics from "@crablet/metrics-otel/ReadConsistencyMetrics";
 import { settleViews, type SettleViews } from "@crablet/views/SettleViews";
-import type { ViewSubscription } from "@crablet/views/ViewSubscription";
-import type { RunnableView } from "@crablet/views";
+import { subscriptionOf, type ViewOrSubscription } from "@crablet/views/ViewSubscription";
+import type { ViewProgressHub } from "@crablet/views/ViewProgressHub";
 import {
   defaultReadConsistency,
   resolveReadPolicy,
@@ -16,18 +16,15 @@ import {
 } from "./ReadConsistency.ts";
 import { ViewsUnavailable } from "./ReadProblems.ts";
 
-export interface ConsistentReadOptions<R = SqlClient.SqlClient> {
+export interface ConsistentReadOptions {
   // The API-wide settings (default: strict, a read with no marker waits for the head of the log, 5 s, at most 30 s, no relaxing).
   readonly config?: ReadConsistencyConfig;
   // The `Retry-After` of a strict read that timed out, in seconds (default 1).
   readonly retryAfterSeconds?: number;
-  // How the views are settled against the write. The real one is `settleViews`; tests pass fakes.
-  readonly settle?: SettleViews<R>;
 }
 
-// What a read needs of a view: its subscription, or the view itself (`defineView`'s result), as the processor takes it.
-export type ReadView = ViewSubscription | Pick<RunnableView, "subscription">;
-const subscriptionOf = (view: ReadView): ViewSubscription => ("subscription" in view ? view.subscription() : view);
+// What a read needs of a view: the view itself (`defineView`'s result), or its subscription.
+export type ReadView = ViewOrSubscription;
 
 // Describes one read endpoint to the wrapper.
 export interface ReadSpec<Request, Parsed, E, R> {
@@ -56,16 +53,28 @@ export interface ConsistentHeaders {
 //
 // Nothing before step 3 waits, so a bad request never costs a timeout. A database failure while checking is a defect (a 500), not a
 // verdict about the views. The result is the `withHeaders` value that the success schema `ReadSuccess(Body)` describes.
-export const makeConsistentRead = <R = SqlClient.SqlClient>(options: ConsistentReadOptions<R> = {}) => {
+// The wrapper `makeConsistentRead` returns: it takes a read's spec and handler and gives the endpoint's handler. `R` is what settling the views needs.
+export type ConsistentRead<R> = <Request extends { readonly query: ConsistencyParams }, Parsed, E1, R1, A, E2, R2>(
+  spec: ReadSpec<Request, Parsed, E1, R1>,
+  run: (parsed: Parsed, request: Request) => Effect.Effect<A, E2, R2>
+) => (request: Request) => Effect.Effect<HttpApiSchema.withHeaders<A, ConsistentHeaders>, E1 | E2 | CommandApiBadRequest | ViewsUnavailable, R | R1 | R2>;
+
+// The views are settled with `settleViews`, which needs the database and the view progress hub (`ViewProgressHubLive`, or `viewProgressPolling`). They
+// are taken where the wrapper is made, the group's construction (`HttpApiBuilder.group(api, name, (handlers) => Effect.map(makeConsistentRead(), ...))`),
+// as a group takes its other services (ADR-0042): so the hub provided to the API layer, the one the live feed uses too, is the one the reads wait on,
+// and a read cannot be served without one.
+export const makeConsistentRead = (options: ConsistentReadOptions = {}): Effect.Effect<ConsistentRead<never>, never, SqlClient.SqlClient | ViewProgressHub> =>
+  Effect.map(Effect.context<SqlClient.SqlClient | ViewProgressHub>(), (services) =>
+    makeConsistentReadWith((subscriptions, marker, timeoutMs) => Effect.provideContext(settleViews(subscriptions, marker, timeoutMs), services), options)
+  );
+
+// The same, with the views settled by `settle`: the read wrapper's tests pass fakes that need no database.
+export const makeConsistentReadWith = <R>(settle: SettleViews<R>, options: ConsistentReadOptions = {}): ConsistentRead<R> => {
   const config = options.config ?? defaultReadConsistency;
   const retryAfterSeconds = options.retryAfterSeconds ?? 1;
-  const settle = options.settle ?? (settleViews as unknown as SettleViews<R>);
 
-  return <Request extends { readonly query: ConsistencyParams }, Parsed, E1, R1, A, E2, R2>(
-    spec: ReadSpec<Request, Parsed, E1, R1>,
-    run: (parsed: Parsed, request: Request) => Effect.Effect<A, E2, R2>
-  ) =>
-    (request: Request): Effect.Effect<HttpApiSchema.withHeaders<A, ConsistentHeaders>, E1 | E2 | CommandApiBadRequest | ViewsUnavailable, R | R1 | R2> =>
+  return (spec, run) =>
+    (request) =>
       Effect.gen(function* () {
         const resolution = resolveReadPolicy(config, spec.consistency ?? {}, request.query);
         if (!resolution.ok) return yield* Effect.fail(CommandApiBadRequest.of(resolution.detail));

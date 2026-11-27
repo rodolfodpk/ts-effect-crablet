@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
-import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadQuery";
+import { ReadSuccess, consistencyQuery, readProblems } from "@crablet/views-http/ReadsApi";
 import { problemSchemaOf } from "@crablet/commands-http/ProblemDetail";
 import { CourseNotFound } from "../slices/enrolment/enrolment.contract.ts";
 

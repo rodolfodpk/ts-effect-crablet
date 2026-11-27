@@ -2,8 +2,7 @@ import { Effect, Option, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { SqlClient, SqlSchema } from "effect/sql";
 import { CommandApiBadRequest, problemOf } from "@crablet/commands-http/ProblemDetail";
-import { makeConsistentRead } from "@crablet/views-http";
-import { defaultReadConsistency, type ReadConsistencyConfig } from "@crablet/views-http/ReadConsistency";
+import { defaultReadConsistency, makeConsistentRead, type ReadConsistencyConfig } from "@crablet/views-http/ReadsLive";
 import type { CourseApi } from "../CourseApi.ts";
 import { CourseNotFound } from "../slices/enrolment/enrolment.contract.ts";
 import { defaultPageSize, maxPageSize } from "./CourseQueryApi.ts";
@@ -68,13 +67,14 @@ export const parseLimit = (raw: string | undefined): number | null => {
 // is not there in time the read is a 503, never a wrong answer. This app lets a client loosen a read (`clientMayRelax`):
 // `?consistency=eventual` answers at once and may be stale, `?consistency=bounded` waits up to the timeout and then answers marked stale.
 export const courseReadConsistency: ReadConsistencyConfig = { ...defaultReadConsistency, clientMayRelax: true };
-const consistentRead = makeConsistentRead({ config: courseReadConsistency });
+// Made where the group is built, which gives it the database and the view progress hub the reads wait on.
+const consistentReads = makeConsistentRead({ config: courseReadConsistency });
 // #endregion read-consistency
 
 // The read group, implemented against the course API itself: each handler's request and response are checked against its endpoint.
 export const makeCourseQueryApiLive = (api: CourseApi) =>
   HttpApiBuilder.group(api, "courseQueries", (handlers) =>
-    Effect.succeed(
+    Effect.map(consistentReads, (consistentRead) =>
       handlers
         // Keyset pagination on the course id (no OFFSET: a page costs the same however deep it is, and a course added or removed
         // meanwhile cannot shift the pages). One extra row is read to know whether there is a next page.
