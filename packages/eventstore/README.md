@@ -39,6 +39,7 @@ framework sits on top of this package.
 - **`EventDecoding`** - the typed `EventDecodingError` for a stored event that cannot be read.
 - **`Storage`** - `storageReport()` and `monitorStorage()`: the size of the log and its indexes ([ADR-0019](../../docs/adr/0019-storage-visibility-and-the-tag-table.md)).
 - **`testing/InMemoryEventStore`** and **`spec/Spec`** - an in-memory store with the same rules as Postgres, and the conformance suite both must pass.
+- **`testing/EventStoreScenario`** - Given/When/Then for code that uses the store directly: `givenEvents(...events).when(code)` gives its value or typed error and the events it appended, in memory.
 
 ## Internal
 

@@ -4,6 +4,7 @@ import type { AppendEvent } from "@crablet/eventstore/AppendEvent";
 import type { Conflict } from "@crablet/eventstore/AppendErrors";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import { makeInMemoryEventStore, type InMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
+import { fixedClock } from "@crablet/eventstore/testing/EventStoreScenario";
 import type { Command, RawInput } from "../Command.ts";
 import { runHandler, withConflictRetry } from "../CommandExecutor.ts";
 import { checkDeadlineCommands, DeadlineFired, DeadlineScheduled, outcomeOfFailure, outcomeOfResult, type FiredDeadline } from "../Deadline.ts";
@@ -72,14 +73,6 @@ export interface Scenario {
   readonly fireDue: (...commands: ReadonlyArray<Command<any, any>>) => Promise<ReadonlyArray<FiredDeadline>>;
 }
 
-// A clock that reads `ms` as the time and is otherwise the real one (sleeping, scheduling).
-const fixedClock = (base: Clock.Clock, ms: number): Clock.Clock =>
-  Object.assign(Object.create(base), {
-    currentTimeMillisUnsafe: () => ms,
-    currentTimeMillis: Effect.succeed(ms),
-    currentTimeNanosUnsafe: () => BigInt(ms) * 1_000_000n,
-    currentTimeNanos: Effect.succeed(BigInt(ms) * 1_000_000n)
-  });
 
 const scenarioOver = (store: InMemoryEventStore, atMs: number | null): Scenario => {
   // Under the scenario's clock, when it has one.
