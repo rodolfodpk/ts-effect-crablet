@@ -127,7 +127,8 @@ project before ([the reliability report](docs/history/plans/reliability-and-scal
   [`docs/adr/README.md`](docs/adr/README.md) under the right heading. One-off findings and gotchas go in the work log, [`docs/history/NOTES.md`](docs/history/NOTES.md), not in a decision record.
 - **Plans are records.** A plan in `docs/history/plans/` is written before the work and kept after it; update its status in [`docs/history/plans/README.md`](docs/history/plans/README.md).
 - **Diagrams are Mermaid** in fenced `mermaid` blocks (GitHub draws them), kept in [`docs/concepts/architecture.md`](docs/concepts/architecture.md) (the framework) and [`docs/concepts/c4-examples.md`](docs/concepts/c4-examples.md) (the two example applications). They are not
-  checked against the code, so when a flow changes, change its diagram in the same commit.
+  checked against the code, so when a flow changes, change its diagram in the same commit; `scripts/mermaid.test.ts` checks only that every one of them parses,
+  so none shows on GitHub as an error box.
 - Use the same example domains as the existing documents: course enrolment to teach (the README, the quick start, the tutorial), the wallet for the full application, and the
   transfer between two accounts in the DCB guide.
 
