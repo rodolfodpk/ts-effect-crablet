@@ -8,9 +8,9 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { all, defineModel, type ModelInstance } from "../../src/Model.ts";
-import { personal } from "../../src/Personal.ts";
+import { personal } from "@crablet/eventstore/Personal";
 import { afterLoad } from "./barrier.ts";
 
 const MINUTE = 60_000;

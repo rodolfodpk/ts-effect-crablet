@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { all, defineModel } from "../../src/Model.ts";
 import { afterLoad } from "./barrier.ts";
 

@@ -11,7 +11,7 @@ import { EventStore, makeEventStoreLayer } from "@crablet/eventstore";
 import { CommandAuditStoreLive } from "@crablet/commands/CommandAuditStore";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { defineCommand, emit } from "@crablet/commands/Command";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "@crablet/commands/Model";
 import { Period } from "@crablet/commands/Period";
 import { startTestDb, type TestDb } from "@crablet/test-support";

@@ -3,7 +3,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import { CommandAuditStore } from "./CommandAuditStore.ts";
 import * as CorrelationContext from "@crablet/eventstore/CorrelationContext";
 import type { Command } from "./Command.ts";
-import { redact } from "./Personal.ts";
+import { redact } from "@crablet/eventstore/Personal";
 
 // The command audit: one row in `crablet_commands` for every command that APPENDED events, written in the command's own
 // transaction. Because the row's `transaction_id` is the transaction that wrote the events, it answers "which request

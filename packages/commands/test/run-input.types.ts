@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, type Command } from "../src/Command.ts";
 import { CommandExecutor } from "../src/CommandExecutor.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { assertRepeatHarmless, given } from "../src/testing/Scenario.ts";
 
 const Noted = defineEvent("RI_Noted", { schema: Schema.Struct({ id: Schema.String, at: Schema.Date }), tags: (d) => ({ note_id: d.id }) });

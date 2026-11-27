@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import { defineCommand, emit } from "../src/Command.ts";
 import { defineContract } from "../src/Contract.ts";
 import { DomainError } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 
 class Taken extends DomainError("Taken", { fields: { id: Schema.String }, kind: "conflict" }) {}
 const Input = Schema.Struct({ id: Schema.String });

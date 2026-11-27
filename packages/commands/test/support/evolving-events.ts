@@ -3,9 +3,9 @@
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { StoredEvent } from "@crablet/eventstore";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../../src/Model.ts";
-import { personal } from "../../src/Personal.ts";
+import { personal } from "@crablet/eventstore/Personal";
 import { assertEventFixtures, type EventFixture } from "../../src/testing/EventFixtures.ts";
 import { assertModelImpact, eventFactsFromFixtures, modelFactsOf } from "../../src/ModelImpact.ts";
 import { verifyEvents } from "../../src/VerifyEvents.ts";

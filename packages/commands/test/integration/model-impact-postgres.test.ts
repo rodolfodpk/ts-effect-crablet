@@ -7,7 +7,7 @@ import { SqlClient } from "effect/sql";
 import { startTestDb, type TestDb } from "@crablet/test-support";
 import { EventStore } from "@crablet/eventstore";
 import * as Crablet from "../support/CommandsLayer.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../../src/Model.ts";
 import { eventFactsFromLog, formatImpactReport, modelFactsOf, modelImpact } from "../../src/ModelImpact.ts";
 

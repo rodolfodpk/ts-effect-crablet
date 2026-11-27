@@ -13,7 +13,7 @@ backlog, and pause, resume or reset one; browse the events page by page, with pe
 - **`eventsGroup`** (`/EventsApi`) - `GET /admin/events?types=A,B&tag=key=value&after=<cursor>&limit=100`: one page of the log in order, of events whose transaction
   had finished, with the `cursor` to read on from ([ADR-0050](../../docs/adr/0050-the-event-store-used-directly.md)). Any of the types, all of the tags; neither, every event.
 - **`eventsHandler({ mask })`** (`/EventsApiLive`) - its handler, over the `EventStore`. `mask` decides what of a payload is shown: build it with
-  `eventPayloadMask(definitions)` from `@crablet/commands/Personal`, which redacts the fields marked `personal(...)` and drops the keys a definition does not know (an older
+  `eventPayloadMask(definitions)` from `@crablet/eventstore/Personal`, which redacts the fields marked `personal(...)` and drops the keys a definition does not know (an older
   field could hold personal data no mark covers). A type with no definition shows no payload, and without a mask no payload is shown at all. An event's metadata ([ADR-0051](../../docs/adr/0051-client-metadata-correlation-and-causation.md)) is
   shown only through a `metadataMask` the application gives (it has no schema to mark personal data with); without one it is withheld. `listEvents` is exported for tests.
 - **`healthRoutes({ ping, readyTimeout, instance })`** (`/Health`) - a process's probes, as routes to serve beside its others: `GET /healthz` (alive; asks neither the

@@ -6,7 +6,7 @@ import { HttpApi, HttpApiBuilder, HttpApiClient, OpenApi } from "effect/http-api
 import { defineCommand, emit, fail } from "@crablet/commands/Command";
 import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import type { HttpClientError } from "effect/http/HttpClientError";
 import { makeCommandApi, makeCommandApiGroup, withApiInfo } from "../src/CommandApi.ts";
 import type { Implementations } from "../src/CommandApi.ts";

@@ -6,7 +6,7 @@ import { OpenApi } from "effect/http-api";
 import { byModel, defineCommand, emit, noop } from "@crablet/commands/Command";
 import { defineContract } from "@crablet/commands/Contract";
 import { DomainError } from "@crablet/commands/Errors";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "@crablet/commands/Model";
 import { ContractMismatch, checkImplementations, makeCommandApi } from "../src/CommandApi.ts";
 

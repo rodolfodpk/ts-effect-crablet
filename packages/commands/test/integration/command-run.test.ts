@@ -16,7 +16,7 @@ import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import { CommandExecutor, CommandExecutorLive } from "../../src/CommandExecutor.ts";
 import { concurrent, defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError, InvalidInput } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../../src/Model.ts";
 import { afterLoad } from "../support/barrier.ts";
 

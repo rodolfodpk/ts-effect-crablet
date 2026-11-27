@@ -15,7 +15,7 @@ import { startTestDb, type TestDb } from "@crablet/test-support";
 import * as Crablet from "../test/support/CommandsLayer.ts";
 import { CommandExecutor } from "../src/CommandExecutor.ts";
 import { defineCommand, emit } from "../src/Command.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../src/Model.ts";
 
 const Ticked = defineEvent("Ticked", { schema: Schema.Struct({ entityId: Schema.String }), tags: (d) => ({ entity_id: d.entityId }) });

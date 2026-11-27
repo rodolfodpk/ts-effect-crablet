@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import * as EventSelectionNS from "@crablet/event-poller/EventSelection";
 import { defineCommand, emit, fail, type Command } from "@crablet/commands/Command";
 import { DomainError } from "@crablet/commands/Errors";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import type { StoredEvent } from "@crablet/eventstore";
 import { assertAutomationIdempotent, checkAutomationIdempotency, inMemoryBackend } from "../src/testing/AutomationIdempotency.ts";
 import { defineAutomation, type AutomationHandler } from "../src/AutomationHandler.ts";

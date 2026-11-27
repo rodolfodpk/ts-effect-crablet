@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import * as PeriodMetrics from "@crablet/metrics-otel/PeriodMetrics";
 import { byModel, defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { all, defineModel } from "../src/Model.ts";
 import { Period } from "../src/Period.ts";
 import * as LogPosition from "@crablet/eventstore/LogPosition";

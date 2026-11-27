@@ -12,9 +12,9 @@ import { CommandExecutor } from "../../src/CommandExecutor.ts";
 import { AuditConfigRef, purgeCommandAudit, startAuditRetention, withActor, type AuditPayload } from "../../src/CommandAudit.ts";
 import { defineCommand, emit, fail } from "../../src/Command.ts";
 import { DomainError } from "../../src/Errors.ts";
-import { defineEvent } from "../../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../../src/Model.ts";
-import { personal } from "../../src/Personal.ts";
+import { personal } from "@crablet/eventstore/Personal";
 import { afterLoad, barrier } from "../support/barrier.ts";
 
 let db: TestDb;

@@ -11,7 +11,7 @@ import { byModel, concurrent, defineCommand, emit, fail, noop } from "../src/Com
 import { runHandler } from "../src/CommandExecutor.ts";
 import { fingerprintOf, isSameRequest } from "../src/Repeat.ts";
 import { IdempotencyMismatch } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../src/Model.ts";
 import { assertRepeatHarmless, given } from "../src/testing/Scenario.ts";
 

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as Schema from "effect/Schema";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../src/Model.ts";
 import { assertModelImpact, baselineOf, eventFactsFromFixtures, formatImpactReport, isExplained, loadBaseline, MIN_REASON_LENGTH, modelFactsOf, modelImpact, saveBaseline, type EventFacts, type ModelFacts } from "../src/ModelImpact.ts";
 

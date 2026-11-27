@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as Schema from "effect/Schema";
 import { defineCommand, emit, fail, noop } from "../src/Command.ts";
 import { DomainError, InvalidInput } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../src/Model.ts";
 import { given } from "../src/testing/Scenario.ts";
 

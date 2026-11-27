@@ -6,7 +6,7 @@ import { defineCommand, emit, fail } from "../src/Command.ts";
 import type { Command } from "../src/Command.ts";
 import { DomainError } from "../src/Errors.ts";
 import type { AnyDomainErrorClass } from "../src/Errors.ts";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;

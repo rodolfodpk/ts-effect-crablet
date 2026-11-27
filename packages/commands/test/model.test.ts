@@ -6,7 +6,7 @@ import * as Tag from "@crablet/eventstore/Tag";
 import type { EventDecodingError } from "@crablet/eventstore/EventDecoding";
 import * as ReadSnapshot from "@crablet/eventstore/ReadSnapshot";
 import { makeInMemoryEventStore } from "@crablet/eventstore/testing/InMemoryEventStore";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { all, defineModel } from "../src/Model.ts";
 
 // A small domain with every feature the model builder has: lifecycle events (not scoped), scoped

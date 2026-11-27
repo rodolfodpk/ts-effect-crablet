@@ -3,7 +3,7 @@
 // the HTTP API is declared from and what a browser could import. Keep server-only imports out of it.
 import * as Schema from "effect/Schema";
 import { defineContract } from "@crablet/commands/Contract";
-import { personal } from "@crablet/commands/Personal";
+import { personal } from "@crablet/eventstore/Personal";
 import { InsufficientFunds, WalletAlreadyExists, WalletNotFound } from "./WalletErrors.ts";
 import { NonBlank, NonNegative, Positive } from "./WalletInputs.ts";
 

@@ -15,7 +15,7 @@ import * as AppendEvent from "@crablet/eventstore/AppendEvent";
 import { parseMarker } from "@crablet/eventstore/Marker";
 import { CommandExecutor, CommandExecutorLive } from "@crablet/commands";
 import { byModel, defineCommand, emit, fail } from "@crablet/commands/Command";
-import { defineEvent } from "@crablet/commands/Event";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "@crablet/commands/Model";
 import { DomainError } from "@crablet/commands/Errors";
 import { defineContract } from "@crablet/commands/Contract";

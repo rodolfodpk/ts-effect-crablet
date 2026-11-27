@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import { EventDecodingFailure, type EventDecodingError } from "@crablet/eventstore/EventDecoding";
+import { EventDecodingFailure, type EventDecodingError } from "../src/EventDecoding.ts";
 import { defineEvent } from "../src/Event.ts";
 import { personal, personalPaths } from "../src/Personal.ts";
 

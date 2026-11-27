@@ -1,7 +1,7 @@
 // Compile-time tests (never executed): a model accepts only events that carry the tag it binds through. An event that did not would match
 // nothing, so the fold would miss it and the boundary would not see a concurrent change to it.
 import * as Schema from "effect/Schema";
-import { defineEvent } from "../src/Event.ts";
+import { defineEvent } from "@crablet/eventstore/Event";
 import { defineModel } from "../src/Model.ts";
 
 const Opened = defineEvent("MT_Opened", { schema: Schema.Struct({ accountId: Schema.String }), tags: (d) => ({ account_id: d.accountId }) });
