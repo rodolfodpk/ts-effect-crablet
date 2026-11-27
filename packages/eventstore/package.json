@@ -30,7 +30,8 @@
     "./ReadSnapshot": "./src/ReadSnapshot.ts",
     "./TagCodec": "./src/TagCodec.ts",
     "./spec/Spec": "./src/spec/Spec.ts",
-    "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts"
+    "./testing/InMemoryEventStore": "./src/testing/InMemoryEventStore.ts",
+    "./testing/EventStoreScenario": "./src/testing/EventStoreScenario.ts"
   },
   "crablet": {
     "coverage": { "lines": 99.4 },

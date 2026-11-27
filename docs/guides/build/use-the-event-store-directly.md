@@ -24,7 +24,7 @@ would otherwise write its parts yourself.
 | Typed state | you fold the events | the model |
 | A boundary other than what was read | `failIfEventsMatch(query, …)` | `consistency` (`strict()`, `concurrent({ guard })`); `resolve`'s reads join the condition |
 | Read the log page by page, or as a stream | `read`, `stream` | — (use the event store API alongside) |
-| Test without a database | the in-memory store | the in-memory store and the Given/When/Then helpers |
+| Test without a database | the in-memory store, and `givenEvents(...).when(code)` | the in-memory store and the Given/When/Then helpers |
 
 ## Set it up
 
@@ -166,6 +166,33 @@ caused by a stored event, and carries its correlation: only an event can be a ca
 automations and deadlines set the correlation and the causation themselves; `withMetadata` and `withCorrelationId` around a command's `run` work
 the same way. Metadata is recorded and never read by the framework: what you select by goes in a tag, and personal data does not go in metadata,
 which the event log shows only through a mask of its own.
+
+## Test it
+
+`givenEvents(...events).when(code)` (`@crablet/eventstore/testing/EventStoreScenario`) runs your code against the in-memory store, starting from the
+log you give: the result says whether it succeeded (`value`) or failed (`error`, typed as your code declares it), and which events it appended. It adds
+no transaction of its own, so code that appends and then fails outside a `transaction` leaves its appends, as on Postgres; later `when`s see earlier
+ones' effects, and `at(now)` fixes the clock.
+
+<!-- file: packages/eventstore/test/event-store-scenario.test.ts#given-when-then -->
+```ts
+const lent = (copyId: string, memberId: string) => AppendEvent.make("CopyLent", { copyId, memberId }, { copy_id: copyId, member_id: memberId });
+
+test("a copy that is out cannot be lent again: the code fails with its own error and appends nothing", async () => {
+  const result = await givenEvents(lent("c-1", "m-1")).when(lendCopy("c-1", "m-2"));
+  expect(result.outcome).toBe("failed");
+  if (result.outcome === "failed") expect(result.error).toBeInstanceOf(CopyNotAvailable);
+  expect(result.events).toEqual([]);
+});
+
+test("a copy on the shelf is lent: the event appended is the loan", async () => {
+  const result = await givenEvents().when(lendCopy("c-1", "m-1"));
+  expect(result.outcome).toBe("succeeded");
+  expect(result.events.map((e) => [e.type, e.data])).toEqual([["CopyLent", { copyId: "c-1", memberId: "m-1" }]]);
+});
+```
+
+What it cannot show is a race (nothing interleaves in memory) or what is Postgres's own; the guide's code also runs on Postgres, with two lends raced.
 
 ## Limits
 
