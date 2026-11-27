@@ -25,6 +25,16 @@ describe("Crablet.observability: OTLP from the OTEL_* variables", () => {
     });
   });
 
+  test("the resource names the service and its instance, and its product as service.namespace when there is one", () => {
+    const s = { endpoint: "http://localhost:4318", serviceName: "wallet-api", instanceId: "pod-a" };
+    expect(Crablet.resourceOf(s)).toEqual({ serviceName: "wallet-api", attributes: { "service.instance.id": "pod-a" } });
+    expect(Crablet.resourceOf(s, { product: "wallet" })).toEqual({
+      serviceName: "wallet-api",
+      attributes: { "service.instance.id": "pod-a", "service.namespace": "wallet" }
+    });
+    expect(Crablet.resourceOf(s, { product: undefined }).attributes).not.toHaveProperty("service.namespace");
+  });
+
   test("without an endpoint the exporter is exactly the empty layer; with one it is not", () => {
     expect(Crablet.otlpLayer({ endpoint: undefined, serviceName: "s", instanceId: "i" })).toBe(Layer.empty);
     expect(Crablet.otlpLayer({ endpoint: "http://localhost:4318", serviceName: "s", instanceId: "i" })).not.toBe(Layer.empty);
