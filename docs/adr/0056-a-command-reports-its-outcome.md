@@ -2,8 +2,12 @@
 
 ## Status
 
-**Proposed** (2026-11-28). Nothing built. The last item of the `@crablet/app` plan's "what this plan does not improve" list ("observability of the
-commands and of HTTP"). Amends nothing; the metric names it adds follow `docs/reference/metrics.md`.
+**Accepted** (2026-11-28, the maintainer's decisions: the OpenTelemetry name for the HTTP metric, and the per-attempt metrics kept beside the new
+ones). Built: `reportExecution` and `outcomeOf` (`packages/commands/src/CommandOutcome.ts`), used by the executor; `crablet.command.executions` and
+`crablet.command.execution.duration` (`@crablet/metrics-otel/CommandMetrics`); `requestMetricsLayer` (`@crablet/commands-http/RequestMetrics`),
+added by `serveApi`, recording `http.server.request.duration` (`@crablet/metrics-otel/HttpMetrics`); the dashboard's command and HTTP panels and
+the `Commands are failing` alert. Tests: `packages/commands/test/command-outcome.test.ts`, `packages/commands-http/test/request-metrics.test.ts`.
+The last item of the `@crablet/app` plan's "what this plan does not improve" list ("observability of the commands and of HTTP").
 
 ## Context
 
@@ -50,6 +54,8 @@ The command's outcome is already a type: `ExecutionResult` (created or idempoten
    | `error` | anything else: `SqlError`, `AppendTooLarge`, an `EventDecodingError`, a defect; with `error` (the tag or `defect`) |
 
    `error` takes its values from the declared errors and the framework's few: a bounded set, fixed by the code, never a message.
+   An input that does not decode (`InvalidInput`, from `run`) is not an execution: nothing ran, so it has no outcome; over HTTP it is a 400 in
+   the request metric.
 2. **The span says it.** `crablet.command` gains `crablet.command.outcome`, `crablet.command.attempts`, and, when present, `crablet.command.error`,
    `crablet.command.error_kind` and `crablet.correlation_id`. A `rejected`, `idempotent` or `mismatch` execution ends its span **ok**: the
    executor turns the declared error into a value inside the span and fails with it again outside, so `E` does not change. `conflict` and `error`
@@ -79,8 +85,9 @@ The command's outcome is already a type: `ExecutionResult` (created or idempoten
   command's declared errors: a handful per command, fixed by the code.
 - `http.server.request.duration` is the one name not under `crablet.`: the HTTP layer is Effect's and OpenTelemetry's convention, not the
   framework's; `docs/reference/metrics.md` says so.
-- Breaks to add (`scripts/breaks.ts`): a domain error counted as `error`; the outcome taken from the first attempt instead of the last; the URL
-  used instead of the route.
+- The three ways to get it wrong are caught by unit tests, not `scripts/breaks.ts` (whose breaks are for the database-bound code): a domain error
+  counted as `error`, the attempts not counted (or the outcome taken per attempt), and the URL used instead of the route each fail
+  `command-outcome.test.ts` or `request-metrics.test.ts` (checked by making each change). `command-run.test.ts` checks the executor's wiring on Postgres.
 - Not done: a trace id stored in the events' metadata (the way from the log to a trace without the `correlationId`); a span per view batch with its
   causation. Both are possible later and change nothing here.
 

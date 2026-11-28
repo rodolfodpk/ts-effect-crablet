@@ -7,9 +7,10 @@ import type { Implementations } from "./CommandApi.ts";
 import type { CommandApiConfig } from "./CommandApiConfig.ts";
 import { makeCommandApiGroupLive } from "./CommandApiLive.ts";
 import { corsLayer, type CorsConfig } from "./Cors.ts";
+import { requestMetricsLayer } from "./RequestMetrics.ts";
 
 // One API, served: its write group from the commands, the application's other groups (reads, a live feed), the OpenAPI document, an optional
-// documentation page and CORS, in one layer to give to `HttpRouter.serve`.
+// documentation page, CORS and the request metrics, in one layer to give to `HttpRouter.serve`.
 //
 //     const served = serveApi(api, {
 //       commands: { contracts: courseContracts, implementations: { define_course: DefineCourse, subscribe: Subscribe } },
@@ -56,6 +57,7 @@ export const serveApi = <
   const commands = makeCommandApiGroupLive(api, options.commands.contracts, options.commands.implementations, config);
   // type escape: `G` is a tuple the caller gives (its own groups); spreading it after `commands` loses the tuple shape, which `Layer.provide` needs
   const groups = [commands, ...(options.groups ?? [])] as unknown as [typeof commands, ...G];
-  const served = Layer.merge(HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(groups)), apiDocsLayer(api, config));
+  // The request metrics (RequestMetrics.ts, ADR-0056) are a global middleware: they count every route of the router this is served on.
+  const served = Layer.mergeAll(HttpApiBuilder.layer(api, apiLayerOptions(config)).pipe(Layer.provide(groups)), apiDocsLayer(api, config), requestMetricsLayer);
   return options.cors === undefined ? served : Layer.merge(served, corsLayer(options.cors));
 };

@@ -47,6 +47,8 @@ Suggestions, by what each metric tells you. Every metric and span, with what it 
 | `crablet.view.project.failures`, `crablet.automation.decide.failures`, `crablet.outbox.publish.failures` | a handler is failing; the error is recorded against the processor |
 | `crablet.deadlines.fired` | deadlines fired, by `outcome`: a steady rate of `failed` is a deadline's command failing, and the deadlines after it waiting; the deadlines processor's `lag_*` gauges count the deadlines due and not fired |
 | `crablet.eventstore.decoding_failures` | a stored event the current definitions cannot read (an unsafe event change) |
+| `crablet.command.executions{outcome="error"}` | commands that ended with a fault, by `command_type` and `error` (the `Commands are failing` alert); `outcome="rejected"` is a business answer, not a fault ([ADR-0056](../../adr/0056-a-command-reports-its-outcome.md)) |
+| `http.server.request.duration` | the served API's requests by route and status: the 5xx rate of a route ([ADR-0056](../../adr/0056-a-command-reports-its-outcome.md)) |
 | `crablet.command.conflict_retries`, `crablet.eventstore.concurrency_violations` | contention: commands whose boundaries overlap |
 | `crablet.period.clock_behind` | a command found a period open that is later than its clock says (a model with a period never turns one back): a few is a pod a little behind, a steady rate is clocks that disagree ([ADR-0025](../../adr/0025-the-framework-turns-the-period.md)) |
 | `crablet.eventstore.wakeups_recorded`, `_sent`, `_saved` | the wake-up notifications ([ADR-0021](../../adr/0021-wakeups-after-commit-and-coalesced.md)): recorded per committed transaction, sent to Postgres, and saved by merging them. `sent` should stay near 1 / window per process |

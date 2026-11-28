@@ -1,10 +1,8 @@
 import { Clock, Duration, Effect, Exit, Metric } from "effect";
 
-// One instrumented "operation" is three plain Metric values: Effect's `Metric.tagged`
-// can only add a tag whose value is known up front, not one chosen after the wrapped effect
-// finishes, so success/failure counts are two separate counters rather than one outcome-tagged
-// counter. Equally queryable at a backend (two series instead of one tag-split series) - a
-// deliberate "redesign, not transliteration" call, not a capability gap.
+// One instrumented "operation" is three plain Metric values: a duration, and success and failure as two counters rather than one counter with an
+// outcome attribute. Effect 4 can add an attribute chosen after the effect finished (`Metric.withAttributes` at update time; ADR-0056 checked it
+// for a timer, and the commands' `executions` use it); these keep two counters because the dashboard and the alerts read them by name.
 export interface OperationMetrics {
   readonly duration: Metric.Histogram<Duration.Duration>;
   readonly successes: Metric.Counter<number>;

@@ -6,7 +6,7 @@ configures. Every metric is named `crablet.<area>.<what>`.
 ## What it gives you
 
 One module per area, each its own import (`@crablet/metrics-otel/PollerMetrics`, ...): **EventStoreMetrics**, **CommandMetrics**, **PollerMetrics**, **LeaderMetrics**,
-**ViewMetrics**, **OutboxMetrics**, **AutomationMetrics**, **DeadlineMetrics** (`crablet.deadlines.fired`, by outcome), **PeriodMetrics** (`crablet.period.clock_behind`: a
+**ViewMetrics**, **OutboxMetrics**, **AutomationMetrics**, **DeadlineMetrics** (`crablet.deadlines.fired`, by outcome), **HttpMetrics** (`http.server.request.duration`, the semantic-convention name, recorded by `serveApi`), **PeriodMetrics** (`crablet.period.clock_behind`: a
 pod's clock behind the period already open), **ReadConsistencyMetrics** and **StorageMetrics** (the `crablet.storage.*` gauges that `monitorStorage` keeps current).
 
 The other packages record into these; you do not call them yourself, you only wire an exporter. That is why the package has no root entry (`@crablet/metrics-otel` alone imports nothing): it is not an application's import, and each area stays its own. Two are not recorded by the processing loop: `monitorStorage` keeps the `crablet.storage.*` gauges current, and
