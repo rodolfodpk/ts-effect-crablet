@@ -39,7 +39,7 @@ for longer ([keep an append small](run-in-production.md#keep-an-append-small)).
 ## 5. Leader takeover
 
 `leaderElectionRetryIntervalMs` (5 s by default) bounds the takeover after a crash. A silent network partition takes the leader's `serverIdleTimeout`
-more (15 s by default; each module's `leader: { serverIdleTimeout }` option, a `LeaderOptions`): the leader's lock session sets `idle_session_timeout` for itself, so the server ends it once the
+more (15 s by default; each module's `leader: { serverIdleTimeout }` option, a `Crablet.LeaderOptions`): the leader's lock session sets `idle_session_timeout` for itself, so the server ends it once the
 leader has gone silent and frees the lock, whatever the TCP keepalives say ([ADR-0045](../../adr/0045-a-leader-session-ends-itself-when-the-leader-goes-silent.md)).
 It must be longer than the leader's own loss detection (6 s with the defaults), which is checked. Setting the server's TCP keepalives
 (`tcp_keepalives_idle`, `_interval`, `_count`) shorter is still worth it, for the backend slots of clients that are gone

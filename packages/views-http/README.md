@@ -5,7 +5,8 @@ write; with no marker it waits for everything committed. The default is strict: 
 
 ## What it gives you
 
-A consistent read comes from two imports, split as the live feed's are: what the endpoint declares, safe for the browser, and the server side.
+A consistent read comes from two imports, split as the live feed's are: what the endpoint declares, safe for the browser, and the server side. The package
+root (`@crablet/views-http`) is the declarations of both, `/ReadsApi` and `/LiveFeedApi` together; the server sides stay their own imports.
 
 - **`consistencyQuery`**, **`ReadSuccess`**, **`readProblems`** (`/ReadsApi`, browser-safe) - what a read endpoint declares: the three consistency parameters, the success with the
   optional stale header, and the `400` and `503` (`ViewsUnavailable`) it can answer, which a client also checks.
