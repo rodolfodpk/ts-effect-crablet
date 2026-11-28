@@ -62,7 +62,10 @@ The command's outcome is already a type: `ExecutionResult` (created or idempoten
    middleware that records `http.server.request.duration` (a timer) by `http.request.method`, `http.route` and `http.response.status_code`: the
    OpenTelemetry semantic-convention name and attributes, which backends already chart, rather than a `crablet.` name. The route is the router's
    template (`/api/wallets/:walletId`), never the URL; a command's route is its own (`POST /api/commands/open_wallet`), so the
-   series is per command with no extra attribute. It lives in `commands-http` because `serveApi` does, and so it covers
+   series is per command with no extra attribute. The middleware is a global `HttpRouter.middleware`: after the handler it reads the route from
+   `HttpRouter.RouteContext` and the status from the response, or, when the handler failed, from `HttpServerError.causeResponse` (the
+   response the server will send: 404 for no route, 500 for a defect). A request that matched no route has no `http.route`, as the convention
+   says. It lives in `commands-http` because `serveApi` does, and so it covers
    the reads (`views-http`) and the admin (`processors-http`) served by the same layer; no package gains `@effect/platform-node`.
 5. **Where they are defined.** The two command metrics in `@crablet/metrics-otel/CommandMetrics`, the HTTP one in a new
    `@crablet/metrics-otel/HttpMetrics`; all in `docs/reference/metrics.md` and in the dashboard (`scripts/dashboard.test.ts`).
@@ -72,7 +75,7 @@ The command's outcome is already a type: `ExecutionResult` (created or idempoten
 - An operator can tell a fault from a business answer: an alert on `outcome="error"`, a panel of `rejected` by `error` (what customers are told
   most), the conflicts that exhausted their retries. Traces show domain errors as ok spans with their outcome, and a trace can be looked up by
   the `correlationId` of an event.
-- Two more series per command and outcome, and one per route and status class. The `error` attribute multiplies the `rejected` series by the
+- Two more series per command and outcome, and one per route and status code. The `error` attribute multiplies the `rejected` series by the
   command's declared errors: a handful per command, fixed by the code.
 - `http.server.request.duration` is the one name not under `crablet.`: the HTTP layer is Effect's and OpenTelemetry's convention, not the
   framework's; `docs/reference/metrics.md` says so.
@@ -83,10 +86,19 @@ The command's outcome is already a type: `ExecutionResult` (created or idempoten
 
 ## Before accepting
 
-- Effect 4.1.4's `Metric.withAttributes` takes an attribute chosen after the effect finished (the executor already does it for
-  `idempotent_duplicates`): confirm for a timer, so the outcome goes on the duration. `observe`'s comment says it cannot (written against Effect 3);
-  correct the comment either way.
-- A span ended ok for a value and then failed outside it: confirm in a test with an in-memory tracer that the backend sees ok and the caller the
-  same `E`.
-- `http.route` is set before the middleware reads it (the router sets it on the request's span, `HttpRouter.js`): confirm, or take the route from
-  `HttpRouter` another way, with a test that a path parameter does not appear in the series.
+Checked on 2026-11-28, effect 4.1.4, in a throwaway test (to become the build's own tests):
+
+1. **An attribute chosen after the effect finished, on a timer: yes.** `Metric.withAttributes(timer, { command_type, outcome })` with the outcome
+   taken from the `Exit` gives one series per outcome, with its own count (three runs: `created` 1, `rejected` 2). `observe`'s comment, written
+   against Effect 3, says it cannot: it is corrected when this is built.
+2. **A declared error ends the span ok, and the caller still gets it: yes.** Inside the span the result becomes an `Exit` value (`Effect.map` to
+   `Exit.succeed`, `Effect.catchIf` the declared errors to `Exit.fail`), and `Effect.flatten` outside fails again: the span's status is ok for
+   the declared error and failed for another, and the caller's `E` is the same type (checked by `tsc`, no cast).
+3. **The route, not the URL: yes, through `RouteContext`, not through the span.** The router puts `http.route` on the request's span only when
+   a tracer other than the native one is installed, so a middleware cannot rely on the span. A global `HttpRouter.middleware` reads
+   `HttpRouter.RouteContext` after the handler instead: `GET /api/wallets/:walletId` for `/api/wallets/w-42`, through `HttpApiBuilder` as
+   through a plain route. Two findings that decision 4 now says:
+   - a handler failure reaches the middleware as a failure, not a response: a defect is a `Die`, and the status comes from
+     `HttpServerError.causeResponse` (500). `exitResponse`, its synchronous form, says 500 for a missing route where the server sends 404, so the
+     effectful form is the one;
+   - a declared error (an `HttpApi` error with a status) reaches it as the response (404), with the route.
