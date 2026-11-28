@@ -144,6 +144,7 @@
       "dependencies": {
         "@crablet/commands": "workspace:*",
         "@crablet/eventstore": "workspace:*",
+        "@crablet/metrics-otel": "workspace:*",
         "effect": "4.1.4",
       },
       "devDependencies": {

@@ -13,6 +13,7 @@
     "./OutboxMetrics": "./src/OutboxMetrics.ts",
     "./AutomationMetrics": "./src/AutomationMetrics.ts",
     "./DeadlineMetrics": "./src/DeadlineMetrics.ts",
+    "./HttpMetrics": "./src/HttpMetrics.ts",
     "./ReadConsistencyMetrics": "./src/ReadConsistencyMetrics.ts",
     "./StorageMetrics": "./src/StorageMetrics.ts"
   },

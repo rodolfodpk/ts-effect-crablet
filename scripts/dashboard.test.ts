@@ -19,17 +19,19 @@ import * as ViewMetrics from "../packages/metrics-otel/src/ViewMetrics.ts";
 import * as OutboxMetrics from "../packages/metrics-otel/src/OutboxMetrics.ts";
 import * as AutomationMetrics from "../packages/metrics-otel/src/AutomationMetrics.ts";
 import * as DeadlineMetrics from "../packages/metrics-otel/src/DeadlineMetrics.ts";
+import * as HttpMetrics from "../packages/metrics-otel/src/HttpMetrics.ts";
 
 const alertsPath = resolve(import.meta.dir, "../ops/grafana/alerts.yaml");
 
-interface Described { readonly id: string; readonly type: string }
+interface Described { readonly id: string; readonly type: string; readonly attributes?: Readonly<Record<string, unknown>> | undefined }
 const isMetric = (v: unknown): v is Described => typeof v === "object" && v !== null && "id" in v && "type" in v && typeof (v as Described).id === "string";
 
 // Every metric the package exports, with the name or names Prometheus gives it when it arrives by OTLP. Measured against the grafana/otel-lgtm image
-// (docs/history/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`.
+// (docs/history/plans/dashboard.md, step 2): a counter keeps its name, a gauge gains `_ratio`, a histogram (a timer) becomes `_milliseconds_bucket|count|sum`, and one
+// whose `unit` attribute is seconds (`http.server.request.duration`, ADR-0056) `_seconds_bucket|count|sum`.
 const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
   const out = new Map<string, ReadonlyArray<string>>();
-  const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics, DeadlineMetrics];
+  const modules = [CommandMetrics, PeriodMetrics, EventStoreMetrics, LeaderMetrics, PollerMetrics, ReadConsistencyMetrics, StorageMetrics, ViewMetrics, OutboxMetrics, AutomationMetrics, DeadlineMetrics, HttpMetrics];
   for (const mod of modules) {
     for (const [key, value] of Object.entries(mod)) {
       if (key === "observe") continue;
@@ -37,7 +39,7 @@ const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
       for (const m of metrics) {
         if (!isMetric(m)) continue;
         const base = m.id.replaceAll(".", "_");
-        const names = m.type === "Gauge" ? [`${base}_ratio`] : m.type === "Histogram" ? ["bucket", "count", "sum"].map((s) => `${base}_milliseconds_${s}`) : m.type === "Counter" ? [base] : [];
+        const names = m.type === "Gauge" ? [`${base}_ratio`] : m.type === "Histogram" ? ["bucket", "count", "sum"].map((s) => `${base}_${m.attributes?.["unit"] === "seconds" ? "seconds" : "milliseconds"}_${s}`) : m.type === "Counter" ? [base] : [];
         if (names.length === 0) throw new Error(`metric ${m.id} has a type (${m.type}) this test does not know the Prometheus name of`);
         out.set(m.id, names);
       }
@@ -47,7 +49,7 @@ const prometheusNames = (): Map<string, ReadonlyArray<string>> => {
 };
 
 const collect = (value: unknown, found: Array<string>): void => {
-  if (typeof value === "string") for (const m of value.matchAll(/\bcrablet_[a-z0-9_]+/g)) found.push(m[0]);
+  if (typeof value === "string") for (const m of value.matchAll(/\b(?:crablet|http_server)_[a-z0-9_]+/g)) found.push(m[0]);
   else if (Array.isArray(value)) for (const v of value) collect(v, found);
   else if (typeof value === "object" && value !== null) for (const v of Object.values(value)) collect(v, found);
 };
@@ -80,6 +82,8 @@ const LABELS: Record<string, ReadonlyArray<string>> = {
   "crablet.automation.decide.duration": ["automation"], "crablet.automation.decide.successes": ["automation"], "crablet.automation.decide.failures": ["automation"], "crablet.automation.events_processed": ["automation"],
   "crablet.outbox.publish.duration": ["publisher"], "crablet.outbox.publish.successes": ["publisher"], "crablet.outbox.publish.failures": ["publisher"], "crablet.outbox.events_published": ["publisher"],
   "crablet.command.handle.duration": ["command_type"], "crablet.command.handle.successes": ["command_type"], "crablet.command.handle.failures": ["command_type"],
+  "crablet.command.executions": ["command_type", "outcome", "error"], "crablet.command.execution.duration": ["command_type", "outcome", "error"],
+  "http.server.request.duration": ["http_request_method", "http_route", "http_response_status_code", "unit"],
   "crablet.command.idempotent_duplicates": ["command_type"], "crablet.command.idempotency_mismatches": ["command_type"], "crablet.command.conflict_retries": ["command_type"],
   "crablet.period.clock_behind": [],
   "crablet.eventstore.append.duration": [], "crablet.eventstore.append.successes": [], "crablet.eventstore.append.failures": [],
@@ -114,7 +118,7 @@ const allowedLabels = (expr: string): Set<string> => {
   const byPrometheusName = new Map<string, string>();
   for (const [id, names] of prometheusNames()) for (const n of names) byPrometheusName.set(n, id);
   const allowed = new Set(DERIVED);
-  for (const name of expr.matchAll(/\bcrablet_[a-z0-9_]+/g)) for (const l of LABELS[byPrometheusName.get(name[0])!] ?? []) allowed.add(l);
+  for (const name of expr.matchAll(/\b(?:crablet|http_server)_[a-z0-9_]+/g)) for (const l of LABELS[byPrometheusName.get(name[0])!] ?? []) allowed.add(l);
   return allowed;
 };
 

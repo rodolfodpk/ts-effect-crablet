@@ -90,6 +90,18 @@ legitimately lag (a nightly export), raise the alert's threshold for it.
 **Do:** as for [a processor that has failed](#a-processor-has-failed), before it gets there. Pausing the processor stops the retries while you fix the
 cause; resume it afterwards.
 
+## Commands are failing
+
+**Means:** executions of a command ended with a fault in the last five minutes (`crablet.command.executions{outcome="error"}`): the database
+(`SqlError`), a stored event the command's model cannot read (`EventDecodingError`), an append over the limit (`AppendTooLarge`), or a defect. A
+domain error the command declares is a business answer (`outcome="rejected"`) and does not fire this.
+
+**Check:** the alert names the command and the error. The `crablet.command` spans with `crablet.command.outcome=error` carry the error and, when
+the request had one, `crablet.correlation_id`, which finds the request in the logs.
+
+**Do:** for `SqlError`, the database first (connections, failover); for `EventDecodingError`, [stored events cannot be read](#stored-events-cannot-be-read);
+for a defect, the log line of the command (annotated `command`) has the stack.
+
 ## Stored events cannot be read
 
 **Means:** a stored event no longer fits its current definition: a field was renamed, retyped or removed, or its meaning changed. Commands whose boundary

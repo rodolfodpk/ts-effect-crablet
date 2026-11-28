@@ -108,7 +108,7 @@ const panels = (): ReadonlyArray<Panel> => {
   // The signals an on-call person reads first: how much work, how slow, how far behind, how much contention. Colours say when to look.
   out.push(row("How is it doing right now?"));
   out.push(stat("Throughput", "Commands that succeeded, per second (each attempt of a retried command counts).", `sum(${rate("crablet_command_handle_successes")})`, undefined, { w: 4, unit: "ops", decimals: 1 }));
-  out.push(stat("Command p95", "95th percentile of handling a command, retries included. Yellow above half a second, red above two.",
+  out.push(stat("Command p95", "95th percentile of one attempt at a command (one transaction; the time a caller waited, retries included, is the Command time panel). Yellow above half a second, red above two.",
     `histogram_quantile(0.95, sum by (le) (${rate("crablet_command_handle_duration_milliseconds_bucket")}))`, undefined,
     { w: 4, unit: "ms", decimals: 0, steps: [{ color: "green", value: null }, { color: "yellow", value: 500 }, { color: "red", value: 2000 }] }));
   out.push(stat("Slowest behind", "Age of the oldest event any processor has not handled yet; 0 when all are caught up. Yellow above 5 s, red above 30 s.", `max(${fresh(`crablet_poller_lag_seconds_ratio{${P}}`)}) or vector(0)`, undefined,
@@ -117,7 +117,7 @@ const panels = (): ReadonlyArray<Panel> => {
     { w: 4, unit: "short", steps: [{ color: "green", value: null }, { color: "yellow", value: 500 }, { color: "red", value: 5000 }] }));
   out.push(stat("Conflict retries/s", "Commands that found their boundary changed and ran again. Some are normal under concurrency; a lot means contention. Yellow above 1, red above 10.", `sum(${rate("crablet_command_conflict_retries")}) or vector(0)`, undefined,
     { w: 4, unit: "ops", decimals: 1, steps: [{ color: "green", value: null }, { color: "yellow", value: 1 }, { color: "red", value: 10 }] }));
-  out.push(stat("Failed attempts/s", "Command attempts that failed, a retried conflict included (so this is not the number of commands that gave up: read it against the conflict retries beside it).", `sum(${rate("crablet_command_handle_failures")}) or vector(0)`, undefined,
+  out.push(stat("Failed attempts/s", "Command attempts that failed: a retried conflict and a domain error (a business answer) included, so this is not the number of faults: the Commands per second panel splits executions by outcome, and the alert reads outcome=\"error\".", `sum(${rate("crablet_command_handle_failures")}) or vector(0)`, undefined,
     { w: 4, unit: "ops", decimals: 1, steps: [{ color: "green", value: null }, { color: "yellow", value: 1 }, { color: "red", value: 10 }] }));
   out.push(row("Who leads, and who is behind?"));
   for (const [module, key] of Object.entries(MODULE_LOCKS)) {
@@ -195,12 +195,19 @@ const panels = (): ReadonlyArray<Panel> => {
     { expr: `sum(${rate("crablet_command_idempotent_duplicates")})`, legend: "idempotent duplicates" },
     { expr: `sum by (command_type) (${rate("crablet_command_idempotency_mismatches")})`, legend: "idempotency mismatches {{command_type}}" }
   ]));
-  out.push(series("Command time (p95)", "95th percentile of handling one command, by command type, retries included.", "ms",
-    [{ expr: `histogram_quantile(0.95, sum by (le, command_type) (${rate("crablet_command_handle_duration_milliseconds_bucket")}))`, legend: "{{command_type}}" }]));
-  out.push(series("Commands per second", "Commands that succeeded, and commands that failed (rejected by their rules or by an error) by command type.", "ops", [
-    { expr: `sum(${rate("crablet_command_handle_successes")})`, legend: "succeeded" },
-    { expr: `sum by (command_type) (${rate("crablet_command_handle_failures")})`, legend: "failed {{command_type}}" }
+  out.push(series("Command time (p95)", "95th percentile of one execution, by command type: what the caller waited, retries included (ADR-0056).", "ms",
+    [{ expr: `histogram_quantile(0.95, sum by (le, command_type) (${rate("crablet_command_execution_duration_milliseconds_bucket")}))`, legend: "{{command_type}}" }]));
+  out.push(series("Commands per second", "Executions by outcome, after their retries (ADR-0056): created, idempotent (a repeat), rejected (a domain error: a business answer), mismatch (a request id reused), conflict (retries ran out), error (a fault).", "ops", [
+    { expr: `sum by (outcome) (${rate("crablet_command_executions")})`, legend: "{{outcome}}" }
   ]));
+  out.push(series("Refused commands", "Executions a declared domain error refused, by command type and error: what customers are told most.", "ops", [
+    { expr: `sum by (command_type, error) (${rate("crablet_command_executions", '{outcome="rejected"}')})`, legend: "{{command_type}} {{error}}" }
+  ]));
+  out.push(series("Requests by route and status", "Requests the served API answered per second, by route template and status code (http.server.request.duration, ADR-0056). A request that matched no route has no route.", "ops", [
+    { expr: `sum by (http_route, http_response_status_code) (${rate("http_server_request_duration_seconds_count")})`, legend: "{{http_route}} {{http_response_status_code}}" }
+  ]));
+  out.push(series("Request time (p95)", "95th percentile of answering a request, by route template.", "s",
+    [{ expr: `histogram_quantile(0.95, sum by (le, http_route) (${rate("http_server_request_duration_seconds_bucket")}))`, legend: "{{http_route}}" }]));
   out.push(series("Append time (p95)", "95th percentile of the conditional append.", "ms",
     [{ expr: `histogram_quantile(0.95, sum by (le) (${rate("crablet_eventstore_append_duration_milliseconds_bucket")}))`, legend: "append" }]));
   out.push(series("Reads that waited for views", "Reads that carried a consistency marker, per second by mode, and how long the waiting ones waited (p95).", "ops", [

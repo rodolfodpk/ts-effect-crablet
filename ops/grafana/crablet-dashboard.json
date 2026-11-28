@@ -428,7 +428,7 @@
       "id": 8,
       "type": "stat",
       "title": "Command p95",
-      "description": "95th percentile of handling a command, retries included. Yellow above half a second, red above two.",
+      "description": "95th percentile of one attempt at a command (one transaction; the time a caller waited, retries included, is the Command time panel). Yellow above half a second, red above two.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -687,7 +687,7 @@
       "id": 12,
       "type": "stat",
       "title": "Failed attempts/s",
-      "description": "Command attempts that failed, a retried conflict included (so this is not the number of commands that gave up: read it against the conflict retries beside it).",
+      "description": "Command attempts that failed: a retried conflict and a domain error (a business answer) included, so this is not the number of faults: the Commands per second panel splits executions by outcome, and the alert reads outcome=\"error\".",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -2321,7 +2321,7 @@
       "id": 43,
       "type": "timeseries",
       "title": "Command time (p95)",
-      "description": "95th percentile of handling one command, by command type, retries included.",
+      "description": "95th percentile of one execution, by command type: what the caller waited, retries included (ADR-0056).",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -2339,7 +2339,7 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, command_type) (rate(crablet_command_handle_duration_milliseconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, command_type) (rate(crablet_command_execution_duration_milliseconds_bucket[$__rate_interval])))",
           "legendFormat": "{{command_type}}",
           "instant": false,
           "range": true
@@ -2370,7 +2370,7 @@
       "id": 44,
       "type": "timeseries",
       "title": "Commands per second",
-      "description": "Commands that succeeded, and commands that failed (rejected by their rules or by an error) by command type.",
+      "description": "Executions by outcome, after their retries (ADR-0056): created, idempotent (a repeat), rejected (a domain error: a business answer), mismatch (a request id reused), conflict (retries ran out), error (a fault).",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -2388,19 +2388,8 @@
             "type": "prometheus",
             "uid": "${ds}"
           },
-          "expr": "sum(rate(crablet_command_handle_successes[$__rate_interval]))",
-          "legendFormat": "succeeded",
-          "instant": false,
-          "range": true
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${ds}"
-          },
-          "expr": "sum by (command_type) (rate(crablet_command_handle_failures[$__rate_interval]))",
-          "legendFormat": "failed {{command_type}}",
+          "expr": "sum by (outcome) (rate(crablet_command_executions[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
           "instant": false,
           "range": true
         }
@@ -2429,8 +2418,8 @@
     {
       "id": 45,
       "type": "timeseries",
-      "title": "Append time (p95)",
-      "description": "95th percentile of the conditional append.",
+      "title": "Refused commands",
+      "description": "Executions a declared domain error refused, by command type and error: what customers are told most.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds}"
@@ -2438,6 +2427,153 @@
       "gridPos": {
         "x": 12,
         "y": 127,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum by (command_type, error) (rate(crablet_command_executions{outcome=\"rejected\"}[$__rate_interval]))",
+          "legendFormat": "{{command_type}} {{error}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "Requests by route and status",
+      "description": "Requests the served API answered per second, by route template and status code (http.server.request.duration, ADR-0056). A request that matched no route has no route.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 135,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "sum by (http_route, http_response_status_code) (rate(http_server_request_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{http_route}} {{http_response_status_code}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 47,
+      "type": "timeseries",
+      "title": "Request time (p95)",
+      "description": "95th percentile of answering a request, by route template.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 135,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{http_route}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 48,
+      "type": "timeseries",
+      "title": "Append time (p95)",
+      "description": "95th percentile of the conditional append.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 143,
         "w": 12,
         "h": 8
       },
@@ -2476,7 +2612,7 @@
       }
     },
     {
-      "id": 46,
+      "id": 49,
       "type": "timeseries",
       "title": "Reads that waited for views",
       "description": "Reads that carried a consistency marker, per second by mode, and how long the waiting ones waited (p95).",
@@ -2485,8 +2621,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 0,
-        "y": 135,
+        "x": 12,
+        "y": 143,
         "w": 12,
         "h": 8
       },
@@ -2525,7 +2661,7 @@
       }
     },
     {
-      "id": 47,
+      "id": 50,
       "type": "timeseries",
       "title": "Time reads waited (p95)",
       "description": "How long reads spent waiting for views to catch up (only reads that waited).",
@@ -2534,8 +2670,8 @@
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 135,
+        "x": 0,
+        "y": 151,
         "w": 12,
         "h": 8
       },
@@ -2574,20 +2710,20 @@
       }
     },
     {
-      "id": 48,
+      "id": 51,
       "type": "row",
       "title": "Storage",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 143,
+        "y": 159,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 49,
+      "id": 52,
       "type": "timeseries",
       "title": "Table size",
       "description": "Total bytes (heap, indexes and TOAST) of each library table. Nothing deletes events, so watch the growth.",
@@ -2597,7 +2733,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 144,
+        "y": 160,
         "w": 12,
         "h": 8
       },
@@ -2636,7 +2772,7 @@
       }
     },
     {
-      "id": 50,
+      "id": 53,
       "type": "timeseries",
       "title": "Rows",
       "description": "The planner's estimate, as fresh as the last autovacuum or ANALYZE.",
@@ -2646,7 +2782,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 144,
+        "y": 160,
         "w": 12,
         "h": 8
       },
@@ -2685,7 +2821,7 @@
       }
     },
     {
-      "id": 51,
+      "id": 54,
       "type": "timeseries",
       "title": "Bytes per event",
       "description": "The events table and the tag table with their indexes, divided by events (about 1.2 KB at the time of writing).",
@@ -2695,7 +2831,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 152,
+        "y": 168,
         "w": 12,
         "h": 8
       },

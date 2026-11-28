@@ -8,6 +8,7 @@ import { type AppendTooLarge, Conflict } from "@crablet/eventstore/AppendErrors"
 import * as CommandMetrics from "@crablet/metrics-otel/CommandMetrics";
 import type { Command, RawInput } from "./Command.ts";
 import { recordCommand } from "./CommandAudit.ts";
+import { reportExecution } from "./CommandOutcome.ts";
 import type * as CD from "./CommandDecision.ts";
 import { IdempotencyMismatch, type InvalidInput } from "./Errors.ts";
 import { isSameRequest } from "./Repeat.ts";
@@ -215,15 +216,14 @@ export const CommandExecutorLive = Layer.effect(
 
     // Execute, re-running after a Conflict while retries remain (each attempt is its own transaction).
     const runDecoded = <In, Err>(command: Command<In, Err>, input: In) =>
-      withConflictRetry(
-        command.retries,
-        execute(command, input, command.handler),
-        Metric.update(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }), 1)
-      ).pipe(
-        // One span for the whole execution, retries included: the attempts and the appends inside it are its children, and its failure is the command's outcome.
-        Effect.withSpan("crablet.command", { attributes: { "crablet.command.name": command.name, "crablet.command.max_retries": command.retries } }),
-        Effect.annotateLogs({ command: command.name })
-      );
+      // The `crablet.command` span and the outcome metrics (CommandOutcome.ts, ADR-0056): one execution, its retries inside it.
+      reportExecution(command, (attempt) =>
+        withConflictRetry(
+          command.retries,
+          attempt(execute(command, input, command.handler)),
+          Metric.update(Metric.withAttributes(CommandMetrics.conflictRetries, { command_type: command.name }), 1)
+        )
+      ).pipe(Effect.annotateLogs({ command: command.name }));
 
     const run = <In, Err, I extends InputSchema>(command: Command<In, Err, I>, input: RawInput<I>) =>
       Effect.flatMap(command.decodeInput(input), (decoded) => runDecoded(command, decoded));

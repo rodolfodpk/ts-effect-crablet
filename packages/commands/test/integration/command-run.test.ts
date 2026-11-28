@@ -306,4 +306,31 @@ describe("CommandExecutor.run: tracing", () => {
     assert.ok(ancestors(append).includes(command.spanId), "the append is inside the command span");
     assert.ok(ancestors(project).includes(command.spanId), "the read is inside the command span");
   });
+
+  it("the executor reports each execution's outcome (ADR-0056): a domain error is an ok span and a rejected execution, the caller still gets it", async () => {
+    const spans: Array<Tracer.Span> = [];
+    const tracer = Tracer.make({
+      span(this: Tracer.Tracer, options) {
+        const span = Tracer.nativeTracer.span.call(this, options);
+        spans.push(span);
+        return span;
+      }
+    });
+    const executions = (outcome: string, extra: Record<string, string> = {}) =>
+      run(Metric.value(Metric.withAttributes(CommandMetrics.executions, { command_type: "book_seat", outcome, ...extra })));
+    const createdBefore = (await executions("created")).count;
+    const rejectedBefore = (await executions("rejected", { error: "SeatTaken" })).count;
+    const s = seat();
+    await run(Effect.flatMap(CommandExecutor, (e) => e.run(bookSeat(), booking(s))));
+    const refused = await run(Effect.withTracer(Effect.flip(Effect.flatMap(CommandExecutor, (e) => e.run(bookSeat(), booking(s)))), tracer));
+    assert.ok(refused instanceof SeatTaken, "the caller gets the domain error");
+    const command = spans.find((x) => x.name === "crablet.command")!;
+    assert.equal(command.attributes.get("crablet.command.outcome"), "rejected");
+    assert.equal(command.attributes.get("crablet.command.error"), "SeatTaken");
+    assert.equal(command.attributes.get("crablet.command.error_kind"), "conflict");
+    assert.equal(command.attributes.get("crablet.command.attempts"), 1);
+    assert.ok(command.status._tag === "Ended" && command.status.exit._tag === "Success", "a business answer ends the span ok");
+    assert.equal((await executions("created")).count, createdBefore + 1);
+    assert.equal((await executions("rejected", { error: "SeatTaken" })).count, rejectedBefore + 1);
+  });
 });

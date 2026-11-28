@@ -12,12 +12,14 @@
     "./ApiDescription": "./src/ApiDescription.ts",
     "./CommandApiLive": "./src/CommandApiLive.ts",
     "./ServeApi": "./src/ServeApi.ts",
-    "./Cors": "./src/Cors.ts"
+    "./Cors": "./src/Cors.ts",
+    "./RequestMetrics": "./src/RequestMetrics.ts"
   },
   "dependencies": {
     "effect": "4.1.4",
     "@crablet/commands": "workspace:*",
-    "@crablet/eventstore": "workspace:*"
+    "@crablet/eventstore": "workspace:*",
+    "@crablet/metrics-otel": "workspace:*"
   },
   "devDependencies": {
     "@effect/platform-node": "4.1.4",

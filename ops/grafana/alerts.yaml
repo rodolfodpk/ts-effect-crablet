@@ -102,6 +102,27 @@ groups:
             datasourceUid: __expr__
             model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
 
+      - uid: crablet-command-faults
+        title: Commands are failing
+        condition: C
+        for: 5m
+        # Faults only (outcome="error", ADR-0056): a domain error is a business answer (outcome="rejected") and never fires this.
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: "{{ $labels.command_type }} failed with a fault ({{ $labels.error }}) in the last five minutes."
+          description: "A fault is not a business answer: the database, an event that cannot be read, an append too large, a defect. The command's span carries the outcome and the error."
+          runbook: docs/guides/operate/runbooks.md#commands-are-failing
+        labels: { severity: warning }
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 300, to: 0 }
+            model: { refId: A, instant: true, expr: 'sum by (command_type, error) (increase(crablet_command_executions{outcome="error"}[5m]))' }
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: A, conditions: [{ evaluator: { type: gt, params: [0] } }] }
+
       - uid: crablet-undecodable-events
         title: Stored events cannot be read
         condition: C
