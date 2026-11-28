@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-06), after the spike below showed the policy is implementable as written. Being built in the order given under "Implementation order"; each step is committed on its own and recorded in NOTES.md.
+Accepted (2026-10-06), after the spike below showed the policy is implementable as written. Built: the six steps under "Implementation order" are done (step 5 as the change-impact report), each committed on its own and recorded in NOTES.md.
 
 ## Context
 

@@ -59,11 +59,11 @@ export interface ProjectionResult<T> {
   readonly state: T;
   readonly logPosition: LogPosition;
   // A cursor that sorts before every event this read could have MISSED (an event whose transaction had not finished when it read), so an append
-  // condition using it can never skip one. In Postgres: `(xmin of a snapshot taken before the read, 0)`: a read sees every event whose
+  // condition using it can never skip one. In Postgres: `(xmin of the read's own snapshot, 0)`: a read sees every event whose
   // transaction id is below its xmin. A model over several entities uses the earliest of its members' horizons (ADR-0018, decision 8).
   readonly horizon: LogPosition;
-  // What this read could see: the snapshot taken just before it (Postgres only). An append condition that carries it counts as a conflict only an
-  // event this read could not see (ADR-0048). Taken BEFORE the read, so it never sees more than the read did. Absent in the in-memory store.
+  // What this read could see: the snapshot of the read's own statement (Postgres only). An append condition that carries it counts as a conflict
+  // only an event this read could not see (ADR-0048, and its 2026-11-27 update). Absent in the in-memory store.
   readonly seen?: ReadSnapshot.ReadSnapshot;
   // The newest event this read returned, settled or not (the read's start when it returned none): an upper bound on what the read
   // saw, which `logPosition` (the last SETTLED one) is not. A command that decides "already done" from what it read answers with it as

@@ -4,7 +4,9 @@
 
 **Accepted** (2026-10-29). Built: the read's snapshot (`ProjectionResult.seen`, `@crablet/eventstore/ReadSnapshot`), carried by the commands into the
 append condition (`AppendCondition.seen`), and checked by the append (`V6__crablet_append_sees_the_read.sql`). Refines the append condition of
-ADR-0012; the pollers are unchanged.
+ADR-0012; the pollers are unchanged. Updated 2026-11-27: the snapshot is the read's own statement's, not one taken just before it (decision 1;
+see "Update" below). Widened by [ADR-0050](0050-the-event-store-used-directly.md): code that uses the event store directly gets the snapshot too,
+through `readToDecide` and `failIfEventsMatch` (decision 5).
 
 ## Context
 
@@ -27,7 +29,8 @@ below it.
 ## Decision
 
 1. **A read carries the snapshot it was taken in.** `project` takes `pg_current_snapshot()` just before its query, where it took xmin before, and returns
-   it as `ProjectionResult.seen`; the horizon's xmin comes from the same snapshot. Taken BEFORE the read, it never sees more than the read did. The
+   it as `ProjectionResult.seen`; the horizon's xmin comes from the same snapshot. *(Since 2026-11-27 it is taken in the read's own
+   statement: see "Update" below.)* Taken BEFORE the read, it never sees more than the read did. The
    in-memory store carries none (its reads are serial, and its position cursor exact).
 2. **The append counts as a conflict only what that snapshot could not see.** `crablet_items_match_any` and `append_events_if` take it as a last
    parameter, `p_after_snapshot`, with a default: a matching event after the cursor, not of the caller's own transaction, is a conflict only if its
@@ -42,6 +45,8 @@ below it.
    without a snapshot makes the whole carry none, which is the behaviour from before, never a missed conflict.
 5. **Only the commands use it.** `AppendCondition` gains an optional `seen`; `AppendCondition.of` and `failIfChanged(...).after(...)` do not take one, so
    code that uses the event store directly keeps the old check. `ReadSnapshot` is opaque and its functions are an internal entry point.
+   *(Widened by ADR-0050: `readToDecide` returns a `DecisionPosition` that carries the read's snapshot, and `failIfEventsMatch(query, { after })`
+   takes it to the append; `of` and `failIfChanged(...).after(...)` still take none. The snapshot still has no constructor.)*
 6. **A new migration, V6** (ADR-0047, rule 5): it drops the two functions and creates them again, with V2's bodies and the snapshot added.
    `append_events_batch` and the lock helpers stay in V2.
 
@@ -52,7 +57,7 @@ below it.
 - Fewer retries without a long transaction too: any writer with a lower xid, open at the moment of a load, made the boundary's fresh events conflicts.
 - What stays conservative: an event committed between the snapshot and the read's own statement (a commit in microseconds) is a conflict though the read
   saw it; between the members of `all(...)`, one seen by one member and not by another is a conflict for both. Both existed before, wider, and the retry
-  converges. Taking the snapshot inside the read's own query would remove the first and a round trip; not done here.
+  converges. Taking the snapshot inside the read's own query would remove the first and a round trip; not done here *(done since: see "Update" below)*.
 - The append is in two files again (V2 and V6), against ADR-0047's wish; it is what its rule 5 costs.
 - Breaks (`scripts/breaks.ts`): the snapshot not passed, the transactions from xmax on treated as seen, the running ones treated as seen, an intersection
   that keeps only the last read. Tests: the regression above; the snapshot against Postgres (`read-snapshot.test.ts`: the append's test agrees with
@@ -63,7 +68,8 @@ below it.
 
 The snapshot is now taken in the read's own statement, not in one just before it (decision 1): `readEvents` (`eventstore/src/internal/sql.ts`)
 returns `pg_current_snapshot()` joined to the matching events by `LEFT JOIN LATERAL`, so one row carries it when nothing matches. In read committed
-every function of a statement sees the statement's snapshot, so `seen` is exactly what the read could see, and decision 3's argument holds unchanged
+every function of a statement sees the statement's snapshot (in repeatable read, the transaction's, which is also what the read saw; the append
+requires read committed in any case), so `seen` is exactly what the read could see, and decision 3's argument holds unchanged
 (the snapshot is no earlier than before, and no later than the read). It removes the first conservative case under Consequences (an event committed
 between the snapshot and the read is no longer a conflict) and a round trip per read.
 
@@ -73,4 +79,5 @@ beside a whole command of 2.7 to 3.8 ms. Over 1,000 events the two are within no
 the snapshot is repeated on every row. Both forms have the same plan (the tags index, then the sort), printed by E5i. Locally the saving is 5 to
 15 % of a typical command; across a network it is one round trip per read, and `all(...)`, a period and `resolve` read more than once. The rows are
 sorted by the real xid8 (`sort_xid`), which is not returned: the client has no codec for it. A new break (`read-snapshot-lost-on-empty-boundary`)
-turns the LEFT JOIN into a JOIN.
+turns the LEFT JOIN into a JOIN. The header comment of `V6__crablet_append_sees_the_read.sql` still says "just before it": it describes the
+form of the time, and an applied migration is not edited (ADR-0047, rule 5).
